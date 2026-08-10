@@ -162,9 +162,17 @@ export const registerProjectRequestSchema = z.object({
   trusted: z.literal(true),
 })
 
+export const relinkProjectRequestSchema = registerProjectRequestSchema.extend({
+  projectId: idSchema,
+})
+
 export const projectIdRequestSchema = z.object({ projectId: idSchema })
 export const sessionIdRequestSchema = z.object({ sessionId: idSchema })
 export const createSessionRequestSchema = z.object({ projectId: idSchema })
+export const selectContextRequestSchema = z.object({
+  projectId: idSchema.nullable(),
+  sessionId: idSchema.nullable(),
+})
 export const renameSessionRequestSchema = z.object({
   sessionId: idSchema,
   title: z.string().trim().min(1).max(120),
@@ -280,6 +288,8 @@ export type Project = z.infer<typeof projectSchema>
 export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
 export type SessionRecord = z.infer<typeof sessionRecordSchema>
 export type SessionSummary = z.infer<typeof sessionSummarySchema>
+export type RunRecord = z.infer<typeof runRecordSchema>
+export type ToolEvent = z.infer<typeof toolEventSchema>
 export type ModelSettings = z.infer<typeof modelSettingsSchema>
 export type ModelSettingsInput = z.infer<typeof modelSettingsInputSchema>
 export type SaveSettingsRequest = z.infer<typeof saveSettingsRequestSchema>
@@ -296,7 +306,11 @@ export interface PictorBridge {
   registerProject: (
     request: z.infer<typeof registerProjectRequestSchema>,
   ) => Promise<IpcResult<Project>>
+  relinkProject: (
+    request: z.infer<typeof relinkProjectRequestSchema>,
+  ) => Promise<IpcResult<Project>>
   removeProject: (request: z.infer<typeof projectIdRequestSchema>) => Promise<IpcResult<null>>
+  selectContext: (request: z.infer<typeof selectContextRequestSchema>) => Promise<IpcResult<null>>
   createSession: (
     request: z.infer<typeof createSessionRequestSchema>,
   ) => Promise<IpcResult<SessionSummary>>

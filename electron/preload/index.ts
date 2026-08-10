@@ -10,11 +10,13 @@ import {
   projectIdRequestSchema,
   projectResultSchema,
   registerProjectRequestSchema,
+  relinkProjectRequestSchema,
   renameSessionRequestSchema,
   runIdRequestSchema,
   runtimeEventSchema,
   savedSettingsResultSchema,
   saveSettingsRequestSchema,
+  selectContextRequestSchema,
   sessionIdRequestSchema,
   sessionRecordResultSchema,
   sessionSummaryResultSchema,
@@ -36,9 +38,17 @@ const bridge = Object.freeze({
     projectResultSchema.parse(
       await ipcRenderer.invoke('project:register', registerProjectRequestSchema.parse(input)),
     ),
+  relinkProject: async (input) =>
+    projectResultSchema.parse(
+      await ipcRenderer.invoke('project:relink', relinkProjectRequestSchema.parse(input)),
+    ),
   removeProject: async (input) =>
     voidResultSchema.parse(
       await ipcRenderer.invoke('project:remove', projectIdRequestSchema.parse(input)),
+    ),
+  selectContext: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke('app:select-context', selectContextRequestSchema.parse(input)),
     ),
   createSession: async (input) =>
     sessionSummaryResultSchema.parse(

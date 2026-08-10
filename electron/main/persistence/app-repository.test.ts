@@ -133,6 +133,32 @@ describe('AppRepository', () => {
     )
   })
 
+  it('persists navigation selection and relinks a missing project without changing its identity', async () => {
+    const repository = createRepository()
+    await repository.initialize()
+    const project = await repository.registerProject(projectDirectory)
+    const session = await repository.createSession(project.id)
+    await repository.selectContext(project.id, session.id)
+
+    await rm(projectDirectory, { recursive: true })
+    const replacementDirectory = join(testRoot, 'replacement-project')
+    await mkdir(replacementDirectory)
+    const relinked = await repository.relinkProject(project.id, replacementDirectory)
+
+    const restored = createRepository()
+    await restored.initialize()
+    const snapshot = await restored.getSnapshot()
+    expect(relinked).toMatchObject({ id: project.id, availability: 'available' })
+    expect(snapshot.selectedProjectId).toBe(project.id)
+    expect(snapshot.selectedSessionId).toBe(session.id)
+    expect(snapshot.projects[0]).toMatchObject({
+      id: project.id,
+      name: 'replacement-project',
+      rootPath: relinked.rootPath,
+      availability: 'available',
+    })
+  })
+
   it('rejects a session whose project binding is changed', async () => {
     const repository = createRepository()
     await repository.initialize()

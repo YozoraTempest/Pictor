@@ -159,6 +159,53 @@ export class AppRepository {
     return project
   }
 
+  async relinkProject(projectId: string, rootPath: string): Promise<Project> {
+    this.ensureInitialized()
+    const project = this.getProject(projectId)
+    const canonicalPath = await this.canonicalDirectory(rootPath)
+    const conflictingProject = this.state.projects.find(
+      (candidate) =>
+        candidate.id !== projectId &&
+        candidate.rootPath.toLocaleLowerCase('en-US') === canonicalPath.toLocaleLowerCase('en-US'),
+    )
+    if (conflictingProject) {
+      throw new PictorError('invalid-input', '该目录已经关联到另一个项目')
+    }
+
+    project.name = basename(canonicalPath)
+    project.rootPath = canonicalPath
+    project.availability = 'available'
+    project.trustedAt = new Date().toISOString()
+    project.updatedAt = project.trustedAt
+    this.state.selectedProjectId = project.id
+    this.state.selectedSessionId =
+      this.state.sessions.find((session) => session.projectId === project.id)?.id ?? null
+    await this.persistState()
+    return project
+  }
+
+  async selectContext(projectId: string | null, sessionId: string | null): Promise<void> {
+    this.ensureInitialized()
+    if (projectId === null) {
+      if (sessionId !== null) throw new PictorError('invalid-input', '未选择项目时不能选择会话')
+      this.state.selectedProjectId = null
+      this.state.selectedSessionId = null
+      await this.persistState()
+      return
+    }
+
+    this.getProject(projectId)
+    if (sessionId !== null) {
+      const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
+      if (!session || session.projectId !== projectId) {
+        throw new PictorError('invalid-input', '会话不属于所选项目')
+      }
+    }
+    this.state.selectedProjectId = projectId
+    this.state.selectedSessionId = sessionId
+    await this.persistState()
+  }
+
   async removeProject(projectId: string): Promise<void> {
     this.ensureInitialized()
     const project = this.state.projects.find((candidate) => candidate.id === projectId)

@@ -3,7 +3,7 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 
-import type { PictorBridge, RuntimeEvent } from '../src/shared/contracts.js'
+import type { PictorBridge } from '../src/shared/contracts.js'
 
 const bridgeKeys = [
   'approveCommand',
@@ -16,10 +16,12 @@ const bridgeKeys = [
   'pickProjectDirectory',
   'onRuntimeEvent',
   'registerProject',
+  'relinkProject',
   'removeProject',
   'renameSession',
   'rejectCommand',
   'saveSettings',
+  'selectContext',
   'startRun',
   'stopRun',
   'testSettings',
@@ -142,7 +144,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
   }
 })
 
-test('runs a streamed Pi task through the utility-process boundary', async ({
+test('completes the delegate flow through the GUI and utility-process boundary', async ({
   browserName: _browserName,
 }, testInfo) => {
   let modelRequestCount = 0
@@ -235,90 +237,65 @@ test('runs a streamed Pi task through the utility-process boundary', async ({
   try {
     const window = await electronApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
-    await window.evaluate(() => {
-      const global = globalThis as typeof globalThis & {
-        pictor: PictorBridge
-        runtimeEvents: RuntimeEvent[]
-        unsubscribeRuntime: () => void
-      }
-      global.runtimeEvents = []
-      global.unsubscribeRuntime = global.pictor.onRuntimeEvent((event) =>
-        global.runtimeEvents.push(event),
-      )
-    })
-    const setup = await window.evaluate(
-      async ({ baseUrl, projectRoot }) => {
-        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-        const settings = await bridge.saveSettings({
-          baseUrl,
-          modelId: 'pictor-e2e-model',
-          temperature: null,
-          maxOutputTokens: 64,
-          apiKey: { action: 'replace', value: 'local-e2e-key' },
-        })
-        const project = await bridge.registerProject({ rootPath: projectRoot, trusted: true })
-        if (!project.ok) return { settings, project, session: null, run: null }
-        const session = await bridge.createSession({ projectId: project.value.id })
-        if (!session.ok) return { settings, project, session, run: null }
-        const run = await bridge.startRun({ sessionId: session.value.id, prompt: 'Say hello.' })
-        return { settings, project, session, run }
-      },
-      { baseUrl: `http://127.0.0.1:${address.port}/v1`, projectRoot },
-    )
-    expect(setup.settings.ok).toBe(true)
-    expect(setup.project.ok).toBe(true)
-    expect(setup.session?.ok).toBe(true)
-    expect(setup.run?.ok).toBe(true)
 
-    await window.waitForFunction(
-      () =>
-        (globalThis as typeof globalThis & { runtimeEvents: RuntimeEvent[] }).runtimeEvents.some(
-          (event) => event.type === 'approval.requested',
-        ),
-      undefined,
-      { timeout: 20_000 },
+    await window.getByRole('button', { name: '模型设置' }).click()
+    await window.getByLabel('API Base URL').fill(`http://127.0.0.1:${address.port}/v1`)
+    await window.getByRole('textbox', { name: '模型', exact: true }).fill('pictor-e2e-model')
+    await window.getByLabel('API Key').fill('local-e2e-key')
+    await window.getByLabel('最大输出 Token').fill('64')
+    await window.getByRole('button', { name: '保存设置' }).click()
+    await expect(window.getByRole('dialog')).toBeHidden()
+
+    const project = await window.evaluate(
+      async (rootPath) =>
+        (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.registerProject({
+          rootPath,
+          trusted: true,
+        }),
+      projectRoot,
     )
+    expect(project.ok).toBe(true)
+    await window.reload()
+    await window.waitForLoadState('domcontentloaded')
+
+    await window.getByRole('button', { name: '新建 Session' }).first().click()
+    await expect(window.getByRole('heading', { name: '新建会话' })).toBeVisible()
+    await window.getByRole('textbox', { name: '任务描述' }).fill('Say hello.')
+    await window.getByRole('button', { name: '发送任务' }).click()
+
+    await expect(window.getByText('printf approved > command-approved.txt')).toBeVisible({
+      timeout: 20_000,
+    })
     await expect(readFile(join(projectRoot, 'command-approved.txt'), 'utf8')).rejects.toThrow()
-    const approval = await window.evaluate(async () => {
-      const global = globalThis as typeof globalThis & {
-        pictor: PictorBridge
-        runtimeEvents: RuntimeEvent[]
-      }
-      const event = global.runtimeEvents.find(
-        (candidate) => candidate.type === 'approval.requested',
-      )
-      if (!event || event.type !== 'approval.requested') return null
-      return global.pictor.approveCommand({ runId: event.runId, callId: event.callId })
-    })
-    expect(approval).toEqual({ ok: true, value: null })
+    await window.screenshot({ path: testInfo.outputPath('delegate-approval.png') })
+    await window.getByRole('button', { name: '允许一次' }).click()
+    await expect(window.getByText('Utility runtime works')).toBeVisible({ timeout: 20_000 })
+    await expect(window.getByText('已完成').last()).toBeVisible()
 
-    await window.waitForFunction(
-      () =>
-        (globalThis as typeof globalThis & { runtimeEvents: RuntimeEvent[] }).runtimeEvents.some(
-          (event) => event.type === 'run.stateChanged' && event.status === 'completed',
-        ),
-      undefined,
-      { timeout: 20_000 },
-    )
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setContentSize(900, 620)
+    })
+    await expect.poll(() => window.evaluate(() => globalThis.innerWidth)).toBe(900)
+    const layout = await window.evaluate(() => ({
+      bodyWidth: document.body.scrollWidth,
+      viewportWidth: globalThis.innerWidth,
+      composer: document.querySelector('.composer')?.getBoundingClientRect().toJSON(),
+      sidebar: document.querySelector('.sidebar')?.getBoundingClientRect().toJSON(),
+    }))
+    expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewportWidth)
+    expect(layout.composer?.width).toBeGreaterThan(300)
+    expect(layout.sidebar?.width).toBeGreaterThanOrEqual(230)
+    await window.screenshot({ path: testInfo.outputPath('delegate-constrained.png') })
+
     const evidence = await window.evaluate(async () => {
-      const global = globalThis as typeof globalThis & {
-        pictor: PictorBridge
-        runtimeEvents: RuntimeEvent[]
-        unsubscribeRuntime: () => void
-      }
-      global.unsubscribeRuntime()
-      const completed = global.runtimeEvents.find((event) => event.type === 'message.completed')
-      const snapshot = await global.pictor.getSnapshot()
-      if (!snapshot.ok || !snapshot.value.sessions[0]) return { completed, session: null }
-      const session = await global.pictor.getSession({ sessionId: snapshot.value.sessions[0].id })
-      return { completed, session }
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      const snapshot = await bridge.getSnapshot()
+      if (!snapshot.ok || !snapshot.value.sessions[0]) return null
+      return bridge.getSession({ sessionId: snapshot.value.sessions[0].id })
     })
 
-    expect(evidence.completed).toEqual(
-      expect.objectContaining({ type: 'message.completed', content: 'Utility runtime works' }),
-    )
     expect(await readFile(join(projectRoot, 'command-approved.txt'), 'utf8')).toBe('approved')
-    expect(evidence.session).toEqual(
+    expect(evidence).toEqual(
       expect.objectContaining({
         ok: true,
         value: expect.objectContaining({

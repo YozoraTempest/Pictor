@@ -9,8 +9,10 @@ import {
   createSessionRequestSchema,
   projectIdRequestSchema,
   registerProjectRequestSchema,
+  relinkProjectRequestSchema,
   renameSessionRequestSchema,
   saveSettingsRequestSchema,
+  selectContextRequestSchema,
   sessionIdRequestSchema,
   startRunRequestSchema,
   testSettingsRequestSchema,
@@ -89,11 +91,28 @@ export function registerIpc(dependencies: IpcDependencies): void {
     })
   })
 
+  ipcMain.handle('project:relink', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return result(async () => {
+      const request = relinkProjectRequestSchema.parse(input)
+      return repository.relinkProject(request.projectId, request.rootPath)
+    })
+  })
+
   ipcMain.handle('project:remove', (event, input: unknown) => {
     validateSender(event.senderFrame)
     return result(async () => {
       const request = projectIdRequestSchema.parse(input)
       await repository.removeProject(request.projectId)
+      return null
+    })
+  })
+
+  ipcMain.handle('app:select-context', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return result(async () => {
+      const request = selectContextRequestSchema.parse(input)
+      await repository.selectContext(request.projectId, request.sessionId)
       return null
     })
   })
