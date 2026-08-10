@@ -1,9 +1,21 @@
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { app, BrowserWindow, ipcMain, net, protocol, session, type WebFrameMain } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  net,
+  protocol,
+  safeStorage,
+  session,
+  type WebFrameMain,
+} from 'electron'
 
 import { appInfoSchema } from '../../src/shared/contracts.js'
+import { registerIpc } from './ipc.js'
+import { ModelConnectionTester } from './model-connection.js'
+import { AppRepository } from './persistence/app-repository.js'
+import { SecretStore } from './persistence/secret-store.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
 
 const APP_SCHEME = 'app'
@@ -52,18 +64,6 @@ function validateSender(frame: WebFrameMain | null): void {
   }
 }
 
-function registerIpc(): void {
-  ipcMain.handle('app:get-info', (event) => {
-    validateSender(event.senderFrame)
-
-    return appInfoSchema.parse({
-      name: app.getName(),
-      version: app.getVersion(),
-      platform: process.platform,
-    })
-  })
-}
-
 function createMainWindow(): BrowserWindow {
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
   const window = new BrowserWindow({
@@ -98,18 +98,34 @@ function createMainWindow(): BrowserWindow {
 }
 
 void app.whenReady().then(() => {
+  const dataDirectory = join(app.getPath('userData'), 'data-v1')
+  const secretStore = new SecretStore(dataDirectory, safeStorage)
+  const repository = new AppRepository(dataDirectory, secretStore)
+
   registerAppProtocol()
-  registerIpc()
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(false)
-  })
+  return repository.initialize().then(() => {
+    registerIpc({
+      repository,
+      connectionTester: new ModelConnectionTester(),
+      validateSender,
+      getAppInfo: () =>
+        appInfoSchema.parse({
+          name: app.getName(),
+          version: app.getVersion(),
+          platform: process.platform,
+        }),
+    })
+    session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+      callback(false)
+    })
 
-  createMainWindow()
+    createMainWindow()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow()
-    }
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow()
+      }
+    })
   })
 })
 
