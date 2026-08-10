@@ -16,6 +16,8 @@ import { registerIpc } from './ipc.js'
 import { ModelConnectionTester } from './model-connection.js'
 import { AppRepository } from './persistence/app-repository.js'
 import { SecretStore } from './persistence/secret-store.js'
+import { RuntimeCoordinator } from './runtime-coordinator.js'
+import { RuntimeSupervisor } from './runtime-supervisor.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
 
 const APP_SCHEME = 'app'
@@ -104,10 +106,21 @@ void app.whenReady().then(() => {
 
   registerAppProtocol()
   return repository.initialize().then(() => {
+    const coordinatorReference: { current?: RuntimeCoordinator } = {}
+    const runtimeSupervisor = new RuntimeSupervisor((event) =>
+      coordinatorReference.current?.handleEvent(event),
+    )
+    const runtimeCoordinator = new RuntimeCoordinator(repository, runtimeSupervisor, (event) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send('runtime:event', event)
+      }
+    })
+    coordinatorReference.current = runtimeCoordinator
     registerIpc({
       repository,
       connectionTester: new ModelConnectionTester(),
       validateSender,
+      runtimeCoordinator,
       getAppInfo: () =>
         appInfoSchema.parse({
           name: app.getName(),
@@ -126,6 +139,7 @@ void app.whenReady().then(() => {
         createMainWindow()
       }
     })
+    app.once('before-quit', () => void runtimeSupervisor.dispose())
   })
 })
 

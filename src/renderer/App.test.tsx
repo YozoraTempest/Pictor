@@ -21,6 +21,11 @@ beforeEach(() => {
     getSettings: unsupported,
     saveSettings: unsupported,
     testSettings: unsupported,
+    startRun: unsupported,
+    approveCommand: unsupported,
+    rejectCommand: unsupported,
+    stopRun: unsupported,
+    onRuntimeEvent: () => () => undefined,
   }
 
   Object.defineProperty(window, 'pictor', {

@@ -5,24 +5,29 @@ import { z } from 'zod'
 
 import {
   appInfoSchema,
+  approvalResolutionRequestSchema,
   createSessionRequestSchema,
   projectIdRequestSchema,
   registerProjectRequestSchema,
   renameSessionRequestSchema,
   saveSettingsRequestSchema,
   sessionIdRequestSchema,
+  startRunRequestSchema,
   testSettingsRequestSchema,
+  runIdRequestSchema,
   type IpcResult,
 } from '../../src/shared/contracts.js'
 import { PictorError, toIpcError } from './errors.js'
 import type { ModelConnectionTester } from './model-connection.js'
 import type { AppRepository } from './persistence/app-repository.js'
+import type { RuntimeCoordinator } from './runtime-coordinator.js'
 
 interface IpcDependencies {
   repository: AppRepository
   connectionTester: ModelConnectionTester
   validateSender: (frame: WebFrameMain | null) => void
   getAppInfo: () => z.infer<typeof appInfoSchema>
+  runtimeCoordinator: RuntimeCoordinator
 }
 
 async function result<T>(operation: () => Promise<T>): Promise<IpcResult<T>> {
@@ -45,7 +50,8 @@ async function result<T>(operation: () => Promise<T>): Promise<IpcResult<T>> {
 }
 
 export function registerIpc(dependencies: IpcDependencies): void {
-  const { repository, connectionTester, validateSender, getAppInfo } = dependencies
+  const { repository, connectionTester, validateSender, getAppInfo, runtimeCoordinator } =
+    dependencies
 
   ipcMain.handle('app:get-info', (event) => {
     validateSender(event.senderFrame)
@@ -144,6 +150,41 @@ export function registerIpc(dependencies: IpcDependencies): void {
         throw new PictorError('invalid-input', '请输入 API Key，或先保存一个可用凭据', 'apiKey')
       }
       return connectionTester.test(request, apiKey)
+    })
+  })
+
+  ipcMain.handle('runtime:start', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return result(async () => {
+      const request = startRunRequestSchema.parse(input)
+      return runtimeCoordinator.start(request.sessionId, request.prompt)
+    })
+  })
+
+  ipcMain.handle('runtime:approve', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return result(async () => {
+      const request = approvalResolutionRequestSchema.parse(input)
+      runtimeCoordinator.approve(request.runId, request.callId)
+      return null
+    })
+  })
+
+  ipcMain.handle('runtime:reject', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return result(async () => {
+      const request = approvalResolutionRequestSchema.parse(input)
+      runtimeCoordinator.reject(request.runId, request.callId)
+      return null
+    })
+  })
+
+  ipcMain.handle('runtime:stop', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return result(async () => {
+      const request = runIdRequestSchema.parse(input)
+      runtimeCoordinator.stop(request.runId)
+      return null
     })
   })
 }

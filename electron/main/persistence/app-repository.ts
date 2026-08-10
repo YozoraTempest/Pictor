@@ -176,6 +176,27 @@ export class AppRepository {
     await this.persistState()
   }
 
+  getProject(projectId: string): Project {
+    this.ensureInitialized()
+    const project = this.state.projects.find((candidate) => candidate.id === projectId)
+    if (!project) throw new PictorError('not-found', '项目不存在或已被移除')
+    return project
+  }
+
+  getRuntimePaths(
+    projectId: string,
+    sessionId: string,
+  ): {
+    agentDirectory: string
+    sessionDirectory: string
+  } {
+    this.ensureInitialized()
+    return {
+      agentDirectory: join(this.dataDirectory, 'pi', 'agent'),
+      sessionDirectory: join(this.dataDirectory, 'pi', projectId, sessionId),
+    }
+  }
+
   async createSession(projectId: string): Promise<SessionSummary> {
     this.ensureInitialized()
     const project = this.state.projects.find((candidate) => candidate.id === projectId)

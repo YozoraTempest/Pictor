@@ -46,6 +46,15 @@ export const toolEventSchema = z.object({
   callId: z.string().min(1),
   kind: z.enum(['list', 'search', 'read', 'write', 'edit', 'command']),
   label: z.string().min(1),
+  path: z.string().nullable(),
+  command: z
+    .object({
+      command: z.string().min(1),
+      cwd: z.string().min(1),
+      purpose: z.string().min(1),
+      approval: z.enum(['pending', 'allowed', 'rejected']),
+    })
+    .nullable(),
   status: z.enum(['pending', 'running', 'completed', 'failed', 'rejected']),
   output: z.string().nullable(),
   createdAt: timestampSchema,
@@ -191,6 +200,80 @@ export const savedSettingsResultSchema = ipcResultSchema(modelSettingsSchema)
 export const connectionTestIpcResultSchema = ipcResultSchema(connectionTestResultSchema)
 export const voidResultSchema = ipcResultSchema(z.null())
 
+export const startRunRequestSchema = z.object({
+  sessionId: idSchema,
+  prompt: z.string().trim().min(1).max(200_000),
+})
+export const runIdRequestSchema = z.object({ runId: idSchema })
+export const approvalResolutionRequestSchema = z.object({
+  runId: idSchema,
+  callId: z.string().min(1),
+})
+export const startRunResultSchema = ipcResultSchema(z.object({ runId: idSchema }))
+
+const runtimeEventBaseSchema = z.object({
+  runId: idSchema,
+  sessionId: idSchema,
+  at: timestampSchema,
+})
+
+export const runtimeEventSchema = z.discriminatedUnion('type', [
+  runtimeEventBaseSchema.extend({
+    type: z.literal('run.stateChanged'),
+    status: runStatusSchema,
+    error: z.string().nullable(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('message.started'),
+    messageId: idSchema,
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('message.delta'),
+    messageId: idSchema,
+    delta: z.string(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('message.completed'),
+    messageId: idSchema,
+    content: z.string(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('tool.started'),
+    callId: z.string().min(1),
+    kind: toolEventSchema.shape.kind,
+    label: z.string().min(1),
+    path: z.string().nullable(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('tool.updated'),
+    callId: z.string().min(1),
+    output: z.string(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('tool.completed'),
+    callId: z.string().min(1),
+    output: z.string(),
+    isError: z.boolean(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('approval.requested'),
+    callId: z.string().min(1),
+    command: z.string().min(1),
+    cwd: z.string().min(1),
+    purpose: z.string().min(1),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('approval.resolved'),
+    callId: z.string().min(1),
+    allowed: z.boolean(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('runtime.error'),
+    category: z.enum(['authentication', 'connectivity', 'model', 'server', 'runtime']),
+    message: z.string().min(1),
+  }),
+])
+
 export type AppInfo = z.infer<typeof appInfoSchema>
 export type AppSnapshot = z.infer<typeof appSnapshotSchema>
 export type Project = z.infer<typeof projectSchema>
@@ -202,6 +285,7 @@ export type ModelSettingsInput = z.infer<typeof modelSettingsInputSchema>
 export type SaveSettingsRequest = z.infer<typeof saveSettingsRequestSchema>
 export type TestSettingsRequest = z.infer<typeof testSettingsRequestSchema>
 export type ConnectionTestResult = z.infer<typeof connectionTestResultSchema>
+export type RuntimeEvent = z.infer<typeof runtimeEventSchema>
 export type IpcError = z.infer<typeof ipcErrorSchema>
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: IpcError }
 
@@ -224,4 +308,15 @@ export interface PictorBridge {
   getSettings: () => Promise<IpcResult<ModelSettings | null>>
   saveSettings: (request: SaveSettingsRequest) => Promise<IpcResult<ModelSettings>>
   testSettings: (request: TestSettingsRequest) => Promise<IpcResult<ConnectionTestResult>>
+  startRun: (
+    request: z.infer<typeof startRunRequestSchema>,
+  ) => Promise<IpcResult<{ runId: string }>>
+  approveCommand: (
+    request: z.infer<typeof approvalResolutionRequestSchema>,
+  ) => Promise<IpcResult<null>>
+  rejectCommand: (
+    request: z.infer<typeof approvalResolutionRequestSchema>,
+  ) => Promise<IpcResult<null>>
+  stopRun: (request: z.infer<typeof runIdRequestSchema>) => Promise<IpcResult<null>>
+  onRuntimeEvent: (listener: (event: RuntimeEvent) => void) => () => void
 }

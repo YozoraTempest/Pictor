@@ -8,7 +8,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: resolve('electron/main/index.ts'),
+        input: {
+          index: resolve('electron/main/index.ts'),
+          'runtime/host': resolve('electron/runtime/host.ts'),
+        },
       },
     },
   },

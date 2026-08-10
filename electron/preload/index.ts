@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 import {
   appInfoSchema,
+  approvalResolutionRequestSchema,
   appSnapshotResultSchema,
   connectionTestIpcResultSchema,
   createSessionRequestSchema,
@@ -10,12 +11,16 @@ import {
   projectResultSchema,
   registerProjectRequestSchema,
   renameSessionRequestSchema,
+  runIdRequestSchema,
+  runtimeEventSchema,
   savedSettingsResultSchema,
   saveSettingsRequestSchema,
   sessionIdRequestSchema,
   sessionRecordResultSchema,
   sessionSummaryResultSchema,
   settingsResultSchema,
+  startRunRequestSchema,
+  startRunResultSchema,
   testSettingsRequestSchema,
   voidResultSchema,
   type PictorBridge,
@@ -60,6 +65,29 @@ const bridge = Object.freeze({
     connectionTestIpcResultSchema.parse(
       await ipcRenderer.invoke('settings:test', testSettingsRequestSchema.parse(input)),
     ),
+  startRun: async (input) =>
+    startRunResultSchema.parse(
+      await ipcRenderer.invoke('runtime:start', startRunRequestSchema.parse(input)),
+    ),
+  approveCommand: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke('runtime:approve', approvalResolutionRequestSchema.parse(input)),
+    ),
+  rejectCommand: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke('runtime:reject', approvalResolutionRequestSchema.parse(input)),
+    ),
+  stopRun: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke('runtime:stop', runIdRequestSchema.parse(input)),
+    ),
+  onRuntimeEvent: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown) => {
+      listener(runtimeEventSchema.parse(value))
+    }
+    ipcRenderer.on('runtime:event', handler)
+    return () => ipcRenderer.removeListener('runtime:event', handler)
+  },
 } satisfies PictorBridge)
 
 contextBridge.exposeInMainWorld('pictor', bridge)
