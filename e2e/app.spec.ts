@@ -154,7 +154,51 @@ test('completes the delegate flow through the GUI and utility-process boundary',
     if (modelRequestCount === 1) {
       response.write(
         `data: ${JSON.stringify({
-          id: 'chatcmpl-e2e-tool',
+          id: 'chatcmpl-e2e-write',
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: 'pictor-e2e-model',
+          choices: [
+            {
+              index: 0,
+              delta: {
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call-write-e2e',
+                    type: 'function',
+                    function: {
+                      name: 'pictor_write',
+                      arguments: JSON.stringify({
+                        path: 'agent-created.txt',
+                        content: 'created by Pictor',
+                      }),
+                    },
+                  },
+                ],
+              },
+              finish_reason: null,
+            },
+          ],
+        })}\n\n`,
+      )
+      response.write(
+        `data: ${JSON.stringify({
+          id: 'chatcmpl-e2e-write',
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: 'pictor-e2e-model',
+          choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
+        })}\n\n`,
+      )
+      response.end('data: [DONE]\n\n')
+      return
+    }
+    if (modelRequestCount === 2) {
+      response.write(
+        `data: ${JSON.stringify({
+          id: 'chatcmpl-e2e-command',
           object: 'chat.completion.chunk',
           created: Math.floor(Date.now() / 1000),
           model: 'pictor-e2e-model',
@@ -186,7 +230,7 @@ test('completes the delegate flow through the GUI and utility-process boundary',
       )
       response.write(
         `data: ${JSON.stringify({
-          id: 'chatcmpl-e2e-tool',
+          id: 'chatcmpl-e2e-command',
           object: 'chat.completion.chunk',
           created: Math.floor(Date.now() / 1000),
           model: 'pictor-e2e-model',
@@ -194,6 +238,24 @@ test('completes the delegate flow through the GUI and utility-process boundary',
         })}\n\n`,
       )
       response.end('data: [DONE]\n\n')
+      return
+    }
+    if (modelRequestCount === 4) {
+      response.write(
+        `data: ${JSON.stringify({
+          id: 'chatcmpl-e2e-stoppable',
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: 'pictor-e2e-model',
+          choices: [
+            {
+              index: 0,
+              delta: { role: 'assistant', content: 'Working until stopped' },
+              finish_reason: null,
+            },
+          ],
+        })}\n\n`,
+      )
       return
     }
     response.write(
@@ -205,7 +267,11 @@ test('completes the delegate flow through the GUI and utility-process boundary',
         choices: [
           {
             index: 0,
-            delta: { role: 'assistant', content: 'Utility runtime works' },
+            delta: {
+              role: 'assistant',
+              content:
+                'Task completed.\n\nChanged files:\n- `agent-created.txt`\n- `command-approved.txt`\n\nVerification:\n- Approved command exited with code 0.\n\nRemaining work: none.',
+            },
             finish_reason: null,
           },
         ],
@@ -266,10 +332,13 @@ test('completes the delegate flow through the GUI and utility-process boundary',
     await expect(window.getByText('printf approved > command-approved.txt')).toBeVisible({
       timeout: 20_000,
     })
+    await expect(window.getByText('agent-created.txt').first()).toBeVisible()
+    expect(await readFile(join(projectRoot, 'agent-created.txt'), 'utf8')).toBe('created by Pictor')
     await expect(readFile(join(projectRoot, 'command-approved.txt'), 'utf8')).rejects.toThrow()
     await window.screenshot({ path: testInfo.outputPath('delegate-approval.png') })
     await window.getByRole('button', { name: '允许一次' }).click()
-    await expect(window.getByText('Utility runtime works')).toBeVisible({ timeout: 20_000 })
+    await expect(window.getByText('Task completed.')).toBeVisible({ timeout: 20_000 })
+    await expect(window.getByText('Changed files:')).toBeVisible()
     await expect(window.getByText('已完成').last()).toBeVisible()
 
     await electronApp.evaluate(({ BrowserWindow }) => {
@@ -287,6 +356,12 @@ test('completes the delegate flow through the GUI and utility-process boundary',
     expect(layout.sidebar?.width).toBeGreaterThanOrEqual(230)
     await window.screenshot({ path: testInfo.outputPath('delegate-constrained.png') })
 
+    await window.getByRole('textbox', { name: '任务描述' }).fill('Keep working until stopped.')
+    await window.getByRole('button', { name: '发送任务' }).click()
+    await expect(window.getByText('Working until stopped')).toBeVisible({ timeout: 20_000 })
+    await window.getByRole('button', { name: '停止', exact: true }).click()
+    await expect(window.getByText('已停止').last()).toBeVisible({ timeout: 20_000 })
+
     const evidence = await window.evaluate(async () => {
       const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
       const snapshot = await bridge.getSnapshot()
@@ -300,12 +375,20 @@ test('completes the delegate flow through the GUI and utility-process boundary',
         ok: true,
         value: expect.objectContaining({
           messages: expect.arrayContaining([
-            expect.objectContaining({ role: 'assistant', content: 'Utility runtime works' }),
+            expect.objectContaining({
+              role: 'assistant',
+              content: expect.stringContaining('Remaining work: none.'),
+            }),
           ]),
           runs: expect.arrayContaining([
             expect.objectContaining({
               status: 'completed',
               toolEvents: expect.arrayContaining([
+                expect.objectContaining({
+                  kind: 'write',
+                  path: 'agent-created.txt',
+                  status: 'completed',
+                }),
                 expect.objectContaining({
                   kind: 'command',
                   status: 'completed',
@@ -314,6 +397,7 @@ test('completes the delegate flow through the GUI and utility-process boundary',
                 }),
               ]),
             }),
+            expect.objectContaining({ status: 'stopped' }),
           ]),
         }),
       }),
@@ -322,6 +406,129 @@ test('completes the delegate flow through the GUI and utility-process boundary',
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
+    )
+  }
+})
+
+test('confirms active-run exit and restores the run as interrupted', async ({
+  browserName: _browserName,
+}, testInfo) => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+    response.write(
+      `data: ${JSON.stringify({
+        id: 'chatcmpl-close-confirmation',
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: 'pictor-e2e-model',
+        choices: [
+          {
+            index: 0,
+            delta: { role: 'assistant', content: 'Still running' },
+            finish_reason: null,
+          },
+        ],
+      })}\n\n`,
+    )
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('E2E model server failed to bind')
+
+  const projectRoot = testInfo.outputPath('interrupted-project')
+  const userDataDirectory = testInfo.outputPath('interrupted-user-data')
+  await mkdir(projectRoot, { recursive: true })
+  const launch = () =>
+    electron.launch({
+      args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
+      cwd: resolve('.'),
+    })
+
+  const firstApp = await launch()
+  let restoredApp: Awaited<ReturnType<typeof launch>> | null = null
+  try {
+    const firstWindow = await firstApp.firstWindow()
+    await firstWindow.waitForLoadState('domcontentloaded')
+    const setup = await firstWindow.evaluate(
+      async ({ baseUrl, projectRoot }) => {
+        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+        const settings = await bridge.saveSettings({
+          baseUrl,
+          modelId: 'pictor-e2e-model',
+          temperature: null,
+          maxOutputTokens: 64,
+          apiKey: { action: 'replace', value: 'interrupted-e2e-key' },
+        })
+        const project = await bridge.registerProject({ rootPath: projectRoot, trusted: true })
+        if (!project.ok) return { settings, project, session: null, run: null }
+        const session = await bridge.createSession({ projectId: project.value.id })
+        if (!session.ok) return { settings, project, session, run: null }
+        const run = await bridge.startRun({ sessionId: session.value.id, prompt: 'Keep running.' })
+        return { settings, project, session, run }
+      },
+      { baseUrl: `http://127.0.0.1:${address.port}/v1`, projectRoot },
+    )
+    expect(setup.run?.ok).toBe(true)
+    if (!setup.session?.ok) throw new Error('Interrupted-run E2E session setup failed')
+    const interruptedSessionId = setup.session.value.id
+    await expect
+      .poll(
+        () =>
+          firstWindow.evaluate(async (sessionId) => {
+            const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+            const response = await bridge.getSession({ sessionId })
+            return response.ok ? response.value.runs.at(-1)?.status : null
+          }, interruptedSessionId),
+        { timeout: 20_000 },
+      )
+      .toBe('running')
+
+    const keptOpen = await firstApp.evaluate(({ BrowserWindow, dialog }) => {
+      dialog.showMessageBoxSync = () => 0
+      const window = BrowserWindow.getAllWindows()[0]
+      window?.close()
+      return Boolean(window && !window.isDestroyed())
+    })
+    expect(keptOpen).toBe(true)
+
+    const firstProcess = firstApp.process()
+    const exited = new Promise<void>((resolveExit) =>
+      firstProcess.once('exit', () => resolveExit()),
+    )
+    await firstApp.evaluate(({ BrowserWindow, dialog }) => {
+      dialog.showMessageBoxSync = () => 1
+      BrowserWindow.getAllWindows()[0]?.close()
+    })
+    await exited
+
+    restoredApp = await launch()
+    const restoredWindow = await restoredApp.firstWindow()
+    await restoredWindow.waitForLoadState('domcontentloaded')
+    const restored = await restoredWindow.evaluate(async () => {
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      const snapshot = await bridge.getSnapshot()
+      if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
+      return bridge.getSession({ sessionId: snapshot.value.selectedSessionId })
+    })
+    expect(restored).toEqual(
+      expect.objectContaining({
+        ok: true,
+        value: expect.objectContaining({
+          runs: expect.arrayContaining([
+            expect.objectContaining({
+              status: 'interrupted',
+              error: '应用在运行完成前关闭，任务未自动重放',
+            }),
+          ]),
+        }),
+      }),
+    )
+  } finally {
+    await restoredApp?.close().catch(() => undefined)
+    await firstApp.close().catch(() => undefined)
+    server.closeAllConnections()
+    await new Promise<void>((resolveClose, reject) =>
+      server.close((error) => (error ? reject(error) : resolveClose())),
     )
   }
 })

@@ -47,10 +47,12 @@ describe('Pictor runtime tools', () => {
     return {
       approvals,
       command: tools.find((tool) => tool.name === 'pictor_command')!,
+      delete: tools.find((tool) => tool.name === 'pictor_delete')!,
       edit: tools.find((tool) => tool.name === 'pictor_edit')!,
       execute,
       requested,
       resolved,
+      move: tools.find((tool) => tool.name === 'pictor_move')!,
       setCancelled: () => {
         cancelled = true
       },
@@ -125,5 +127,34 @@ describe('Pictor runtime tools', () => {
       {} as never,
     )
     expect(await readFile(join(projectRoot, 'src', 'example.txt'), 'utf8')).toBe('after')
+  })
+
+  it('moves and deletes files only inside the guarded project', async () => {
+    const { write, move, delete: remove } = setup()
+    await write.execute(
+      'write-move',
+      { path: 'src/source.txt', content: 'movable' },
+      undefined,
+      undefined,
+      {} as never,
+    )
+    await move.execute(
+      'move-1',
+      { sourcePath: 'src/source.txt', destinationPath: 'archive/moved.txt' },
+      undefined,
+      undefined,
+      {} as never,
+    )
+    await expect(readFile(join(projectRoot, 'src', 'source.txt'), 'utf8')).rejects.toThrow()
+    expect(await readFile(join(projectRoot, 'archive', 'moved.txt'), 'utf8')).toBe('movable')
+
+    await remove.execute(
+      'delete-1',
+      { path: 'archive/moved.txt' },
+      undefined,
+      undefined,
+      {} as never,
+    )
+    await expect(readFile(join(projectRoot, 'archive', 'moved.txt'), 'utf8')).rejects.toThrow()
   })
 })

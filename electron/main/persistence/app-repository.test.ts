@@ -169,4 +169,21 @@ describe('AppRepository', () => {
 
     await expect(repository.saveSession(session)).rejects.toThrow('项目绑定不匹配')
   })
+
+  it('removes Pictor metadata without deleting files from the project directory', async () => {
+    const repository = createRepository()
+    await repository.initialize()
+    const projectFile = join(projectDirectory, 'keep.txt')
+    await writeFile(projectFile, 'keep me')
+    const project = await repository.registerProject(projectDirectory)
+    const session = await repository.createSession(project.id)
+
+    await repository.deleteSession(session.id)
+    expect(await readFile(projectFile, 'utf8')).toBe('keep me')
+    expect((await repository.getSnapshot()).sessions).toHaveLength(0)
+
+    await repository.removeProject(project.id)
+    expect(await readFile(projectFile, 'utf8')).toBe('keep me')
+    expect((await repository.getSnapshot()).projects).toHaveLength(0)
+  })
 })

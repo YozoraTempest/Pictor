@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { basename, delimiter, dirname, join } from 'node:path'
 
 const OUTPUT_LIMIT = 100_000
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
 
 export interface CommandResult {
   exitCode: number | null
@@ -49,6 +50,8 @@ function appendBounded(current: string, chunk: Buffer): string {
 }
 
 export class GitBashCommandExecutor implements CommandExecutor {
+  constructor(private readonly timeoutMs = DEFAULT_TIMEOUT_MS) {}
+
   async execute(command: string, cwd: string, signal?: AbortSignal): Promise<CommandResult> {
     signal?.throwIfAborted()
     const bash = await findGitBash()
@@ -61,7 +64,27 @@ export class GitBashCommandExecutor implements CommandExecutor {
       })
       let stdout = ''
       let stderr = ''
-      const abort = () => child.kill()
+      let timedOut = false
+      const terminate = () => {
+        if (process.platform === 'win32' && child.pid) {
+          const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+            windowsHide: true,
+            stdio: 'ignore',
+          })
+          killer.once('error', () => child.kill())
+          return
+        }
+        child.kill()
+      }
+      const abort = () => terminate()
+      const timeout = setTimeout(() => {
+        timedOut = true
+        terminate()
+      }, this.timeoutMs)
+      const cleanup = () => {
+        clearTimeout(timeout)
+        signal?.removeEventListener('abort', abort)
+      }
       signal?.addEventListener('abort', abort, { once: true })
       child.stdout.on('data', (chunk: Buffer) => {
         stdout = appendBounded(stdout, chunk)
@@ -69,9 +92,16 @@ export class GitBashCommandExecutor implements CommandExecutor {
       child.stderr.on('data', (chunk: Buffer) => {
         stderr = appendBounded(stderr, chunk)
       })
-      child.on('error', reject)
+      child.on('error', (error) => {
+        cleanup()
+        reject(error)
+      })
       child.on('close', (exitCode) => {
-        signal?.removeEventListener('abort', abort)
+        cleanup()
+        if (timedOut) {
+          reject(new Error(`命令执行超时（${Math.max(1, Math.ceil(this.timeoutMs / 1000))} 秒）`))
+          return
+        }
         if (signal?.aborted) {
           reject(signal.reason)
           return

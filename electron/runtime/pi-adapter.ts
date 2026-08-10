@@ -27,6 +27,8 @@ const toolKinds = {
   pictor_read: 'read',
   pictor_write: 'write',
   pictor_edit: 'edit',
+  pictor_move: 'move',
+  pictor_delete: 'delete',
   pictor_command: 'command',
 } as const
 
@@ -104,11 +106,17 @@ function classifyError(
 
 function toolPath(projectRoot: string, args: unknown): string | null {
   if (!args || typeof args !== 'object') return null
-  const value = Reflect.get(args, 'path')
-  if (typeof value !== 'string') return null
-  const candidate = isAbsolute(value) ? resolve(value) : resolve(projectRoot, value)
-  const display = relative(projectRoot, candidate)
-  return display && !display.startsWith('..') && !isAbsolute(display) ? display : value
+  const displayPath = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null
+    const candidate = isAbsolute(value) ? resolve(value) : resolve(projectRoot, value)
+    const display = relative(projectRoot, candidate)
+    return display && !display.startsWith('..') && !isAbsolute(display) ? display : value
+  }
+  const path = displayPath(Reflect.get(args, 'path'))
+  if (path) return path
+  const source = displayPath(Reflect.get(args, 'sourcePath'))
+  const destination = displayPath(Reflect.get(args, 'destinationPath'))
+  return source && destination ? `${source} -> ${destination}` : (source ?? destination)
 }
 
 async function createProductionSession({

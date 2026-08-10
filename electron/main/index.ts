@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import {
   app,
   BrowserWindow,
+  dialog,
   net,
   protocol,
   safeStorage,
@@ -66,7 +67,7 @@ function validateSender(frame: WebFrameMain | null): void {
   }
 }
 
-function createMainWindow(): BrowserWindow {
+function createMainWindow(runtimeCoordinator: RuntimeCoordinator): BrowserWindow {
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
   const window = new BrowserWindow({
     width: 1280,
@@ -89,6 +90,26 @@ function createMainWindow(): BrowserWindow {
     }
   })
   window.once('ready-to-show', () => window.show())
+  let closeConfirmed = false
+  window.on('close', (event) => {
+    if (closeConfirmed || !runtimeCoordinator.isActive()) return
+    event.preventDefault()
+    const choice = dialog.showMessageBoxSync(window, {
+      type: 'warning',
+      title: 'Agent 仍在运行',
+      message: '当前 Agent 运行尚未完成',
+      detail:
+        '退出 Pictor 会终止当前运行。重新打开应用后，该运行会标记为已中断，且不会自动重放工具操作。',
+      buttons: ['继续运行', '停止并退出'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    })
+    if (choice === 1) {
+      closeConfirmed = true
+      window.close()
+    }
+  })
 
   if (developmentUrl) {
     void window.loadURL(developmentUrl)
@@ -132,11 +153,11 @@ void app.whenReady().then(() => {
       callback(false)
     })
 
-    createMainWindow()
+    createMainWindow(runtimeCoordinator)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow()
+        createMainWindow(runtimeCoordinator)
       }
     })
     app.once('before-quit', () => void runtimeSupervisor.dispose())

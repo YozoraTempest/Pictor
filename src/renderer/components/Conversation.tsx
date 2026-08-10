@@ -66,12 +66,16 @@ const toolLabels: Record<ToolEvent['kind'], string> = {
   read: '读取文件',
   write: '写入文件',
   edit: '编辑文件',
+  move: '移动文件',
+  delete: '删除文件',
   command: '执行命令',
 }
 
 function ToolIcon({ kind }: { kind: ToolEvent['kind'] }): React.JSX.Element {
   if (kind === 'command') return <TerminalSquare size={15} />
-  if (kind === 'edit' || kind === 'write') return <FilePenLine size={15} />
+  if (kind === 'edit' || kind === 'write' || kind === 'move' || kind === 'delete') {
+    return <FilePenLine size={15} />
+  }
   if (kind === 'read') return <FileSearch size={15} />
   return <FolderSearch2 size={15} />
 }

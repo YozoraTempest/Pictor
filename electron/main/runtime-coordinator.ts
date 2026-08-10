@@ -122,6 +122,10 @@ export class RuntimeCoordinator {
     this.supervisor.stop(runId)
   }
 
+  isActive(): boolean {
+    return this.active !== null || this.supervisor.isActive()
+  }
+
   handleEvent(event: RuntimeEvent): void {
     const active = this.active
     if (!active || active.runId !== event.runId || active.session.id !== event.sessionId) {

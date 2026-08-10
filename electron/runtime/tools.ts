@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent'
@@ -40,6 +40,13 @@ async function assertFile(path: string): Promise<void> {
 
 async function assertDirectory(path: string): Promise<void> {
   if (!(await stat(path)).isDirectory()) throw new Error('目标路径不是目录')
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  return access(path).then(
+    () => true,
+    () => false,
+  )
 }
 
 export function createPictorTools(dependencies: ToolDependencies): ToolDefinition[] {
@@ -187,6 +194,48 @@ export function createPictorTools(dependencies: ToolDependencies): ToolDefinitio
     },
   })
 
+  const move = defineTool({
+    name: 'pictor_move',
+    label: '移动文件',
+    description: '在项目目录内移动或重命名一个文件；目标路径必须尚不存在。',
+    executionMode: 'sequential',
+    parameters: Type.Object({ sourcePath: Type.String(), destinationPath: Type.String() }),
+    async execute(_callId, params, signal) {
+      ensureActive(dependencies, signal)
+      const source = await dependencies.guard.resolveExisting(params.sourcePath)
+      await assertFile(source)
+      const destination = await dependencies.guard.resolveForWrite(params.destinationPath)
+      if (await pathExists(destination)) throw new Error('目标路径已存在，未覆盖原文件')
+      await mkdir(dirname(destination), { recursive: true })
+      ensureActive(dependencies, signal)
+      await rename(source, destination)
+      const sourceDisplay = dependencies.guard.toRelative(source)
+      const destinationDisplay = dependencies.guard.toRelative(destination)
+      return textResult(`已移动 ${sourceDisplay} -> ${destinationDisplay}`, {
+        sourcePath: sourceDisplay,
+        destinationPath: destinationDisplay,
+      })
+    },
+  })
+
+  const remove = defineTool({
+    name: 'pictor_delete',
+    label: '删除文件',
+    description: '删除项目目录内的一个文件；不能删除目录。',
+    executionMode: 'sequential',
+    parameters: Type.Object({ path: Type.String() }),
+    async execute(_callId, params, signal) {
+      ensureActive(dependencies, signal)
+      const target = await dependencies.guard.resolveExisting(params.path)
+      await assertFile(target)
+      ensureActive(dependencies, signal)
+      await unlink(target)
+      return textResult(`已删除 ${dependencies.guard.toRelative(target)}`, {
+        path: dependencies.guard.toRelative(target),
+      })
+    },
+  })
+
   const command = defineTool({
     name: 'pictor_command',
     label: '执行命令',
@@ -219,5 +268,5 @@ export function createPictorTools(dependencies: ToolDependencies): ToolDefinitio
     },
   })
 
-  return [list, search, read, write, edit, command]
+  return [list, search, read, write, edit, move, remove, command]
 }
