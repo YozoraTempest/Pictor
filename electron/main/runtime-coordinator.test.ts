@@ -149,6 +149,7 @@ it.each(['a', 'id', 'running'])(
       status: 'completed',
       content: expect.stringContaining('[REDACTED]'),
     })
+    expect(saveSession).toHaveBeenCalledTimes(5)
     expect(JSON.stringify(broadcast.mock.calls.map(([event]) => event))).toContain('[REDACTED]')
 
     await expect(coordinator.start(sessionId, 'subsequent prompt')).resolves.toEqual({

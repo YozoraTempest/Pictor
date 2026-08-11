@@ -150,7 +150,11 @@ export class RuntimeCoordinator {
       sanitizedEvent.type === 'run.stateChanged' &&
       ['completed', 'failed', 'stopped', 'interrupted'].includes(sanitizedEvent.status)
     this.applyEvent(active, sanitizedEvent)
-    if (sanitizedEvent.type === 'message.delta' || sanitizedEvent.type === 'tool.updated') {
+    if (
+      sanitizedEvent.type === 'message.delta' ||
+      sanitizedEvent.type === 'message.completed' ||
+      sanitizedEvent.type === 'tool.updated'
+    ) {
       this.broadcast(sanitizedEvent)
     } else {
       this.persistenceQueue = this.persistenceQueue
