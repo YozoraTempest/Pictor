@@ -10,6 +10,7 @@ import {
 } from '../runtime/protocol.js'
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'stopped', 'interrupted'])
+const RUNTIME_READY_TIMEOUT_MS = 30_000
 
 export class RuntimeSupervisor {
   private child: UtilityProcess | null = null
@@ -86,7 +87,10 @@ export class RuntimeSupervisor {
       await Promise.race([
         readyPromise,
         new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(() => reject(new Error('Agent Runtime 启动超时')), 10_000)
+          timeout = setTimeout(
+            () => reject(new Error('Agent Runtime 启动超时')),
+            RUNTIME_READY_TIMEOUT_MS,
+          )
         }),
       ])
     } catch (error) {

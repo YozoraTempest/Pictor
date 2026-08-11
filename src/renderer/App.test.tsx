@@ -74,6 +74,38 @@ it('renders the empty delegate workspace from a persisted snapshot', async () =>
   expect(screen.getByText('v0.1.0')).toBeInTheDocument()
 })
 
+it('saves the selected Responses compatibility mode', async () => {
+  const snapshot = emptySnapshot()
+  const saveSettings = vi.fn(async (request) =>
+    ok({
+      apiProtocol: request.apiProtocol,
+      baseUrl: request.baseUrl,
+      modelId: request.modelId,
+      temperature: request.temperature,
+      maxOutputTokens: request.maxOutputTokens,
+      hasApiKey: false,
+    }),
+  )
+  const bridge = { ...createBridge(snapshot), saveSettings }
+  installBridge(bridge)
+  render(<App />)
+
+  await screen.findByRole('heading', { name: '选择一个项目开始' })
+  fireEvent.click(screen.getByRole('button', { name: '模型设置' }))
+  const responsesButton = screen.getByRole('button', { name: 'Responses' })
+  fireEvent.click(responsesButton)
+  fireEvent.change(screen.getByRole('textbox', { name: '模型' }), {
+    target: { value: 'gpt-5.6-sol' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+
+  await waitFor(() =>
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ apiProtocol: 'responses', modelId: 'gpt-5.6-sol' }),
+    ),
+  )
+})
+
 it('renders an exact command approval and allows it once', async () => {
   const snapshot: AppSnapshot = {
     projects: [
@@ -100,6 +132,7 @@ it('renders an exact command approval and allows it once', async () => {
     selectedProjectId: projectId,
     selectedSessionId: sessionId,
     settings: {
+      apiProtocol: 'chat-completions',
       baseUrl: 'https://api.example.test/v1',
       modelId: 'model-test',
       temperature: null,

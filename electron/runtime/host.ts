@@ -1,10 +1,18 @@
-import { PiAgentRuntime } from './pi-adapter.js'
 import { runtimeCommandSchema } from './protocol.js'
 
 const parentPort = process.parentPort
 if (!parentPort) throw new Error('Pictor runtime host requires an Electron utility-process parent')
 
-const runtime = new PiAgentRuntime((event) => parentPort.postMessage(event))
+const runtimePromise = import('./pi-adapter.js').then(
+  ({ PiAgentRuntime }) => new PiAgentRuntime((event) => parentPort.postMessage(event)),
+)
+
+function reportFatal(error: unknown): void {
+  parentPort.postMessage({
+    type: 'host.fatal',
+    message: error instanceof Error ? error.message : 'Agent Runtime 加载失败',
+  })
+}
 
 parentPort.on('message', (messageEvent) => {
   const parsed = runtimeCommandSchema.safeParse(messageEvent.data)
@@ -15,22 +23,29 @@ parentPort.on('message', (messageEvent) => {
 
   const command = parsed.data
   if (command.type === 'start') {
-    void runtime.start(command)
+    void runtimePromise.then((runtime) => runtime.start(command)).catch(reportFatal)
     return
   }
   if (command.type === 'approve') {
-    runtime.resolveApproval(command.runId, command.callId, true)
+    void runtimePromise
+      .then((runtime) => runtime.resolveApproval(command.runId, command.callId, true))
+      .catch(reportFatal)
     return
   }
   if (command.type === 'reject') {
-    runtime.resolveApproval(command.runId, command.callId, false)
+    void runtimePromise
+      .then((runtime) => runtime.resolveApproval(command.runId, command.callId, false))
+      .catch(reportFatal)
     return
   }
   if (command.type === 'abort') {
-    void runtime.abort(command.runId)
+    void runtimePromise.then((runtime) => runtime.abort(command.runId)).catch(reportFatal)
     return
   }
-  void runtime.dispose().finally(() => process.exit(0))
+  void runtimePromise
+    .then((runtime) => runtime.dispose())
+    .catch(reportFatal)
+    .finally(() => process.exit(0))
 })
 
 parentPort.postMessage({ type: 'host.ready' })

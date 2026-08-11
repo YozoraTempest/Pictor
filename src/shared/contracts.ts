@@ -101,7 +101,12 @@ export const baseUrlSchema = z
     }
   })
 
+export const apiProtocolSchema = z
+  .enum(['chat-completions', 'responses'])
+  .default('chat-completions')
+
 export const modelSettingsInputSchema = z.object({
+  apiProtocol: apiProtocolSchema,
   baseUrl: baseUrlSchema,
   modelId: z
     .string()

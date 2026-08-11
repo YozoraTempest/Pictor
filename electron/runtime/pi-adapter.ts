@@ -147,9 +147,11 @@ async function createProductionSession({
   await resourceLoader.reload()
 
   const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false })
+  const api =
+    config.settings.apiProtocol === 'responses' ? 'openai-responses' : 'openai-completions'
   modelRuntime.registerProvider(PROVIDER_ID, {
     name: 'Pictor OpenAI-compatible endpoint',
-    api: 'openai-completions',
+    api,
     baseUrl: config.settings.baseUrl,
     apiKey: config.apiKey,
     authHeader: true,
@@ -157,7 +159,7 @@ async function createProductionSession({
       {
         id: config.settings.modelId,
         name: config.settings.modelId,
-        api: 'openai-completions',
+        api,
         reasoning: false,
         input: ['text'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

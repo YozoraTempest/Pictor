@@ -327,6 +327,7 @@ export class AppRepository {
   async saveSettings(request: SaveSettingsRequest): Promise<ModelSettings> {
     this.ensureInitialized()
     const settings = modelSettingsInputSchema.parse({
+      apiProtocol: request.apiProtocol,
       baseUrl: request.baseUrl.replace(/\/+$/, ''),
       modelId: request.modelId,
       temperature: request.temperature,

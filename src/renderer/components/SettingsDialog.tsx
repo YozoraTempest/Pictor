@@ -15,6 +15,7 @@ interface SettingsDialogProps {
 }
 
 interface FormState {
+  apiProtocol: 'chat-completions' | 'responses'
   baseUrl: string
   modelId: string
   apiKey: string
@@ -25,6 +26,7 @@ interface FormState {
 
 function createFormState(settings: ModelSettings | null): FormState {
   return {
+    apiProtocol: settings?.apiProtocol ?? 'chat-completions',
     baseUrl: settings?.baseUrl ?? 'https://api.openai.com/v1',
     modelId: settings?.modelId ?? '',
     apiKey: '',
@@ -53,6 +55,7 @@ export function SettingsDialog({
 
   const parseSettings = () => {
     const result = modelSettingsInputSchema.safeParse({
+      apiProtocol: form.apiProtocol,
       baseUrl: form.baseUrl,
       modelId: form.modelId,
       temperature: form.temperature.trim() ? Number(form.temperature) : null,
@@ -123,6 +126,28 @@ export function SettingsDialog({
       width="wide"
     >
       <div className="settings-form">
+        <div className="field field--full">
+          <span>兼容模式</span>
+          <div className="protocol-switch" role="group" aria-label="兼容模式">
+            <button
+              type="button"
+              className={form.apiProtocol === 'chat-completions' ? 'is-active' : ''}
+              aria-pressed={form.apiProtocol === 'chat-completions'}
+              onClick={() => update('apiProtocol', 'chat-completions')}
+            >
+              Chat Completions
+            </button>
+            <button
+              type="button"
+              className={form.apiProtocol === 'responses' ? 'is-active' : ''}
+              aria-pressed={form.apiProtocol === 'responses'}
+              onClick={() => update('apiProtocol', 'responses')}
+            >
+              Responses
+            </button>
+          </div>
+        </div>
+
         <label className="field field--full">
           <span>API Base URL</span>
           <div className="input-with-icon">

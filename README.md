@@ -11,7 +11,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 - 列出、搜索、读取、创建、编辑、移动和删除项目内文件；
 - 在显示完整命令、工作目录和用途后，允许一次或拒绝 Git Bash 命令；
 - 展示 Markdown 回复、工具状态、命令输出、错误、停止和中断状态；
-- 配置 API Base URL、模型标识、API Key、温度和最大输出 Token 数。
+- 配置 Chat Completions 或 Responses 兼容模式、API Base URL、模型标识、API Key、温度和
+  最大输出 Token 数。
 
 首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、插件、远程项目、WSL、
 容器以及 macOS/Linux 打包不在当前范围内。
@@ -21,7 +22,7 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 - Windows 11 x64；
 - Node.js 22 或更新版本；
 - Git for Windows，命令执行依赖其中的 Git Bash；
-- 一个兼容 OpenAI Chat Completions、SSE 流式响应和函数工具调用的模型端点。
+- 一个兼容 OpenAI Chat Completions 或 Responses、SSE 流式响应和函数工具调用的模型端点。
 
 ## 本地运行
 
@@ -30,8 +31,10 @@ npm ci
 npm run dev
 ```
 
-首次启动后，在“模型设置”中保存 API Base URL、模型标识和 API Key，再添加本地项目并
-创建 Session。远程端点必须使用 HTTPS；本机回环地址可以使用 HTTP。
+首次启动后，在“模型设置”中选择兼容模式并保存 API Base URL、模型标识和 API Key，再
+添加本地项目并创建 Session。API Base URL 应填写 API 根地址（例如
+`https://api.example.com/v1`）；Pictor 会按兼容模式追加 `/chat/completions` 或
+`/responses`。远程端点必须使用 HTTPS；本机回环地址可以使用 HTTP。
 
 ## 验证
 

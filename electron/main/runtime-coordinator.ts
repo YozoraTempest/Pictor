@@ -88,6 +88,7 @@ export class RuntimeCoordinator {
         projectRoot: project.rootPath,
         ...runtimePaths,
         settings: {
+          apiProtocol: settings.apiProtocol,
           baseUrl: settings.baseUrl,
           modelId: settings.modelId,
           temperature: settings.temperature,

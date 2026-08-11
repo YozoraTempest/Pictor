@@ -1199,6 +1199,41 @@ textarea:disabled {
   grid-column: 1 / -1;
 }
 
+.protocol-switch {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: #111416;
+}
+
+.protocol-switch button {
+  min-width: 0;
+  height: 29px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.protocol-switch button:hover {
+  color: var(--text);
+}
+
+.protocol-switch button.is-active {
+  background: #263d36;
+  color: #91d8c1;
+}
+
+.protocol-switch button:focus-visible {
+  outline: 1px solid #70ad99;
+  outline-offset: -1px;
+}
+
 .field input,
 .input-with-icon {
   width: 100%;

@@ -41,6 +41,7 @@ describe('AppRepository', () => {
     const repository = createRepository()
     await repository.initialize()
     await repository.saveSettings({
+      apiProtocol: 'responses',
       baseUrl: 'https://example.test/v1/',
       modelId: 'test-model',
       temperature: 0.2,
@@ -79,6 +80,7 @@ describe('AppRepository', () => {
     expect(snapshot.projects).toHaveLength(1)
     expect(snapshot.sessions).toHaveLength(1)
     expect(snapshot.settings).toEqual({
+      apiProtocol: 'responses',
       baseUrl: 'https://example.test/v1',
       modelId: 'test-model',
       temperature: 0.2,

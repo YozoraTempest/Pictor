@@ -92,6 +92,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
   await firstWindow.waitForLoadState('domcontentloaded')
   const saved = await firstWindow.evaluate(() =>
     (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.saveSettings({
+      apiProtocol: 'responses',
       baseUrl: 'https://api.example.test/v1',
       modelId: 'model-e2e',
       temperature: 0.3,
@@ -102,6 +103,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
   expect(saved).toEqual({
     ok: true,
     value: {
+      apiProtocol: 'responses',
       baseUrl: 'https://api.example.test/v1',
       modelId: 'model-e2e',
       temperature: 0.3,
@@ -130,6 +132,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
         ok: true,
         value: expect.objectContaining({
           settings: {
+            apiProtocol: 'responses',
             baseUrl: 'https://api.example.test/v1',
             modelId: 'model-e2e',
             temperature: 0.3,
@@ -305,10 +308,17 @@ test('completes the delegate flow through the GUI and utility-process boundary',
     await window.waitForLoadState('domcontentloaded')
 
     await window.getByRole('button', { name: '模型设置' }).click()
+    await expect(window.getByRole('button', { name: 'Chat Completions' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
     await window.getByLabel('API Base URL').fill(`http://127.0.0.1:${address.port}/v1`)
     await window.getByRole('textbox', { name: '模型', exact: true }).fill('pictor-e2e-model')
     await window.getByLabel('API Key').fill('local-e2e-key')
     await window.getByLabel('最大输出 Token').fill('64')
+    await window.getByRole('button', { name: 'Responses' }).click()
+    await window.screenshot({ path: testInfo.outputPath('model-settings.png') })
+    await window.getByRole('button', { name: 'Chat Completions' }).click()
     await window.getByRole('button', { name: '保存设置' }).click()
     await expect(window.getByRole('dialog')).toBeHidden()
 
@@ -453,6 +463,7 @@ test('confirms active-run exit and restores the run as interrupted', async ({
       async ({ baseUrl, projectRoot }) => {
         const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
         const settings = await bridge.saveSettings({
+          apiProtocol: 'chat-completions',
           baseUrl,
           modelId: 'pictor-e2e-model',
           temperature: null,

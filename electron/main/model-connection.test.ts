@@ -6,6 +6,7 @@ import type { ModelSettingsInput } from '../../src/shared/contracts.js'
 import { ModelConnectionTester } from './model-connection.js'
 
 const settings: ModelSettingsInput = {
+  apiProtocol: 'chat-completions',
   baseUrl: 'https://example.test/v1',
   modelId: 'test-model',
   temperature: null,
@@ -24,11 +25,35 @@ describe('ModelConnectionTester', () => {
 
     await expect(tester.test(settings, 'secret')).resolves.toEqual({
       outcome: 'success',
-      message: '连接成功，端点接受流式文本和工具调用参数',
+      message: '连接成功，端点兼容 Chat Completions 流式工具调用',
     })
     expect(fetchMock).toHaveBeenCalledWith(
       'https://example.test/v1/chat/completions',
       expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('probes the Responses endpoint with a Responses request body', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response('data: {"type":"response.completed"}\n\n', {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+      }),
+    )
+    const tester = new ModelConnectionTester(fetchMock)
+
+    await expect(tester.test({ ...settings, apiProtocol: 'responses' }, 'secret')).resolves.toEqual(
+      {
+        outcome: 'success',
+        message: '连接成功，端点兼容 Responses 流式工具调用',
+      },
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://example.test/v1/responses',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"max_output_tokens":16'),
+      }),
     )
   })
 
@@ -51,7 +76,11 @@ describe('ModelConnectionTester', () => {
           new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
         ),
     )
-    expect((await tester.test(settings, 'secret')).outcome).toBe('incompatible')
+    await expect(tester.test(settings, 'secret')).resolves.toEqual({
+      outcome: 'incompatible',
+      message:
+        'Chat Completions 端点未返回 SSE 流；请确认 Base URL 是 API 根地址（通常以 /v1 结尾）',
+    })
   })
 
   it('classifies transport failures as connectivity errors', async () => {

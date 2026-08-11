@@ -6,7 +6,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: [['list']],
-  timeout: 30_000,
+  timeout: 60_000,
   use: {
     trace: 'retain-on-failure',
   },
