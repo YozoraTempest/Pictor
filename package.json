@@ -17,8 +17,9 @@
     "test:e2e": "npm run build:app && playwright test",
     "build:app": "electron-vite build",
     "build": "npm run typecheck && npm run lint && npm run test && npm run build:app",
-    "package:dir": "npm run build && electron-builder --dir --win",
-    "package": "npm run build && electron-builder --win nsis"
+    "package:dir": "npm run build && electron-builder --dir --win --x64",
+    "package:verify": "node scripts/verify-windows-package.mjs",
+    "package": "npm run build && electron-builder --win nsis --x64 && npm run package:verify"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.1",
@@ -60,6 +61,7 @@
     "directories": {
       "output": "dist"
     },
+    "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}",
     "files": [
       "out/**/*",
       "package.json"

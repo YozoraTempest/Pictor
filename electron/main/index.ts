@@ -20,6 +20,7 @@ import { SecretStore } from './persistence/secret-store.js'
 import { RuntimeCoordinator } from './runtime-coordinator.js'
 import { RuntimeSupervisor } from './runtime-supervisor.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
+import { shouldShowMainWindow } from './window-visibility.js'
 
 const APP_SCHEME = 'app'
 const APP_HOST = 'bundle'
@@ -69,7 +70,7 @@ function validateSender(frame: WebFrameMain | null): void {
 
 function createMainWindow(runtimeCoordinator: RuntimeCoordinator): BrowserWindow {
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
-  const shouldShowWindow = app.isPackaged || process.env.PICTOR_E2E_HEADLESS !== '1'
+  const shouldShowWindow = shouldShowMainWindow()
   const window = new BrowserWindow({
     width: 1280,
     height: 820,

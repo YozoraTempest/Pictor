@@ -50,9 +50,13 @@ npm test
 npm run test:e2e
 npm run build
 npm run package:dir
+npm run package
 ```
 
-`npm run package:dir` 生成 `dist/win-unpacked/Pictor.exe`。Electron E2E 使用本地确定性
+`npm run package:dir` 生成 `dist/win-unpacked/Pictor.exe`。`npm run package` 同时生成
+`dist/Pictor-<version>-windows-x64-setup.exe` NSIS 安装程序和 `dist/win-unpacked/`，随后自动
+校验安装程序、应用归档以及解包可执行文件的 x64 PE 架构；也可以对已有产物单独运行
+`npm run package:verify`。Electron E2E 使用本地确定性
 OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、命令审批、取消、凭据重启、
 活动运行关闭确认和中断恢复，不需要外部模型凭据。E2E 默认隐藏 Electron 窗口并在后台
 运行，不影响截图和交互验证。
