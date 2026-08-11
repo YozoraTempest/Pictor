@@ -20,7 +20,7 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 ## 环境要求
 
 - Windows 11 x64；
-- Node.js 22 或更新版本；
+- Node.js 22.22.2 或更新版本；
 - Git for Windows，命令执行依赖其中的 Git Bash；
 - 一个兼容 OpenAI Chat Completions 或 Responses、SSE 流式响应和函数工具调用的模型端点。
 

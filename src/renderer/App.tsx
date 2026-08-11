@@ -7,7 +7,6 @@ import type {
   IpcError,
   Project,
   ProjectCandidate,
-  RuntimeEvent,
   SessionRecord,
   SessionSummary,
 } from '../shared/contracts'
@@ -108,12 +107,6 @@ export function App(): React.JSX.Element {
   }, [applySnapshot, loadSession])
 
   useEffect(() => {
-    const refreshEventSession = async (event: RuntimeEvent) => {
-      if (event.sessionId !== selectedSessionId) return
-      const response = await window.pictor.getSession({ sessionId: event.sessionId })
-      if (response.ok) setSession(response.value)
-    }
-
     return window.pictor.onRuntimeEvent((event) => {
       if (event.sessionId === selectedSessionId && event.type === 'message.delta') {
         setSession((current) =>
@@ -149,13 +142,17 @@ export function App(): React.JSX.Element {
             : current,
         )
       } else {
-        void refreshEventSession(event)
+        if (event.sessionId === selectedSessionId) {
+          void loadSession(event.sessionId, false).catch((error: unknown) =>
+            setActionError(errorMessage(error)),
+          )
+        }
       }
       if (event.type !== 'message.delta' && event.type !== 'tool.updated') {
         void refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error)))
       }
     })
-  }, [refreshSnapshot, selectedSessionId])
+  }, [loadSession, refreshSnapshot, selectedSessionId])
 
   const projects = snapshot?.projects ?? []
   const sessions = snapshot?.sessions ?? []

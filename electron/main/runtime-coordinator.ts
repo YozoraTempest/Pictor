@@ -146,14 +146,21 @@ export class RuntimeCoordinator {
       this.broadcast(sanitizedEvent)
       return
     }
+    const terminalEvent =
+      sanitizedEvent.type === 'run.stateChanged' &&
+      ['completed', 'failed', 'stopped', 'interrupted'].includes(sanitizedEvent.status)
     this.applyEvent(active, sanitizedEvent)
     if (sanitizedEvent.type === 'message.delta' || sanitizedEvent.type === 'tool.updated') {
       this.broadcast(sanitizedEvent)
     } else {
       this.persistenceQueue = this.persistenceQueue
         .then(() => this.repository.saveSession(active.session))
-        .then(() => this.broadcast(sanitizedEvent))
+        .then(() => {
+          if (terminalEvent && this.active === active) this.active = null
+          this.broadcast(sanitizedEvent)
+        })
         .catch(() => {
+          if (terminalEvent && this.active === active) this.active = null
           this.broadcast({
             type: 'runtime.error',
             runId: sanitizedEvent.runId,
@@ -163,12 +170,6 @@ export class RuntimeCoordinator {
             message: '运行状态无法写入本地存储，请停止当前任务并检查磁盘权限',
           })
         })
-    }
-    if (
-      sanitizedEvent.type === 'run.stateChanged' &&
-      ['completed', 'failed', 'stopped', 'interrupted'].includes(sanitizedEvent.status)
-    ) {
-      this.active = null
     }
   }
 

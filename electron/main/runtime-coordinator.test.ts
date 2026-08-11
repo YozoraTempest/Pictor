@@ -24,7 +24,16 @@ it.each(['a', 'id', 'running'])(
       createdAt: now,
       updatedAt: now,
     }
-    const saveSession = vi.fn(async () => ({ id: sessionId }))
+    let saveCount = 0
+    let releasePersistence!: () => void
+    const persistenceGate = new Promise<void>((resolve) => {
+      releasePersistence = resolve
+    })
+    const saveSession = vi.fn(async () => {
+      saveCount += 1
+      if (saveCount > 1) await persistenceGate
+      return { id: sessionId }
+    })
     const repository = {
       getSession: vi.fn(async () => session),
       getProject: vi.fn(() => ({
@@ -112,6 +121,11 @@ it.each(['a', 'id', 'running'])(
       error: null,
     })
 
+    expect(coordinator.isActive()).toBe(true)
+    expect(broadcast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'run.stateChanged', status: 'completed' }),
+    )
+    releasePersistence()
     await vi.waitFor(() =>
       expect(broadcast).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -122,6 +136,7 @@ it.each(['a', 'id', 'running'])(
         }),
       ),
     )
+    expect(coordinator.isActive()).toBe(false)
     const run = session.runs[0]!
     expect(run.status).toBe('completed')
     expect(run.toolEvents[0]).toMatchObject({

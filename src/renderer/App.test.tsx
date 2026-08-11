@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import type {
@@ -20,6 +20,14 @@ const now = '2026-08-11T00:00:00.000Z'
 
 function ok<T>(value: T): IpcResult<T> {
   return { ok: true, value }
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 function emptySnapshot(): AppSnapshot {
@@ -245,4 +253,100 @@ it('renders an exact command approval and allows it once', async () => {
   await waitFor(() =>
     expect(bridge.approveCommand).toHaveBeenCalledWith({ runId, callId: 'call-1' }),
   )
+})
+
+it('ignores an older runtime refresh that resolves after the terminal state', async () => {
+  const project = {
+    id: projectId,
+    name: 'Pictor',
+    rootPath: 'E:\\code\\Pictor',
+    trustedAt: now,
+    availability: 'available' as const,
+    createdAt: now,
+    updatedAt: now,
+  }
+  const runningSession: SessionRecord = {
+    schemaVersion: 1,
+    id: sessionId,
+    projectId,
+    title: '运行验证',
+    messages: [],
+    runs: [
+      {
+        id: runId,
+        status: 'running',
+        error: null,
+        toolEvents: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    createdAt: now,
+    updatedAt: now,
+  }
+  const completedSession: SessionRecord = {
+    ...runningSession,
+    runs: [{ ...runningSession.runs[0]!, status: 'completed' }],
+  }
+  const snapshot: AppSnapshot = {
+    projects: [project],
+    sessions: [
+      {
+        id: sessionId,
+        projectId,
+        title: runningSession.title,
+        lastRunStatus: 'running',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    selectedProjectId: projectId,
+    selectedSessionId: sessionId,
+    settings: null,
+    issues: [],
+  }
+  const staleRefresh = deferred<IpcResult<SessionRecord>>()
+  const terminalRefresh = deferred<IpcResult<SessionRecord>>()
+  const getSession = vi
+    .fn()
+    .mockResolvedValueOnce(ok(runningSession))
+    .mockReturnValueOnce(staleRefresh.promise)
+    .mockReturnValueOnce(terminalRefresh.promise)
+  let runtimeListener: ((event: RuntimeEvent) => void) | null = null
+  installBridge({
+    ...createBridge(snapshot, runningSession),
+    getSession,
+    onRuntimeEvent: (listener) => {
+      runtimeListener = listener
+      return () => undefined
+    },
+  })
+  render(<App />)
+
+  expect(await screen.findByRole('heading', { name: '运行验证' })).toBeInTheDocument()
+  if (!runtimeListener) throw new Error('Runtime listener was not registered')
+  act(() => {
+    runtimeListener?.({
+      type: 'message.completed',
+      runId,
+      sessionId,
+      messageId,
+      content: 'Done',
+      at: now,
+    })
+    runtimeListener?.({
+      type: 'run.stateChanged',
+      runId,
+      sessionId,
+      status: 'completed',
+      error: null,
+      at: now,
+    })
+  })
+  await waitFor(() => expect(getSession).toHaveBeenCalledTimes(3))
+
+  await act(async () => terminalRefresh.resolve(ok(completedSession)))
+  expect(await screen.findByText('已完成')).toBeInTheDocument()
+  await act(async () => staleRefresh.resolve(ok(runningSession)))
+  expect(screen.getByText('已完成')).toBeInTheDocument()
 })
