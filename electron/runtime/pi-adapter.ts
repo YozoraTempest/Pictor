@@ -55,7 +55,10 @@ interface ActiveRuntime {
   unsubscribe: (() => void) | null
   cancelled: boolean
   text: string
+  failure: RuntimeFailure | null
 }
+
+type RuntimeFailure = Pick<Extract<RuntimeEvent, { type: 'runtime.error' }>, 'category' | 'message'>
 
 type RuntimeEventPayload = RuntimeEvent extends infer Event
   ? Event extends RuntimeEvent
@@ -84,24 +87,40 @@ function outputText(value: unknown): string {
   return eventText(value)
 }
 
-function classifyError(
-  message: string,
-): Extract<RuntimeEvent, { type: 'runtime.error' }>['category'] {
+function classifyError(message: string): RuntimeFailure['category'] {
   const normalized = message.toLocaleLowerCase('en-US')
   if (normalized.includes('401') || normalized.includes('403') || normalized.includes('api key')) {
     return 'authentication'
   }
+  if (normalized.includes('429') || /\b5\d\d\b/.test(normalized)) return 'server'
   if (normalized.includes('404') || normalized.includes('model')) return 'model'
   if (
     normalized.includes('network') ||
     normalized.includes('fetch') ||
     normalized.includes('connect') ||
-    normalized.includes('timeout')
+    normalized.includes('timeout') ||
+    normalized.includes('terminated') ||
+    normalized.includes('socket') ||
+    normalized.includes('econnreset') ||
+    normalized.includes('stream ended') ||
+    normalized.includes('stream closed')
   ) {
     return 'connectivity'
   }
-  if (normalized.includes('429') || /\b5\d\d\b/.test(normalized)) return 'server'
   return 'runtime'
+}
+
+const categoryMessages: Record<RuntimeFailure['category'], string> = {
+  authentication: '模型认证失败：请检查 API Key 和端点权限后重试。',
+  connectivity: '模型连接中断：请检查网络和 API Base URL 后重试。',
+  model: '模型不可用：请检查模型标识及该端点的模型权限。',
+  server: '模型服务暂时不可用或请求受限：请稍后重试。',
+  runtime: '模型响应无法处理：请检查兼容模式和服务端 SSE 格式。',
+}
+
+function runtimeFailure(detail: string): RuntimeFailure {
+  const category = classifyError(detail)
+  return { category, message: `${categoryMessages[category]} 技术详情：${detail}` }
 }
 
 function toolPath(projectRoot: string, args: unknown): string | null {
@@ -223,6 +242,7 @@ export class PiAgentRuntime {
       unsubscribe: null,
       cancelled: false,
       text: '',
+      failure: null,
     }
     this.current = current
     this.emitEvent(config, { type: 'run.stateChanged', status: 'running', error: null })
@@ -255,6 +275,12 @@ export class PiAgentRuntime {
 
       if (current.cancelled) {
         this.emitEvent(config, { type: 'run.stateChanged', status: 'stopped', error: null })
+      } else if (current.failure) {
+        this.emitEvent(config, {
+          type: 'run.stateChanged',
+          status: 'failed',
+          error: current.failure.message,
+        })
       } else {
         this.emitEvent(config, {
           type: 'message.completed',
@@ -264,16 +290,20 @@ export class PiAgentRuntime {
         this.emitEvent(config, { type: 'run.stateChanged', status: 'completed', error: null })
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Pi runtime failed'
+      const detail = error instanceof Error ? error.message : 'Pi runtime failed'
       if (current.cancelled) {
         this.emitEvent(config, { type: 'run.stateChanged', status: 'stopped', error: null })
       } else {
+        const failure = runtimeFailure(detail)
         this.emitEvent(config, {
           type: 'runtime.error',
-          category: classifyError(message),
-          message,
+          ...failure,
         })
-        this.emitEvent(config, { type: 'run.stateChanged', status: 'failed', error: message })
+        this.emitEvent(config, {
+          type: 'run.stateChanged',
+          status: 'failed',
+          error: failure.message,
+        })
       }
     } finally {
       current.approvals.cancelAll()
@@ -345,12 +375,13 @@ export class PiAgentRuntime {
       return
     }
     if (event.type === 'message_end' && 'errorMessage' in event.message) {
-      const message = Reflect.get(event.message, 'errorMessage')
-      if (typeof message === 'string' && message) {
+      const detail = Reflect.get(event.message, 'errorMessage')
+      if (typeof detail === 'string' && detail && !current.failure) {
+        const failure = runtimeFailure(detail)
+        current.failure = failure
         this.emitEvent(config, {
           type: 'runtime.error',
-          category: classifyError(message),
-          message,
+          ...failure,
         })
       }
     }
