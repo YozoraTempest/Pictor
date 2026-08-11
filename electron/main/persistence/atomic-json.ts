@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
 
 import type { z } from 'zod'
 
@@ -28,29 +27,11 @@ export async function writeTextFile(path: string, content: string): Promise<void
     await handle.writeFile(content, 'utf8')
     await handle.sync()
     await handle.close()
-    await replaceFile(temporaryPath, path)
+    await rename(temporaryPath, path)
   } catch (error) {
     await handle.close().catch(() => undefined)
     await unlink(temporaryPath).catch(() => undefined)
     throw error
-  }
-}
-
-async function replaceFile(source: string, destination: string): Promise<void> {
-  let attempt = 0
-  while (true) {
-    try {
-      await rename(source, destination)
-      return
-    } catch (error) {
-      const retryable =
-        process.platform === 'win32' &&
-        isNodeError(error) &&
-        ['EACCES', 'EBUSY', 'EPERM'].includes(error.code ?? '')
-      if (!retryable || attempt >= 4) throw error
-      await delay(50 * 2 ** attempt)
-      attempt += 1
-    }
   }
 }
 
