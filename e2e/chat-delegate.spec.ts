@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 
 import type { PictorBridge } from '../src/shared/contracts.js'
-import { credentialFixtures } from './support.js'
+import { credentialFixtures, readSelectedRunStatus } from './support.js'
 
 test('@smoke completes the delegate flow through the GUI and utility-process boundary', async ({
   browserName: _browserName,
@@ -209,14 +209,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await expect(window.getByText('Task completed.')).toBeVisible({ timeout: 20_000 })
     await expect(window.getByText('Changed files:')).toBeVisible()
     await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
-    const completedStatus = await window.evaluate(async () => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      const snapshot = await bridge.getSnapshot()
-      if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
-      const session = await bridge.getSession({ sessionId: snapshot.value.selectedSessionId })
-      return session.ok ? session.value.runs.at(-1)?.status : null
-    })
-    expect(completedStatus).toBe('completed')
+    expect(await readSelectedRunStatus(window)).toBe('completed')
 
     await electronApp.evaluate(async ({ BrowserWindow }) => {
       const target = BrowserWindow.getAllWindows().find(

@@ -1,4 +1,7 @@
+import type { Page } from '@playwright/test'
 import type { ServerResponse } from 'node:http'
+
+import type { PictorBridge } from '../src/shared/contracts.js'
 
 process.env.PICTOR_E2E_HEADLESS = '1'
 
@@ -32,6 +35,16 @@ export const bridgeKeys = [
   'stopRun',
   'testSettings',
 ]
+
+export async function readSelectedRunStatus(window: Page): Promise<string | null> {
+  return window.evaluate(async () => {
+    const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+    const snapshot = await bridge.getSnapshot()
+    if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
+    const session = await bridge.getSession({ sessionId: snapshot.value.selectedSessionId })
+    return session.ok ? (session.value.runs.at(-1)?.status ?? null) : null
+  })
+}
 
 function writeResponsesEvents(response: ServerResponse, events: unknown[]): void {
   response.writeHead(200, {

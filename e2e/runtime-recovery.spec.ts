@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 
 import type { PictorBridge } from '../src/shared/contracts.js'
-import { credentialFixtures, writeChatText } from './support.js'
+import { credentialFixtures, readSelectedRunStatus, writeChatText } from './support.js'
 
 test('shows a readable runtime failure and keeps the session sendable', async ({
   browserName: _browserName,
@@ -80,7 +80,8 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
     await expect(window.getByText(/模型认证失败：请检查 API Key 和端点权限后重试。/)).toBeVisible({
       timeout: 20_000,
     })
-    await expect(window.getByText('失败').last()).toBeVisible()
+    await expect(window.getByText('失败').last()).toBeVisible({ timeout: 20_000 })
+    expect(await readSelectedRunStatus(window)).toBe('failed')
 
     await composer.fill('Continue in the same session.')
     await expect(send).toBeEnabled()
@@ -88,7 +89,8 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
     await expect(window.getByText('Recovered after runtime failure.')).toBeVisible({
       timeout: 20_000,
     })
-    await expect(window.getByText('已完成').last()).toBeVisible()
+    await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
+    expect(await readSelectedRunStatus(window)).toBe('completed')
 
     const session = await window.evaluate(async () => {
       const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor

@@ -4,7 +4,12 @@ import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 
 import type { PictorBridge } from '../src/shared/contracts.js'
-import { credentialFixtures, writeResponsesText, writeResponsesToolCall } from './support.js'
+import {
+  credentialFixtures,
+  readSelectedRunStatus,
+  writeResponsesText,
+  writeResponsesToolCall,
+} from './support.js'
 
 test('completes model discovery and the delegate tool flow with Responses', async ({
   browserName: _browserName,
@@ -109,7 +114,8 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     )
     await window.getByRole('button', { name: '允许一次' }).click()
     await expect(window.getByText('Responses task completed.')).toBeVisible({ timeout: 20_000 })
-    await expect(window.getByText('已完成').last()).toBeVisible()
+    await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
+    expect(await readSelectedRunStatus(window)).toBe('completed')
 
     expect(await readFile(join(projectRoot, 'responses-command.txt'), 'utf8')).toBe(
       'responses-approved',
