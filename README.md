@@ -24,6 +24,20 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 - Git for Windows，命令执行依赖其中的 Git Bash；
 - 一个兼容 OpenAI Chat Completions 或 Responses、SSE 流式响应和函数工具调用的模型端点。
 
+## 安装与卸载
+
+0.1.0 提供 Windows x64 NSIS 安装程序：`Pictor-0.1.0-windows-x64-setup.exe`。运行安装程序，
+按向导选择安装位置即可；安装程序会创建桌面和开始菜单快捷方式。安装完成后可从任一快捷
+方式启动 Pictor。
+
+要卸载，请在 Windows 的“已安装的应用”中选择 Pictor 并执行卸载，或运行安装目录中的
+卸载程序。RC1 验收已覆盖静默安装、安装后启动和静默卸载：卸载后测试安装目录、测试创建
+的桌面/开始菜单快捷方式和卸载注册表项均已移除。该验证使用隔离的临时安装位置和用户数据；
+它不是净机测试。
+
+当前发布的安装程序和解包的 `Pictor.exe` 均未进行 Authenticode 签名。请只从可信发布
+渠道获取安装程序，并在组织安全策略要求签名时暂缓部署。
+
 ## 本地运行
 
 ```powershell
@@ -31,12 +45,21 @@ npm ci
 npm run dev
 ```
 
-首次启动后，在“模型设置”中选择兼容模式并保存 API Base URL、模型标识和 API Key，再
-添加本地项目并创建 Session。API Base URL 应填写 API 根地址（例如
-`https://api.example.com/v1`）；Pictor 会按兼容模式追加 `/chat/completions` 或
-`/responses`，并从 `/models` 获取模型列表。远程端点必须使用 HTTPS；本机回环地址可以
-使用 HTTP。连接测试会解析实际 SSE 事件并强制执行一次无副作用函数调用，用于验证端点
-同时支持所选协议、流式响应和工具调用。
+首次启动后，在“模型设置”中完成以下配置，再添加本地项目并创建 Session：
+
+- 选择 **Chat Completions** 或 **Responses**。API Base URL 填 API 根地址，例如
+  `https://api.example.com/v1`；Pictor 会分别请求 `/chat/completions` 或 `/responses`。
+- 输入模型标识和 API Key。远程端点必须使用 HTTPS；只有 `localhost`、`127.0.0.1` 或
+  `::1` 可以使用 HTTP。
+- 可使用“获取模型”从同一 Base URL 的 `/models` 获取 OpenAI 兼容模型列表并选择模型。
+  该调用需要端点返回非空的 `{ "data": [{ "id": "..." }] }`；不兼容或空列表时请手动
+  输入模型标识。
+- 可将推理强度留空，或选择 `minimal`、`low`、`medium`、`high`、`xhigh`、`max`。对于
+  Chat Completions，Pictor 发送 `reasoning_effort`；对于 Responses，发送
+  `reasoning.effort`。端点和模型是否接受所选级别取决于服务商。
+
+保存前运行连接测试。它会解析实际 SSE 事件，并要求模型执行一次无副作用函数调用，以验证
+所选协议、流式响应和工具调用；测试通过不代表已验证真实服务商的计费、可用性或模型质量。
 
 ## 验证
 
@@ -56,10 +79,21 @@ npm run package
 `npm run package:dir` 生成 `dist/win-unpacked/Pictor.exe`。`npm run package` 同时生成
 `dist/Pictor-<version>-windows-x64-setup.exe` NSIS 安装程序和 `dist/win-unpacked/`，随后自动
 校验安装程序、应用归档以及解包可执行文件的 x64 PE 架构；也可以对已有产物单独运行
-`npm run package:verify`。Electron E2E 使用本地确定性
+`npm run package:verify`。它验证文件存在、非空和解包可执行文件的 x64 PE 架构，不验证
+签名、安装生命周期或外部服务商兼容性。Electron E2E 使用本地确定性
 OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、命令审批、取消、凭据重启、
 活动运行关闭确认和中断恢复，不需要外部模型凭据。E2E 默认隐藏 Electron 窗口并在后台
 运行，不影响截图和交互验证。
+
+## 已知限制
+
+- 0.1.0 的 Windows 安装程序和应用可执行文件未签名；应用图标仍使用 Electron 默认图标。
+- 已完成的 Windows RC1 安装、启动和卸载验收运行在非净 Windows 开发机上，虽然安装位置和
+  首次运行数据均已隔离并在验收后清理；尚未取得净机安装证据。
+- Chat Completions 和 Responses 均由本地确定性 OpenAI 兼容端点覆盖。尚未用真实第三方
+  API Key 验证任何外部服务商。
+- 首期只支持 Windows x64；编辑器、Git 工作流、多 Agent、插件、远程项目、WSL、容器以及
+  macOS/Linux 打包不在范围内。持久化格式也尚未形成跨版本兼容承诺。
 
 ## 本地数据与安全边界
 
