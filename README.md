@@ -42,6 +42,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 
 ```powershell
 npm ci
+npm run deps:prepare
+npm run deps:verify
 npm run dev
 ```
 
@@ -63,18 +65,15 @@ npm run dev
 
 ## 验证
 
-以下命令已在 Windows 11 上验证：
+日常提交前运行快速验证；PR 级验证会额外构建一次桌面应用并执行核心 E2E Smoke：
 
 ```powershell
-npm run format:check
-npm run typecheck
-npm run lint
-npm test
-npm run test:e2e
-npm run build
-npm run package:dir
-npm run package
+npm run verify:fast
+npm run verify:pr
 ```
+
+发布前运行 `npm run verify:release`。完整的测试分层、叶子命令、CI 门禁和稳定性规则见
+[`docs/TESTING.md`](docs/TESTING.md)。
 
 `npm run package:dir` 生成 `dist/win-unpacked/Pictor.exe`。`npm run package` 同时生成
 `dist/Pictor-<version>-windows-x64-setup.exe` NSIS 安装程序和 `dist/win-unpacked/`，随后自动
