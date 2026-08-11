@@ -208,22 +208,15 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await window.getByRole('button', { name: '允许一次' }).click()
     await expect(window.getByText('Task completed.')).toBeVisible({ timeout: 20_000 })
     await expect(window.getByText('Changed files:')).toBeVisible()
-    await expect
-      .poll(
-        () =>
-          window.evaluate(async () => {
-            const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-            const snapshot = await bridge.getSnapshot()
-            if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
-            const session = await bridge.getSession({
-              sessionId: snapshot.value.selectedSessionId,
-            })
-            return session.ok ? session.value.runs.at(-1)?.status : null
-          }),
-        { timeout: 20_000 },
-      )
-      .toBe('completed')
-    await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 20_000 })
+    await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
+    const completedStatus = await window.evaluate(async () => {
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      const snapshot = await bridge.getSnapshot()
+      if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
+      const session = await bridge.getSession({ sessionId: snapshot.value.selectedSessionId })
+      return session.ok ? session.value.runs.at(-1)?.status : null
+    })
+    expect(completedStatus).toBe('completed')
 
     await electronApp.evaluate(async ({ BrowserWindow }) => {
       const target = BrowserWindow.getAllWindows().find(
