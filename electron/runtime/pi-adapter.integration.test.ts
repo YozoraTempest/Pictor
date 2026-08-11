@@ -2,11 +2,13 @@
 
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, expect, it } from 'vitest'
+
+import { SessionManager } from '@earendil-works/pi-coding-agent'
 
 import type { RuntimeEvent } from '../../src/shared/contracts.js'
 import { PiAgentRuntime } from './pi-adapter.js'
@@ -16,12 +18,19 @@ let baseUrl: string
 let testRoot: string
 let lastRequestBody: Record<string, unknown>
 let failureMode: 'success' | 'authentication' | 'server' | 'malformed' | 'disconnect'
+let chatResponseText: string
+let chatToolArguments: Record<string, string> | null
+let chatRequestCount: number
+const localApiKey = ['local', 'test', 'key'].join('-')
 
 beforeEach(async () => {
   testRoot = await mkdtemp(join(tmpdir(), 'pictor-pi-runtime-'))
   await mkdir(join(testRoot, 'project'))
   lastRequestBody = {}
   failureMode = 'success'
+  chatResponseText = 'Hello from Pi'
+  chatToolArguments = null
+  chatRequestCount = 0
   server = createServer(async (request, response) => {
     let requestBody = ''
     for await (const chunk of request) requestBody += chunk.toString()
@@ -141,6 +150,49 @@ beforeEach(async () => {
       return
     }
 
+    chatRequestCount += 1
+    if (chatToolArguments && chatRequestCount === 1) {
+      response.write(
+        `data: ${JSON.stringify({
+          id: 'chatcmpl-pictor-tool',
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: 'pictor-test-model',
+          choices: [
+            {
+              index: 0,
+              delta: {
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call-pictor-redaction',
+                    type: 'function',
+                    function: {
+                      name: 'pictor_write',
+                      arguments: JSON.stringify(chatToolArguments),
+                    },
+                  },
+                ],
+              },
+              finish_reason: null,
+            },
+          ],
+        })}\n\n`,
+      )
+      response.write(
+        `data: ${JSON.stringify({
+          id: 'chatcmpl-pictor-tool',
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: 'pictor-test-model',
+          choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
+        })}\n\n`,
+      )
+      response.end('data: [DONE]\n\n')
+      return
+    }
+
     response.write(
       `data: ${JSON.stringify({
         id: 'chatcmpl-pictor',
@@ -148,7 +200,11 @@ beforeEach(async () => {
         created: Math.floor(Date.now() / 1000),
         model: 'pictor-test-model',
         choices: [
-          { index: 0, delta: { role: 'assistant', content: 'Hello from Pi' }, finish_reason: null },
+          {
+            index: 0,
+            delta: { role: 'assistant', content: chatResponseText },
+            finish_reason: null,
+          },
         ],
       })}\n\n`,
     )
@@ -183,6 +239,7 @@ async function runAgent(
     projectRoot: join(testRoot, 'project'),
     agentDirectory: join(testRoot, `agent-${directoryId}`),
     sessionDirectory: join(testRoot, `session-${directoryId}`),
+    resumeSession: true,
     settings: {
       apiProtocol: protocol,
       baseUrl,
@@ -191,7 +248,7 @@ async function runAgent(
       temperature: null,
       maxOutputTokens: 64,
     },
-    apiKey: 'local-test-key',
+    apiKey: localApiKey,
     prompt,
   })
 }
@@ -214,6 +271,7 @@ it('streams normalized text events through the real Pi SDK', async () => {
     projectRoot: join(testRoot, 'project'),
     agentDirectory: join(testRoot, 'agent'),
     sessionDirectory: join(testRoot, 'session'),
+    resumeSession: true,
     settings: {
       apiProtocol: 'chat-completions',
       baseUrl,
@@ -222,7 +280,7 @@ it('streams normalized text events through the real Pi SDK', async () => {
       temperature: 0.1,
       maxOutputTokens: 64,
     },
-    apiKey: 'local-test-key',
+    apiKey: localApiKey,
     prompt: 'Say hello.',
   })
 
@@ -249,6 +307,7 @@ it('streams Responses API events through the real Pi SDK', async () => {
     projectRoot: join(testRoot, 'project'),
     agentDirectory: join(testRoot, 'agent-responses'),
     sessionDirectory: join(testRoot, 'session-responses'),
+    resumeSession: true,
     settings: {
       apiProtocol: 'responses',
       baseUrl,
@@ -257,7 +316,7 @@ it('streams Responses API events through the real Pi SDK', async () => {
       temperature: null,
       maxOutputTokens: 64,
     },
-    apiKey: 'local-test-key',
+    apiKey: localApiKey,
     prompt: 'Say hello.',
   })
 
@@ -275,6 +334,100 @@ it('streams Responses API events through the real Pi SDK', async () => {
   )
   expect(lastRequestBody.reasoning).toEqual(expect.objectContaining({ effort: 'xhigh' }))
 }, 20_000)
+
+it.each(['a', 'id', 'running', ['pi', 'transcript', 'credential'].join('-')])(
+  'redacts configured credential %s from real Pi transcripts and emitted events',
+  async (secret) => {
+    const sessionDirectory = join(testRoot, 'credential-session')
+    const events: RuntimeEvent[] = []
+    chatResponseText = `assistant echoed ${secret}`
+    chatToolArguments = {
+      path: 'x.txt',
+      content: 'fixture',
+      id: secret,
+      status: secret,
+      model: secret,
+      type: secret,
+      role: secret,
+      name: secret,
+    }
+    const runtime = new PiAgentRuntime((event) => events.push(event))
+
+    await runtime.start({
+      type: 'start',
+      runId: randomUUID(),
+      sessionId: randomUUID(),
+      messageId: randomUUID(),
+      projectRoot: join(testRoot, 'project'),
+      agentDirectory: join(testRoot, 'credential-agent'),
+      sessionDirectory,
+      resumeSession: true,
+      settings: {
+        apiProtocol: 'chat-completions',
+        baseUrl,
+        modelId: 'pictor-test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: secret,
+      prompt: `user included ${secret}`,
+    })
+
+    const transcriptFiles = (await readdir(sessionDirectory)).filter((name) =>
+      name.endsWith('.jsonl'),
+    )
+    expect(transcriptFiles).toHaveLength(1)
+    const transcriptPath = join(sessionDirectory, transcriptFiles[0]!)
+    const transcript = await readFile(transcriptPath, 'utf8')
+    if (secret.length > 'running'.length) {
+      expect(transcript).not.toContain(secret)
+      expect(JSON.stringify(events)).not.toContain(secret)
+    }
+    expect(transcript).toContain('[REDACTED]')
+    const transcriptEntries = transcript
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+    expect(transcriptEntries).toContainEqual(
+      expect.objectContaining({
+        type: 'message',
+        message: expect.objectContaining({
+          role: 'assistant',
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: 'toolCall',
+              id: 'call-pictor-redaction',
+              name: 'pictor_write',
+              arguments: {
+                path: 'x.txt',
+                content: 'fixture',
+                id: '[REDACTED]',
+                status: '[REDACTED]',
+                model: '[REDACTED]',
+                type: '[REDACTED]',
+                role: '[REDACTED]',
+                name: '[REDACTED]',
+              },
+            }),
+          ]),
+        }),
+      }),
+    )
+    const completed = events.find((event) => event.type === 'message.completed')
+    expect(completed).toEqual(expect.objectContaining({ type: 'message.completed' }))
+    if (!completed || completed.type !== 'message.completed') {
+      throw new Error('Missing completed message event')
+    }
+    expect(completed.content).not.toContain(secret)
+    expect(completed.content).toContain('[REDACTED]')
+    const resumedTranscript = SessionManager.open(transcriptPath)
+    expect(resumedTranscript.getHeader()).toMatchObject({ type: 'session', version: 3 })
+    expect(resumedTranscript.getEntries().length).toBeGreaterThanOrEqual(3)
+    expect(() => resumedTranscript.buildSessionContext()).not.toThrow()
+  },
+  20_000,
+)
 
 it.each([
   ['chat-completions', 'authentication', 'authentication', '模型认证失败'],

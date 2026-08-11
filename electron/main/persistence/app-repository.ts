@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rename, stat, unlink } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join, relative } from 'node:path'
 
 import { z } from 'zod'
 
 import {
   appSnapshotSchema,
+  dataIssueSchema,
   modelSettingsInputSchema,
   projectSchema,
   sessionRecordSchema,
@@ -17,8 +18,13 @@ import {
   type SessionRecord,
   type SessionSummary,
 } from '../../../src/shared/contracts.js'
+import { createSecretRedactor } from '../../../src/shared/secret-redaction.js'
 import { PictorError } from '../errors.js'
 import { isNodeError, readJsonFile, writeJsonFile } from './atomic-json.js'
+import {
+  migrateCredentialPersistence,
+  type CredentialMigrationResult,
+} from './credential-migration.js'
 import { CredentialUnavailableError, type SecretStore } from './secret-store.js'
 
 const stateSchema = z.object({
@@ -28,6 +34,7 @@ const stateSchema = z.object({
   selectedProjectId: z.uuid().nullable(),
   selectedSessionId: z.uuid().nullable(),
   settings: modelSettingsInputSchema.nullable(),
+  issues: z.array(dataIssueSchema).default([]),
 })
 
 type PersistedState = z.infer<typeof stateSchema>
@@ -42,6 +49,7 @@ function createEmptyState(): PersistedState {
     selectedProjectId: null,
     selectedSessionId: null,
     settings: null,
+    issues: [],
   }
 }
 
@@ -56,16 +64,29 @@ function summarizeSession(session: SessionRecord): SessionSummary {
   })
 }
 
+function isPathWithin(root: string, candidate: string): boolean {
+  const relativePath = relative(root, candidate)
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+}
+
+type CredentialMigration = (
+  dataDirectory: string,
+  secretValues: readonly string[],
+) => Promise<CredentialMigrationResult>
+
 export class AppRepository {
   private readonly statePath: string
   private readonly sessionsDirectory: string
   private state: PersistedState = createEmptyState()
   private initialized = false
   private issues: AppSnapshot['issues'] = []
+  private unsafePiPaths: string[] = []
+  private blockAllPiResume = false
 
   constructor(
     private readonly dataDirectory: string,
     private readonly secretStore: SecretStore,
+    private readonly migrateCredentials: CredentialMigration = migrateCredentialPersistence,
   ) {
     this.statePath = join(dataDirectory, 'state.json')
     this.sessionsDirectory = join(dataDirectory, 'sessions')
@@ -74,9 +95,33 @@ export class AppRepository {
   async initialize(): Promise<void> {
     await mkdir(this.sessionsDirectory, { recursive: true })
     this.state = (await readJsonFile(this.statePath, stateSchema)) ?? createEmptyState()
-    this.issues = []
+    this.issues = [...this.state.issues]
+    this.unsafePiPaths = []
+    this.blockAllPiResume = false
+    const previousIssues = JSON.stringify(this.issues)
+    const migrationSecrets = await this.getMigrationSecretValues()
+    const previousMigrationIssue = this.issues.some(
+      (issue) => issue.code === 'credential-migration-failed',
+    )
 
-    let changed = await this.refreshProjectAvailability()
+    if (migrationSecrets.failed) {
+      this.blockAllPiResume = true
+      this.setMigrationIssue()
+    } else if (migrationSecrets.values.length > 0) {
+      const migration = await this.migrateCredentials(this.dataDirectory, migrationSecrets.values)
+      this.issues = this.issues.filter((issue) => issue.code !== 'credential-migration-failed')
+      if (migration.failures.length > 0) {
+        this.unsafePiPaths = migration.failures
+          .filter((failure) => failure.scope === 'pi')
+          .map((failure) => failure.path)
+        this.setMigrationIssue()
+      }
+    } else if (previousMigrationIssue) {
+      this.blockAllPiResume = true
+    }
+
+    const projectAvailabilityChanged = await this.refreshProjectAvailability()
+    let changed = previousIssues !== JSON.stringify(this.issues) || projectAvailabilityChanged
     const validSummaries: SessionSummary[] = []
 
     for (const summary of this.state.sessions) {
@@ -99,6 +144,7 @@ export class AppRepository {
     }
 
     this.state.sessions = validSummaries
+    this.state.issues = this.issues
     this.repairSelection()
     this.initialized = true
     if (changed) await this.persistState()
@@ -236,11 +282,20 @@ export class AppRepository {
   ): {
     agentDirectory: string
     sessionDirectory: string
+    resumeSession: boolean
   } {
     this.ensureInitialized()
+    const sessionDirectory = join(this.dataDirectory, 'pi', projectId, sessionId)
     return {
       agentDirectory: join(this.dataDirectory, 'pi', 'agent'),
-      sessionDirectory: join(this.dataDirectory, 'pi', projectId, sessionId),
+      sessionDirectory,
+      resumeSession:
+        !this.blockAllPiResume &&
+        !this.unsafePiPaths.some(
+          (unsafePath) =>
+            isPathWithin(sessionDirectory, unsafePath) ||
+            isPathWithin(unsafePath, sessionDirectory),
+        ),
     }
   }
 
@@ -289,8 +344,8 @@ export class AppRepository {
       throw new PictorError('not-found', '会话不存在或项目绑定不匹配')
     }
 
-    await this.writeSession(parsed)
-    const summary = summarizeSession(parsed)
+    const sanitized = await this.writeSession(parsed)
+    const summary = summarizeSession(sanitized)
     this.state.sessions = this.state.sessions.map((candidate) =>
       candidate.id === summary.id ? summary : candidate,
     )
@@ -374,11 +429,50 @@ export class AppRepository {
   private async readSession(sessionId: string): Promise<SessionRecord> {
     const session = await readJsonFile(this.sessionPath(sessionId), sessionRecordSchema)
     if (!session) throw new Error('Session file is missing')
-    return session
+    const sanitized = await this.sanitizeSession(session)
+    if (JSON.stringify(sanitized) !== JSON.stringify(session)) {
+      await writeJsonFile(this.sessionPath(session.id), sanitized)
+    }
+    return sanitized
   }
 
-  private async writeSession(session: SessionRecord): Promise<void> {
-    await writeJsonFile(this.sessionPath(session.id), sessionRecordSchema.parse(session))
+  private async writeSession(session: SessionRecord): Promise<SessionRecord> {
+    const sanitized = await this.sanitizeSession(sessionRecordSchema.parse(session))
+    await writeJsonFile(this.sessionPath(sanitized.id), sanitized)
+    return sanitized
+  }
+
+  private async sanitizeSession(session: SessionRecord): Promise<SessionRecord> {
+    const redactor = createSecretRedactor(await this.getKnownSecretValues())
+    return sessionRecordSchema.parse(redactor.redactSession(session))
+  }
+
+  private async getKnownSecretValues(): Promise<string[]> {
+    try {
+      const apiKey = await this.secretStore.getApiKey()
+      return apiKey ? [apiKey] : []
+    } catch {
+      return []
+    }
+  }
+
+  private async getMigrationSecretValues(): Promise<{ values: string[]; failed: boolean }> {
+    try {
+      const apiKey = await this.secretStore.getApiKey()
+      return { values: apiKey ? [apiKey] : [], failed: false }
+    } catch {
+      return { values: [], failed: true }
+    }
+  }
+
+  private setMigrationIssue(): void {
+    if (this.issues.some((issue) => issue.code === 'credential-migration-failed')) return
+    this.issues.push({
+      code: 'credential-migration-failed',
+      sessionId: null,
+      message:
+        '部分历史会话的凭据清理未完成。为防止泄露，相关 Pi 会话不会恢复；请检查本地数据目录权限并重启 Pictor 后重试。',
+    })
   }
 
   private async quarantineSession(sessionId: string): Promise<void> {

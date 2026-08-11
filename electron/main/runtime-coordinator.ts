@@ -7,6 +7,7 @@ import {
   type RuntimeEvent,
   type SessionRecord,
 } from '../../src/shared/contracts.js'
+import { createSecretRedactor, type SecretRedactor } from '../../src/shared/secret-redaction.js'
 import { PictorError } from './errors.js'
 import type { AppRepository } from './persistence/app-repository.js'
 import type { RuntimeSupervisor } from './runtime-supervisor.js'
@@ -15,6 +16,7 @@ interface ActiveRun {
   session: SessionRecord
   runId: string
   assistantMessageId: string
+  redactor: SecretRedactor
 }
 
 export class RuntimeCoordinator {
@@ -41,6 +43,8 @@ export class RuntimeCoordinator {
     if (!settings || !apiKey) {
       throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
     }
+    const redactor = createSecretRedactor([apiKey])
+    const sanitizedPrompt = redactor.redactText(prompt)
 
     const now = new Date().toISOString()
     const runId = randomUUID()
@@ -49,7 +53,7 @@ export class RuntimeCoordinator {
       messageSchema.parse({
         id: randomUUID(),
         role: 'user',
-        content: prompt,
+        content: sanitizedPrompt,
         status: 'completed',
         createdAt: now,
         updatedAt: now,
@@ -73,10 +77,12 @@ export class RuntimeCoordinator {
         updatedAt: now,
       }),
     )
-    if (session.title === '新建会话') session.title = prompt.replace(/\s+/g, ' ').slice(0, 48)
+    if (session.title === '新建会话') {
+      session.title = sanitizedPrompt.replace(/\s+/g, ' ').slice(0, 48)
+    }
     session.updatedAt = now
     await this.repository.saveSession(session)
-    this.active = { session, runId, assistantMessageId }
+    this.active = { session, runId, assistantMessageId, redactor }
 
     const runtimePaths = this.repository.getRuntimePaths(project.id, session.id)
     try {
@@ -96,14 +102,15 @@ export class RuntimeCoordinator {
           maxOutputTokens: settings.maxOutputTokens,
         },
         apiKey,
-        prompt,
+        prompt: sanitizedPrompt,
       })
     } catch (error) {
       this.active = null
       const run = session.runs.find((candidate) => candidate.id === runId)
       if (run) {
         run.status = 'failed'
-        run.error = error instanceof Error ? error.message : '无法启动 Agent Runtime'
+        run.error =
+          error instanceof Error ? redactor.redactText(error.message) : '无法启动 Agent Runtime'
         run.updatedAt = new Date().toISOString()
       }
       await this.repository.saveSession(session)
@@ -130,22 +137,27 @@ export class RuntimeCoordinator {
 
   handleEvent(event: RuntimeEvent): void {
     const active = this.active
-    if (!active || active.runId !== event.runId || active.session.id !== event.sessionId) {
-      this.broadcast(event)
+    const sanitizedEvent = active ? active.redactor.redactRuntimeEvent(event) : event
+    if (
+      !active ||
+      active.runId !== sanitizedEvent.runId ||
+      active.session.id !== sanitizedEvent.sessionId
+    ) {
+      this.broadcast(sanitizedEvent)
       return
     }
-    this.applyEvent(active, event)
-    if (event.type === 'message.delta' || event.type === 'tool.updated') {
-      this.broadcast(event)
+    this.applyEvent(active, sanitizedEvent)
+    if (sanitizedEvent.type === 'message.delta' || sanitizedEvent.type === 'tool.updated') {
+      this.broadcast(sanitizedEvent)
     } else {
       this.persistenceQueue = this.persistenceQueue
         .then(() => this.repository.saveSession(active.session))
-        .then(() => this.broadcast(event))
+        .then(() => this.broadcast(sanitizedEvent))
         .catch(() => {
           this.broadcast({
             type: 'runtime.error',
-            runId: event.runId,
-            sessionId: event.sessionId,
+            runId: sanitizedEvent.runId,
+            sessionId: sanitizedEvent.sessionId,
             at: new Date().toISOString(),
             category: 'runtime',
             message: '运行状态无法写入本地存储，请停止当前任务并检查磁盘权限',
@@ -153,8 +165,8 @@ export class RuntimeCoordinator {
         })
     }
     if (
-      event.type === 'run.stateChanged' &&
-      ['completed', 'failed', 'stopped', 'interrupted'].includes(event.status)
+      sanitizedEvent.type === 'run.stateChanged' &&
+      ['completed', 'failed', 'stopped', 'interrupted'].includes(sanitizedEvent.status)
     ) {
       this.active = null
     }

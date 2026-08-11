@@ -13,6 +13,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 
 import { runtimeEventSchema, type RuntimeEvent } from '../../src/shared/contracts.js'
+import { createSecretRedactor, type SecretRedactor } from '../../src/shared/secret-redaction.js'
 import { ApprovalBroker } from './approval-broker.js'
 import { GitBashCommandExecutor, type CommandExecutor } from './command-executor.js'
 import { ProjectPathGuard } from './path-guard.js'
@@ -56,6 +57,7 @@ interface ActiveRuntime {
   cancelled: boolean
   text: string
   failure: RuntimeFailure | null
+  redactor: SecretRedactor
 }
 
 type RuntimeFailure = Pick<Extract<RuntimeEvent, { type: 'runtime.error' }>, 'category' | 'message'>
@@ -198,6 +200,17 @@ async function createProductionSession({
   const model = modelRuntime.getModel(PROVIDER_ID, config.settings.modelId)
   if (!model) throw new Error(`Model is unavailable: ${config.settings.modelId}`)
 
+  const sessionManager = config.resumeSession
+    ? SessionManager.continueRecent(config.projectRoot, config.sessionDirectory)
+    : SessionManager.create(config.projectRoot, config.sessionDirectory)
+  const redactor = createSecretRedactor([config.apiKey])
+  // Pi appends synchronously; mutating the pending entry here keeps its in-memory context and JSONL identical.
+  const internalManager = sessionManager as unknown as {
+    _persist: (entry: unknown) => void
+  }
+  const persist = internalManager._persist.bind(sessionManager)
+  internalManager._persist = (entry) => persist(redactor.redactPiEntryInPlace(entry))
+
   const { session } = await createAgentSession({
     cwd: config.projectRoot,
     agentDir: config.agentDirectory,
@@ -208,7 +221,7 @@ async function createProductionSession({
     customTools: tools,
     resourceLoader,
     settingsManager,
-    sessionManager: SessionManager.continueRecent(config.projectRoot, config.sessionDirectory),
+    sessionManager,
   })
   return session
 }
@@ -243,12 +256,13 @@ export class PiAgentRuntime {
       cancelled: false,
       text: '',
       failure: null,
+      redactor: createSecretRedactor([config.apiKey]),
     }
     this.current = current
-    this.emitEvent(config, { type: 'run.stateChanged', status: 'running', error: null })
-    this.emitEvent(config, { type: 'message.started', messageId: config.messageId })
 
     try {
+      this.emitEvent(config, { type: 'run.stateChanged', status: 'running', error: null })
+      this.emitEvent(config, { type: 'message.started', messageId: config.messageId })
       const guard = await ProjectPathGuard.create(config.projectRoot)
       const tools = createPictorTools({
         guard,
@@ -388,13 +402,16 @@ export class PiAgentRuntime {
   }
 
   private emitEvent(config: RuntimeStartConfig, event: RuntimeEventPayload): void {
-    this.emit(
-      runtimeEventSchema.parse({
-        ...event,
-        runId: config.runId,
-        sessionId: config.sessionId,
-        at: new Date().toISOString(),
-      }),
-    )
+    const redactor =
+      this.current?.config === config
+        ? this.current.redactor
+        : createSecretRedactor([config.apiKey])
+    const completeEvent = runtimeEventSchema.parse({
+      ...event,
+      runId: config.runId,
+      sessionId: config.sessionId,
+      at: new Date().toISOString(),
+    })
+    this.emit(redactor.redactRuntimeEvent(completeEvent))
   }
 }

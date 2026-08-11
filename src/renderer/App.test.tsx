@@ -12,6 +12,7 @@ import { App } from './App'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
 const sessionId = '22222222-2222-4222-8222-222222222222'
+const temporaryApiKey = ['temporary', 'key'].join('-')
 const runId = '33333333-3333-4333-8333-333333333333'
 const messageId = '44444444-4444-4444-8444-444444444444'
 const toolId = '55555555-5555-4555-8555-555555555555'
@@ -130,7 +131,7 @@ it('fetches and selects a model from the compatible endpoint', async () => {
 
   await screen.findByRole('heading', { name: '选择一个项目开始' })
   fireEvent.click(screen.getByRole('button', { name: '模型设置' }))
-  fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'temporary-key' } })
+  fireEvent.change(screen.getByLabelText('API Key'), { target: { value: temporaryApiKey } })
   fireEvent.click(screen.getByRole('button', { name: '获取模型' }))
 
   const availableModels = await screen.findByRole('combobox', { name: '模型' })
@@ -138,7 +139,7 @@ it('fetches and selects a model from the compatible endpoint', async () => {
   expect(availableModels).toHaveValue('gpt-5.6-sol')
   expect(listModels).toHaveBeenCalledWith({
     baseUrl: 'https://api.openai.com/v1',
-    apiKey: 'temporary-key',
+    apiKey: temporaryApiKey,
   })
 })
 

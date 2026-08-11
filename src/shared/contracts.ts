@@ -170,7 +170,7 @@ export const modelCatalogResultSchema = z.object({
 })
 
 export const dataIssueSchema = z.object({
-  code: z.enum(['session-corrupt', 'persistence-failed']),
+  code: z.enum(['session-corrupt', 'persistence-failed', 'credential-migration-failed']),
   sessionId: idSchema.nullable(),
   message: z.string().min(1),
 })

@@ -10,6 +10,7 @@ export const runtimeStartConfigSchema = z.object({
   projectRoot: z.string().min(1),
   agentDirectory: z.string().min(1),
   sessionDirectory: z.string().min(1),
+  resumeSession: z.boolean(),
   settings: modelSettingsInputSchema,
   apiKey: z.string().min(1),
   prompt: z.string().min(1),

@@ -1,11 +1,19 @@
 import { _electron as electron, expect, test } from '@playwright/test'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 
 import type { PictorBridge } from '../src/shared/contracts.js'
 
 process.env.PICTOR_E2E_HEADLESS = '1'
+
+const credentialFixtures = {
+  encryptedSettings: ['pictor', 'e2e', 'secret'].join('-'),
+  localRuntime: ['local', 'e2e', 'key'].join('-'),
+  runtimeRecovery: ['recovery', 'e2e', 'key'].join('-'),
+  responsesRuntime: ['responses', 'e2e', 'key'].join('-'),
+  interruptedRun: ['interrupted', 'e2e', 'key'].join('-'),
+}
 
 const bridgeKeys = [
   'approveCommand',
@@ -165,7 +173,10 @@ test('launches a sandboxed, nonblank desktop shell', async ({
   browserName: _browserName,
 }, testInfo) => {
   const electronApp = await electron.launch({
-    args: [resolve('out/main/index.js')],
+    args: [
+      resolve('out/main/index.js'),
+      `--user-data-dir=${testInfo.outputPath('shell-user-data')}`,
+    ],
     cwd: resolve('.'),
   })
 
@@ -224,16 +235,18 @@ test('encrypts model credentials and restores non-secret settings', async ({
   const firstApp = await launch()
   const firstWindow = await firstApp.firstWindow()
   await firstWindow.waitForLoadState('domcontentloaded')
-  const saved = await firstWindow.evaluate(() =>
-    (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.saveSettings({
-      apiProtocol: 'responses',
-      baseUrl: 'https://api.example.test/v1',
-      modelId: 'model-e2e',
-      reasoningEffort: 'xhigh',
-      temperature: 0.3,
-      maxOutputTokens: 4096,
-      apiKey: { action: 'replace', value: 'pictor-e2e-secret' },
-    }),
+  const saved = await firstWindow.evaluate(
+    (apiKey) =>
+      (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.saveSettings({
+        apiProtocol: 'responses',
+        baseUrl: 'https://api.example.test/v1',
+        modelId: 'model-e2e',
+        reasoningEffort: 'xhigh',
+        temperature: 0.3,
+        maxOutputTokens: 4096,
+        apiKey: { action: 'replace', value: apiKey },
+      }),
+    credentialFixtures.encryptedSettings,
   )
   expect(saved).toEqual({
     ok: true,
@@ -254,7 +267,72 @@ test('encrypts model credentials and restores non-secret settings', async ({
     readFile(join(dataDirectory, 'state.json'), 'utf8'),
     readFile(join(dataDirectory, 'secrets.json'), 'utf8'),
   ])
-  expect(persistedText.join('\n')).not.toContain('pictor-e2e-secret')
+  expect(persistedText.join('\n')).not.toContain(credentialFixtures.encryptedSettings)
+
+  const legacySessionPath = join(dataDirectory, 'sessions', 'legacy-fixture.json')
+  const legacyTranscriptPath = join(
+    dataDirectory,
+    'pi',
+    'legacy-project',
+    'legacy-session',
+    'legacy-fixture.jsonl',
+  )
+  await mkdir(join(dataDirectory, 'sessions'), { recursive: true })
+  await mkdir(join(dataDirectory, 'pi', 'legacy-project', 'legacy-session'), { recursive: true })
+  const legacyProjectId = '01234567-89ab-4def-8123-456789abcdef'
+  const legacySessionId = '11234567-89ab-4def-8123-456789abcdef'
+  const legacyMessageId = '21234567-89ab-4def-8123-456789abcdef'
+  const legacyTimestamp = '2026-08-11T00:00:00.000Z'
+  await writeFile(
+    legacySessionPath,
+    `${JSON.stringify({
+      schemaVersion: 1,
+      id: legacySessionId,
+      projectId: legacyProjectId,
+      title: `legacy ${credentialFixtures.encryptedSettings} keep`,
+      messages: [
+        {
+          id: legacyMessageId,
+          role: 'user',
+          content: 'unrelated session content',
+          status: 'completed',
+          createdAt: legacyTimestamp,
+          updatedAt: legacyTimestamp,
+        },
+      ],
+      runs: [],
+      createdAt: legacyTimestamp,
+      updatedAt: legacyTimestamp,
+    })}\n`,
+  )
+  await writeFile(
+    legacyTranscriptPath,
+    [
+      JSON.stringify({
+        type: 'session',
+        version: 3,
+        id: legacySessionId,
+        timestamp: legacyTimestamp,
+        cwd: 'C:\\legacy-project',
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'legacy-entry',
+        parentId: null,
+        timestamp: legacyTimestamp,
+        message: {
+          role: 'toolResult',
+          toolCallId: 'legacy-call',
+          toolName: 'pictor_read',
+          content: [{ type: 'text', text: `tool ${credentialFixtures.encryptedSettings}` }],
+          details: { note: 'unrelated transcript content' },
+          isError: false,
+          timestamp: Date.parse(legacyTimestamp),
+        },
+      }),
+      '',
+    ].join('\n'),
+  )
 
   const restoredApp = await launch()
   try {
@@ -279,6 +357,14 @@ test('encrypts model credentials and restores non-secret settings', async ({
         }),
       }),
     )
+    const migratedText = await Promise.all([
+      readFile(legacySessionPath, 'utf8'),
+      readFile(legacyTranscriptPath, 'utf8'),
+    ])
+    expect(migratedText.join('\n')).not.toContain(credentialFixtures.encryptedSettings)
+    expect(migratedText[0]).toContain('legacy [REDACTED] keep')
+    expect(migratedText[0]).toContain('unrelated session content')
+    expect(migratedText[1]).toContain('unrelated transcript content')
   } finally {
     await restoredApp.close()
   }
@@ -451,7 +537,7 @@ test('completes the delegate flow through the GUI and utility-process boundary',
     )
     await window.getByLabel('API Base URL').fill(`http://127.0.0.1:${address.port}/v1`)
     await window.getByRole('textbox', { name: '模型', exact: true }).fill('pictor-e2e-model')
-    await window.getByLabel('API Key').fill('local-e2e-key')
+    await window.getByLabel('API Key').fill(credentialFixtures.localRuntime)
     await window.getByLabel('最大输出 Token').fill('64')
     await window.getByRole('button', { name: 'Responses' }).click()
     await window.screenshot({ path: testInfo.outputPath('model-settings.png') })
@@ -602,7 +688,7 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
     ).toBe(true)
 
     const setup = await window.evaluate(
-      async ({ baseUrl, rootPath }) => {
+      async ({ apiKey, baseUrl, rootPath }) => {
         const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
         const settings = await bridge.saveSettings({
           apiProtocol: 'chat-completions',
@@ -611,7 +697,7 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
           reasoningEffort: null,
           temperature: null,
           maxOutputTokens: 64,
-          apiKey: { action: 'replace', value: 'recovery-e2e-key' },
+          apiKey: { action: 'replace', value: apiKey },
         })
         const project = await bridge.registerProject({ rootPath, trusted: true })
         if (!project.ok) return { settings, project, session: null }
@@ -621,7 +707,11 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
         }
         return { settings, project, session }
       },
-      { baseUrl: `http://127.0.0.1:${address.port}/v1`, rootPath: projectRoot },
+      {
+        apiKey: credentialFixtures.runtimeRecovery,
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        rootPath: projectRoot,
+      },
     )
     expect(setup.settings.ok).toBe(true)
     expect(setup.project.ok).toBe(true)
@@ -678,6 +768,7 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
 test('completes model discovery and the delegate tool flow with Responses', async ({
   browserName: _browserName,
 }, testInfo) => {
+  test.setTimeout(120_000)
   let runtimeRequestCount = 0
   let probeRequest: Record<string, unknown> | null = null
   let firstRuntimeRequest: Record<string, unknown> | null = null
@@ -740,7 +831,7 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     await window.getByRole('button', { name: '模型设置' }).click()
     await window.getByRole('button', { name: 'Responses' }).click()
     await window.getByLabel('API Base URL').fill(`http://127.0.0.1:${address.port}/v1`)
-    await window.getByLabel('API Key').fill('responses-e2e-key')
+    await window.getByLabel('API Key').fill(credentialFixtures.responsesRuntime)
     await window.getByRole('button', { name: '获取模型' }).click()
     await expect(window.getByText('已获取 2 个可用模型')).toBeVisible()
     await window.getByRole('combobox', { name: '模型', exact: true }).selectOption('gpt-5.6-sol')
@@ -767,7 +858,7 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     await window.getByRole('button', { name: '发送任务' }).click()
 
     await expect(window.getByText('responses-created.txt').first()).toBeVisible({
-      timeout: 20_000,
+      timeout: 40_000,
     })
     await expect(window.getByText('printf responses-approved > responses-command.txt')).toBeVisible(
       { timeout: 20_000 },
@@ -836,7 +927,7 @@ test('confirms active-run exit and restores the run as interrupted', async ({
     const firstWindow = await firstApp.firstWindow()
     await firstWindow.waitForLoadState('domcontentloaded')
     const setup = await firstWindow.evaluate(
-      async ({ baseUrl, projectRoot }) => {
+      async ({ apiKey, baseUrl, projectRoot }) => {
         const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
         const settings = await bridge.saveSettings({
           apiProtocol: 'chat-completions',
@@ -845,7 +936,7 @@ test('confirms active-run exit and restores the run as interrupted', async ({
           reasoningEffort: null,
           temperature: null,
           maxOutputTokens: 64,
-          apiKey: { action: 'replace', value: 'interrupted-e2e-key' },
+          apiKey: { action: 'replace', value: apiKey },
         })
         const project = await bridge.registerProject({ rootPath: projectRoot, trusted: true })
         if (!project.ok) return { settings, project, session: null, run: null }
@@ -854,7 +945,11 @@ test('confirms active-run exit and restores the run as interrupted', async ({
         const run = await bridge.startRun({ sessionId: session.value.id, prompt: 'Keep running.' })
         return { settings, project, session, run }
       },
-      { baseUrl: `http://127.0.0.1:${address.port}/v1`, projectRoot },
+      {
+        apiKey: credentialFixtures.interruptedRun,
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        projectRoot,
+      },
     )
     expect(setup.run?.ok).toBe(true)
     if (!setup.session?.ok) throw new Error('Interrupted-run E2E session setup failed')

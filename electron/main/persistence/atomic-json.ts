@@ -15,12 +15,16 @@ export async function readJsonFile<T>(path: string, schema: z.ZodType<T>): Promi
 }
 
 export async function writeJsonFile(path: string, value: unknown): Promise<void> {
+  await writeTextFile(path, `${JSON.stringify(value, null, 2)}\n`)
+}
+
+export async function writeTextFile(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const temporaryPath = `${path}.${randomUUID()}.tmp`
   const handle = await open(temporaryPath, 'wx')
 
   try {
-    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8')
+    await handle.writeFile(content, 'utf8')
     await handle.sync()
     await handle.close()
     await rename(temporaryPath, path)
