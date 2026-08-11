@@ -91,6 +91,7 @@ export class RuntimeCoordinator {
           apiProtocol: settings.apiProtocol,
           baseUrl: settings.baseUrl,
           modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
           temperature: settings.temperature,
           maxOutputTokens: settings.maxOutputTokens,
         },

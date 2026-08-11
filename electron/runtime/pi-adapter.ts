@@ -149,6 +149,7 @@ async function createProductionSession({
   const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false })
   const api =
     config.settings.apiProtocol === 'responses' ? 'openai-responses' : 'openai-completions'
+  const reasoningEnabled = config.settings.reasoningEffort !== null
   modelRuntime.registerProvider(PROVIDER_ID, {
     name: 'Pictor OpenAI-compatible endpoint',
     api,
@@ -160,11 +161,15 @@ async function createProductionSession({
         id: config.settings.modelId,
         name: config.settings.modelId,
         api,
-        reasoning: false,
+        reasoning: reasoningEnabled,
+        ...(reasoningEnabled ? { thinkingLevelMap: { xhigh: 'xhigh', max: 'max' } } : {}),
         input: ['text'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 128_000,
         maxTokens: config.settings.maxOutputTokens ?? 8192,
+        ...(api === 'openai-completions' && reasoningEnabled
+          ? { compat: { supportsReasoningEffort: true } }
+          : {}),
         ...(config.settings.temperature === null
           ? {}
           : { samplingParams: { temperature: config.settings.temperature } }),
@@ -179,7 +184,7 @@ async function createProductionSession({
     agentDir: config.agentDirectory,
     modelRuntime,
     model,
-    thinkingLevel: 'off',
+    thinkingLevel: config.settings.reasoningEffort ?? 'off',
     tools: tools.map((tool) => tool.name),
     customTools: tools,
     resourceLoader,

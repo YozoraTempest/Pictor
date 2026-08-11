@@ -6,6 +6,8 @@ import {
   appSnapshotResultSchema,
   connectionTestIpcResultSchema,
   createSessionRequestSchema,
+  listModelsRequestSchema,
+  modelCatalogIpcResultSchema,
   projectCandidateResultSchema,
   projectIdRequestSchema,
   projectResultSchema,
@@ -74,6 +76,10 @@ const bridge = Object.freeze({
   testSettings: async (input) =>
     connectionTestIpcResultSchema.parse(
       await ipcRenderer.invoke('settings:test', testSettingsRequestSchema.parse(input)),
+    ),
+  listModels: async (input) =>
+    modelCatalogIpcResultSchema.parse(
+      await ipcRenderer.invoke('settings:list-models', listModelsRequestSchema.parse(input)),
     ),
   startRun: async (input) =>
     startRunResultSchema.parse(

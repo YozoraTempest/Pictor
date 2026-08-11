@@ -1,9 +1,11 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { mkdir, readFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
+import { createServer, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 
 import type { PictorBridge } from '../src/shared/contracts.js'
+
+process.env.PICTOR_E2E_HEADLESS = '1'
 
 const bridgeKeys = [
   'approveCommand',
@@ -13,6 +15,7 @@ const bridgeKeys = [
   'getSession',
   'getSettings',
   'getSnapshot',
+  'listModels',
   'pickProjectDirectory',
   'onRuntimeEvent',
   'registerProject',
@@ -26,6 +29,114 @@ const bridgeKeys = [
   'stopRun',
   'testSettings',
 ]
+
+function writeResponsesEvents(response: ServerResponse, events: unknown[]): void {
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    Connection: 'keep-alive',
+    'Cache-Control': 'no-cache',
+  })
+  for (const event of events) response.write(`data: ${JSON.stringify(event)}\n\n`)
+  response.end('data: [DONE]\n\n')
+}
+
+function writeResponsesToolCall(
+  response: ServerResponse,
+  responseId: string,
+  callId: string,
+  name: string,
+  args: Record<string, unknown>,
+): void {
+  const itemId = `fc_${callId}`
+  const argumentsJson = JSON.stringify(args)
+  const item = {
+    id: itemId,
+    type: 'function_call',
+    status: 'completed',
+    call_id: callId,
+    name,
+    arguments: argumentsJson,
+  }
+  writeResponsesEvents(response, [
+    { type: 'response.created', response: { id: responseId, status: 'in_progress', output: [] } },
+    {
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { ...item, status: 'in_progress', arguments: '' },
+    },
+    {
+      type: 'response.function_call_arguments.delta',
+      output_index: 0,
+      item_id: itemId,
+      delta: argumentsJson,
+    },
+    {
+      type: 'response.function_call_arguments.done',
+      output_index: 0,
+      item_id: itemId,
+      arguments: argumentsJson,
+    },
+    { type: 'response.output_item.done', output_index: 0, item },
+    {
+      type: 'response.completed',
+      response: {
+        id: responseId,
+        status: 'completed',
+        output: [item],
+        usage: {
+          input_tokens: 10,
+          input_tokens_details: { cached_tokens: 0 },
+          output_tokens: 5,
+          output_tokens_details: { reasoning_tokens: 0 },
+          total_tokens: 15,
+        },
+      },
+    },
+  ])
+}
+
+function writeResponsesText(response: ServerResponse, responseId: string, text: string): void {
+  const itemId = `msg_${responseId}`
+  const item = {
+    id: itemId,
+    type: 'message',
+    status: 'completed',
+    role: 'assistant',
+    content: [{ type: 'output_text', text, annotations: [], logprobs: [] }],
+  }
+  writeResponsesEvents(response, [
+    { type: 'response.created', response: { id: responseId, status: 'in_progress', output: [] } },
+    {
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { ...item, status: 'in_progress', content: [] },
+    },
+    {
+      type: 'response.output_text.delta',
+      output_index: 0,
+      content_index: 0,
+      item_id: itemId,
+      delta: text,
+      logprobs: [],
+    },
+    { type: 'response.output_item.done', output_index: 0, item },
+    {
+      type: 'response.completed',
+      response: {
+        id: responseId,
+        status: 'completed',
+        output: [item],
+        usage: {
+          input_tokens: 12,
+          input_tokens_details: { cached_tokens: 0 },
+          output_tokens: 8,
+          output_tokens_details: { reasoning_tokens: 0 },
+          total_tokens: 20,
+        },
+      },
+    },
+  ])
+}
 
 test('launches a sandboxed, nonblank desktop shell', async ({
   browserName: _browserName,
@@ -95,6 +206,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
       apiProtocol: 'responses',
       baseUrl: 'https://api.example.test/v1',
       modelId: 'model-e2e',
+      reasoningEffort: 'xhigh',
       temperature: 0.3,
       maxOutputTokens: 4096,
       apiKey: { action: 'replace', value: 'pictor-e2e-secret' },
@@ -106,6 +218,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
       apiProtocol: 'responses',
       baseUrl: 'https://api.example.test/v1',
       modelId: 'model-e2e',
+      reasoningEffort: 'xhigh',
       temperature: 0.3,
       maxOutputTokens: 4096,
       hasApiKey: true,
@@ -135,6 +248,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
             apiProtocol: 'responses',
             baseUrl: 'https://api.example.test/v1',
             modelId: 'model-e2e',
+            reasoningEffort: 'xhigh',
             temperature: 0.3,
             maxOutputTokens: 4096,
             hasApiKey: true,
@@ -351,10 +465,20 @@ test('completes the delegate flow through the GUI and utility-process boundary',
     await expect(window.getByText('Changed files:')).toBeVisible()
     await expect(window.getByText('已完成').last()).toBeVisible()
 
-    await electronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setContentSize(900, 620)
+    await electronApp.evaluate(async ({ BrowserWindow }) => {
+      const target = BrowserWindow.getAllWindows().find(
+        (candidate) => candidate.getTitle() === 'Pictor',
+      )
+      if (!target) throw new Error('Pictor window is unavailable')
+      target.restore()
+      target.setResizable(true)
+      target.setContentSize(900, 620)
+      await new Promise((resolveResize) => setTimeout(resolveResize, 250))
+      target.setContentSize(900, 620)
     })
-    await expect.poll(() => window.evaluate(() => globalThis.innerWidth)).toBe(900)
+    await expect
+      .poll(() => window.evaluate(() => globalThis.innerWidth), { timeout: 10_000 })
+      .toBe(900)
     const layout = await window.evaluate(() => ({
       bodyWidth: document.body.scrollWidth,
       viewportWidth: globalThis.innerWidth,
@@ -420,6 +544,127 @@ test('completes the delegate flow through the GUI and utility-process boundary',
   }
 })
 
+test('completes model discovery and the delegate tool flow with Responses', async ({
+  browserName: _browserName,
+}, testInfo) => {
+  let runtimeRequestCount = 0
+  let probeRequest: Record<string, unknown> | null = null
+  let firstRuntimeRequest: Record<string, unknown> | null = null
+  const server = createServer(async (request, response) => {
+    if (request.method === 'GET' && request.url === '/v1/models') {
+      response.writeHead(200, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ data: [{ id: 'gpt-5.6-sol' }, { id: 'gpt-4.1' }] }))
+      return
+    }
+
+    let body = ''
+    for await (const chunk of request) body += chunk.toString()
+    const parsed = JSON.parse(body) as Record<string, unknown>
+    const toolChoice = parsed.tool_choice as { name?: string } | undefined
+    if (toolChoice?.name === 'pictor_connection_test') {
+      probeRequest = parsed
+      writeResponsesToolCall(response, 'resp_probe', 'call_probe', 'pictor_connection_test', {})
+      return
+    }
+
+    runtimeRequestCount += 1
+    firstRuntimeRequest ??= parsed
+    if (runtimeRequestCount === 1) {
+      writeResponsesToolCall(response, 'resp_write', 'call_write', 'pictor_write', {
+        path: 'responses-created.txt',
+        content: 'created through Responses',
+      })
+      return
+    }
+    if (runtimeRequestCount === 2) {
+      writeResponsesToolCall(response, 'resp_command', 'call_command', 'pictor_command', {
+        command: 'printf responses-approved > responses-command.txt',
+        cwd: '.',
+        purpose: 'Verify Responses command approval',
+      })
+      return
+    }
+    writeResponsesText(
+      response,
+      'resp_final',
+      'Responses task completed.\n\nChanged files:\n- `responses-created.txt`\n- `responses-command.txt`\n\nVerification:\n- Approved command exited with code 0.\n\nRemaining work: none.',
+    )
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('E2E model server failed to bind')
+
+  const projectRoot = testInfo.outputPath('responses-runtime-project')
+  const userDataDirectory = testInfo.outputPath('responses-runtime-user-data')
+  await mkdir(projectRoot, { recursive: true })
+  const electronApp = await electron.launch({
+    args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
+    cwd: resolve('.'),
+  })
+
+  try {
+    const window = await electronApp.firstWindow()
+    await window.waitForLoadState('domcontentloaded')
+
+    await window.getByRole('button', { name: '模型设置' }).click()
+    await window.getByRole('button', { name: 'Responses' }).click()
+    await window.getByLabel('API Base URL').fill(`http://127.0.0.1:${address.port}/v1`)
+    await window.getByLabel('API Key').fill('responses-e2e-key')
+    await window.getByRole('button', { name: '获取模型' }).click()
+    await expect(window.getByText('已获取 2 个可用模型')).toBeVisible()
+    await window.getByRole('combobox', { name: '模型', exact: true }).selectOption('gpt-5.6-sol')
+    await window.getByRole('combobox', { name: '模型强度' }).selectOption('xhigh')
+    await window.getByRole('button', { name: '测试连接' }).click()
+    await expect(window.getByText('连接成功，已验证 Responses 流式工具调用')).toBeVisible()
+    await window.screenshot({ path: testInfo.outputPath('responses-settings-verified.png') })
+    await window.getByRole('button', { name: '保存设置' }).click()
+    await expect(window.getByRole('dialog')).toBeHidden()
+
+    const project = await window.evaluate(
+      async (rootPath) =>
+        (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.registerProject({
+          rootPath,
+          trusted: true,
+        }),
+      projectRoot,
+    )
+    expect(project.ok).toBe(true)
+    await window.reload()
+    await window.waitForLoadState('domcontentloaded')
+    await window.getByRole('button', { name: '新建 Session' }).first().click()
+    await window.getByRole('textbox', { name: '任务描述' }).fill('Complete a Responses task.')
+    await window.getByRole('button', { name: '发送任务' }).click()
+
+    await expect(window.getByText('responses-created.txt').first()).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(window.getByText('printf responses-approved > responses-command.txt')).toBeVisible(
+      { timeout: 20_000 },
+    )
+    expect(await readFile(join(projectRoot, 'responses-created.txt'), 'utf8')).toBe(
+      'created through Responses',
+    )
+    await window.getByRole('button', { name: '允许一次' }).click()
+    await expect(window.getByText('Responses task completed.')).toBeVisible({ timeout: 20_000 })
+    await expect(window.getByText('已完成').last()).toBeVisible()
+
+    expect(await readFile(join(projectRoot, 'responses-command.txt'), 'utf8')).toBe(
+      'responses-approved',
+    )
+    expect(probeRequest).toEqual(
+      expect.objectContaining({ reasoning: expect.objectContaining({ effort: 'xhigh' }) }),
+    )
+    expect(firstRuntimeRequest).toEqual(
+      expect.objectContaining({ reasoning: expect.objectContaining({ effort: 'xhigh' }) }),
+    )
+  } finally {
+    await electronApp.close()
+    await new Promise<void>((resolveClose, reject) =>
+      server.close((error) => (error ? reject(error) : resolveClose())),
+    )
+  }
+})
+
 test('confirms active-run exit and restores the run as interrupted', async ({
   browserName: _browserName,
 }, testInfo) => {
@@ -466,6 +711,7 @@ test('confirms active-run exit and restores the run as interrupted', async ({
           apiProtocol: 'chat-completions',
           baseUrl,
           modelId: 'pictor-e2e-model',
+          reasoningEffort: null,
           temperature: null,
           maxOutputTokens: 64,
           apiKey: { action: 'replace', value: 'interrupted-e2e-key' },

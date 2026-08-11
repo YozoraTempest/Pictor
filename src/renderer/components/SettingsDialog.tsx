@@ -1,7 +1,8 @@
-import { CheckCircle2, KeyRound, LoaderCircle, Server, Trash2 } from 'lucide-react'
+import { CheckCircle2, KeyRound, LoaderCircle, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 
 import {
+  baseUrlSchema,
   modelSettingsInputSchema,
   type ConnectionTestResult,
   type ModelSettings,
@@ -19,6 +20,7 @@ interface FormState {
   baseUrl: string
   modelId: string
   apiKey: string
+  reasoningEffort: string
   temperature: string
   maxOutputTokens: string
   clearApiKey: boolean
@@ -30,6 +32,7 @@ function createFormState(settings: ModelSettings | null): FormState {
     baseUrl: settings?.baseUrl ?? 'https://api.openai.com/v1',
     modelId: settings?.modelId ?? '',
     apiKey: '',
+    reasoningEffort: settings?.reasoningEffort ?? '',
     temperature: settings?.temperature?.toString() ?? '',
     maxOutputTokens: settings?.maxOutputTokens?.toString() ?? '',
     clearApiKey: false,
@@ -43,14 +46,18 @@ export function SettingsDialog({
 }: SettingsDialogProps): React.JSX.Element {
   const [form, setForm] = useState(() => createFormState(initial))
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState<'save' | 'test' | null>(null)
+  const [busy, setBusy] = useState<'save' | 'test' | 'models' | null>(null)
   const [feedback, setFeedback] = useState<ConnectionTestResult | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [availableModels, setAvailableModels] = useState<string[]>([])
 
   const update = (field: keyof FormState, value: string | boolean) => {
     setForm((current) => ({ ...current, [field]: value }))
     setFieldErrors((current) => ({ ...current, [field]: '' }))
     setFeedback(null)
+    if (field === 'baseUrl' || field === 'apiKey' || field === 'clearApiKey') {
+      setAvailableModels([])
+    }
   }
 
   const parseSettings = () => {
@@ -58,6 +65,7 @@ export function SettingsDialog({
       apiProtocol: form.apiProtocol,
       baseUrl: form.baseUrl,
       modelId: form.modelId,
+      reasoningEffort: form.reasoningEffort || null,
       temperature: form.temperature.trim() ? Number(form.temperature) : null,
       maxOutputTokens: form.maxOutputTokens.trim() ? Number(form.maxOutputTokens) : null,
     })
@@ -90,6 +98,38 @@ export function SettingsDialog({
     setBusy(null)
     if (response.ok) setFeedback(response.value)
     else setFormError(response.error.message)
+  }
+
+  const handleLoadModels = async () => {
+    const baseUrl = baseUrlSchema.safeParse(form.baseUrl)
+    if (!baseUrl.success) {
+      setFieldErrors((current) => ({
+        ...current,
+        baseUrl: baseUrl.error.issues[0]?.message ?? '请输入有效的 API Base URL',
+      }))
+      return
+    }
+    if (form.clearApiKey || (!form.apiKey.trim() && !initial?.hasApiKey)) {
+      setFieldErrors((current) => ({ ...current, apiKey: '请输入 API Key 以获取模型' }))
+      return
+    }
+
+    setBusy('models')
+    setFormError(null)
+    const response = await window.pictor.listModels({
+      baseUrl: baseUrl.data,
+      ...(form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
+    })
+    setBusy(null)
+    if (!response.ok) {
+      setFormError(response.error.message)
+      return
+    }
+    setAvailableModels(response.value.models)
+    if (response.value.outcome === 'success' && !form.modelId && response.value.models[0]) {
+      setForm((current) => ({ ...current, modelId: response.value.models[0] ?? current.modelId }))
+    }
+    setFeedback({ outcome: response.value.outcome, message: response.value.message })
   }
 
   const handleSave = async () => {
@@ -165,18 +205,52 @@ export function SettingsDialog({
           ) : null}
         </label>
 
-        <label className="field field--full">
-          <span>模型</span>
-          <input
-            value={form.modelId}
-            placeholder="例如 gpt-5"
-            onChange={(event) => update('modelId', event.target.value)}
-            aria-invalid={Boolean(fieldErrors.modelId)}
-          />
+        <div className="field field--full">
+          <label htmlFor="model-id">模型</label>
+          <div className="model-picker-row">
+            {availableModels.length > 0 ? (
+              <select
+                id="model-id"
+                value={form.modelId}
+                onChange={(event) => update('modelId', event.target.value)}
+                aria-invalid={Boolean(fieldErrors.modelId)}
+              >
+                {form.modelId && !availableModels.includes(form.modelId) ? (
+                  <option value={form.modelId}>{form.modelId}（当前）</option>
+                ) : null}
+                {availableModels.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="model-id"
+                value={form.modelId}
+                placeholder="例如 gpt-5.6-sol"
+                onChange={(event) => update('modelId', event.target.value)}
+                aria-invalid={Boolean(fieldErrors.modelId)}
+              />
+            )}
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={handleLoadModels}
+              disabled={busy !== null}
+            >
+              {busy === 'models' ? (
+                <LoaderCircle className="spin" size={14} />
+              ) : (
+                <RefreshCw size={14} />
+              )}
+              获取模型
+            </button>
+          </div>
           {fieldErrors.modelId ? (
             <small className="field-error">{fieldErrors.modelId}</small>
           ) : null}
-        </label>
+        </div>
 
         <label className="field field--full">
           <span>API Key</span>
@@ -208,6 +282,22 @@ export function SettingsDialog({
           {form.clearApiKey ? (
             <small className="field-warning">保存后将删除已加密凭据。</small>
           ) : null}
+        </label>
+
+        <label className="field">
+          <span>模型强度</span>
+          <select
+            value={form.reasoningEffort}
+            onChange={(event) => update('reasoningEffort', event.target.value)}
+          >
+            <option value="">服务端默认</option>
+            <option value="minimal">最低（minimal）</option>
+            <option value="low">低（low）</option>
+            <option value="medium">中（medium）</option>
+            <option value="high">高（high）</option>
+            <option value="xhigh">超高（xhigh）</option>
+            <option value="max">最高（max）</option>
+          </select>
         </label>
 
         <label className="field">

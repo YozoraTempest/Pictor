@@ -11,8 +11,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 - 列出、搜索、读取、创建、编辑、移动和删除项目内文件；
 - 在显示完整命令、工作目录和用途后，允许一次或拒绝 Git Bash 命令；
 - 展示 Markdown 回复、工具状态、命令输出、错误、停止和中断状态；
-- 配置 Chat Completions 或 Responses 兼容模式、API Base URL、模型标识、API Key、温度和
-  最大输出 Token 数。
+- 配置 Chat Completions 或 Responses 兼容模式、API Base URL、模型标识、API Key、模型
+  推理强度、温度和最大输出 Token 数；支持从兼容的 `/models` 端点获取并选择模型。
 
 首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、插件、远程项目、WSL、
 容器以及 macOS/Linux 打包不在当前范围内。
@@ -34,7 +34,9 @@ npm run dev
 首次启动后，在“模型设置”中选择兼容模式并保存 API Base URL、模型标识和 API Key，再
 添加本地项目并创建 Session。API Base URL 应填写 API 根地址（例如
 `https://api.example.com/v1`）；Pictor 会按兼容模式追加 `/chat/completions` 或
-`/responses`。远程端点必须使用 HTTPS；本机回环地址可以使用 HTTP。
+`/responses`，并从 `/models` 获取模型列表。远程端点必须使用 HTTPS；本机回环地址可以
+使用 HTTP。连接测试会解析实际 SSE 事件并强制执行一次无副作用函数调用，用于验证端点
+同时支持所选协议、流式响应和工具调用。
 
 ## 验证
 
@@ -52,7 +54,8 @@ npm run package:dir
 
 `npm run package:dir` 生成 `dist/win-unpacked/Pictor.exe`。Electron E2E 使用本地确定性
 OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、命令审批、取消、凭据重启、
-活动运行关闭确认和中断恢复，不需要外部模型凭据。
+活动运行关闭确认和中断恢复，不需要外部模型凭据。E2E 默认隐藏 Electron 窗口并在后台
+运行，不影响截图和交互验证。
 
 ## 本地数据与安全边界
 

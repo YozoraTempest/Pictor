@@ -1235,11 +1235,13 @@ textarea:disabled {
 }
 
 .field input,
+.field select,
 .input-with-icon {
   width: 100%;
 }
 
-.field input {
+.field input,
+.field select {
   height: 35px;
   min-width: 0;
   padding: 0 10px;
@@ -1252,7 +1254,12 @@ textarea:disabled {
   font-weight: 400;
 }
 
-.field input:focus {
+.field select {
+  padding-right: 30px;
+}
+
+.field input:focus,
+.field select:focus {
   border-color: #578d7e;
 }
 
@@ -1285,6 +1292,23 @@ textarea:disabled {
 .credential-row .input-with-icon {
   min-width: 0;
   flex: 1;
+}
+
+.model-picker-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-picker-row input,
+.model-picker-row select {
+  min-width: 0;
+  flex: 1;
+}
+
+.model-picker-row .secondary-button {
+  flex: 0 0 auto;
 }
 
 .field-error,

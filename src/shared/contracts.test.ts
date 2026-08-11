@@ -9,6 +9,7 @@ describe('modelSettingsInputSchema', () => {
       const result = modelSettingsInputSchema.safeParse({
         baseUrl,
         modelId: 'model-1',
+        reasoningEffort: null,
         temperature: null,
         maxOutputTokens: null,
       })
@@ -23,6 +24,7 @@ describe('modelSettingsInputSchema', () => {
         apiProtocol,
         baseUrl: 'https://api.example.test/v1',
         modelId: 'model-1',
+        reasoningEffort: 'high',
         temperature: null,
         maxOutputTokens: null,
       }).success,
@@ -33,9 +35,25 @@ describe('modelSettingsInputSchema', () => {
     const result = modelSettingsInputSchema.safeParse({
       baseUrl: 'http://api.example.test/v1',
       modelId: 'model-1',
+      reasoningEffort: null,
       temperature: null,
       maxOutputTokens: null,
     })
     expect(result.success).toBe(false)
   })
+
+  it.each(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const)(
+    'accepts reasoning effort %s',
+    (reasoningEffort) => {
+      expect(
+        modelSettingsInputSchema.safeParse({
+          baseUrl: 'https://api.example.test/v1',
+          modelId: 'gpt-5.6-sol',
+          reasoningEffort,
+          temperature: null,
+          maxOutputTokens: null,
+        }).success,
+      ).toBe(true)
+    },
+  )
 })

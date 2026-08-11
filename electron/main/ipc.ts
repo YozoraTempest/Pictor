@@ -7,6 +7,7 @@ import {
   appInfoSchema,
   approvalResolutionRequestSchema,
   createSessionRequestSchema,
+  listModelsRequestSchema,
   projectIdRequestSchema,
   registerProjectRequestSchema,
   relinkProjectRequestSchema,
@@ -169,6 +170,18 @@ export function registerIpc(dependencies: IpcDependencies): void {
         throw new PictorError('invalid-input', '请输入 API Key，或先保存一个可用凭据', 'apiKey')
       }
       return connectionTester.test(request, apiKey)
+    })
+  })
+
+  ipcMain.handle('settings:list-models', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return result(async () => {
+      const request = listModelsRequestSchema.parse(input)
+      const apiKey = request.apiKey ?? (await repository.getApiKey())
+      if (!apiKey) {
+        throw new PictorError('invalid-input', '请输入 API Key，或先保存一个可用凭据', 'apiKey')
+      }
+      return connectionTester.listModels(request.baseUrl, apiKey)
     })
   })
 

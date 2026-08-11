@@ -53,6 +53,8 @@ function createBridge(
     getSettings: async () => ok(snapshot.settings),
     saveSettings: async () => ok(snapshot.settings!),
     testSettings: async () => ok({ outcome: 'success', message: '连接成功' }),
+    listModels: async () =>
+      ok({ outcome: 'success', message: '已获取 1 个可用模型', models: ['gpt-5.6-sol'] }),
     startRun: async () => ok({ runId }),
     approveCommand,
     rejectCommand: async () => ok(null),
@@ -81,6 +83,7 @@ it('saves the selected Responses compatibility mode', async () => {
       apiProtocol: request.apiProtocol,
       baseUrl: request.baseUrl,
       modelId: request.modelId,
+      reasoningEffort: request.reasoningEffort,
       temperature: request.temperature,
       maxOutputTokens: request.maxOutputTokens,
       hasApiKey: false,
@@ -97,13 +100,46 @@ it('saves the selected Responses compatibility mode', async () => {
   fireEvent.change(screen.getByRole('textbox', { name: '模型' }), {
     target: { value: 'gpt-5.6-sol' },
   })
+  fireEvent.change(screen.getByRole('combobox', { name: '模型强度' }), {
+    target: { value: 'xhigh' },
+  })
   fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
 
   await waitFor(() =>
     expect(saveSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ apiProtocol: 'responses', modelId: 'gpt-5.6-sol' }),
+      expect.objectContaining({
+        apiProtocol: 'responses',
+        modelId: 'gpt-5.6-sol',
+        reasoningEffort: 'xhigh',
+      }),
     ),
   )
+})
+
+it('fetches and selects a model from the compatible endpoint', async () => {
+  const snapshot = emptySnapshot()
+  const listModels = vi.fn(async () =>
+    ok({
+      outcome: 'success' as const,
+      message: '已获取 2 个可用模型',
+      models: ['gpt-4.1', 'gpt-5.6-sol'],
+    }),
+  )
+  installBridge({ ...createBridge(snapshot), listModels })
+  render(<App />)
+
+  await screen.findByRole('heading', { name: '选择一个项目开始' })
+  fireEvent.click(screen.getByRole('button', { name: '模型设置' }))
+  fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'temporary-key' } })
+  fireEvent.click(screen.getByRole('button', { name: '获取模型' }))
+
+  const availableModels = await screen.findByRole('combobox', { name: '模型' })
+  fireEvent.change(availableModels, { target: { value: 'gpt-5.6-sol' } })
+  expect(availableModels).toHaveValue('gpt-5.6-sol')
+  expect(listModels).toHaveBeenCalledWith({
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: 'temporary-key',
+  })
 })
 
 it('renders an exact command approval and allows it once', async () => {
@@ -135,6 +171,7 @@ it('renders an exact command approval and allows it once', async () => {
       apiProtocol: 'chat-completions',
       baseUrl: 'https://api.example.test/v1',
       modelId: 'model-test',
+      reasoningEffort: null,
       temperature: null,
       maxOutputTokens: null,
       hasApiKey: true,

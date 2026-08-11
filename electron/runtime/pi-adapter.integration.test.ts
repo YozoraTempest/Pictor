@@ -13,11 +13,16 @@ import { PiAgentRuntime } from './pi-adapter.js'
 let server: Server
 let baseUrl: string
 let testRoot: string
+let lastRequestBody: Record<string, unknown>
 
 beforeEach(async () => {
   testRoot = await mkdtemp(join(tmpdir(), 'pictor-pi-runtime-'))
   await mkdir(join(testRoot, 'project'))
-  server = createServer((request, response) => {
+  lastRequestBody = {}
+  server = createServer(async (request, response) => {
+    let requestBody = ''
+    for await (const chunk of request) requestBody += chunk.toString()
+    lastRequestBody = JSON.parse(requestBody) as Record<string, unknown>
     response.writeHead(200, {
       'Content-Type': 'text/event-stream',
       Connection: 'keep-alive',
@@ -139,6 +144,7 @@ it('streams normalized text events through the real Pi SDK', async () => {
       apiProtocol: 'chat-completions',
       baseUrl,
       modelId: 'pictor-test-model',
+      reasoningEffort: 'high',
       temperature: 0.1,
       maxOutputTokens: 64,
     },
@@ -155,6 +161,7 @@ it('streams normalized text events through the real Pi SDK', async () => {
   expect(events.at(-1)).toEqual(
     expect.objectContaining({ type: 'run.stateChanged', status: 'completed' }),
   )
+  expect(lastRequestBody.reasoning_effort).toBe('high')
 }, 20_000)
 
 it('streams Responses API events through the real Pi SDK', async () => {
@@ -172,6 +179,7 @@ it('streams Responses API events through the real Pi SDK', async () => {
       apiProtocol: 'responses',
       baseUrl,
       modelId: 'pictor-test-model',
+      reasoningEffort: 'xhigh',
       temperature: null,
       maxOutputTokens: 64,
     },
@@ -191,4 +199,5 @@ it('streams Responses API events through the real Pi SDK', async () => {
   expect(events.at(-1)).toEqual(
     expect.objectContaining({ type: 'run.stateChanged', status: 'completed' }),
   )
+  expect(lastRequestBody.reasoning).toEqual(expect.objectContaining({ effort: 'xhigh' }))
 }, 20_000)

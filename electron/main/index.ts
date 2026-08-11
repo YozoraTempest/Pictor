@@ -69,6 +69,7 @@ function validateSender(frame: WebFrameMain | null): void {
 
 function createMainWindow(runtimeCoordinator: RuntimeCoordinator): BrowserWindow {
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
+  const shouldShowWindow = app.isPackaged || process.env.PICTOR_E2E_HEADLESS !== '1'
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -89,7 +90,7 @@ function createMainWindow(runtimeCoordinator: RuntimeCoordinator): BrowserWindow
       event.preventDefault()
     }
   })
-  window.once('ready-to-show', () => window.show())
+  if (shouldShowWindow) window.once('ready-to-show', () => window.show())
   let closeConfirmed = false
   window.on('close', (event) => {
     if (closeConfirmed || !runtimeCoordinator.isActive()) return

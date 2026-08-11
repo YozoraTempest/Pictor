@@ -330,6 +330,7 @@ export class AppRepository {
       apiProtocol: request.apiProtocol,
       baseUrl: request.baseUrl.replace(/\/+$/, ''),
       modelId: request.modelId,
+      reasoningEffort: request.reasoningEffort,
       temperature: request.temperature,
       maxOutputTokens: request.maxOutputTokens,
     })
