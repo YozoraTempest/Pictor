@@ -57,6 +57,11 @@ E2E；`tsconfig.web.json` 只覆盖 Renderer、Shared 和 Web 测试基础设施
 集中在内部 `SessionPersistence` module；它直接使用本地文件系统和现有凭据迁移函数，不增加
 通用 Repository、DAO 或存储 provider。相关测试通过真实临时目录验证该 module 的可观察行为。
 
+Renderer 的 `App` 只负责页面布局、Settings 和界面级 modal 编排。内部
+`useWorkspaceController` 通过注入的 `PictorBridge` 管理 workspace snapshot、当前 Session、导航
+竞态、Runtime event reconcile 与 Run/Project/Session intent；测试使用窄 bridge fake 直接验证
+异步状态和事件顺序。不要在 UI 组件中重新实现刷新顺序，也不要为此引入第二套全局 store。
+
 ## 新代码放置
 
 - Electron 生命周期、窗口、安全、更新或 IPC adapter：`src/main/`。

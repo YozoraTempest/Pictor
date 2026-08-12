@@ -1,25 +1,21 @@
 import { AlertTriangle, FolderOpen, LoaderCircle, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import type { Project, SessionRecord, SessionSummary } from '../shared/domain'
-import type { AppInfo, AppSnapshot, ProjectCandidate } from '../shared/desktop-bridge'
-import type { IpcError } from '../shared/errors'
+import type { Project, SessionSummary } from '../shared/domain'
+import type { AppInfo } from '../shared/desktop-bridge'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { Modal } from './ui/Modal'
 import { Conversation } from './workspace/Conversation'
 import { Sidebar } from './workspace/Sidebar'
-
-const activeStatuses = new Set(['queued', 'running', 'awaiting-approval', 'stopping'])
+import {
+  useWorkspaceController,
+  type WorkspaceTrustRequest,
+} from './workspace/use-workspace-controller'
 
 type Confirmation =
   | { type: 'remove-project'; project: Project }
   | { type: 'delete-session'; session: SessionSummary }
   | null
-
-interface TrustRequest {
-  candidate: ProjectCandidate
-  relinkProjectId: string | null
-}
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error) return String(error.message)
@@ -27,303 +23,82 @@ function errorMessage(error: unknown): string {
 }
 
 export function App(): React.JSX.Element {
+  const workspace = useWorkspaceController(window.pictor)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
-  const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null)
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-  const [session, setSession] = useState<SessionRecord | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [sessionLoading, setSessionLoading] = useState(false)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [appInfoLoading, setAppInfoLoading] = useState(true)
+  const [appInfoError, setAppInfoError] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [trustRequest, setTrustRequest] = useState<TrustRequest | null>(null)
+  const [trustRequest, setTrustRequest] = useState<WorkspaceTrustRequest | null>(null)
   const [confirmation, setConfirmation] = useState<Confirmation>(null)
   const [renameTarget, setRenameTarget] = useState<SessionSummary | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [modalBusy, setModalBusy] = useState(false)
-  const [approvalBusyCallId, setApprovalBusyCallId] = useState<string | null>(null)
-  const sessionRequestId = useRef(0)
-
-  const applySnapshot = useCallback((value: AppSnapshot) => {
-    setSnapshot(value)
-    setSelectedProjectId(value.selectedProjectId)
-    setSelectedSessionId(value.selectedSessionId)
-  }, [])
-
-  const refreshSnapshot = useCallback(async () => {
-    const response = await window.pictor.getSnapshot()
-    if (!response.ok) throw response.error
-    applySnapshot(response.value)
-    return response.value
-  }, [applySnapshot])
-
-  const loadSession = useCallback(async (sessionId: string | null, showLoading = true) => {
-    const requestId = ++sessionRequestId.current
-    if (!sessionId) {
-      setSession(null)
-      setSessionLoading(false)
-      return
-    }
-    if (showLoading) setSessionLoading(true)
-    const response = await window.pictor.getSession({ sessionId })
-    if (requestId !== sessionRequestId.current) return
-    if (response.ok) {
-      setSession(response.value)
-      setActionError(null)
-    } else {
-      setSession(null)
-      setActionError(response.error.message)
-    }
-    setSessionLoading(false)
-  }, [])
 
   useEffect(() => {
     let active = true
-    void Promise.all([window.pictor.getAppInfo(), window.pictor.getSnapshot()])
-      .then(([info, response]) => {
-        if (!active) return
-        setAppInfo(info)
-        if (!response.ok) throw response.error
-        applySnapshot(response.value)
-        return loadSession(response.value.selectedSessionId)
+    void window.pictor
+      .getAppInfo()
+      .then((value) => {
+        if (active) setAppInfo(value)
       })
       .catch((error: unknown) => {
-        if (active) setLoadError(errorMessage(error))
+        if (active) setAppInfoError(errorMessage(error))
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (active) setAppInfoLoading(false)
       })
     return () => {
       active = false
     }
-  }, [applySnapshot, loadSession])
-
-  useEffect(() => {
-    return window.pictor.onRuntimeEvent((event) => {
-      if (event.sessionId === selectedSessionId && event.type === 'message.delta') {
-        setSession((current) =>
-          current
-            ? {
-                ...current,
-                messages: current.messages.map((message) =>
-                  message.id === event.messageId
-                    ? { ...message, content: message.content + event.delta, updatedAt: event.at }
-                    : message,
-                ),
-              }
-            : current,
-        )
-      } else if (event.sessionId === selectedSessionId && event.type === 'tool.updated') {
-        setSession((current) =>
-          current
-            ? {
-                ...current,
-                runs: current.runs.map((run) =>
-                  run.id === event.runId
-                    ? {
-                        ...run,
-                        toolEvents: run.toolEvents.map((tool) =>
-                          tool.callId === event.callId
-                            ? { ...tool, output: event.output, updatedAt: event.at }
-                            : tool,
-                        ),
-                      }
-                    : run,
-                ),
-              }
-            : current,
-        )
-      } else {
-        if (event.sessionId === selectedSessionId) {
-          void loadSession(event.sessionId, false).catch((error: unknown) =>
-            setActionError(errorMessage(error)),
-          )
-        }
-      }
-      if (event.type !== 'message.delta' && event.type !== 'tool.updated') {
-        void refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error)))
-      }
-    })
-  }, [loadSession, refreshSnapshot, selectedSessionId])
-
-  const projects = snapshot?.projects ?? []
-  const sessions = snapshot?.sessions ?? []
-  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null
-  const activeSessionSummary = sessions.find((candidate) =>
-    activeStatuses.has(candidate.lastRunStatus ?? ''),
-  )
-  const lastRun = session?.runs.at(-1) ?? null
-  const selectedRunIsActive = Boolean(lastRun && activeStatuses.has(lastRun.status))
-  const anotherSessionRunning = Boolean(
-    activeSessionSummary && activeSessionSummary.id !== selectedSessionId,
-  )
-  const draft = selectedSessionId ? (drafts[selectedSessionId] ?? '') : ''
-
-  const disabledReason = useMemo(() => {
-    if (!selectedProject || !session) return '请先选择一个 Session'
-    if (selectedProject.availability !== 'available') return '项目目录不可用'
-    if (!snapshot?.settings?.hasApiKey) return '模型 API 尚未配置'
-    if (selectedRunIsActive) return '当前 Agent 正在运行'
-    if (anotherSessionRunning) return '另一个 Session 正在运行'
-    return null
-  }, [anotherSessionRunning, selectedProject, selectedRunIsActive, session, snapshot?.settings])
-
-  const selectProject = async (projectId: string) => {
-    setActionError(null)
-    const response = await window.pictor.selectContext({ projectId, sessionId: null })
-    if (!response.ok) return setActionError(response.error.message)
-    setSelectedProjectId(projectId)
-    setSelectedSessionId(null)
-    setSession(null)
-    await refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error)))
-  }
-
-  const selectSession = async (projectId: string, sessionId: string) => {
-    setActionError(null)
-    setSelectedProjectId(projectId)
-    setSelectedSessionId(sessionId)
-    setSessionLoading(true)
-    const response = await window.pictor.selectContext({ projectId, sessionId })
-    if (!response.ok) {
-      setSessionLoading(false)
-      return setActionError(response.error.message)
-    }
-    await Promise.all([
-      loadSession(sessionId),
-      refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error))),
-    ])
-  }
+  }, [])
 
   const pickProject = async (relinkProjectId: string | null = null) => {
-    setActionError(null)
-    const response = await window.pictor.pickProjectDirectory()
-    if (!response.ok) return setActionError(response.error.message)
-    if (!response.value) return
-    if (response.value.existingProjectId) {
-      if (relinkProjectId && response.value.existingProjectId !== relinkProjectId) {
-        return setActionError('该目录已属于另一个项目，请选择不同目录')
-      }
-      await selectProject(response.value.existingProjectId)
-      return
-    }
-    setTrustRequest({ candidate: response.value, relinkProjectId })
+    const request = await workspace.pickProject(relinkProjectId)
+    if (request) setTrustRequest(request)
   }
 
   const confirmTrust = async () => {
     if (!trustRequest) return
     setModalBusy(true)
-    const request = {
-      rootPath: trustRequest.candidate.rootPath,
-      trusted: true as const,
-    }
-    const response = trustRequest.relinkProjectId
-      ? await window.pictor.relinkProject({ ...request, projectId: trustRequest.relinkProjectId })
-      : await window.pictor.registerProject(request)
+    const completed = await workspace.trustProject(trustRequest)
     setModalBusy(false)
-    if (!response.ok) return setActionError(response.error.message)
-    setTrustRequest(null)
-    await selectProject(response.value.id)
-  }
-
-  const createSession = async (projectId: string) => {
-    setActionError(null)
-    const response = await window.pictor.createSession({ projectId })
-    if (!response.ok) return setActionError(response.error.message)
-    await selectSession(projectId, response.value.id)
-  }
-
-  const startRun = async () => {
-    if (!selectedSessionId || !draft.trim() || disabledReason) return
-    setActionError(null)
-    const prompt = draft.trim()
-    const response = await window.pictor.startRun({ sessionId: selectedSessionId, prompt })
-    if (!response.ok) return setActionError(response.error.message)
-    setDrafts((current) => ({ ...current, [selectedSessionId]: '' }))
-    await Promise.all([
-      loadSession(selectedSessionId, false),
-      refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error))),
-    ])
-  }
-
-  const stopRun = async (runId: string) => {
-    setActionError(null)
-    setSession((current) =>
-      current
-        ? {
-            ...current,
-            runs: current.runs.map((run) =>
-              run.id === runId ? { ...run, status: 'stopping' as const } : run,
-            ),
-          }
-        : current,
-    )
-    const response = await window.pictor.stopRun({ runId })
-    if (!response.ok) setActionError(response.error.message)
-  }
-
-  const resolveApproval = async (runId: string, callId: string, allowed: boolean) => {
-    setApprovalBusyCallId(callId)
-    setActionError(null)
-    const response = allowed
-      ? await window.pictor.approveCommand({ runId, callId })
-      : await window.pictor.rejectCommand({ runId, callId })
-    setApprovalBusyCallId(null)
-    if (!response.ok) setActionError(response.error.message)
-  }
-
-  const confirmDestructiveAction = async () => {
-    if (!confirmation) return
-    setModalBusy(true)
-    let response: { ok: boolean; error?: IpcError }
-    if (confirmation.type === 'remove-project') {
-      response = await window.pictor.removeProject({ projectId: confirmation.project.id })
-    } else {
-      response = await window.pictor.deleteSession({ sessionId: confirmation.session.id })
-    }
-    setModalBusy(false)
-    if (!response.ok) return setActionError(response.error?.message ?? '删除失败')
-    setConfirmation(null)
-    setSession(null)
-    await refreshSnapshot()
-      .then((value) => loadSession(value.selectedSessionId))
-      .catch((error: unknown) => setActionError(errorMessage(error)))
+    if (completed) setTrustRequest(null)
   }
 
   const requestDestructiveAction = (next: Exclude<Confirmation, null>) => {
     const targetSessionId = next.type === 'delete-session' ? next.session.id : null
     const targetProjectId = next.type === 'remove-project' ? next.project.id : null
     if (
-      activeSessionSummary &&
-      (activeSessionSummary.id === targetSessionId ||
-        activeSessionSummary.projectId === targetProjectId)
+      workspace.activeSessionSummary &&
+      (workspace.activeSessionSummary.id === targetSessionId ||
+        workspace.activeSessionSummary.projectId === targetProjectId)
     ) {
-      setActionError('请先停止该项目中正在进行的 Agent 运行')
+      workspace.reportActionError('请先停止该项目中正在进行的 Agent 运行')
       return
     }
     setConfirmation(next)
   }
 
+  const confirmDestructiveAction = async () => {
+    if (!confirmation) return
+    setModalBusy(true)
+    const completed =
+      confirmation.type === 'remove-project'
+        ? await workspace.removeProject(confirmation.project.id)
+        : await workspace.deleteSession(confirmation.session.id)
+    setModalBusy(false)
+    if (completed) setConfirmation(null)
+  }
+
   const saveRename = async () => {
     if (!renameTarget || !renameValue.trim()) return
     setModalBusy(true)
-    const response = await window.pictor.renameSession({
-      sessionId: renameTarget.id,
-      title: renameValue.trim(),
-    })
+    const completed = await workspace.renameSession(renameTarget.id, renameValue.trim())
     setModalBusy(false)
-    if (!response.ok) return setActionError(response.error.message)
-    setRenameTarget(null)
-    await Promise.all([
-      refreshSnapshot(),
-      selectedSessionId === response.value.id
-        ? loadSession(response.value.id, false)
-        : Promise.resolve(),
-    ])
+    if (completed) setRenameTarget(null)
   }
 
-  if (loading) {
+  if (workspace.loading || appInfoLoading) {
     return (
       <main className="app-loading">
         <LoaderCircle className="spin" size={22} />
@@ -332,7 +107,8 @@ export function App(): React.JSX.Element {
     )
   }
 
-  if (loadError || !snapshot) {
+  const loadError = workspace.loadError ?? appInfoError
+  if (loadError || !workspace.snapshot) {
     return (
       <main className="fatal-state">
         <AlertTriangle size={26} />
@@ -348,16 +124,18 @@ export function App(): React.JSX.Element {
   return (
     <main className="app-shell">
       <Sidebar
-        projects={projects}
-        sessions={sessions}
-        selectedProjectId={selectedProjectId}
-        selectedSessionId={selectedSessionId}
+        projects={workspace.projects}
+        sessions={workspace.sessions}
+        selectedProjectId={workspace.selectedProjectId}
+        selectedSessionId={workspace.selectedSessionId}
         onAddProject={() => void pickProject()}
-        onSelectProject={(id) => void selectProject(id)}
+        onSelectProject={(id) => void workspace.selectProject(id)}
         onRemoveProject={(project) => requestDestructiveAction({ type: 'remove-project', project })}
         onRelinkProject={(project) => void pickProject(project.id)}
-        onCreateSession={(id) => void createSession(id)}
-        onSelectSession={(projectId, sessionId) => void selectSession(projectId, sessionId)}
+        onCreateSession={(id) => void workspace.createSession(id)}
+        onSelectSession={(projectId, sessionId) =>
+          void workspace.selectSession(projectId, sessionId)
+        }
         onRenameSession={(target) => {
           setRenameTarget(target)
           setRenameValue(target.title)
@@ -369,25 +147,23 @@ export function App(): React.JSX.Element {
       />
 
       <Conversation
-        project={selectedProject}
-        session={session}
-        loading={sessionLoading}
-        draft={draft}
+        project={workspace.selectedProject}
+        session={workspace.session}
+        loading={workspace.sessionLoading}
+        draft={workspace.draft}
         appVersion={appInfo?.version ?? null}
-        disabledReason={disabledReason}
-        activeRun={lastRun}
-        anotherSessionRunning={anotherSessionRunning}
-        actionError={actionError ?? snapshot.issues[0]?.message ?? null}
-        approvalBusyCallId={approvalBusyCallId}
-        onDraftChange={(value) =>
-          selectedSessionId && setDrafts((current) => ({ ...current, [selectedSessionId]: value }))
-        }
-        onSend={() => void startRun()}
-        onStop={(runId) => void stopRun(runId)}
-        onApprove={(runId, callId) => void resolveApproval(runId, callId, true)}
-        onReject={(runId, callId) => void resolveApproval(runId, callId, false)}
+        disabledReason={workspace.disabledReason}
+        activeRun={workspace.activeRun}
+        anotherSessionRunning={workspace.anotherSessionRunning}
+        actionError={workspace.actionError ?? workspace.snapshot.issues[0]?.message ?? null}
+        approvalBusyCallId={workspace.approvalBusyCallId}
+        onDraftChange={workspace.setDraft}
+        onSend={() => void workspace.startRun()}
+        onStop={(runId) => void workspace.stopRun(runId)}
+        onApprove={(runId, callId) => void workspace.resolveApproval(runId, callId, true)}
+        onReject={(runId, callId) => void workspace.resolveApproval(runId, callId, false)}
         onAddProject={() => void pickProject()}
-        onCreateSession={(id) => void createSession(id)}
+        onCreateSession={(id) => void workspace.createSession(id)}
         onOpenSettings={() => setSettingsOpen(true)}
         onRelinkProject={(project) => void pickProject(project.id)}
       />
@@ -395,11 +171,9 @@ export function App(): React.JSX.Element {
       {settingsOpen ? (
         <SettingsDialog
           appInfo={appInfo}
-          initial={snapshot.settings}
+          initial={workspace.snapshot.settings}
           onClose={() => setSettingsOpen(false)}
-          onSaved={(settings) =>
-            setSnapshot((current) => (current ? { ...current, settings } : current))
-          }
+          onSaved={workspace.applySettings}
         />
       ) : null}
 
