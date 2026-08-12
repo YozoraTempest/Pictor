@@ -157,3 +157,4 @@ export {
   saveSettingsRequestSchema,
   testSettingsRequestSchema,
 }
+export type { RuntimeEvent } from './runtime-protocol.js'

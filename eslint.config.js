@@ -92,8 +92,15 @@ export default tseslint.config(
           ],
           patterns: [
             {
-              group: ['node:*', '**/main/**', '**/preload/**', '**/runtime/**'],
-              message: 'Renderer modules cannot depend on Node or another process implementation.',
+              group: [
+                'node:*',
+                '**/main/**',
+                '**/preload/**',
+                '**/runtime/**',
+                '**/shared/runtime-protocol*',
+              ],
+              message:
+                'Renderer modules must use the desktop bridge instead of Node or another process boundary.',
             },
           ],
         },

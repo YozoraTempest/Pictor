@@ -2,8 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import type { SessionRecord } from '../shared/domain'
-import type { AppSnapshot, IpcResult, PictorBridge } from '../shared/desktop-bridge'
-import type { RuntimeEvent } from '../shared/runtime-protocol'
+import type { AppSnapshot, IpcResult, PictorBridge, RuntimeEvent } from '../shared/desktop-bridge'
 import { App } from './App'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
