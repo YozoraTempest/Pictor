@@ -28,7 +28,7 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 
 ## 安装与卸载
 
-0.1.0 提供 Windows x64 NSIS 安装程序：`Pictor-0.1.0-windows-x64-setup.exe`。运行安装程序，
+0.1.1 提供 Windows x64 NSIS 安装程序：`Pictor-0.1.1-windows-x64-setup.exe`。运行安装程序，
 按向导选择安装位置即可；安装程序会创建桌面和开始菜单快捷方式。安装完成后可从任一快捷
 方式启动 Pictor。
 
@@ -88,7 +88,7 @@ OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、命令�
 
 ## 已知限制
 
-- 0.1.0 的 Windows 安装程序和应用可执行文件未签名；应用图标仍使用 Electron 默认图标。
+- 0.1.1 的 Windows 安装程序和应用可执行文件未签名；应用图标仍使用 Electron 默认图标。
 - 已完成的 Windows RC1 安装、启动和卸载验收运行在非净 Windows 开发机上，虽然安装位置和
   首次运行数据均已隔离并在验收后清理；尚未取得净机安装证据。
 - Chat Completions 和 Responses 均由本地确定性 OpenAI 兼容端点覆盖。尚未用真实第三方
