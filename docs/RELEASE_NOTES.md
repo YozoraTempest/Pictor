@@ -7,7 +7,7 @@ Pictor 0.1.0 是 Windows x64 MVP。它提供本地项目和持久化 Session、P
 Completions 与 Responses、`/models` 模型发现和可选推理强度。发布物为 NSIS 安装程序和
 解包应用；验收已验证 x64 产物、静默安装、安装后启动和静默卸载。
 
-验收还通过了格式检查、完整构建、64 个单元/集成测试和 6 个隐藏 Electron E2E 测试。E2E
+验收还通过了格式检查、完整构建、95 个单元/集成测试和 6 个隐藏 Electron E2E 测试。E2E
 使用本地确定性 OpenAI 兼容服务，并未使用真实第三方 API Key。
 
 ### 已知风险
