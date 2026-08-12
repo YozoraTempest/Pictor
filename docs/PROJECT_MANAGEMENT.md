@@ -5,8 +5,10 @@ Pictor 使用轻量双分支模型。GitHub Issues 记录可交付工作，Pull 
 
 ## 分支
 
-- `main`：稳定发布分支，只接受来自 `develop` 的发布 Pull Request；每次合并都会触发正式发布。
-- `develop`：默认集成分支，日常功能、修复和维护 Pull Request 均以它为目标。
+- `main`：GitHub 默认分支和稳定发布分支，只接受来自 `develop` 的发布 Pull Request；每次合并
+  都会触发正式发布。默认分支用于展示和克隆稳定代码，不是普通贡献的合并目标。
+- `develop`：日常集成分支，功能、修复和维护 Pull Request 均以它为目标；在 GitHub 创建普通
+  Pull Request 时必须主动将 base 分支改为 `develop`。
 - 短期分支：从 `develop` 创建，使用 `feature/<topic>`、`fix/<topic>`、`docs/<topic>` 或
   `ci/<topic>` 命名，合并后删除。
 - `hotfix/<topic>`：仅用于已发布版本的紧急修复，从 `main` 创建并直接向 `main` 提交 Pull
