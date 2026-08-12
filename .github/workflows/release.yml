@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install --global npm@11.17.0
+      - run: npm ci
+      - name: Read and validate release metadata
+        id: metadata
+        run: node scripts/prepare-release.mjs
+      - name: Reject an existing version tag
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          $remoteTag = git ls-remote --tags origin "refs/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to query remote tags"
+          }
+          if ($remoteTag) {
+            throw "Release tag $env:RELEASE_TAG already exists. Bump the version before merging to main."
+          }
+      - run: npm run deps:prepare
+      - run: npm run deps:verify
+      - run: npm run verify:release
+      - name: Prepare release asset
+        id: asset
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RELEASE_NOTES_PATH: ${{ steps.metadata.outputs.notes_path }}
+        run: |
+          $installer = Join-Path $PWD "dist/Pictor-$env:RELEASE_VERSION-windows-x64-setup.exe"
+          $digest = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+          Add-Content -LiteralPath $env:RELEASE_NOTES_PATH -Value "`n安装程序 SHA-256：``$digest``"
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+          "sha256=$digest" >> $env:GITHUB_OUTPUT
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RELEASE_NOTES_PATH: ${{ steps.metadata.outputs.notes_path }}
+          RELEASE_INSTALLER: ${{ steps.asset.outputs.installer }}
+        run: |
+          gh release create $env:RELEASE_TAG $env:RELEASE_INSTALLER `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title "Pictor $env:RELEASE_VERSION" `
+            --notes-file $env:RELEASE_NOTES_PATH `
+            --latest
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-failure-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

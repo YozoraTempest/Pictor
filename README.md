@@ -28,7 +28,7 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 
 ## 安装与卸载
 
-0.1.2 提供 Windows x64 NSIS 安装程序：`Pictor-0.1.2-windows-x64-setup.exe`。运行安装程序，
+0.1.3 提供 Windows x64 NSIS 安装程序：`Pictor-0.1.3-windows-x64-setup.exe`。运行安装程序，
 按向导选择安装位置即可；安装程序会创建桌面和开始菜单快捷方式。安装完成后可从任一快捷
 方式启动 Pictor。
 
@@ -77,6 +77,10 @@ npm run verify:pr
 发布前运行 `npm run verify:release`。完整的测试分层、叶子命令、CI 门禁和稳定性规则见
 [`docs/TESTING.md`](docs/TESTING.md)。
 
+日常开发从 `develop` 创建短期分支并通过 Pull Request 合回；`develop` 合并到 `main` 时自动
+创建正式版本。分支、Issue、Pull Request 和发布规则见
+[`docs/PROJECT_MANAGEMENT.md`](docs/PROJECT_MANAGEMENT.md)。
+
 `npm run package:dir` 生成 `dist/win-unpacked/Pictor.exe`。`npm run package` 同时生成
 `dist/Pictor-<version>-windows-x64-setup.exe` NSIS 安装程序和 `dist/win-unpacked/`，随后自动
 校验安装程序、应用归档以及解包可执行文件的 x64 PE 架构；也可以对已有产物单独运行
@@ -88,7 +92,7 @@ OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、命令�
 
 ## 已知限制
 
-- 0.1.2 的 Windows 安装程序和应用可执行文件未签名；应用图标仍使用 Electron 默认图标。
+- 0.1.3 的 Windows 安装程序和应用可执行文件未签名；应用图标仍使用 Electron 默认图标。
 - 已完成的 Windows RC1 安装、启动和卸载验收运行在非净 Windows 开发机上，虽然安装位置和
   首次运行数据均已隔离并在验收后清理；尚未取得净机安装证据。
 - Chat Completions 和 Responses 均由本地确定性 OpenAI 兼容端点覆盖。尚未用真实第三方

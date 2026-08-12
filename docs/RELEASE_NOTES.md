@@ -1,5 +1,25 @@
 # 发布说明
 
+## 0.1.3 - 2026-08-12
+
+Pictor 0.1.3 建立了轻量的 `develop`/`main` 双分支协作流程。日常 Pull Request 合入默认分支
+`develop`，发布 Pull Request 再以 merge commit 合入 `main`。CI 对两个长期分支执行统一的
+质量、测试和桌面验收门禁，合并到 `develop` 后执行完整桌面 E2E。
+
+合并到 `main` 现在会自动校验版本和发布说明，执行完整发布验证，构建并校验 Windows x64
+安装包，随后创建版本标签和 GitHub Release。发布工作流拒绝覆盖已存在的版本，并在 Release
+说明中附加安装包 SHA-256。项目管理文档同时明确了分支、Issue、Pull Request、hotfix 和
+SemVer 发布规则。
+
+验收通过格式、类型和 lint 检查、103 个单元/集成测试、6 个 Electron 桌面 E2E 测试，以及
+Windows x64 NSIS 安装包构建和架构校验。
+
+### 已知风险
+
+- 自动发布依赖 GitHub Hosted Windows runner 和 GitHub Release 服务可用。
+- 安装程序和 `Pictor.exe` 未经 Authenticode 签名，且仍使用 Electron 默认应用图标。
+- 当前发布产物仍仅支持 Windows x64；Linux 和 macOS 打包尚未实现。
+
 ## 0.1.2 - 2026-08-12
 
 Pictor 0.1.2 统一了凭据在 Windows、Linux 和 macOS 上的持久化语义。API Key 现在明文保存

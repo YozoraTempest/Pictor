@@ -23,15 +23,15 @@ npm run deps:verify
 
 ## 测试分层
 
-| 层级        | 命令                                                | 覆盖范围                    | 运行时机                     |
-| ----------- | --------------------------------------------------- | --------------------------- | ---------------------------- |
-| 静态检查    | `npm run check:format`、`check:types`、`check:lint` | 格式、类型、Lint            | 本地提交前、每个 PR          |
-| 单元测试    | `npm run test:unit`                                 | 纯函数、组件、服务边界      | 开发循环、每个 PR            |
-| 集成测试    | `npm run test:integration`                          | Pi adapter 与运行时协议集成 | 修改运行时边界时、每个 PR    |
-| Vitest 全量 | `npm test`                                          | 单元与集成测试一次完成      | 本地提交前、每个 PR          |
-| E2E Smoke   | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环     | PR，复用已构建的 `out/`      |
-| E2E Full    | `npm run test:e2e:run`                              | 六个桌面用户场景            | `main`、版本标签、本地发布前 |
-| 包验证      | `npm run package:verify`                            | 安装包、ASAR、x64 PE 结构   | 版本标签、发布前             |
+| 层级        | 命令                                                | 覆盖范围                    | 运行时机                        |
+| ----------- | --------------------------------------------------- | --------------------------- | ------------------------------- |
+| 静态检查    | `npm run check:format`、`check:types`、`check:lint` | 格式、类型、Lint            | 本地提交前、每个 PR             |
+| 单元测试    | `npm run test:unit`                                 | 纯函数、组件、服务边界      | 开发循环、每个 PR               |
+| 集成测试    | `npm run test:integration`                          | Pi adapter 与运行时协议集成 | 修改运行时边界时、每个 PR       |
+| Vitest 全量 | `npm test`                                          | 单元与集成测试一次完成      | 本地提交前、每个 PR             |
+| E2E Smoke   | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环     | PR，复用已构建的 `out/`         |
+| E2E Full    | `npm run test:e2e:run`                              | 六个桌面用户场景            | `develop`、正式发布、本地发布前 |
+| 包验证      | `npm run package:verify`                            | 安装包、ASAR、x64 PE 结构   | 正式发布、本地发布前            |
 
 聚合命令：
 
@@ -66,7 +66,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 打包校验
 ## CI 门禁
 
 PR 并行运行质量检查和 Vitest 全量，通过后在 Windows 上构建一次并执行 E2E Smoke。推送
-`main` 时执行 E2E Full。`v*` 标签还会执行 Windows 打包与结构校验，并上传发布
-产物。分支保护应要求 `Quality`、`Unit and integration` 和 `Windows acceptance` 三个检查。
+`develop` 时执行 E2E Full。合并到 `main` 后，Release 工作流会再次执行完整验证、Windows
+打包与结构校验，并创建版本标签和 GitHub Release。分支保护应要求 `Quality`、
+`Unit and integration` 和 `Windows acceptance` 三个检查。
 
 安装程序的真实安装、首次启动、卸载和签名仍属于发布验收，不由 `package:verify` 代替。
