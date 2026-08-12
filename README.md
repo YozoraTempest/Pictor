@@ -79,7 +79,9 @@ npm run verify:pr
 
 日常开发从 `develop` 创建短期分支并通过 Pull Request 合回；`develop` 合并到 `main` 时自动
 创建正式版本。分支、Issue、Pull Request 和发布规则见
-[`docs/PROJECT_MANAGEMENT.md`](docs/PROJECT_MANAGEMENT.md)。
+[`CONTRIBUTING.md`](CONTRIBUTING.md) 和
+[`docs/PROJECT_MANAGEMENT.md`](docs/PROJECT_MANAGEMENT.md)。仓库默认展示稳定的 `main`；提交
+普通贡献时，请在 GitHub 上将 Pull Request 的目标分支改为 `develop`。
 
 `npm run package:dir` 生成 `dist/win-unpacked/Pictor.exe`。`npm run package` 同时生成
 `dist/Pictor-<version>-windows-x64-setup.exe` NSIS 安装程序和 `dist/win-unpacked/`，随后自动
