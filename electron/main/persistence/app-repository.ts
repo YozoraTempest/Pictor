@@ -25,7 +25,7 @@ import {
   migrateCredentialPersistence,
   type CredentialMigrationResult,
 } from './credential-migration.js'
-import { CredentialUnavailableError, type SecretStore } from './secret-store.js'
+import type { SecretStore } from './secret-store.js'
 
 const stateSchema = z.object({
   schemaVersion: z.literal(1),
@@ -390,16 +390,8 @@ export class AppRepository {
       maxOutputTokens: request.maxOutputTokens,
     })
 
-    try {
-      if (request.apiKey.action === 'replace')
-        await this.secretStore.setApiKey(request.apiKey.value)
-      if (request.apiKey.action === 'clear') await this.secretStore.clearApiKey()
-    } catch (error) {
-      if (error instanceof CredentialUnavailableError) {
-        throw new PictorError('credential-unavailable', error.message)
-      }
-      throw error
-    }
+    if (request.apiKey.action === 'replace') await this.secretStore.setApiKey(request.apiKey.value)
+    if (request.apiKey.action === 'clear') await this.secretStore.clearApiKey()
 
     this.state.settings = settings
     await this.persistState()
@@ -408,14 +400,7 @@ export class AppRepository {
 
   async getApiKey(): Promise<string | null> {
     this.ensureInitialized()
-    try {
-      return await this.secretStore.getApiKey()
-    } catch (error) {
-      if (error instanceof CredentialUnavailableError) {
-        throw new PictorError('credential-unavailable', error.message)
-      }
-      throw error
-    }
+    return this.secretStore.getApiKey()
   }
 
   private ensureInitialized(): void {

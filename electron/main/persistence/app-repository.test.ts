@@ -12,12 +12,6 @@ import { AppRepository } from './app-repository.js'
 import type { CredentialMigrationResult } from './credential-migration.js'
 import { SecretStore } from './secret-store.js'
 
-const safeStorage = {
-  isEncryptionAvailable: () => true,
-  encryptString: (plainText: string) => Buffer.from(plainText.split('').reverse().join('')),
-  decryptString: (encrypted: Buffer) => encrypted.toString().split('').reverse().join(''),
-}
-
 describe('AppRepository', () => {
   let testRoot: string
   let dataDirectory: string
@@ -40,11 +34,7 @@ describe('AppRepository', () => {
       secretValues: readonly string[],
     ) => Promise<CredentialMigrationResult>,
   ): AppRepository {
-    return new AppRepository(
-      dataDirectory,
-      new SecretStore(dataDirectory, safeStorage),
-      migrateCredentials,
-    )
+    return new AppRepository(dataDirectory, new SecretStore(dataDirectory), migrateCredentials)
   }
 
   it('restores projects, settings, sessions, and interrupts unfinished runs', async () => {
@@ -111,8 +101,9 @@ describe('AppRepository', () => {
       join(dataDirectory, 'sessions', `${summary.id}.json`),
       'utf8',
     )
-    const secretsContent = await readFile(join(dataDirectory, 'secrets.json'), 'utf8')
-    expect(`${stateContent}${sessionContent}${secretsContent}`).not.toContain(storedApiKey)
+    const authContent = await readFile(join(dataDirectory, 'auth.json'), 'utf8')
+    expect(`${stateContent}${sessionContent}`).not.toContain(storedApiKey)
+    expect(authContent).toContain(storedApiKey)
     expect(await restored.getApiKey()).toBe(storedApiKey)
   })
 
@@ -253,8 +244,8 @@ describe('AppRepository', () => {
     },
   )
 
-  it('migrates legacy session and Pi data using the encrypted configured credential', async () => {
-    const secret = ['legacy', 'encrypted', 'credential'].join('-')
+  it('migrates legacy session and Pi data using the configured credential', async () => {
+    const secret = ['legacy', 'stored', 'credential'].join('-')
     const repository = createRepository()
     await repository.initialize()
     await repository.saveSettings({

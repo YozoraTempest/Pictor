@@ -6,7 +6,7 @@ import type { PictorBridge } from '../src/shared/contracts.js'
 process.env.PICTOR_E2E_HEADLESS = '1'
 
 export const credentialFixtures = {
-  encryptedSettings: ['pictor', 'e2e', 'secret'].join('-'),
+  storedSettings: ['pictor', 'e2e', 'secret'].join('-'),
   localRuntime: ['local', 'e2e', 'key'].join('-'),
   runtimeRecovery: ['recovery', 'e2e', 'key'].join('-'),
   responsesRuntime: ['responses', 'e2e', 'key'].join('-'),

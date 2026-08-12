@@ -28,7 +28,7 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 
 ## 安装与卸载
 
-0.1.1 提供 Windows x64 NSIS 安装程序：`Pictor-0.1.1-windows-x64-setup.exe`。运行安装程序，
+0.1.2 提供 Windows x64 NSIS 安装程序：`Pictor-0.1.2-windows-x64-setup.exe`。运行安装程序，
 按向导选择安装位置即可；安装程序会创建桌面和开始菜单快捷方式。安装完成后可从任一快捷
 方式启动 Pictor。
 
@@ -88,7 +88,7 @@ OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、命令�
 
 ## 已知限制
 
-- 0.1.1 的 Windows 安装程序和应用可执行文件未签名；应用图标仍使用 Electron 默认图标。
+- 0.1.2 的 Windows 安装程序和应用可执行文件未签名；应用图标仍使用 Electron 默认图标。
 - 已完成的 Windows RC1 安装、启动和卸载验收运行在非净 Windows 开发机上，虽然安装位置和
   首次运行数据均已隔离并在验收后清理；尚未取得净机安装证据。
 - Chat Completions 和 Responses 均由本地确定性 OpenAI 兼容端点覆盖。尚未用真实第三方
@@ -99,9 +99,9 @@ OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、命令�
 ## 本地数据与安全边界
 
 Pictor 将版本化状态写入 Electron `userData/data-v1`。普通设置保存在 `state.json`，每个
-Session 独立保存在 `sessions/`，Pi 私有会话位于 `pi/`。API Key 只以 Electron
-`safeStorage` 生成的 Windows DPAPI 密文保存在 `secrets.json`，不会返回 Renderer，也不会
-写入项目或 Session 数据。
+Session 独立保存在 `sessions/`，Pi 私有会话位于 `pi/`。API Key 明文保存在独立的
+`auth.json`，依靠当前用户的数据目录和文件权限保护；它不会返回 Renderer，也不会写入项目
+或 Session 数据。不要共享该文件或整个用户数据目录。
 
 Renderer 启用 Chromium sandbox、context isolation 和限制性 CSP，不开放 Node 或原始
 Electron API。Pi 运行在独立 utility process 中，内置工具和项目扩展均被禁用，只能调用

@@ -298,8 +298,9 @@ export function SettingsDialog({
                     type="password"
                     value={form.apiKey}
                     disabled={form.clearApiKey}
-                    placeholder={initial?.hasApiKey ? '已安全保存；留空保持不变' : '输入 API Key'}
+                    placeholder={initial?.hasApiKey ? '已保存；留空保持不变' : '输入 API Key'}
                     autoComplete="off"
+                    aria-label="API Key"
                     onChange={(event) => update('apiKey', event.target.value)}
                     aria-invalid={Boolean(fieldErrors.apiKey)}
                   />
@@ -319,8 +320,10 @@ export function SettingsDialog({
                 <small className="field-error">{fieldErrors.apiKey}</small>
               ) : null}
               {form.clearApiKey ? (
-                <small className="field-warning">保存后将删除已加密凭据。</small>
-              ) : null}
+                <small className="field-warning">保存后将删除本地凭据。</small>
+              ) : (
+                <small className="field-hint">凭据由当前用户的数据目录权限保护。</small>
+              )}
             </label>
 
             <label className="field">

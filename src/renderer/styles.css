@@ -1342,7 +1342,8 @@ textarea:disabled {
 }
 
 .field-error,
-.field-warning {
+.field-warning,
+.field-hint {
   color: #e48683;
   font-size: 10px;
   font-weight: 400;
@@ -1351,6 +1352,10 @@ textarea:disabled {
 
 .field-warning {
   color: #d8b169;
+}
+
+.field-hint {
+  color: var(--text-muted);
 }
 
 .connection-result,

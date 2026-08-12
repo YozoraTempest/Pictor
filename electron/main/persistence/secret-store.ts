@@ -1,69 +1,105 @@
+import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { z } from 'zod'
 
 import { readJsonFile, writeJsonFile } from './atomic-json.js'
 
+const authSchema = z.object({
+  apiKey: z.string().min(1).nullable(),
+})
+
 const secretsSchema = z.object({
   schemaVersion: z.literal(1),
   apiKeyCiphertext: z.string().min(1).nullable(),
 })
 
-interface SafeStorageAdapter {
+interface LegacySafeStorageAdapter {
   isEncryptionAvailable: () => boolean
-  encryptString: (plainText: string) => Buffer
   decryptString: (encrypted: Buffer) => string
 }
 
-export class CredentialUnavailableError extends Error {
-  constructor() {
-    super('Windows 安全凭据存储当前不可用，请重新登录系统后再试')
-    this.name = 'CredentialUnavailableError'
-  }
-}
-
 export class SecretStore {
-  private readonly path: string
+  private readonly authPath: string
+  private readonly legacyPath: string
+  private migration: Promise<void> | null = null
 
   constructor(
     dataDirectory: string,
-    private readonly safeStorage: SafeStorageAdapter,
+    private readonly legacySafeStorage?: LegacySafeStorageAdapter,
   ) {
-    this.path = join(dataDirectory, 'secrets.json')
+    this.authPath = join(dataDirectory, 'auth.json')
+    this.legacyPath = join(dataDirectory, 'secrets.json')
   }
 
   async hasApiKey(): Promise<boolean> {
-    const secrets = await this.read()
-    return secrets.apiKeyCiphertext !== null
+    return (await this.read()).apiKey !== null
   }
 
   async getApiKey(): Promise<string | null> {
-    const secrets = await this.read()
-    if (secrets.apiKeyCiphertext === null) return null
-    this.ensureAvailable()
-    return this.safeStorage.decryptString(Buffer.from(secrets.apiKeyCiphertext, 'base64'))
+    return (await this.read()).apiKey
   }
 
   async setApiKey(apiKey: string): Promise<void> {
-    this.ensureAvailable()
-    const ciphertext = this.safeStorage.encryptString(apiKey).toString('base64')
-    await writeJsonFile(this.path, { schemaVersion: 1, apiKeyCiphertext: ciphertext })
+    await writeJsonFile(this.authPath, { apiKey }, 0o600)
+    await this.removeLegacyFile()
   }
 
   async clearApiKey(): Promise<void> {
-    await writeJsonFile(this.path, { schemaVersion: 1, apiKeyCiphertext: null })
+    await writeJsonFile(this.authPath, { apiKey: null }, 0o600)
+    await this.removeLegacyFile()
   }
 
-  private ensureAvailable(): void {
-    if (!this.safeStorage.isEncryptionAvailable()) throw new CredentialUnavailableError()
+  private async read(): Promise<z.infer<typeof authSchema>> {
+    await this.ensureMigrated()
+    try {
+      return (await readJsonFile(this.authPath, authSchema)) ?? { apiKey: null }
+    } catch {
+      return { apiKey: null }
+    }
   }
 
-  private async read(): Promise<z.infer<typeof secretsSchema>> {
-    return (
-      (await readJsonFile(this.path, secretsSchema)) ?? {
-        schemaVersion: 1,
-        apiKeyCiphertext: null,
+  private async ensureMigrated(): Promise<void> {
+    if (!this.migration) this.migration = this.migrateLegacyFile()
+    await this.migration
+  }
+
+  private async migrateLegacyFile(): Promise<void> {
+    try {
+      const auth = await readJsonFile(this.authPath, authSchema)
+      if (auth) {
+        await this.removeLegacyFile()
+        return
       }
-    )
+    } catch {
+      return
+    }
+
+    let legacy: z.infer<typeof secretsSchema> | null
+    try {
+      legacy = await readJsonFile(this.legacyPath, secretsSchema)
+    } catch {
+      return
+    }
+    if (!legacy) return
+
+    let apiKey: string | null = null
+    if (legacy.apiKeyCiphertext !== null) {
+      if (!this.legacySafeStorage?.isEncryptionAvailable()) return
+      try {
+        apiKey = this.legacySafeStorage.decryptString(
+          Buffer.from(legacy.apiKeyCiphertext, 'base64'),
+        )
+      } catch {
+        return
+      }
+    }
+
+    await writeJsonFile(this.authPath, { apiKey }, 0o600)
+    await this.removeLegacyFile()
+  }
+
+  private async removeLegacyFile(): Promise<void> {
+    await unlink(this.legacyPath).catch(() => undefined)
   }
 }

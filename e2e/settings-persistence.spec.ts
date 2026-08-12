@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import type { PictorBridge } from '../src/shared/contracts.js'
 import { credentialFixtures } from './support.js'
 
-test('encrypts model credentials and restores non-secret settings', async ({
+test('isolates model credentials and restores non-secret settings', async ({
   browserName: _browserName,
 }, testInfo) => {
   const userDataDirectory = testInfo.outputPath('user-data')
@@ -29,7 +29,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
         maxOutputTokens: 4096,
         apiKey: { action: 'replace', value: apiKey },
       }),
-    credentialFixtures.encryptedSettings,
+    credentialFixtures.storedSettings,
   )
   expect(saved).toEqual({
     ok: true,
@@ -46,11 +46,12 @@ test('encrypts model credentials and restores non-secret settings', async ({
   await firstApp.close()
 
   const dataDirectory = join(userDataDirectory, 'data-v1')
-  const persistedText = await Promise.all([
-    readFile(join(dataDirectory, 'state.json'), 'utf8'),
-    readFile(join(dataDirectory, 'secrets.json'), 'utf8'),
-  ])
-  expect(persistedText.join('\n')).not.toContain(credentialFixtures.encryptedSettings)
+  const stateText = await readFile(join(dataDirectory, 'state.json'), 'utf8')
+  const auth = JSON.parse(await readFile(join(dataDirectory, 'auth.json'), 'utf8')) as {
+    apiKey: string | null
+  }
+  expect(stateText).not.toContain(credentialFixtures.storedSettings)
+  expect(auth).toEqual({ apiKey: credentialFixtures.storedSettings })
 
   const legacySessionPath = join(dataDirectory, 'sessions', 'legacy-fixture.json')
   const legacyTranscriptPath = join(
@@ -72,7 +73,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
       schemaVersion: 1,
       id: legacySessionId,
       projectId: legacyProjectId,
-      title: `legacy ${credentialFixtures.encryptedSettings} keep`,
+      title: `legacy ${credentialFixtures.storedSettings} keep`,
       messages: [
         {
           id: legacyMessageId,
@@ -107,7 +108,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
           role: 'toolResult',
           toolCallId: 'legacy-call',
           toolName: 'pictor_read',
-          content: [{ type: 'text', text: `tool ${credentialFixtures.encryptedSettings}` }],
+          content: [{ type: 'text', text: `tool ${credentialFixtures.storedSettings}` }],
           details: { note: 'unrelated transcript content' },
           isError: false,
           timestamp: Date.parse(legacyTimestamp),
@@ -144,7 +145,7 @@ test('encrypts model credentials and restores non-secret settings', async ({
       readFile(legacySessionPath, 'utf8'),
       readFile(legacyTranscriptPath, 'utf8'),
     ])
-    expect(migratedText.join('\n')).not.toContain(credentialFixtures.encryptedSettings)
+    expect(migratedText.join('\n')).not.toContain(credentialFixtures.storedSettings)
     expect(migratedText[0]).toContain('legacy [REDACTED] keep')
     expect(migratedText[0]).toContain('unrelated session content')
     expect(migratedText[1]).toContain('unrelated transcript content')
