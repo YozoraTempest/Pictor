@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import type { ServerResponse } from 'node:http'
 
-import type { PictorBridge } from '../src/shared/contracts.js'
+import type { PictorBridge } from '../src/shared/desktop-bridge.js'
 
 process.env.PICTOR_E2E_HEADLESS = '1'
 

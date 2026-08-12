@@ -9,8 +9,8 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve('electron/main/index.ts'),
-          'runtime/host': resolve('electron/runtime/host.ts'),
+          index: resolve('src/main/index.ts'),
+          'runtime/host': resolve('src/runtime/host.ts'),
         },
       },
     },
@@ -19,7 +19,7 @@ export default defineConfig({
     build: {
       externalizeDeps: false,
       rollupOptions: {
-        input: resolve('electron/preload/index.ts'),
+        input: resolve('src/preload/index.ts'),
         output: {
           entryFileNames: 'index.cjs',
           format: 'cjs',

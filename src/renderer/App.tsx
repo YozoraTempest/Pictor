@@ -1,19 +1,13 @@
 import { AlertTriangle, FolderOpen, LoaderCircle, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type {
-  AppInfo,
-  AppSnapshot,
-  IpcError,
-  Project,
-  ProjectCandidate,
-  SessionRecord,
-  SessionSummary,
-} from '../shared/contracts'
-import { Conversation } from './components/Conversation'
-import { Modal } from './components/Modal'
-import { SettingsDialog } from './components/SettingsDialog'
-import { Sidebar } from './components/Sidebar'
+import type { Project, SessionRecord, SessionSummary } from '../shared/domain'
+import type { AppInfo, AppSnapshot, ProjectCandidate } from '../shared/desktop-bridge'
+import type { IpcError } from '../shared/errors'
+import { SettingsDialog } from './settings/SettingsDialog'
+import { Modal } from './ui/Modal'
+import { Conversation } from './workspace/Conversation'
+import { Sidebar } from './workspace/Sidebar'
 
 const activeStatuses = new Set(['queued', 'running', 'awaiting-approval', 'stopping'])
 

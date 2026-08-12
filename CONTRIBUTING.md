@@ -11,6 +11,9 @@
 3. 创建 Pull Request 时将 base 分支改为 `develop`，关联对应 Issue，并填写实际验证结果。
 4. 等待 `Quality`、`Unit and integration` 和 `Windows acceptance` 全部通过后合并。
 
+新增或移动代码前请阅读 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。跨进程交互必须经过
+共享协议，不得直接导入其他进程的实现；测试应与实现就近放置并通过公开 interface 验证行为。
+
 不要将普通功能或修复直接提交到 `main`。`develop` 到 `main` 的 Pull Request 仅用于正式发布；
 `hotfix/*` 只用于已发布版本的紧急修复，并须遵循
 [`docs/PROJECT_MANAGEMENT.md`](docs/PROJECT_MANAGEMENT.md) 中的版本与回合并要求。
