@@ -54,6 +54,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 打包校验
   Smoke；设置迁移、故障恢复、第二协议和中断恢复属于 Full。
 - 测试不得访问真实模型、用户目录或网络服务。E2E 必须使用 `testInfo.outputPath()` 隔离数据，
   并在 `finally` 中关闭 Electron 和本地服务。
+- Main、Preload、Renderer、Runtime 和 Shared 的测试归属及允许依赖方向见
+  [`ARCHITECTURE.md`](ARCHITECTURE.md)。测试不得用不安全类型强转穿透 module interface。
 
 ## 稳定性规则
 

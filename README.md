@@ -77,6 +77,10 @@ npm run verify:pr
 发布前运行 `npm run verify:release`。完整的测试分层、叶子命令、CI 门禁和稳定性规则见
 [`docs/TESTING.md`](docs/TESTING.md)。
 
+应用源码统一位于 `src/`，并按 Electron Main、Preload、Renderer、Agent Runtime 和共享协议
+划分。目录职责、跨进程协议和允许依赖方向见
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+
 日常开发从 `develop` 创建短期分支并通过 Pull Request 合回；`develop` 合并到 `main` 时自动
 创建正式版本。分支、Issue、Pull Request 和发布规则见
 [`CONTRIBUTING.md`](CONTRIBUTING.md) 和

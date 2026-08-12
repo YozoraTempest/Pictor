@@ -1,13 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 
-import type {
-  AppSnapshot,
-  IpcResult,
-  PictorBridge,
-  RuntimeEvent,
-  SessionRecord,
-} from '../shared/contracts'
+import type { SessionRecord } from '../shared/domain'
+import type { AppSnapshot, IpcResult, PictorBridge } from '../shared/desktop-bridge'
+import type { RuntimeEvent } from '../shared/runtime-protocol'
 import { App } from './App'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
@@ -347,17 +343,19 @@ it('ignores an older runtime refresh that resolves after the terminal state', as
     .mockReturnValueOnce(staleRefresh.promise)
     .mockReturnValueOnce(terminalRefresh.promise)
   let runtimeListener: ((event: RuntimeEvent) => void) | null = null
+  const onRuntimeEvent = vi.fn((listener: (event: RuntimeEvent) => void) => {
+    runtimeListener = listener
+    return () => undefined
+  })
   installBridge({
     ...createBridge(snapshot, runningSession),
     getSession,
-    onRuntimeEvent: (listener) => {
-      runtimeListener = listener
-      return () => undefined
-    },
+    onRuntimeEvent,
   })
   render(<App />)
 
   expect(await screen.findByRole('heading', { name: '运行验证' })).toBeInTheDocument()
+  await waitFor(() => expect(onRuntimeEvent.mock.calls.length).toBeGreaterThanOrEqual(2))
   if (!runtimeListener) throw new Error('Runtime listener was not registered')
   act(() => {
     runtimeListener?.({

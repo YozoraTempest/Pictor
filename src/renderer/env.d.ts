@@ -1,4 +1,4 @@
-import type { PictorBridge } from '../shared/contracts'
+import type { PictorBridge } from '../shared/desktop-bridge'
 
 declare global {
   interface Window {
