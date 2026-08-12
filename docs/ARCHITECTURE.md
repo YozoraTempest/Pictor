@@ -52,6 +52,11 @@ E2E；`tsconfig.web.json` 只覆盖 Renderer、Shared 和 Web 测试基础设施
 `AppRepository` 与 `RuntimeSupervisor` 直接满足它们；测试使用 in-memory adapter，不依赖具体
 实现类型。不要为整个持久化模块添加只有一个 production adapter 的抽象。
 
+`AppRepository` 是 Main 进程的工作区状态入口，只协调 Project、Settings、导航选择和持久化
+初始化。Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全
+集中在内部 `SessionPersistence` module；它直接使用本地文件系统和现有凭据迁移函数，不增加
+通用 Repository、DAO 或存储 provider。相关测试通过真实临时目录验证该 module 的可观察行为。
+
 ## 新代码放置
 
 - Electron 生命周期、窗口、安全、更新或 IPC adapter：`src/main/`。

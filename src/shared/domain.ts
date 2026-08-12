@@ -90,3 +90,4 @@ export type SessionRecord = z.infer<typeof sessionRecordSchema>
 export type SessionSummary = z.infer<typeof sessionSummarySchema>
 export type RunRecord = z.infer<typeof runRecordSchema>
 export type ToolEvent = z.infer<typeof toolEventSchema>
+export type DataIssue = z.infer<typeof dataIssueSchema>
