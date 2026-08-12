@@ -35,7 +35,7 @@
     "verify:pr": "npm run verify:fast && npm run build:app && npm run test:e2e:smoke:run",
     "verify:release": "npm run verify:fast && npm run build:app && npm run test:e2e:run && npm run package:build && npm run package:verify",
     "package:dir:build": "electron-builder --dir --win --x64",
-    "package:build": "electron-builder --win nsis --x64",
+    "package:build": "electron-builder --win nsis --x64 --publish never",
     "package:dir": "npm run build:app && npm run package:dir:build",
     "package:verify": "node scripts/verify-windows-package.mjs",
     "package": "npm run build:app && npm run package:build && npm run package:verify"
