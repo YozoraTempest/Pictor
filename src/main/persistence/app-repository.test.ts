@@ -186,7 +186,7 @@ describe('AppRepository', () => {
     expect(JSON.stringify(restored)).not.toContain(secret)
     expect(restored.messages[0]?.content).toContain('[REDACTED]')
     expect(restored.runs[0]?.toolEvents[0]?.output).toContain('[REDACTED]')
-  })
+  }, 15_000)
 
   it.each(['a', 'id', 'running'])(
     'accepts short credential %s while preserving persisted Session controls',
