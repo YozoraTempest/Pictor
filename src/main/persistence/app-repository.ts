@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, realpath, rename, stat, unlink } from 'node:fs/promises'
-import { basename, isAbsolute, join, relative } from 'node:path'
+import { realpath, stat } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 
 import { z } from 'zod'
 
@@ -20,13 +20,9 @@ import {
   type ModelSettings,
   type SaveSettingsRequest,
 } from '../../shared/model.js'
-import { createSecretRedactor } from '../../shared/secret-redaction.js'
 import { isNodeError, readJsonFile, writeJsonFile } from './atomic-json.js'
-import {
-  migrateCredentialPersistence,
-  type CredentialMigrationResult,
-} from './credential-migration.js'
 import type { SecretStore } from './secret-store.js'
+import { SessionPersistence, type CredentialMigration } from './session-persistence.js'
 
 const stateSchema = z.object({
   schemaVersion: z.literal(1),
@@ -40,8 +36,6 @@ const stateSchema = z.object({
 
 type PersistedState = z.infer<typeof stateSchema>
 
-const activeRunStatuses = new Set(['queued', 'running', 'awaiting-approval', 'stopping'])
-
 function createEmptyState(): PersistedState {
   return {
     schemaVersion: 1,
@@ -54,98 +48,28 @@ function createEmptyState(): PersistedState {
   }
 }
 
-function summarizeSession(session: SessionRecord): SessionSummary {
-  return sessionSummarySchema.parse({
-    id: session.id,
-    projectId: session.projectId,
-    title: session.title,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    lastRunStatus: session.runs.at(-1)?.status ?? null,
-  })
-}
-
-function isPathWithin(root: string, candidate: string): boolean {
-  const relativePath = relative(root, candidate)
-  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
-}
-
-type CredentialMigration = (
-  dataDirectory: string,
-  secretValues: readonly string[],
-) => Promise<CredentialMigrationResult>
-
 export class AppRepository {
   private readonly statePath: string
-  private readonly sessionsDirectory: string
+  private readonly sessionPersistence: SessionPersistence
   private state: PersistedState = createEmptyState()
   private initialized = false
-  private issues: AppSnapshot['issues'] = []
-  private unsafePiPaths: string[] = []
-  private blockAllPiResume = false
 
   constructor(
     private readonly dataDirectory: string,
     private readonly secretStore: SecretStore,
-    private readonly migrateCredentials: CredentialMigration = migrateCredentialPersistence,
+    migrateCredentials?: CredentialMigration,
   ) {
     this.statePath = join(dataDirectory, 'state.json')
-    this.sessionsDirectory = join(dataDirectory, 'sessions')
+    this.sessionPersistence = new SessionPersistence(dataDirectory, secretStore, migrateCredentials)
   }
 
   async initialize(): Promise<void> {
-    await mkdir(this.sessionsDirectory, { recursive: true })
     this.state = (await readJsonFile(this.statePath, stateSchema)) ?? createEmptyState()
-    this.issues = [...this.state.issues]
-    this.unsafePiPaths = []
-    this.blockAllPiResume = false
-    const previousIssues = JSON.stringify(this.issues)
-    const migrationSecrets = await this.getMigrationSecretValues()
-    const previousMigrationIssue = this.issues.some(
-      (issue) => issue.code === 'credential-migration-failed',
-    )
-
-    if (migrationSecrets.failed) {
-      this.blockAllPiResume = true
-      this.setMigrationIssue()
-    } else if (migrationSecrets.values.length > 0) {
-      const migration = await this.migrateCredentials(this.dataDirectory, migrationSecrets.values)
-      this.issues = this.issues.filter((issue) => issue.code !== 'credential-migration-failed')
-      if (migration.failures.length > 0) {
-        this.unsafePiPaths = migration.failures
-          .filter((failure) => failure.scope === 'pi')
-          .map((failure) => failure.path)
-        this.setMigrationIssue()
-      }
-    } else if (previousMigrationIssue) {
-      this.blockAllPiResume = true
-    }
-
+    const recovery = await this.sessionPersistence.recover(this.state.sessions, this.state.issues)
     const projectAvailabilityChanged = await this.refreshProjectAvailability()
-    let changed = previousIssues !== JSON.stringify(this.issues) || projectAvailabilityChanged
-    const validSummaries: SessionSummary[] = []
-
-    for (const summary of this.state.sessions) {
-      try {
-        const session = await this.readSession(summary.id)
-        const interrupted = this.interruptActiveRuns(session)
-        if (interrupted) await this.writeSession(session)
-        const repairedSummary = summarizeSession(session)
-        validSummaries.push(repairedSummary)
-        changed ||= interrupted || JSON.stringify(repairedSummary) !== JSON.stringify(summary)
-      } catch {
-        await this.quarantineSession(summary.id)
-        this.issues.push({
-          code: 'session-corrupt',
-          sessionId: summary.id,
-          message: `会话“${summary.title}”的数据已损坏，已隔离且不会影响其他会话`,
-        })
-        changed = true
-      }
-    }
-
-    this.state.sessions = validSummaries
-    this.state.issues = this.issues
+    const changed = recovery.changed || projectAvailabilityChanged
+    this.state.sessions = recovery.summaries
+    this.state.issues = recovery.issues
     this.repairSelection()
     this.initialized = true
     if (changed) await this.persistState()
@@ -162,7 +86,7 @@ export class AppRepository {
       selectedProjectId: this.state.selectedProjectId,
       selectedSessionId: this.state.selectedSessionId,
       settings,
-      issues: this.issues,
+      issues: this.state.issues,
     })
   }
 
@@ -261,9 +185,7 @@ export class AppRepository {
     const sessionIds = this.state.sessions
       .filter((session) => session.projectId === projectId)
       .map((session) => session.id)
-    await Promise.all(
-      sessionIds.map((sessionId) => unlink(this.sessionPath(sessionId)).catch(() => undefined)),
-    )
+    await this.sessionPersistence.deleteMany(sessionIds)
     this.state.projects = this.state.projects.filter((candidate) => candidate.id !== projectId)
     this.state.sessions = this.state.sessions.filter((session) => session.projectId !== projectId)
     this.repairSelection()
@@ -286,18 +208,7 @@ export class AppRepository {
     resumeSession: boolean
   } {
     this.ensureInitialized()
-    const sessionDirectory = join(this.dataDirectory, 'pi', projectId, sessionId)
-    return {
-      agentDirectory: join(this.dataDirectory, 'pi', 'agent'),
-      sessionDirectory,
-      resumeSession:
-        !this.blockAllPiResume &&
-        !this.unsafePiPaths.some(
-          (unsafePath) =>
-            isPathWithin(sessionDirectory, unsafePath) ||
-            isPathWithin(unsafePath, sessionDirectory),
-        ),
-    }
+    return this.sessionPersistence.getRuntimePaths(projectId, sessionId)
   }
 
   async createSession(projectId: string): Promise<SessionSummary> {
@@ -320,8 +231,7 @@ export class AppRepository {
       createdAt: now,
       updatedAt: now,
     })
-    await this.writeSession(session)
-    const summary = summarizeSession(session)
+    const summary = await this.sessionPersistence.save(session)
     this.state.sessions.push(summary)
     this.state.selectedProjectId = projectId
     this.state.selectedSessionId = session.id
@@ -334,7 +244,7 @@ export class AppRepository {
     if (!this.state.sessions.some((session) => session.id === sessionId)) {
       throw new PictorError('not-found', '会话不存在或已被删除')
     }
-    return this.readSession(sessionId)
+    return this.sessionPersistence.read(sessionId)
   }
 
   async saveSession(session: SessionRecord): Promise<SessionSummary> {
@@ -345,8 +255,7 @@ export class AppRepository {
       throw new PictorError('not-found', '会话不存在或项目绑定不匹配')
     }
 
-    const sanitized = await this.writeSession(parsed)
-    const summary = summarizeSession(sanitized)
+    const summary = await this.sessionPersistence.save(parsed)
     this.state.sessions = this.state.sessions.map((candidate) =>
       candidate.id === summary.id ? summary : candidate,
     )
@@ -366,9 +275,7 @@ export class AppRepository {
     if (!this.state.sessions.some((session) => session.id === sessionId)) {
       throw new PictorError('not-found', '会话不存在或已被删除')
     }
-    await unlink(this.sessionPath(sessionId)).catch((error) => {
-      if (!isNodeError(error) || error.code !== 'ENOENT') throw error
-    })
+    await this.sessionPersistence.delete(sessionId)
     this.state.sessions = this.state.sessions.filter((session) => session.id !== sessionId)
     this.repairSelection()
     await this.persistState()
@@ -406,80 +313,6 @@ export class AppRepository {
 
   private ensureInitialized(): void {
     if (!this.initialized) throw new Error('AppRepository has not been initialized')
-  }
-
-  private sessionPath(sessionId: string): string {
-    return join(this.sessionsDirectory, `${sessionId}.json`)
-  }
-
-  private async readSession(sessionId: string): Promise<SessionRecord> {
-    const session = await readJsonFile(this.sessionPath(sessionId), sessionRecordSchema)
-    if (!session) throw new Error('Session file is missing')
-    const sanitized = await this.sanitizeSession(session)
-    if (JSON.stringify(sanitized) !== JSON.stringify(session)) {
-      await writeJsonFile(this.sessionPath(session.id), sanitized)
-    }
-    return sanitized
-  }
-
-  private async writeSession(session: SessionRecord): Promise<SessionRecord> {
-    const sanitized = await this.sanitizeSession(sessionRecordSchema.parse(session))
-    await writeJsonFile(this.sessionPath(sanitized.id), sanitized)
-    return sanitized
-  }
-
-  private async sanitizeSession(session: SessionRecord): Promise<SessionRecord> {
-    const redactor = createSecretRedactor(await this.getKnownSecretValues())
-    return sessionRecordSchema.parse(redactor.redactSession(session))
-  }
-
-  private async getKnownSecretValues(): Promise<string[]> {
-    try {
-      const apiKey = await this.secretStore.getApiKey()
-      return apiKey ? [apiKey] : []
-    } catch {
-      return []
-    }
-  }
-
-  private async getMigrationSecretValues(): Promise<{ values: string[]; failed: boolean }> {
-    try {
-      const apiKey = await this.secretStore.getApiKey()
-      return { values: apiKey ? [apiKey] : [], failed: false }
-    } catch {
-      return { values: [], failed: true }
-    }
-  }
-
-  private setMigrationIssue(): void {
-    if (this.issues.some((issue) => issue.code === 'credential-migration-failed')) return
-    this.issues.push({
-      code: 'credential-migration-failed',
-      sessionId: null,
-      message:
-        '部分历史会话的凭据清理未完成。为防止泄露，相关 Pi 会话不会恢复；请检查本地数据目录权限并重启 Pictor 后重试。',
-    })
-  }
-
-  private async quarantineSession(sessionId: string): Promise<void> {
-    const source = this.sessionPath(sessionId)
-    const destination = join(this.sessionsDirectory, `${sessionId}.corrupt-${Date.now()}.json`)
-    await rename(source, destination).catch(() => undefined)
-  }
-
-  private interruptActiveRuns(session: SessionRecord): boolean {
-    let changed = false
-    const now = new Date().toISOString()
-    for (const run of session.runs) {
-      if (activeRunStatuses.has(run.status)) {
-        run.status = 'interrupted'
-        run.error = '应用在运行完成前关闭，任务未自动重放'
-        run.updatedAt = now
-        changed = true
-      }
-    }
-    if (changed) session.updatedAt = now
-    return changed
   }
 
   private async canonicalDirectory(rootPath: string): Promise<string> {

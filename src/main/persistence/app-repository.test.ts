@@ -1,15 +1,13 @@
 // @vitest-environment node
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { SessionRecord } from '../../shared/domain.js'
 import { AppRepository } from './app-repository.js'
-import type { CredentialMigrationResult } from './credential-migration.js'
 import { SecretStore } from './secret-store.js'
 
 describe('AppRepository', () => {
@@ -28,13 +26,8 @@ describe('AppRepository', () => {
     await rm(testRoot, { recursive: true, force: true })
   })
 
-  function createRepository(
-    migrateCredentials?: (
-      dataDirectory: string,
-      secretValues: readonly string[],
-    ) => Promise<CredentialMigrationResult>,
-  ): AppRepository {
-    return new AppRepository(dataDirectory, new SecretStore(dataDirectory), migrateCredentials)
+  function createRepository(): AppRepository {
+    return new AppRepository(dataDirectory, new SecretStore(dataDirectory))
   }
 
   it('restores projects, settings, sessions, and interrupts unfinished runs', async () => {
@@ -107,258 +100,6 @@ describe('AppRepository', () => {
     expect(await restored.getApiKey()).toBe(storedApiKey)
   })
 
-  it('isolates a corrupt session without blocking valid sessions', async () => {
-    const repository = createRepository()
-    await repository.initialize()
-    const project = await repository.registerProject(projectDirectory)
-    const corrupt = await repository.createSession(project.id)
-    const valid = await repository.createSession(project.id)
-    await writeFile(join(dataDirectory, 'sessions', `${corrupt.id}.json`), '{invalid json')
-
-    const restored = createRepository()
-    await restored.initialize()
-    const snapshot = await restored.getSnapshot()
-    const storedFiles = await readdir(join(dataDirectory, 'sessions'))
-
-    expect(snapshot.sessions.map((session) => session.id)).toEqual([valid.id])
-    expect(snapshot.issues).toEqual([
-      expect.objectContaining({ code: 'session-corrupt', sessionId: corrupt.id }),
-    ])
-    expect(storedFiles.some((name) => name.startsWith(`${corrupt.id}.corrupt-`))).toBe(true)
-  })
-
-  it('redacts the configured credential before session and renderer-visible state are persisted', async () => {
-    const secret = ['write', 'boundary', 'credential'].join('-')
-    const repository = createRepository()
-    await repository.initialize()
-    await repository.saveSettings({
-      apiProtocol: 'chat-completions',
-      baseUrl: 'https://example.test/v1',
-      modelId: 'test-model',
-      reasoningEffort: null,
-      temperature: null,
-      maxOutputTokens: null,
-      apiKey: { action: 'replace', value: secret },
-    })
-    const project = await repository.registerProject(projectDirectory)
-    const summary = await repository.createSession(project.id)
-    const session = await repository.getSession(summary.id)
-    const now = new Date().toISOString()
-    session.title = `title ${secret}`
-    session.messages.push({
-      id: randomUUID(),
-      role: 'assistant',
-      content: `message ${secret}`,
-      status: 'completed',
-      createdAt: now,
-      updatedAt: now,
-    })
-    session.runs.push({
-      id: randomUUID(),
-      status: 'failed',
-      error: `error ${secret}`,
-      toolEvents: [
-        {
-          id: randomUUID(),
-          callId: 'credential-tool',
-          kind: 'read',
-          label: 'fixture',
-          path: null,
-          command: null,
-          status: 'completed',
-          output: `output ${secret}`,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-      createdAt: now,
-      updatedAt: now,
-    })
-
-    await repository.saveSession(session)
-
-    const persisted = await Promise.all([
-      readFile(join(dataDirectory, 'state.json'), 'utf8'),
-      readFile(join(dataDirectory, 'sessions', `${summary.id}.json`), 'utf8'),
-    ])
-    const restored = await repository.getSession(summary.id)
-    expect(persisted.join('\n')).not.toContain(secret)
-    expect(JSON.stringify(restored)).not.toContain(secret)
-    expect(restored.messages[0]?.content).toContain('[REDACTED]')
-    expect(restored.runs[0]?.toolEvents[0]?.output).toContain('[REDACTED]')
-  }, 15_000)
-
-  it.each(['a', 'id', 'running'])(
-    'accepts short credential %s while preserving persisted Session controls',
-    async (secret) => {
-      const repository = createRepository()
-      await repository.initialize()
-      await repository.saveSettings({
-        apiProtocol: 'responses',
-        baseUrl: 'https://example.test/v1',
-        modelId: 'test-model',
-        reasoningEffort: null,
-        temperature: null,
-        maxOutputTokens: null,
-        apiKey: { action: 'replace', value: secret },
-      })
-      const project = await repository.registerProject(projectDirectory)
-      const summary = await repository.createSession(project.id)
-      const session = await repository.getSession(summary.id)
-      const now = new Date().toISOString()
-      const runId = randomUUID()
-      const messageId = randomUUID()
-      session.title = `title ${secret}`
-      session.messages.push({
-        id: messageId,
-        role: 'user',
-        content: `message ${secret}`,
-        status: 'completed',
-        createdAt: now,
-        updatedAt: now,
-      })
-      session.runs.push({
-        id: runId,
-        status: 'running',
-        error: `error ${secret}`,
-        toolEvents: [],
-        createdAt: now,
-        updatedAt: now,
-      })
-
-      await repository.saveSession(session)
-
-      const persisted = JSON.parse(
-        await readFile(join(dataDirectory, 'sessions', `${summary.id}.json`), 'utf8'),
-      ) as SessionRecord
-      expect((await repository.getSettings())?.hasApiKey).toBe(true)
-      expect(persisted).toMatchObject({
-        id: summary.id,
-        projectId: project.id,
-        messages: [{ id: messageId, role: 'user', status: 'completed' }],
-        runs: [{ id: runId, status: 'running' }],
-      })
-      expect(persisted.title).toContain('[REDACTED]')
-      expect(persisted.messages[0]?.content).toContain('[REDACTED]')
-      expect(persisted.runs[0]?.error).toContain('[REDACTED]')
-    },
-  )
-
-  it('migrates legacy session and Pi data using the configured credential', async () => {
-    const secret = ['legacy', 'stored', 'credential'].join('-')
-    const repository = createRepository()
-    await repository.initialize()
-    await repository.saveSettings({
-      apiProtocol: 'responses',
-      baseUrl: 'https://example.test/v1',
-      modelId: 'test-model',
-      reasoningEffort: null,
-      temperature: null,
-      maxOutputTokens: null,
-      apiKey: { action: 'replace', value: secret },
-    })
-    const project = await repository.registerProject(projectDirectory)
-    const summary = await repository.createSession(project.id)
-    const session = await repository.getSession(summary.id)
-    const now = new Date().toISOString()
-    session.messages.push({
-      id: randomUUID(),
-      role: 'user',
-      content: `legacy ${secret} keep`,
-      status: 'completed',
-      createdAt: now,
-      updatedAt: now,
-    })
-    const sessionPath = join(dataDirectory, 'sessions', `${summary.id}.json`)
-    const transcriptDirectory = join(dataDirectory, 'pi', project.id, summary.id)
-    const transcriptPath = join(transcriptDirectory, 'legacy.jsonl')
-    await writeFile(sessionPath, `${JSON.stringify(session, null, 2)}\n`)
-    await mkdir(transcriptDirectory, { recursive: true })
-    await writeFile(
-      transcriptPath,
-      [
-        JSON.stringify({
-          type: 'session',
-          version: 3,
-          id: summary.id,
-          timestamp: now,
-          cwd: projectDirectory,
-        }),
-        JSON.stringify({
-          type: 'message',
-          id: randomUUID(),
-          parentId: null,
-          timestamp: now,
-          message: { role: 'user', content: `legacy ${secret} transcript` },
-        }),
-        '',
-      ].join('\n'),
-    )
-
-    const restored = createRepository()
-    await restored.initialize()
-    const firstPass = await Promise.all([
-      readFile(sessionPath, 'utf8'),
-      readFile(transcriptPath, 'utf8'),
-    ])
-    await restored.initialize()
-    const secondPass = await Promise.all([
-      readFile(sessionPath, 'utf8'),
-      readFile(transcriptPath, 'utf8'),
-    ])
-
-    expect(secondPass).toEqual(firstPass)
-    expect(firstPass.join('\n')).not.toContain(secret)
-    expect(firstPass[0]).toContain('legacy [REDACTED] keep')
-    expect(firstPass[1]).toContain('"type":"session"')
-    expect(firstPass[1]).toContain('legacy [REDACTED] transcript')
-  })
-
-  it('persists migration failures, blocks unsafe transcript resume, and recovers on retry', async () => {
-    const secret = ['migration', 'failure', 'credential'].join('-')
-    const repository = createRepository()
-    await repository.initialize()
-    await repository.saveSettings({
-      apiProtocol: 'responses',
-      baseUrl: 'https://example.test/v1',
-      modelId: 'test-model',
-      reasoningEffort: null,
-      temperature: null,
-      maxOutputTokens: null,
-      apiKey: { action: 'replace', value: secret },
-    })
-    const project = await repository.registerProject(projectDirectory)
-    const session = await repository.createSession(project.id)
-    const unsafeTranscript = join(dataDirectory, 'pi', project.id, session.id, 'unsafe.jsonl')
-
-    const failed = createRepository(async () => ({
-      attempted: true,
-      failures: [{ scope: 'pi', path: unsafeTranscript, operation: 'write' }],
-    }))
-    await failed.initialize()
-
-    const failedSnapshot = await failed.getSnapshot()
-    const persistedFailure = await readFile(join(dataDirectory, 'state.json'), 'utf8')
-    expect(failedSnapshot.issues).toEqual([
-      expect.objectContaining({
-        code: 'credential-migration-failed',
-        sessionId: null,
-      }),
-    ])
-    expect(JSON.stringify(failedSnapshot.issues)).not.toContain(secret)
-    expect(persistedFailure).not.toContain(secret)
-    expect(failed.getRuntimePaths(project.id, session.id).resumeSession).toBe(false)
-
-    const recovered = createRepository(async () => ({ attempted: true, failures: [] }))
-    await recovered.initialize()
-
-    expect((await recovered.getSnapshot()).issues).toEqual([])
-    expect(recovered.getRuntimePaths(project.id, session.id).resumeSession).toBe(true)
-    expect(await readFile(join(dataDirectory, 'state.json'), 'utf8')).not.toContain(
-      'credential-migration-failed',
-    )
-  })
-
   it('marks a project missing when its directory disappears', async () => {
     const repository = createRepository()
     await repository.initialize()
@@ -402,7 +143,7 @@ describe('AppRepository', () => {
     await repository.initialize()
     const project = await repository.registerProject(projectDirectory)
     const summary = await repository.createSession(project.id)
-    const session = (await repository.getSession(summary.id)) as SessionRecord
+    const session = await repository.getSession(summary.id)
     session.projectId = randomUUID()
 
     await expect(repository.saveSession(session)).rejects.toThrow('项目绑定不匹配')
@@ -414,14 +155,19 @@ describe('AppRepository', () => {
     const projectFile = join(projectDirectory, 'keep.txt')
     await writeFile(projectFile, 'keep me')
     const project = await repository.registerProject(projectDirectory)
-    const session = await repository.createSession(project.id)
+    const deletedSession = await repository.createSession(project.id)
 
-    await repository.deleteSession(session.id)
+    await repository.deleteSession(deletedSession.id)
     expect(await readFile(projectFile, 'utf8')).toBe('keep me')
     expect((await repository.getSnapshot()).sessions).toHaveLength(0)
 
+    const projectSession = await repository.createSession(project.id)
     await repository.removeProject(project.id)
     expect(await readFile(projectFile, 'utf8')).toBe('keep me')
     expect((await repository.getSnapshot()).projects).toHaveLength(0)
+    expect((await repository.getSnapshot()).sessions).toHaveLength(0)
+    await expect(
+      readFile(join(dataDirectory, 'sessions', `${projectSession.id}.json`), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
