@@ -74,7 +74,7 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     const window = await electronApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
 
-    await window.getByRole('button', { name: '模型设置' }).click()
+    await window.getByRole('button', { name: '设置' }).click()
     await window.getByRole('button', { name: 'Responses' }).click()
     await window.getByLabel('API Base URL').fill(`http://127.0.0.1:${address.port}/v1`)
     await window.getByLabel('API Key').fill(credentialFixtures.responsesRuntime)

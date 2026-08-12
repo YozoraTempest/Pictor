@@ -24,6 +24,7 @@ import { PictorError, toIpcError } from './errors.js'
 import type { ModelConnectionTester } from './model-connection.js'
 import type { AppRepository } from './persistence/app-repository.js'
 import type { RuntimeCoordinator } from './runtime-coordinator.js'
+import type { UpdateService } from './update-service.js'
 
 interface IpcDependencies {
   repository: AppRepository
@@ -31,6 +32,7 @@ interface IpcDependencies {
   validateSender: (frame: WebFrameMain | null) => void
   getAppInfo: () => z.infer<typeof appInfoSchema>
   runtimeCoordinator: RuntimeCoordinator
+  updateService: UpdateService
 }
 
 async function result<T>(operation: () => Promise<T>): Promise<IpcResult<T>> {
@@ -53,12 +55,28 @@ async function result<T>(operation: () => Promise<T>): Promise<IpcResult<T>> {
 }
 
 export function registerIpc(dependencies: IpcDependencies): void {
-  const { repository, connectionTester, validateSender, getAppInfo, runtimeCoordinator } =
-    dependencies
+  const {
+    repository,
+    connectionTester,
+    validateSender,
+    getAppInfo,
+    runtimeCoordinator,
+    updateService,
+  } = dependencies
 
   ipcMain.handle('app:get-info', (event) => {
     validateSender(event.senderFrame)
     return appInfoSchema.parse(getAppInfo())
+  })
+
+  ipcMain.handle('app:check-for-updates', (event) => {
+    validateSender(event.senderFrame)
+    return result(() => updateService.check())
+  })
+
+  ipcMain.handle('app:open-update', (event) => {
+    validateSender(event.senderFrame)
+    return result(() => updateService.openUpdate())
   })
 
   ipcMain.handle('app:get-snapshot', (event) => {

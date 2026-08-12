@@ -214,7 +214,7 @@ export function Sidebar({
 
       <button className="settings-button" type="button" onClick={onOpenSettings}>
         <Settings size={16} />
-        <span>模型设置</span>
+        <span>设置</span>
       </button>
     </aside>
   )

@@ -26,12 +26,16 @@ import {
   startRunRequestSchema,
   startRunResultSchema,
   testSettingsRequestSchema,
+  updateCheckIpcResultSchema,
   voidResultSchema,
   type PictorBridge,
 } from '../../src/shared/contracts.js'
 
 const bridge = Object.freeze({
   getAppInfo: async () => appInfoSchema.parse(await ipcRenderer.invoke('app:get-info')),
+  checkForUpdates: async () =>
+    updateCheckIpcResultSchema.parse(await ipcRenderer.invoke('app:check-for-updates')),
+  openUpdate: async () => voidResultSchema.parse(await ipcRenderer.invoke('app:open-update')),
   getSnapshot: async () =>
     appSnapshotResultSchema.parse(await ipcRenderer.invoke('app:get-snapshot')),
   pickProjectDirectory: async () =>

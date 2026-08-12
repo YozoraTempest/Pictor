@@ -50,6 +50,12 @@ test('@smoke launches a sandboxed, nonblank desktop shell', async ({
     expect(rendererGlobals.bridgeKeys.sort()).toEqual(bridgeKeys.toSorted())
     expect(rendererGlobals.nodeProcessType).toBe('undefined')
 
+    await window.getByRole('button', { name: '设置' }).click()
+    await window.getByRole('button', { name: '关于' }).click()
+    await expect(window.getByRole('heading', { name: '应用更新' })).toBeVisible()
+    await expect(window.getByText('MIT', { exact: true })).toBeVisible()
+    await expect(window.getByRole('button', { name: '检查更新' })).toBeVisible()
+
     await window.screenshot({ path: testInfo.outputPath('pictor-shell.png') })
   } finally {
     await electronApp.close()

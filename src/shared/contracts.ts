@@ -9,6 +9,14 @@ export const appInfoSchema = z.object({
   platform: z.literal('win32'),
 })
 
+export const updateCheckResultSchema = z.object({
+  currentVersion: z.string().min(1),
+  latestVersion: z.string().min(1),
+  updateAvailable: z.boolean(),
+  installerAvailable: z.boolean(),
+  publishedAt: timestampSchema.nullable(),
+})
+
 export const projectAvailabilitySchema = z.enum(['available', 'missing', 'inaccessible'])
 
 export const projectSchema = z.object({
@@ -240,6 +248,7 @@ export const settingsResultSchema = ipcResultSchema(modelSettingsSchema.nullable
 export const savedSettingsResultSchema = ipcResultSchema(modelSettingsSchema)
 export const connectionTestIpcResultSchema = ipcResultSchema(connectionTestResultSchema)
 export const modelCatalogIpcResultSchema = ipcResultSchema(modelCatalogResultSchema)
+export const updateCheckIpcResultSchema = ipcResultSchema(updateCheckResultSchema)
 export const voidResultSchema = ipcResultSchema(z.null())
 
 export const startRunRequestSchema = z.object({
@@ -317,6 +326,7 @@ export const runtimeEventSchema = z.discriminatedUnion('type', [
 ])
 
 export type AppInfo = z.infer<typeof appInfoSchema>
+export type UpdateCheckResult = z.infer<typeof updateCheckResultSchema>
 export type AppSnapshot = z.infer<typeof appSnapshotSchema>
 export type Project = z.infer<typeof projectSchema>
 export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
@@ -337,6 +347,8 @@ export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: IpcError
 
 export interface PictorBridge {
   getAppInfo: () => Promise<AppInfo>
+  checkForUpdates: () => Promise<IpcResult<UpdateCheckResult>>
+  openUpdate: () => Promise<IpcResult<null>>
   getSnapshot: () => Promise<IpcResult<AppSnapshot>>
   pickProjectDirectory: () => Promise<IpcResult<ProjectCandidate | null>>
   registerProject: (

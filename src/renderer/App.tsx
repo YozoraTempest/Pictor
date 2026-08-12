@@ -400,6 +400,7 @@ export function App(): React.JSX.Element {
 
       {settingsOpen ? (
         <SettingsDialog
+          appInfo={appInfo}
           initial={snapshot.settings}
           onClose={() => setSettingsOpen(false)}
           onSaved={(settings) =>

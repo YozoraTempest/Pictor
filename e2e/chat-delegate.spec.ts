@@ -166,7 +166,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     const window = await electronApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
 
-    await window.getByRole('button', { name: '模型设置' }).click()
+    await window.getByRole('button', { name: '设置' }).click()
     await expect(window.getByRole('button', { name: 'Chat Completions' })).toHaveAttribute(
       'aria-pressed',
       'true',

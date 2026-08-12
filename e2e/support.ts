@@ -15,6 +15,7 @@ export const credentialFixtures = {
 
 export const bridgeKeys = [
   'approveCommand',
+  'checkForUpdates',
   'createSession',
   'deleteSession',
   'getAppInfo',
@@ -24,6 +25,7 @@ export const bridgeKeys = [
   'listModels',
   'pickProjectDirectory',
   'onRuntimeEvent',
+  'openUpdate',
   'registerProject',
   'relinkProject',
   'removeProject',

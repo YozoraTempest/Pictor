@@ -48,6 +48,15 @@ function createBridge(
   const approveCommand = vi.fn(async () => ok(null))
   return {
     getAppInfo: async () => ({ name: 'Pictor', version: '0.1.0', platform: 'win32' }),
+    checkForUpdates: async () =>
+      ok({
+        currentVersion: '0.1.0',
+        latestVersion: '0.2.0',
+        updateAvailable: true,
+        installerAvailable: true,
+        publishedAt: now,
+      }),
+    openUpdate: async () => ok(null),
     getSnapshot: async () => ok(snapshot),
     pickProjectDirectory: async () => ok(null),
     registerProject: async () => ok(snapshot.projects[0]!),
@@ -85,6 +94,31 @@ it('renders the empty delegate workspace from a persisted snapshot', async () =>
   expect(screen.getByText('v0.1.0')).toBeInTheDocument()
 })
 
+it('shows app information and downloads an available update from settings', async () => {
+  const checkForUpdates = vi.fn(async () =>
+    ok({
+      currentVersion: '0.1.0',
+      latestVersion: '0.2.0',
+      updateAvailable: true,
+      installerAvailable: true,
+      publishedAt: now,
+    }),
+  )
+  const openUpdate = vi.fn(async () => ok(null))
+  installBridge({ ...createBridge(emptySnapshot()), checkForUpdates, openUpdate })
+  render(<App />)
+
+  await screen.findByRole('heading', { name: '选择一个项目开始' })
+  fireEvent.click(screen.getByRole('button', { name: '设置' }))
+  fireEvent.click(screen.getByRole('button', { name: '关于' }))
+
+  expect(screen.getAllByText('v0.1.0')).toHaveLength(2)
+  fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
+  expect(await screen.findByText('发现新版本 v0.2.0')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '下载安装包' }))
+  await waitFor(() => expect(openUpdate).toHaveBeenCalledOnce())
+})
+
 it('saves the selected Responses compatibility mode', async () => {
   const snapshot = emptySnapshot()
   const saveSettings = vi.fn(async (request) =>
@@ -103,7 +137,7 @@ it('saves the selected Responses compatibility mode', async () => {
   render(<App />)
 
   await screen.findByRole('heading', { name: '选择一个项目开始' })
-  fireEvent.click(screen.getByRole('button', { name: '模型设置' }))
+  fireEvent.click(screen.getByRole('button', { name: '设置' }))
   const responsesButton = screen.getByRole('button', { name: 'Responses' })
   fireEvent.click(responsesButton)
   fireEvent.change(screen.getByRole('textbox', { name: '模型' }), {
@@ -138,7 +172,7 @@ it('fetches and selects a model from the compatible endpoint', async () => {
   render(<App />)
 
   await screen.findByRole('heading', { name: '选择一个项目开始' })
-  fireEvent.click(screen.getByRole('button', { name: '模型设置' }))
+  fireEvent.click(screen.getByRole('button', { name: '设置' }))
   fireEvent.change(screen.getByLabelText('API Key'), { target: { value: temporaryApiKey } })
   fireEvent.click(screen.getByRole('button', { name: '获取模型' }))
 

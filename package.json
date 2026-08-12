@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "description": "Agent-native desktop development environment",
+  "author": "YozoraTempest",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YozoraTempest/Pictor.git"
+  },
+  "homepage": "https://github.com/YozoraTempest/Pictor#readme",
+  "bugs": {
+    "url": "https://github.com/YozoraTempest/Pictor/issues"
+  },
   "main": "out/main/index.js",
   "type": "module",
   "packageManager": "npm@11.17.0",

@@ -9,9 +9,11 @@ import {
   protocol,
   safeStorage,
   session,
+  shell,
   type WebFrameMain,
 } from 'electron'
 
+import packageMetadata from '../../package.json' with { type: 'json' }
 import { appInfoSchema } from '../../src/shared/contracts.js'
 import { registerIpc } from './ipc.js'
 import { ModelConnectionTester } from './model-connection.js'
@@ -21,6 +23,7 @@ import { RuntimeCoordinator } from './runtime-coordinator.js'
 import { RuntimeSupervisor } from './runtime-supervisor.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
 import { shouldShowMainWindow } from './window-visibility.js'
+import { UpdateService } from './update-service.js'
 
 const APP_SCHEME = 'app'
 const APP_HOST = 'bundle'
@@ -123,6 +126,7 @@ function createMainWindow(runtimeCoordinator: RuntimeCoordinator): BrowserWindow
 }
 
 void app.whenReady().then(() => {
+  const currentVersion = app.isPackaged ? app.getVersion() : packageMetadata.version
   const dataDirectory = join(app.getPath('userData'), 'data-v1')
   const secretStore = new SecretStore(dataDirectory, safeStorage)
   const repository = new AppRepository(dataDirectory, secretStore)
@@ -142,12 +146,17 @@ void app.whenReady().then(() => {
     registerIpc({
       repository,
       connectionTester: new ModelConnectionTester(),
+      updateService: new UpdateService({
+        currentVersion,
+        fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+        openExternal: (url) => shell.openExternal(url),
+      }),
       validateSender,
       runtimeCoordinator,
       getAppInfo: () =>
         appInfoSchema.parse({
           name: app.getName(),
-          version: app.getVersion(),
+          version: currentVersion,
           platform: process.platform,
         }),
     })

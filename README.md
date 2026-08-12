@@ -12,7 +12,9 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 桌面开发环境。当
 - 在显示完整命令、工作目录和用途后，允许一次或拒绝 Git Bash 命令；
 - 展示 Markdown 回复、工具状态、命令输出、错误、停止和中断状态；
 - 配置 Chat Completions 或 Responses 兼容模式、API Base URL、模型标识、API Key、模型
-  推理强度、温度和最大输出 Token 数；支持从兼容的 `/models` 端点获取并选择模型。
+  推理强度、温度和最大输出 Token 数；支持从兼容的 `/models` 端点获取并选择模型；
+- 在设置的“关于”页查看版本，并按需检查 GitHub Release；有新版本时可下载官方 Windows
+  x64 安装包，发布未附带安装包时则打开对应发布页。
 
 首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、插件、远程项目、WSL、
 容器以及 macOS/Linux 打包不在当前范围内。
@@ -47,7 +49,7 @@ npm run deps:verify
 npm run dev
 ```
 
-首次启动后，在“模型设置”中完成以下配置，再添加本地项目并创建 Session：
+首次启动后，在“设置 > 模型”中完成以下配置，再添加本地项目并创建 Session：
 
 - 选择 **Chat Completions** 或 **Responses**。API Base URL 填 API 根地址，例如
   `https://api.example.com/v1`；Pictor 会分别请求 `/chat/completions` 或 `/responses`。
@@ -104,6 +106,9 @@ Session 独立保存在 `sessions/`，Pi 私有会话位于 `pi/`。API Key 只�
 Renderer 启用 Chromium sandbox、context isolation 和限制性 CSP，不开放 Node 或原始
 Electron API。Pi 运行在独立 utility process 中，内置工具和项目扩展均被禁用，只能调用
 Pictor 提供且经过路径守卫的工具。
+
+更新检查只在用户点击“检查更新”后由 Main Process 请求 Pictor 官方 GitHub Release API；
+应用不会在后台轮询。下载按钮只允许打开官方仓库的 HTTPS 安装包或发布页。
 
 项目文件操作限定在解析后的项目根目录内，并拒绝父目录跳转、符号链接和目录联接逃逸。
 命令审批是明确的用户授权边界，不是操作系统沙箱：获批命令仍以当前 Windows 用户权限运行。
