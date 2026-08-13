@@ -112,6 +112,24 @@ describe('AppRepository', () => {
     )
   })
 
+  it.runIf(process.platform !== 'win32')(
+    'registers differently-cased directories as distinct projects on Linux',
+    async () => {
+      const upperDirectory = join(testRoot, 'Repo')
+      const lowerDirectory = join(testRoot, 'repo')
+      await mkdir(upperDirectory)
+      await mkdir(lowerDirectory)
+      const repository = createRepository()
+      await repository.initialize()
+
+      const upperProject = await repository.registerProject(upperDirectory)
+      const lowerProject = await repository.registerProject(lowerDirectory)
+
+      expect(lowerProject.id).not.toBe(upperProject.id)
+      expect((await repository.getSnapshot()).projects).toHaveLength(2)
+    },
+  )
+
   it('persists navigation selection and relinks a missing project without changing its identity', async () => {
     const repository = createRepository()
     await repository.initialize()

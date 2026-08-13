@@ -15,6 +15,8 @@ import {
 
 import packageMetadata from '../../package.json' with { type: 'json' }
 import { appInfoSchema } from '../shared/desktop-bridge.js'
+import { discoverCommandInterpreter } from './command-interpreter.js'
+import { detectDesktopDistribution } from './linux-distribution.js'
 import { registerIpc } from './ipc.js'
 import { ModelConnectionTester } from './model-connection.js'
 import { AppRepository } from './persistence/app-repository.js'
@@ -132,22 +134,34 @@ void app.whenReady().then(() => {
   const repository = new AppRepository(dataDirectory, secretStore)
 
   registerAppProtocol()
-  return repository.initialize().then(() => {
+  return Promise.all([
+    repository.initialize(),
+    discoverCommandInterpreter(),
+    detectDesktopDistribution(),
+  ]).then(([, commandInterpreter, distribution]) => {
     const coordinatorReference: { current?: RuntimeCoordinator } = {}
     const runtimeSupervisor = new RuntimeSupervisor((event) =>
       coordinatorReference.current?.handleEvent(event),
     )
-    const runtimeCoordinator = new RuntimeCoordinator(repository, runtimeSupervisor, (event) => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send('runtime:event', event)
-      }
-    })
+    const runtimeCoordinator = new RuntimeCoordinator(
+      repository,
+      runtimeSupervisor,
+      (event) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('runtime:event', event)
+        }
+      },
+      commandInterpreter.executablePath,
+    )
     coordinatorReference.current = runtimeCoordinator
     registerIpc({
       repository,
       connectionTester: new ModelConnectionTester(),
       updateService: new UpdateService({
         currentVersion,
+        platform: process.platform === 'win32' ? 'win32' : 'linux',
+        arch: 'x64',
+        distribution,
         fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
         openExternal: (url) => shell.openExternal(url),
       }),
@@ -158,6 +172,9 @@ void app.whenReady().then(() => {
           name: app.getName(),
           version: currentVersion,
           platform: process.platform,
+          arch: process.arch,
+          distribution,
+          commandInterpreter: commandInterpreter.status,
         }),
     })
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {

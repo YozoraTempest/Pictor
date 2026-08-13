@@ -239,7 +239,7 @@ export function createPictorTools(dependencies: ToolDependencies): ToolDefinitio
   const command = defineTool({
     name: 'pictor_command',
     label: '执行命令',
-    description: '请求用户批准后，在项目内的 Git Bash 工作目录执行一条命令。',
+    description: '请求用户批准后，在项目内使用 Pictor 的 Bash 命令解释器执行一条命令。',
     executionMode: 'sequential',
     parameters: Type.Object({
       command: Type.String({ minLength: 1 }),

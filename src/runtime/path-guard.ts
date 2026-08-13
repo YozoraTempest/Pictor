@@ -1,5 +1,5 @@
 import { lstat, realpath, stat } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { PictorError } from '../shared/errors.js'
 
@@ -11,7 +11,10 @@ function isWithin(root: string, candidate: string): boolean {
   const relativePath = relative(root, candidate)
   return (
     relativePath === '' ||
-    (!relativePath.startsWith('..') && !isAbsolute(relativePath) && !relativePath.includes(':'))
+    (relativePath !== '..' &&
+      !relativePath.startsWith(`..${sep}`) &&
+      !isAbsolute(relativePath) &&
+      (process.platform !== 'win32' || !relativePath.includes(':')))
   )
 }
 
@@ -73,7 +76,7 @@ export class ProjectPathGuard {
   }
 
   private assertWithin(candidate: string, input: string): void {
-    if (!isWithin(this.root.toLocaleLowerCase('en-US'), candidate.toLocaleLowerCase('en-US'))) {
+    if (!isWithin(this.root, candidate)) {
       throw new PictorError('invalid-input', `拒绝访问项目外路径：${input}`)
     }
   }

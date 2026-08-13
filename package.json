@@ -1,9 +1,12 @@
 {
   "name": "pictor",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "private": true,
   "description": "Agent-native desktop development environment",
-  "author": "YozoraTempest",
+  "author": {
+    "name": "YozoraTempest",
+    "email": "54313560+YozoraTempest@users.noreply.github.com"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -13,6 +16,7 @@
   "bugs": {
     "url": "https://github.com/YozoraTempest/Pictor/issues"
   },
+  "desktopName": "pictor.desktop",
   "main": "out/main/index.js",
   "type": "module",
   "packageManager": "npm@11.17.0",
@@ -44,10 +48,15 @@
     "verify:fast": "npm run check:format && npm run check:types && npm run check:lint && npm test",
     "verify:pr": "npm run verify:fast && npm run build:app && npm run test:e2e:smoke:run",
     "verify:release": "npm run verify:fast && npm run build:app && npm run test:e2e:run && npm run package:build && npm run package:verify",
-    "package:dir:build": "electron-builder --dir --win --x64",
-    "package:build": "electron-builder --win nsis --x64 --publish never",
+    "package:dir:build": "electron-builder --dir --x64",
+    "package:build": "electron-builder --x64 --publish never",
+    "package:windows:build": "electron-builder --win nsis --x64 --publish never",
+    "package:linux:build": "electron-builder --linux deb pacman --x64 --publish never",
     "package:dir": "npm run build:app && npm run package:dir:build",
-    "package:verify": "node scripts/verify-windows-package.mjs",
+    "package:verify": "node scripts/verify-package.mjs",
+    "package:verify:windows": "node scripts/verify-windows-package.mjs",
+    "package:verify:linux": "node scripts/verify-linux-packages.mjs",
+    "package:verify:linux:launch": "node scripts/verify-linux-launch.mjs",
     "package": "npm run build:app && npm run package:build && npm run package:verify"
   },
   "dependencies": {
@@ -90,12 +99,12 @@
     "directories": {
       "output": "dist"
     },
-    "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}",
     "files": [
       "out/**/*",
       "package.json"
     ],
     "win": {
+      "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -103,6 +112,70 @@
             "x64"
           ]
         }
+      ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "pacman",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Development",
+      "executableName": "pictor",
+      "syncDesktopName": true
+    },
+    "deb": {
+      "artifactName": "${productName}-${version}-ubuntu-x64.${ext}",
+      "depends": [
+        "libgtk-3-0t64",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0t64",
+        "libuuid1",
+        "libsecret-1-0"
+      ],
+      "recommends": []
+    },
+    "pacman": {
+      "artifactName": "${productName}-${version}-arch-x64.${ext}",
+      "depends": [
+        "alsa-lib",
+        "at-spi2-core",
+        "cairo",
+        "dbus",
+        "expat",
+        "glib2",
+        "glibc",
+        "gtk3",
+        "libcups",
+        "libgcc",
+        "libsecret",
+        "libx11",
+        "libxcb",
+        "libxcomposite",
+        "libxdamage",
+        "libxext",
+        "libxfixes",
+        "libxkbcommon",
+        "libxrandr",
+        "mesa",
+        "nspr",
+        "nss",
+        "pango",
+        "systemd-libs",
+        "xdg-utils"
       ]
     },
     "nsis": {

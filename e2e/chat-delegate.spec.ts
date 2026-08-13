@@ -159,10 +159,18 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
   const projectRoot = testInfo.outputPath('runtime-project')
   const userDataDirectory = testInfo.outputPath('runtime-user-data')
   await mkdir(projectRoot, { recursive: true })
-  const electronApp = await electron.launch({
-    args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
-    cwd: resolve('.'),
-  })
+  const packagedExecutable = process.env.PICTOR_E2E_EXECUTABLE
+  const electronApp = await electron.launch(
+    packagedExecutable
+      ? {
+          executablePath: resolve(packagedExecutable),
+          args: [`--user-data-dir=${userDataDirectory}`],
+        }
+      : {
+          args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
+          cwd: resolve('.'),
+        },
+  )
 
   try {
     const window = await electronApp.firstWindow()

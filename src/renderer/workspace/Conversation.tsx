@@ -26,6 +26,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import type { Project, RunRecord, SessionRecord, ToolEvent } from '../../shared/domain'
+import type { AppInfo } from '../../shared/desktop-bridge'
 
 interface ConversationProps {
   project: Project | null
@@ -33,6 +34,8 @@ interface ConversationProps {
   loading: boolean
   draft: string
   appVersion: string | null
+  platform: AppInfo['platform'] | null
+  commandInterpreter: AppInfo['commandInterpreter'] | null
   disabledReason: string | null
   activeRun: RunRecord | null
   anotherSessionRunning: boolean
@@ -140,16 +143,30 @@ function StatusBadge({ status }: { status: RunRecord['status'] }): React.JSX.Ele
   )
 }
 
+function CommandInterpreterNotice({
+  commandInterpreter,
+}: Pick<ConversationProps, 'commandInterpreter'>): React.JSX.Element | null {
+  if (!commandInterpreter || commandInterpreter.available) return null
+  return (
+    <div className="workspace-notice workspace-notice--info" role="status">
+      <TerminalSquare size={15} />
+      <span>{commandInterpreter.message}</span>
+    </div>
+  )
+}
+
 function ToolActivity({
   run,
   tool,
   busy,
+  platform,
   onApprove,
   onReject,
 }: {
   run: RunRecord
   tool: ToolEvent
   busy: boolean
+  platform: AppInfo['platform'] | null
   onApprove: (runId: string, callId: string) => void
   onReject: (runId: string, callId: string) => void
 }): React.JSX.Element {
@@ -193,7 +210,7 @@ function ToolActivity({
             <div className="approval-actions">
               <div className="approval-warning">
                 <ShieldAlert size={14} />
-                此命令将以当前 Windows 用户权限运行
+                {`此命令将以当前 ${platform === 'linux' ? 'Linux' : 'Windows'} 用户权限运行`}
               </div>
               <button
                 className="secondary-button"
@@ -234,11 +251,12 @@ function ToolActivity({
 function Timeline({
   session,
   approvalBusyCallId,
+  platform,
   onApprove,
   onReject,
 }: Pick<
   ConversationProps,
-  'session' | 'approvalBusyCallId' | 'onApprove' | 'onReject'
+  'session' | 'approvalBusyCallId' | 'platform' | 'onApprove' | 'onReject'
 >): React.JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null)
   const contentKey = session?.messages.map((message) => message.content.length).join(':') ?? ''
@@ -271,6 +289,7 @@ function Timeline({
                 run={run}
                 tool={tool}
                 busy={approvalBusyCallId === tool.callId}
+                platform={platform}
                 onApprove={onApprove}
                 onReject={onReject}
               />
@@ -306,6 +325,8 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     loading,
     draft,
     appVersion,
+    platform,
+    commandInterpreter,
     disabledReason,
     activeRun,
     anotherSessionRunning,
@@ -332,6 +353,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           </div>
           <span className="version-label">{appVersion ? `v${appVersion}` : '正在连接'}</span>
         </header>
+        <CommandInterpreterNotice commandInterpreter={commandInterpreter} />
         <div className="empty-state">
           <div className="empty-icon">
             <MessageSquareText size={24} />
@@ -357,6 +379,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           </div>
           <span className="version-label">{appVersion ? `v${appVersion}` : ''}</span>
         </header>
+        <CommandInterpreterNotice commandInterpreter={commandInterpreter} />
         <div className="empty-state">
           <div className="empty-icon">
             {project.availability === 'available' ? (
@@ -423,6 +446,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           </button>
         </div>
       ) : null}
+      <CommandInterpreterNotice commandInterpreter={commandInterpreter} />
       {anotherSessionRunning ? (
         <div className="workspace-notice workspace-notice--info">
           <Clock3 size={15} />
@@ -446,6 +470,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           <Timeline
             session={session}
             approvalBusyCallId={approvalBusyCallId}
+            platform={platform}
             onApprove={onApprove}
             onReject={onReject}
           />

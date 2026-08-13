@@ -51,6 +51,7 @@ export class RuntimeCoordinator {
     private readonly repository: RuntimePersistence,
     private readonly supervisor: RuntimeHost,
     private readonly broadcast: (event: RuntimeEvent) => void,
+    private readonly commandInterpreterPath: string | null = null,
   ) {}
 
   async start(sessionId: string, prompt: string): Promise<{ runId: string }> {
@@ -117,6 +118,7 @@ export class RuntimeCoordinator {
         messageId: assistantMessageId,
         projectRoot: project.rootPath,
         ...runtimePaths,
+        commandInterpreterPath: this.commandInterpreterPath,
         settings: {
           apiProtocol: settings.apiProtocol,
           baseUrl: settings.baseUrl,

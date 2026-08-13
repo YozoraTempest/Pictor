@@ -34,13 +34,21 @@ function createBridge(
 ): PictorBridge & { approveCommand: ReturnType<typeof vi.fn> } {
   const approveCommand = vi.fn(async () => ok(null))
   return {
-    getAppInfo: async () => ({ name: 'Pictor', version: '0.1.0', platform: 'win32' }),
+    getAppInfo: async () => ({
+      name: 'Pictor',
+      version: '0.1.0',
+      platform: 'win32',
+      arch: 'x64',
+      distribution: 'windows',
+      commandInterpreter: { kind: 'bash', available: true, message: null },
+    }),
     checkForUpdates: async () =>
       ok({
         currentVersion: '0.1.0',
         latestVersion: '0.2.0',
         updateAvailable: true,
-        installerAvailable: true,
+        packageAvailable: true,
+        packageKind: 'windows-nsis',
         publishedAt: now,
       }),
     openUpdate: async () => ok(null),
@@ -87,7 +95,8 @@ it('shows app information and downloads an available update from settings', asyn
       currentVersion: '0.1.0',
       latestVersion: '0.2.0',
       updateAvailable: true,
-      installerAvailable: true,
+      packageAvailable: true,
+      packageKind: 'windows-nsis' as const,
       publishedAt: now,
     }),
   )
@@ -102,8 +111,34 @@ it('shows app information and downloads an available update from settings', asyn
   expect(screen.getAllByText('v0.1.0')).toHaveLength(2)
   fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
   expect(await screen.findByText('发现新版本 v0.2.0')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '下载安装包' }))
+  fireEvent.click(screen.getByRole('button', { name: '下载发行包' }))
   await waitFor(() => expect(openUpdate).toHaveBeenCalledOnce())
+})
+
+it('shows the Linux platform in app information', async () => {
+  installBridge({
+    ...createBridge(emptySnapshot()),
+    getAppInfo: async () => ({
+      name: 'Pictor',
+      version: '0.1.0',
+      platform: 'linux',
+      arch: 'x64',
+      distribution: 'arch',
+      commandInterpreter: {
+        kind: 'bash',
+        available: false,
+        message: '未找到 Bash；命令工具不可用。',
+      },
+    }),
+  })
+  render(<App />)
+
+  await screen.findByRole('heading', { name: '选择一个项目开始' })
+  fireEvent.click(screen.getByRole('button', { name: '设置' }))
+  fireEvent.click(screen.getByRole('button', { name: '关于' }))
+
+  expect(screen.getByText('Linux x64')).toBeInTheDocument()
+  expect(screen.getByText('未找到 Bash；命令工具不可用。')).toBeInTheDocument()
 })
 
 it('saves the selected Responses compatibility mode', async () => {

@@ -15,6 +15,7 @@ import {
   type SessionSummary,
 } from '../../shared/domain.js'
 import { PictorError } from '../../shared/errors.js'
+import { pathsReferToSameLocation } from '../../shared/path-identity.js'
 import {
   modelSettingsInputSchema,
   type ModelSettings,
@@ -23,6 +24,8 @@ import {
 import { isNodeError, readJsonFile, writeJsonFile } from './atomic-json.js'
 import type { SecretStore } from './secret-store.js'
 import { SessionPersistence, type CredentialMigration } from './session-persistence.js'
+
+const PATH_PLATFORM = process.platform === 'win32' ? 'win32' : 'linux'
 
 const stateSchema = z.object({
   schemaVersion: z.literal(1),
@@ -94,9 +97,8 @@ export class AppRepository {
     this.ensureInitialized()
     const canonicalPath = await this.canonicalDirectory(rootPath)
     return (
-      this.state.projects.find(
-        (project) =>
-          project.rootPath.toLocaleLowerCase('en-US') === canonicalPath.toLocaleLowerCase('en-US'),
+      this.state.projects.find((project) =>
+        pathsReferToSameLocation(project.rootPath, canonicalPath, PATH_PLATFORM),
       ) ?? null
     )
   }
@@ -137,7 +139,7 @@ export class AppRepository {
     const conflictingProject = this.state.projects.find(
       (candidate) =>
         candidate.id !== projectId &&
-        candidate.rootPath.toLocaleLowerCase('en-US') === canonicalPath.toLocaleLowerCase('en-US'),
+        pathsReferToSameLocation(candidate.rootPath, canonicalPath, PATH_PLATFORM),
     )
     if (conflictingProject) {
       throw new PictorError('invalid-input', '该目录已经关联到另一个项目')

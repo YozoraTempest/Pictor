@@ -28,6 +28,7 @@ module，但跨进程调用必须经过 `shared` 中的协议，不能直接导�
 - `model.ts`：模型端点设置、连接测试和模型发现语义。
 - `desktop-bridge.ts`：Renderer 与 Main 之间的请求、结果和 `PictorBridge` interface。
 - `runtime-protocol.ts`：Main 与 Runtime Host 之间的 command、host message 和 Runtime event。
+- `path-identity.ts`：Windows 与 Linux 的项目路径身份语义，不读取文件系统。
 - `errors.ts`：可跨进程表达的错误代码和 `PictorError`。
 - `secret-redaction.ts`：Session、Runtime event 和 Pi transcript 的凭据脱敏。
 
@@ -56,6 +57,20 @@ E2E；`tsconfig.web.json` 只覆盖 Renderer、Shared 和 Web 测试基础设施
 初始化。Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全
 集中在内部 `SessionPersistence` module；它直接使用本地文件系统和现有凭据迁移函数，不增加
 通用 Repository、DAO 或存储 provider。相关测试通过真实临时目录验证该 module 的可观察行为。
+
+`command-interpreter.ts` 在 Main 进程识别当前平台可用的 Bash，并把解析后的绝对路径作为
+Runtime 启动配置传入 utility process。Runtime 不重新猜测用户环境；`BashCommandExecutor`
+只负责固定参数执行、输出和进程生命周期。Windows 使用 Git for Windows 的 Bash 并终止进程
+树；Linux 将每条命令放入独立 POSIX 进程组，在停止或超时时终止整个组。这个窄配置边界保留
+了以后更换 Command Interpreter 的变化点，而不把通用 Shell 抽象扩散到工具协议。
+
+`linux-distribution.ts` 只在 Main 进程读取本机 `/etc/os-release`，把原生 Ubuntu、原生 Arch
+或不受支持 Linux 映射为共享平台信息。Renderer 只消费映射结果，更新服务也只用该结果选择
+当前版本、平台和架构完全匹配的官方资产；原始 os-release 内容不进入 IPC、持久化或日志。
+
+Runtime 的 `ProjectPathGuard` 按宿主文件系统的大小写语义做真实路径边界检查。共享的项目路径
+身份仅用于持久化去重：Windows 忽略大小写，Linux 保留大小写。符号链接解析和越界拒绝仍只
+位于 Runtime 文件系统边界，不能用字符串路径身份函数替代。
 
 Renderer 的 `App` 只负责页面布局、Settings 和界面级 modal 编排。内部
 `useWorkspaceController` 通过注入的 `PictorBridge` 管理 workspace snapshot、当前 Session、导航

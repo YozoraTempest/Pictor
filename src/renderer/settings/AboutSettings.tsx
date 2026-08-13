@@ -11,6 +11,14 @@ export function AboutSettings({ appInfo }: AboutSettingsProps): React.JSX.Elemen
   const [busy, setBusy] = useState<'check' | 'open' | null>(null)
   const [result, setResult] = useState<UpdateCheckResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const packageLabel =
+    result?.packageKind === 'windows-nsis'
+      ? 'Windows x64 安装包'
+      : result?.packageKind === 'ubuntu-deb'
+        ? 'Ubuntu x64 DEB 包'
+        : result?.packageKind === 'arch-pacman'
+          ? 'Arch Linux x64 Pacman 包'
+          : null
 
   const handleCheckForUpdates = async () => {
     setBusy('check')
@@ -34,7 +42,7 @@ export function AboutSettings({ appInfo }: AboutSettingsProps): React.JSX.Elemen
     <div className="about-settings">
       <header className="about-product">
         <h3>Pictor</h3>
-        <p>面向 Agent 委托工作流的 Windows 桌面开发环境</p>
+        <p>面向 Agent 委托工作流的桌面开发环境</p>
       </header>
 
       <dl className="about-details">
@@ -44,7 +52,11 @@ export function AboutSettings({ appInfo }: AboutSettingsProps): React.JSX.Elemen
         </div>
         <div>
           <dt>平台</dt>
-          <dd>Windows x64</dd>
+          <dd>
+            {appInfo
+              ? `${appInfo.platform === 'linux' ? 'Linux' : 'Windows'} ${appInfo.arch}`
+              : '加载中'}
+          </dd>
         </div>
         <div>
           <dt>许可证</dt>
@@ -95,8 +107,8 @@ export function AboutSettings({ appInfo }: AboutSettingsProps): React.JSX.Elemen
               </strong>
               {result.updateAvailable ? (
                 <span>
-                  {result.installerAvailable
-                    ? '可以下载官方 Windows x64 安装包。'
+                  {result.packageAvailable
+                    ? `可以下载官方${packageLabel ?? '发行包'}。`
                     : '该版本未附带匹配的安装包，可前往发布页查看。'}
                 </span>
               ) : null}
@@ -113,7 +125,7 @@ export function AboutSettings({ appInfo }: AboutSettingsProps): React.JSX.Elemen
                 ) : (
                   <Download size={15} />
                 )}
-                {result.installerAvailable ? '下载安装包' : '查看发布页'}
+                {result.packageAvailable ? '下载发行包' : '查看发布页'}
               </button>
             ) : null}
           </div>
