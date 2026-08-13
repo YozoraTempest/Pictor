@@ -3,7 +3,8 @@ import type { ServerResponse } from 'node:http'
 
 import type { PictorBridge } from '../src/shared/desktop-bridge.js'
 
-process.env.PICTOR_E2E_HEADLESS = '1'
+// Hidden Wayland windows do not produce the compositor frames Playwright needs for actionability.
+process.env.PICTOR_E2E_HEADLESS = process.platform === 'win32' ? '1' : '0'
 
 export const credentialFixtures = {
   storedSettings: ['pictor', 'e2e', 'secret'].join('-'),

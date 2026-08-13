@@ -19,7 +19,7 @@ import {
 } from '../shared/runtime-protocol.js'
 import { createSecretRedactor, type SecretRedactor } from '../shared/secret-redaction.js'
 import { ApprovalBroker } from './approval-broker.js'
-import { GitBashCommandExecutor, type CommandExecutor } from './command-executor.js'
+import { BashCommandExecutor, type CommandExecutor } from './command-executor.js'
 import { ProjectPathGuard } from './path-guard.js'
 import { createPictorTools } from './tools.js'
 
@@ -235,7 +235,7 @@ export class PiAgentRuntime {
   constructor(
     private readonly emit: (event: RuntimeEvent) => void,
     private readonly sessionFactory: SessionFactory = createProductionSession,
-    private readonly commandExecutor: CommandExecutor = new GitBashCommandExecutor(),
+    private readonly commandExecutor?: CommandExecutor,
   ) {}
 
   async start(config: RuntimeStartConfig): Promise<void> {
@@ -267,10 +267,12 @@ export class PiAgentRuntime {
       this.emitEvent(config, { type: 'run.stateChanged', status: 'running', error: null })
       this.emitEvent(config, { type: 'message.started', messageId: config.messageId })
       const guard = await ProjectPathGuard.create(config.projectRoot)
+      const commandExecutor =
+        this.commandExecutor ?? new BashCommandExecutor(config.commandInterpreterPath ?? null)
       const tools = createPictorTools({
         guard,
         approvals,
-        commandExecutor: this.commandExecutor,
+        commandExecutor,
         isCancelled: () => current.cancelled,
         onApprovalResolved: (request, allowed) => {
           this.emitEvent(config, {

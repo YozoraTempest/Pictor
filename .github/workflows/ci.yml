@@ -101,7 +101,67 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-evidence
+          name: windows-playwright-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  linux-acceptance:
+    name: Linux acceptance
+    needs:
+      - quality
+      - tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Linux acceptance dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libarchive-tools xauth xvfb
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install --global npm@11.17.0
+      - run: npm ci
+      - run: npm run deps:prepare
+        env:
+          ELECTRON_GET_USE_PROXY: 'true'
+      - run: npm run deps:verify
+      - run: npm run verify:fast
+      - run: npm run build:app
+      - name: Run pull-request smoke tests
+        if: github.event_name == 'pull_request'
+        run: xvfb-run --auto-servernum npm run test:e2e:smoke:run
+      - name: Run full desktop tests
+        if: github.event_name == 'push'
+        run: xvfb-run --auto-servernum npm run test:e2e:run
+      - run: npm run package:linux:build
+      - run: npm run package:verify:linux
+      - name: Verify Ubuntu package install, launch, and removal
+        run: |
+          release_version="$(node --print "require('./package.json').version")"
+          lifecycle_root="$(mktemp -d)"
+          user_data="$lifecycle_root/pictor"
+          sudo apt-get install --yes "./dist/Pictor-$release_version-ubuntu-x64.deb"
+          test -x /opt/Pictor/pictor
+          test -f /usr/share/applications/pictor.desktop
+          PICTOR_LINUX_EXECUTABLE=/opt/Pictor/pictor \
+            PICTOR_EXPECTED_DISTRIBUTION=ubuntu \
+            PICTOR_USER_DATA_DIR="$user_data" \
+            xvfb-run --auto-servernum npm run package:verify:linux:launch
+          touch "$user_data/keep-after-uninstall"
+          sudo apt-get remove --yes pictor
+          test ! -e /opt/Pictor/pictor
+          test ! -e /usr/share/applications/pictor.desktop
+          test ! -e /usr/bin/pictor
+          test -f "$user_data/keep-after-uninstall"
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-playwright-evidence
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7

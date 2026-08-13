@@ -72,6 +72,7 @@ export const runtimeStartConfigSchema = z.object({
   agentDirectory: z.string().min(1),
   sessionDirectory: z.string().min(1),
   resumeSession: z.boolean(),
+  commandInterpreterPath: z.string().min(1).nullable().optional(),
   settings: modelSettingsInputSchema,
   apiKey: z.string().min(1),
   prompt: z.string().min(1),

@@ -7,12 +7,14 @@ type Fetch = typeof globalThis.fetch
 
 interface UpdateServiceOptions {
   currentVersion: string
+  platform: 'win32' | 'linux'
+  arch: 'x64'
+  distribution: 'windows' | 'ubuntu' | 'arch' | 'unsupported-linux'
   fetch: Fetch
   openExternal: (url: string) => Promise<void>
 }
 
 const RELEASE_API_URL = 'https://api.github.com/repos/YozoraTempest/Pictor/releases/latest'
-const RELEASE_PATH_PREFIX = '/YozoraTempest/Pictor/releases/'
 const VERSION_PATTERN = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
 
 const githubReleaseSchema = z.object({
@@ -70,19 +72,87 @@ export function compareVersions(left: string, right: string): number {
   return comparePrerelease(leftVersion.prerelease, rightVersion.prerelease)
 }
 
-function trustedReleaseUrl(value: string): string | null {
+function decodedPathSegments(url: URL): string[] | null {
+  try {
+    return url.pathname
+      .split('/')
+      .filter(Boolean)
+      .map((segment) => decodeURIComponent(segment))
+  } catch {
+    return null
+  }
+}
+
+function isOfficialGithubUrl(url: URL): boolean {
+  return url.origin === 'https://github.com' && !url.username && !url.password
+}
+
+function trustedReleaseUrl(value: string, tagName: string): string | null {
   const url = new URL(value)
-  return url.protocol === 'https:' &&
-    url.hostname === 'github.com' &&
-    url.pathname.startsWith(RELEASE_PATH_PREFIX)
+  const segments = decodedPathSegments(url)
+  return isOfficialGithubUrl(url) &&
+    segments?.length === 5 &&
+    segments[0] === 'YozoraTempest' &&
+    segments[1] === 'Pictor' &&
+    segments[2] === 'releases' &&
+    segments[3] === 'tag' &&
+    segments[4] === tagName
     ? url.toString()
     : null
 }
 
-function trustedInstallerUrl(value: string, name: string): string | null {
-  if (!/^Pictor-.+-windows-x64-setup\.exe$/.test(name)) return null
-  const url = trustedReleaseUrl(value)
-  return url && new URL(url).pathname.includes('/download/') ? url : null
+type PackageKind = UpdateCheckResult['packageKind']
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function expectedPackage(
+  version: string,
+  options: Pick<UpdateServiceOptions, 'platform' | 'arch' | 'distribution'>,
+): { kind: Exclude<PackageKind, null>; pattern: RegExp } | null {
+  if (options.arch !== 'x64') return null
+  const escapedVersion = escapeRegExp(version)
+  if (options.platform === 'win32') {
+    return {
+      kind: 'windows-nsis',
+      pattern: new RegExp(`^Pictor-${escapedVersion}-windows-x64-setup\\.exe$`),
+    }
+  }
+  if (options.distribution === 'ubuntu') {
+    return {
+      kind: 'ubuntu-deb',
+      pattern: new RegExp(`^Pictor-${escapedVersion}-ubuntu-x64\\.deb$`),
+    }
+  }
+  if (options.distribution === 'arch') {
+    return {
+      kind: 'arch-pacman',
+      pattern: new RegExp(`^Pictor-${escapedVersion}-arch-x64\\.pacman$`),
+    }
+  }
+  return null
+}
+
+function trustedPackageUrl(
+  value: string,
+  name: string,
+  tagName: string,
+  pattern: RegExp,
+): string | null {
+  if (!pattern.test(name)) return null
+  const url = new URL(value)
+  const segments = decodedPathSegments(url)
+  return isOfficialGithubUrl(url) &&
+    segments?.length === 6 &&
+    segments[0] === 'YozoraTempest' &&
+    segments[1] === 'Pictor' &&
+    segments[2] === 'releases' &&
+    segments[3] === 'download' &&
+    segments[4] === tagName &&
+    segments[5] === name
+    ? url.toString()
+    : null
 }
 
 export class UpdateService {
@@ -115,7 +185,7 @@ export class UpdateService {
       throw new PictorError('internal', 'GitHub 返回了无法识别的发布信息')
     }
 
-    const releaseUrl = trustedReleaseUrl(release.html_url)
+    const releaseUrl = trustedReleaseUrl(release.html_url, release.tag_name)
     if (!releaseUrl) throw new PictorError('internal', 'GitHub 返回了不受信任的发布地址')
 
     let updateAvailable: boolean
@@ -125,16 +195,28 @@ export class UpdateService {
       throw new PictorError('internal', 'GitHub Release 使用了无法识别的版本号')
     }
 
-    const installerUrl = release.assets
-      .map((asset) => trustedInstallerUrl(asset.browser_download_url, asset.name))
-      .find((url): url is string => url !== null)
+    const latestVersion = release.tag_name.replace(/^v/, '')
+    const expected = expectedPackage(latestVersion, this.options)
+    const packageUrl = expected
+      ? release.assets
+          .map((asset) =>
+            trustedPackageUrl(
+              asset.browser_download_url,
+              asset.name,
+              release.tag_name,
+              expected.pattern,
+            ),
+          )
+          .find((url): url is string => url !== null)
+      : undefined
 
-    this.updateTarget = updateAvailable ? (installerUrl ?? releaseUrl) : null
+    this.updateTarget = updateAvailable ? (packageUrl ?? releaseUrl) : null
     return {
       currentVersion: this.options.currentVersion,
-      latestVersion: release.tag_name.replace(/^v/, ''),
+      latestVersion,
       updateAvailable,
-      installerAvailable: installerUrl !== undefined,
+      packageAvailable: packageUrl !== undefined,
+      packageKind: packageUrl ? (expected?.kind ?? null) : null,
       publishedAt: release.published_at,
     }
   }

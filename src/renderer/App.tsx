@@ -152,6 +152,8 @@ export function App(): React.JSX.Element {
         loading={workspace.sessionLoading}
         draft={workspace.draft}
         appVersion={appInfo?.version ?? null}
+        platform={appInfo?.platform ?? null}
+        commandInterpreter={appInfo?.commandInterpreter ?? null}
         disabledReason={workspace.disabledReason}
         activeRun={workspace.activeRun}
         anotherSessionRunning={workspace.anotherSessionRunning}

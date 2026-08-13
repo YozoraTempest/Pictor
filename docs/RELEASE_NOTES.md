@@ -1,5 +1,45 @@
 # 发布说明
 
+## 0.2.0 - 2026-08-13
+
+Pictor 0.2.0 将正式桌面支持扩展到 Ubuntu 24.04 LTS x64 和原生 Arch Linux x64，同时保留
+Windows 11 x64。关于页和命令审批现在显示实际平台；Linux 缺少 Bash 时应用仍能启动并主动
+提示，命令工具则返回明确错误。获批命令使用固定的非登录 Bash 参数，Linux 停止或超时会终止
+独立 POSIX 进程组，避免后台子进程残留。
+
+项目边界现在遵循宿主平台的大小写语义：Linux 会拒绝大小写兄弟目录和符号链接逃逸，并允许
+`/Repo` 与 `/repo` 作为不同项目；Windows 继续按不区分大小写的路径身份去重。更新检查只会
+选择当前平台、x64 架构、版本和原生 Linux 发行版完全匹配的官方 HTTPS 资产，其他情况回退
+到官方 Release 页面。
+
+同一个 Release 现在原子发布 Windows NSIS、Ubuntu deb、Arch pacman 和 `SHA256SUMS`。
+Linux 包校验覆盖包架构、元数据、桌面入口、`app.asar` 和 x64 ELF；发布工作流还分别使用
+Ubuntu runner 与 Arch 容器验证安装和移除。PR 新增独立 `Linux acceptance`，在 Ubuntu 24.04
+通过 Xvfb 执行真实 Electron Smoke，`develop` 和发布阶段执行 Full。
+
+### 验收基线
+
+- Ubuntu 24.04 LTS x64、GNOME Wayland；CI 使用 Ubuntu 24.04 + Xvfb，正式发布前仍需真实
+  GNOME Wayland 桌面证据。
+- 原生 Arch Linux x64，2026-08-13 滚动快照、内核 7.1.8-arch1-3、niri Wayland、
+  Bash 5.3.15；允许 Electron 使用 XWayland。
+- Windows 11 x64；现有 CI、E2E、NSIS 和更新资产行为必须继续通过。
+
+2026-08-13 的本机 Arch 快照已通过格式、类型和 lint、124 项单元/集成测试、6 项真实 Electron
+桌面 E2E、0.2.0 双包结构校验，以及一次性替代根中的 `pacman -U`/`pacman -Rns` 生命周期。
+打包后的 x64 应用已在 niri Wayland 会话启动，Preload 返回 `linux`、`x64`、`arch`、Bash 可用
+和版本 0.2.0，Renderer 非空；卸载验证保留了隔离用户数据。Ubuntu 与 Windows 的目标环境证据
+由对应 required check 和正式 Release 工作流补充。
+
+### 已知风险
+
+- Windows 与 Linux 发布包均未签名，应用仍使用 Electron 默认图标。
+- Arch 是滚动发行版，支持承诺以本节记录的快照为证据，不保证未来系统升级不会引入兼容性
+  变化。Ubuntu/Arch 衍生版、其他 Linux、ARM64 和 macOS 不在正式支持范围。
+- `auth.json` 仍为明文；Unix 请求 `0600` 权限，不集成 Secret Service 或系统 keyring。
+- Xvfb 自动化不等同于真实 Wayland 桌面证据；Ubuntu 正式发布前必须另行完成该验收。
+- 更新功能只打开官方发布包或 Release 页面，不提供静默下载、提权安装、自动重启或软件源。
+
 ## 0.1.3 - 2026-08-12
 
 Pictor 0.1.3 建立了轻量的 `develop`/`main` 双分支协作流程。日常 Pull Request 合入默认分支

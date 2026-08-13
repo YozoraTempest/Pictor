@@ -30,14 +30,22 @@ import { runtimeEventSchema, type RuntimeEvent } from './runtime-protocol.js'
 export const appInfoSchema = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
-  platform: z.literal('win32'),
+  platform: z.enum(['win32', 'linux']),
+  arch: z.literal('x64'),
+  distribution: z.enum(['windows', 'ubuntu', 'arch', 'unsupported-linux']),
+  commandInterpreter: z.object({
+    kind: z.literal('bash'),
+    available: z.boolean(),
+    message: z.string().min(1).nullable(),
+  }),
 })
 
 export const updateCheckResultSchema = z.object({
   currentVersion: z.string().min(1),
   latestVersion: z.string().min(1),
   updateAvailable: z.boolean(),
-  installerAvailable: z.boolean(),
+  packageAvailable: z.boolean(),
+  packageKind: z.enum(['windows-nsis', 'ubuntu-deb', 'arch-pacman']).nullable(),
   publishedAt: z.iso.datetime().nullable(),
 })
 
