@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/contracts.js'
+import type { PictorBridge } from '../src/shared/desktop-bridge.js'
 import { credentialFixtures } from './support.js'
 
 test('confirms active-run exit and restores the run as interrupted', async ({

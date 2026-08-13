@@ -2,7 +2,7 @@ import { _electron as electron, expect, test } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/contracts.js'
+import type { PictorBridge } from '../src/shared/desktop-bridge.js'
 import { credentialFixtures } from './support.js'
 
 test('isolates model credentials and restores non-secret settings', async ({

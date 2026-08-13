@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { RuntimeEvent, SessionRecord } from './contracts.js'
+import type { SessionRecord } from './domain.js'
+import type { RuntimeEvent } from './runtime-protocol.js'
 import { REDACTED_SECRET, createSecretRedactor } from './secret-redaction.js'
 
 const runId = '01234567-89ab-4def-8123-456789abcdef'

@@ -13,8 +13,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Release Windows x64
+  metadata:
+    name: Validate release metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Read and validate release metadata
+        id: metadata
+        run: node scripts/prepare-release.mjs
+      - name: Reject an existing version tag
+        env:
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          set +e
+          remote_tag="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG")"
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "Failed to query remote tags." >&2
+            exit "$status"
+          fi
+          if [ -n "$remote_tag" ]; then
+            echo "Release tag $RELEASE_TAG already exists. Bump the version before merging to main." >&2
+            exit 1
+          fi
+
+  windows-package:
+    name: Build Windows x64
+    needs: metadata
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -25,56 +58,178 @@ jobs:
           cache: npm
       - run: npm install --global npm@11.17.0
       - run: npm ci
-      - name: Read and validate release metadata
-        id: metadata
-        run: node scripts/prepare-release.mjs
-      - name: Reject an existing version tag
-        shell: pwsh
-        env:
-          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
-        run: |
-          $remoteTag = git ls-remote --tags origin "refs/tags/$env:RELEASE_TAG"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to query remote tags"
-          }
-          if ($remoteTag) {
-            throw "Release tag $env:RELEASE_TAG already exists. Bump the version before merging to main."
-          }
       - run: npm run deps:prepare
       - run: npm run deps:verify
-      - run: npm run verify:release
-      - name: Prepare release asset
-        id: asset
-        shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
-          RELEASE_NOTES_PATH: ${{ steps.metadata.outputs.notes_path }}
-        run: |
-          $installer = Join-Path $PWD "dist/Pictor-$env:RELEASE_VERSION-windows-x64-setup.exe"
-          $digest = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
-          Add-Content -LiteralPath $env:RELEASE_NOTES_PATH -Value "`n安装程序 SHA-256：``$digest``"
-          "installer=$installer" >> $env:GITHUB_OUTPUT
-          "sha256=$digest" >> $env:GITHUB_OUTPUT
-      - name: Publish GitHub Release
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
-          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
-          RELEASE_NOTES_PATH: ${{ steps.metadata.outputs.notes_path }}
-          RELEASE_INSTALLER: ${{ steps.asset.outputs.installer }}
-        run: |
-          gh release create $env:RELEASE_TAG $env:RELEASE_INSTALLER `
-            --repo $env:GITHUB_REPOSITORY `
-            --target $env:GITHUB_SHA `
-            --title "Pictor $env:RELEASE_VERSION" `
-            --notes-file $env:RELEASE_NOTES_PATH `
-            --latest
+      - run: npm run verify:fast
+      - run: npm run build:app
+      - run: npm run test:e2e:run
+      - run: npm run package:windows:build
+      - run: npm run package:verify:windows
+      - name: Upload Windows release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-asset
+          path: dist/Pictor-${{ needs.metadata.outputs.version }}-windows-x64-setup.exe
+          if-no-files-found: error
+          retention-days: 1
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: release-failure-evidence
+          name: windows-release-failure-evidence
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  linux-packages:
+    name: Build Linux x64
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Linux release dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libarchive-tools xauth xvfb
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned npm without replacing the runner copy
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
+          echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
+      - run: npm --version
+      - run: npm ci
+      - run: npm run deps:prepare
+        env:
+          ELECTRON_GET_USE_PROXY: 'true'
+      - run: npm run deps:verify
+      - run: npm run verify:fast
+      - run: npm run build:app
+      - run: xvfb-run --auto-servernum npm run test:e2e:run
+      - run: npm run package:linux:build
+      - run: npm run package:verify:linux
+      - name: Verify Ubuntu package lifecycle
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          lifecycle_root="$(mktemp -d)"
+          user_data="$lifecycle_root/Pictor"
+          sudo apt-get install --yes "./dist/Pictor-$RELEASE_VERSION-ubuntu-x64.deb"
+          test -x /opt/Pictor/pictor
+          test -f /usr/share/applications/pictor.desktop
+          PICTOR_LINUX_EXECUTABLE=/opt/Pictor/pictor \
+            PICTOR_EXPECTED_DISTRIBUTION=ubuntu \
+            PICTOR_USER_DATA_DIR="$user_data" \
+            xvfb-run --auto-servernum npm run package:verify:linux:launch
+          touch "$user_data/keep-after-uninstall"
+          sudo apt-get remove --yes pictor
+          test ! -e /opt/Pictor/pictor
+          test ! -e /usr/share/applications/pictor.desktop
+          test ! -e /usr/bin/pictor
+          test -f "$user_data/keep-after-uninstall"
+      - name: Verify Arch package lifecycle in a native container
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+        run: bash scripts/verify-arch-package-lifecycle.sh
+      - name: Upload Linux release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-assets
+          path: |
+            dist/Pictor-${{ needs.metadata.outputs.version }}-ubuntu-x64.deb
+            dist/Pictor-${{ needs.metadata.outputs.version }}-arch-x64.pacman
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-failure-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish atomic desktop release
+    needs:
+      - metadata
+      - windows-package
+      - linux-packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-release-asset*'
+          path: release-assets
+          merge-multiple: true
+      - name: Read release notes
+        id: metadata
+        run: node scripts/prepare-release.mjs
+      - name: Prepare checksums and release notes
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_NOTES_PATH: ${{ steps.metadata.outputs.notes_path }}
+        run: |
+          cd release-assets
+          sha256sum \
+            "Pictor-$RELEASE_VERSION-windows-x64-setup.exe" \
+            "Pictor-$RELEASE_VERSION-ubuntu-x64.deb" \
+            "Pictor-$RELEASE_VERSION-arch-x64.pacman" > SHA256SUMS
+          {
+            echo
+            echo '### SHA-256'
+            while read -r digest asset; do
+              echo "- \`$asset\`: \`$digest\`"
+            done < SHA256SUMS
+          } >> "$RELEASE_NOTES_PATH"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_NOTES_PATH: ${{ steps.metadata.outputs.notes_path }}
+        run: |
+          draft_created=0
+          cleanup_draft() {
+            if [ "$draft_created" -ne 1 ]; then
+              return
+            fi
+            is_draft="$(gh release view "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json isDraft \
+              --jq .isDraft 2>/dev/null || true)"
+            if [ "$is_draft" != true ]; then
+              return
+            fi
+            gh release delete "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --cleanup-tag \
+              --yes || true
+          }
+          trap cleanup_draft ERR
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Pictor $RELEASE_VERSION" \
+            --notes-file "$RELEASE_NOTES_PATH" \
+            --draft
+          draft_created=1
+          gh release upload "$RELEASE_TAG" \
+            release-assets/Pictor-$RELEASE_VERSION-windows-x64-setup.exe \
+            release-assets/Pictor-$RELEASE_VERSION-ubuntu-x64.deb \
+            release-assets/Pictor-$RELEASE_VERSION-arch-x64.pacman \
+            release-assets/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY"
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --latest
+          trap - ERR

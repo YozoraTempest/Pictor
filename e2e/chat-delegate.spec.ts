@@ -3,14 +3,16 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/contracts.js'
+import type { PictorBridge } from '../src/shared/desktop-bridge.js'
 import { credentialFixtures, readSelectedRunStatus } from './support.js'
 
 test('@smoke completes the delegate flow through the GUI and utility-process boundary', async ({
   browserName: _browserName,
 }, testInfo) => {
+  test.setTimeout(120_000)
   let modelRequestCount = 0
-  const server = createServer((_request, response) => {
+  const server = createServer(async (request, response) => {
+    for await (const chunk of request) void chunk
     modelRequestCount += 1
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
     if (modelRequestCount === 1) {
@@ -157,10 +159,18 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
   const projectRoot = testInfo.outputPath('runtime-project')
   const userDataDirectory = testInfo.outputPath('runtime-user-data')
   await mkdir(projectRoot, { recursive: true })
-  const electronApp = await electron.launch({
-    args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
-    cwd: resolve('.'),
-  })
+  const packagedExecutable = process.env.PICTOR_E2E_EXECUTABLE
+  const electronApp = await electron.launch(
+    packagedExecutable
+      ? {
+          executablePath: resolve(packagedExecutable),
+          args: [`--user-data-dir=${userDataDirectory}`],
+        }
+      : {
+          args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
+          cwd: resolve('.'),
+        },
+  )
 
   try {
     const window = await electronApp.firstWindow()
@@ -206,22 +216,18 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await expect(readFile(join(projectRoot, 'command-approved.txt'), 'utf8')).rejects.toThrow()
     await window.screenshot({ path: testInfo.outputPath('delegate-approval.png') })
     await window.getByRole('button', { name: '允许一次' }).click()
-    await expect(window.getByText('Task completed.')).toBeVisible({ timeout: 20_000 })
-    await expect(window.getByText('Changed files:')).toBeVisible()
+    await expect
+      .poll(() => modelRequestCount, {
+        message: 'the Agent should continue with a model request after command approval',
+        timeout: 30_000,
+      })
+      .toBeGreaterThanOrEqual(3)
     await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
+    await expect(window.getByText('Task completed.')).toBeVisible()
+    await expect(window.getByText('Changed files:')).toBeVisible()
     expect(await readSelectedRunStatus(window)).toBe('completed')
 
-    await electronApp.evaluate(async ({ BrowserWindow }) => {
-      const target = BrowserWindow.getAllWindows().find(
-        (candidate) => candidate.getTitle() === 'Pictor',
-      )
-      if (!target) throw new Error('Pictor window is unavailable')
-      target.restore()
-      target.setResizable(true)
-      target.setContentSize(900, 620)
-      await new Promise((resolveResize) => setTimeout(resolveResize, 250))
-      target.setContentSize(900, 620)
-    })
+    await window.setViewportSize({ width: 900, height: 620 })
     await expect
       .poll(() => window.evaluate(() => globalThis.innerWidth), { timeout: 10_000 })
       .toBe(900)

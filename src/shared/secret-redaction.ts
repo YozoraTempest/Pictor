@@ -1,4 +1,5 @@
-import type { RuntimeEvent, SessionRecord } from './contracts.js'
+import type { SessionRecord } from './domain.js'
+import type { RuntimeEvent } from './runtime-protocol.js'
 
 export const REDACTED_SECRET = '[REDACTED]'
 

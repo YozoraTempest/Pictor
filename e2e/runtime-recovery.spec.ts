@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/contracts.js'
+import type { PictorBridge } from '../src/shared/desktop-bridge.js'
 import { credentialFixtures, readSelectedRunStatus, writeChatText } from './support.js'
 
 test('shows a readable runtime failure and keeps the session sendable', async ({
@@ -34,11 +34,13 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
   try {
     const window = await electronApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
-    expect(
-      await electronApp.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows().every((candidate) => !candidate.isVisible()),
-      ),
-    ).toBe(true)
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows().map((candidate) => candidate.isVisible()),
+        ),
+      )
+      .toEqual([process.platform !== 'win32'])
 
     const setup = await window.evaluate(
       async ({ apiKey, baseUrl, rootPath }) => {

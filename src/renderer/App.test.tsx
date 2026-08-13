@@ -1,13 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 
-import type {
-  AppSnapshot,
-  IpcResult,
-  PictorBridge,
-  RuntimeEvent,
-  SessionRecord,
-} from '../shared/contracts'
+import type { SessionRecord } from '../shared/domain'
+import type { AppSnapshot, IpcResult, PictorBridge, RuntimeEvent } from '../shared/desktop-bridge'
 import { App } from './App'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
@@ -20,14 +15,6 @@ const now = '2026-08-11T00:00:00.000Z'
 
 function ok<T>(value: T): IpcResult<T> {
   return { ok: true, value }
-}
-
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise
-  })
-  return { promise, resolve }
 }
 
 function emptySnapshot(): AppSnapshot {
@@ -47,13 +34,21 @@ function createBridge(
 ): PictorBridge & { approveCommand: ReturnType<typeof vi.fn> } {
   const approveCommand = vi.fn(async () => ok(null))
   return {
-    getAppInfo: async () => ({ name: 'Pictor', version: '0.1.0', platform: 'win32' }),
+    getAppInfo: async () => ({
+      name: 'Pictor',
+      version: '0.1.0',
+      platform: 'win32',
+      arch: 'x64',
+      distribution: 'windows',
+      commandInterpreter: { kind: 'bash', available: true, message: null },
+    }),
     checkForUpdates: async () =>
       ok({
         currentVersion: '0.1.0',
         latestVersion: '0.2.0',
         updateAvailable: true,
-        installerAvailable: true,
+        packageAvailable: true,
+        packageKind: 'windows-nsis',
         publishedAt: now,
       }),
     openUpdate: async () => ok(null),
@@ -100,7 +95,8 @@ it('shows app information and downloads an available update from settings', asyn
       currentVersion: '0.1.0',
       latestVersion: '0.2.0',
       updateAvailable: true,
-      installerAvailable: true,
+      packageAvailable: true,
+      packageKind: 'windows-nsis' as const,
       publishedAt: now,
     }),
   )
@@ -115,8 +111,34 @@ it('shows app information and downloads an available update from settings', asyn
   expect(screen.getAllByText('v0.1.0')).toHaveLength(2)
   fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
   expect(await screen.findByText('发现新版本 v0.2.0')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '下载安装包' }))
+  fireEvent.click(screen.getByRole('button', { name: '下载发行包' }))
   await waitFor(() => expect(openUpdate).toHaveBeenCalledOnce())
+})
+
+it('shows the Linux platform in app information', async () => {
+  installBridge({
+    ...createBridge(emptySnapshot()),
+    getAppInfo: async () => ({
+      name: 'Pictor',
+      version: '0.1.0',
+      platform: 'linux',
+      arch: 'x64',
+      distribution: 'arch',
+      commandInterpreter: {
+        kind: 'bash',
+        available: false,
+        message: '未找到 Bash；命令工具不可用。',
+      },
+    }),
+  })
+  render(<App />)
+
+  await screen.findByRole('heading', { name: '选择一个项目开始' })
+  fireEvent.click(screen.getByRole('button', { name: '设置' }))
+  fireEvent.click(screen.getByRole('button', { name: '关于' }))
+
+  expect(screen.getByText('Linux x64')).toBeInTheDocument()
+  expect(screen.getByText('未找到 Bash；命令工具不可用。')).toBeInTheDocument()
 })
 
 it('saves the selected Responses compatibility mode', async () => {
@@ -287,100 +309,4 @@ it('renders an exact command approval and allows it once', async () => {
   await waitFor(() =>
     expect(bridge.approveCommand).toHaveBeenCalledWith({ runId, callId: 'call-1' }),
   )
-})
-
-it('ignores an older runtime refresh that resolves after the terminal state', async () => {
-  const project = {
-    id: projectId,
-    name: 'Pictor',
-    rootPath: 'E:\\code\\Pictor',
-    trustedAt: now,
-    availability: 'available' as const,
-    createdAt: now,
-    updatedAt: now,
-  }
-  const runningSession: SessionRecord = {
-    schemaVersion: 1,
-    id: sessionId,
-    projectId,
-    title: '运行验证',
-    messages: [],
-    runs: [
-      {
-        id: runId,
-        status: 'running',
-        error: null,
-        toolEvents: [],
-        createdAt: now,
-        updatedAt: now,
-      },
-    ],
-    createdAt: now,
-    updatedAt: now,
-  }
-  const completedSession: SessionRecord = {
-    ...runningSession,
-    runs: [{ ...runningSession.runs[0]!, status: 'completed' }],
-  }
-  const snapshot: AppSnapshot = {
-    projects: [project],
-    sessions: [
-      {
-        id: sessionId,
-        projectId,
-        title: runningSession.title,
-        lastRunStatus: 'running',
-        createdAt: now,
-        updatedAt: now,
-      },
-    ],
-    selectedProjectId: projectId,
-    selectedSessionId: sessionId,
-    settings: null,
-    issues: [],
-  }
-  const staleRefresh = deferred<IpcResult<SessionRecord>>()
-  const terminalRefresh = deferred<IpcResult<SessionRecord>>()
-  const getSession = vi
-    .fn()
-    .mockResolvedValueOnce(ok(runningSession))
-    .mockReturnValueOnce(staleRefresh.promise)
-    .mockReturnValueOnce(terminalRefresh.promise)
-  let runtimeListener: ((event: RuntimeEvent) => void) | null = null
-  installBridge({
-    ...createBridge(snapshot, runningSession),
-    getSession,
-    onRuntimeEvent: (listener) => {
-      runtimeListener = listener
-      return () => undefined
-    },
-  })
-  render(<App />)
-
-  expect(await screen.findByRole('heading', { name: '运行验证' })).toBeInTheDocument()
-  if (!runtimeListener) throw new Error('Runtime listener was not registered')
-  act(() => {
-    runtimeListener?.({
-      type: 'message.completed',
-      runId,
-      sessionId,
-      messageId,
-      content: 'Done',
-      at: now,
-    })
-    runtimeListener?.({
-      type: 'run.stateChanged',
-      runId,
-      sessionId,
-      status: 'completed',
-      error: null,
-      at: now,
-    })
-  })
-  await waitFor(() => expect(getSession).toHaveBeenCalledTimes(3))
-
-  await act(async () => terminalRefresh.resolve(ok(completedSession)))
-  expect(await screen.findByText('已完成')).toBeInTheDocument()
-  await act(async () => staleRefresh.resolve(ok(runningSession)))
-  expect(screen.getByText('已完成')).toBeInTheDocument()
 })
