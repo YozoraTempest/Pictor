@@ -22,17 +22,17 @@ npm run deps:verify
 
 ## 测试分层
 
-| 层级           | 命令                                                | 覆盖范围                                   | 运行时机                        |
-| -------------- | --------------------------------------------------- | ------------------------------------------ | ------------------------------- |
-| 静态检查       | `npm run check:format`、`check:types`、`check:lint` | 格式、类型、Lint                           | 本地提交前、每个 PR             |
-| 单元测试       | `npm run test:unit`                                 | 纯函数、组件、服务边界                     | 开发循环、每个 PR               |
-| 集成测试       | `npm run test:integration`                          | Pi adapter 与运行时协议集成                | 修改运行时边界时、每个 PR       |
-| Vitest 全量    | `npm test`                                          | 单元与集成测试一次完成                     | 本地提交前、每个 PR             |
-| E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                    | Windows/Linux PR，复用 `out/`   |
-| E2E Full       | `npm run test:e2e:run`                              | 全部桌面用户场景                           | `develop`、正式发布、本地发布前 |
-| Windows 包验证 | `npm run package:verify:windows`                    | NSIS、ASAR、x64 PE                         | 正式发布、本地发布前            |
-| Linux 包验证   | `npm run package:verify:linux`                      | deb/pacman 元数据、桌面入口、ASAR、x64 ELF | 正式发布、本地发布前            |
-| Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer、平台信息   | 正式发布、目标桌面验收          |
+| 层级           | 命令                                                | 覆盖范围                                      | 运行时机                        |
+| -------------- | --------------------------------------------------- | --------------------------------------------- | ------------------------------- |
+| 静态检查       | `npm run check:format`、`check:types`、`check:lint` | 格式、类型、Lint                              | 本地提交前、每个 PR             |
+| 单元测试       | `npm run test:unit`                                 | 纯函数、组件、服务边界                        | 开发循环、每个 PR               |
+| 集成测试       | `npm run test:integration`                          | Pi adapter 与运行时协议集成                   | 修改运行时边界时、每个 PR       |
+| Vitest 全量    | `npm test`                                          | 单元与集成测试一次完成                        | 本地提交前、每个 PR             |
+| E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Windows/Linux PR，复用 `out/`   |
+| E2E Full       | `npm run test:e2e:run`                              | 全部桌面用户场景                              | `develop`、正式发布、本地发布前 |
+| Windows 包验证 | `npm run package:verify:windows`                    | NSIS、ASAR、x64 PE                            | 正式发布、本地发布前            |
+| Linux 包验证   | `npm run package:verify:linux`                      | deb/pacman 元数据、桌面入口、ASAR、x64 ELF    | 正式发布、本地发布前            |
+| Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer 终态与平台信息 | 正式发布、目标桌面验收          |
 
 聚合命令：
 
@@ -92,6 +92,8 @@ XWayland，并记录发行版、架构、内核、桌面会话、Bash 版本、�
 - 不通过提高全局重试掩盖失败。出现不稳定测试时，先记录失败证据和根因，再修复或临时隔离。
 - Electron E2E 在 CI 中保持单 worker，避免共享桌面资源和用户数据竞争。
 - Linux hosted runner 通过 `xvfb-run -a` 提供确定性显示服务，并作为 Ubuntu 发布验收环境。
+- 已安装包启动探针必须等待 Renderer 进入 `.app-shell` 或 `.fatal-state` 明确终态；不得在
+  `DOMContentLoaded` 后立即采样，也不得用固定延时掩盖异步初始化。
 - Windows E2E 可以隐藏窗口；Linux E2E 必须让窗口进入当前显示服务的合成器，否则隐藏的
   Wayland 窗口不会产生 Playwright actionability 所需的帧。CI 窗口只显示在 Xvfb 虚拟屏幕。
 - 失败证据写入 Playwright `test-results/`，CI 仅在失败时上传，保留 7 天。
