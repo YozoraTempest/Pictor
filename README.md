@@ -87,6 +87,8 @@ npm run verify:pr
 [`docs/PROJECT_MANAGEMENT.md`](docs/PROJECT_MANAGEMENT.md)。仓库默认展示稳定的 `main`；提交
 普通贡献时，请在 GitHub 上将 Pull Request 的目标分支改为 `develop`。
 
+项目领域术语见 [`CONTEXT.md`](CONTEXT.md)，已接受的架构决策见 [`docs/adr/`](docs/adr/)。
+
 `npm run package:dir` 生成 `dist/win-unpacked/Pictor.exe`。`npm run package` 同时生成
 `dist/Pictor-<version>-windows-x64-setup.exe` NSIS 安装程序和 `dist/win-unpacked/`，随后自动
 校验安装程序、应用归档以及解包可执行文件的 x64 PE 架构；也可以对已有产物单独运行
