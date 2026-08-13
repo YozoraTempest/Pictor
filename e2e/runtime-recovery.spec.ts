@@ -34,10 +34,13 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
   try {
     const window = await electronApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
-    const windowVisibility = await electronApp.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows().map((candidate) => candidate.isVisible()),
-    )
-    expect(windowVisibility).toEqual([process.platform !== 'win32'])
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows().map((candidate) => candidate.isVisible()),
+        ),
+      )
+      .toEqual([process.platform !== 'win32'])
 
     const setup = await window.evaluate(
       async ({ apiKey, baseUrl, rootPath }) => {

@@ -227,17 +227,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await expect(window.getByText('Changed files:')).toBeVisible()
     expect(await readSelectedRunStatus(window)).toBe('completed')
 
-    await electronApp.evaluate(async ({ BrowserWindow }) => {
-      const target = BrowserWindow.getAllWindows().find(
-        (candidate) => candidate.getTitle() === 'Pictor',
-      )
-      if (!target) throw new Error('Pictor window is unavailable')
-      target.restore()
-      target.setResizable(true)
-      target.setContentSize(900, 620)
-      await new Promise((resolveResize) => setTimeout(resolveResize, 250))
-      target.setContentSize(900, 620)
-    })
+    await window.setViewportSize({ width: 900, height: 620 })
     await expect
       .poll(() => window.evaluate(() => globalThis.innerWidth), { timeout: 10_000 })
       .toBe(900)
