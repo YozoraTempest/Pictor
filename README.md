@@ -24,8 +24,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 | 平台           | 正式支持的环境                                     | Release Asset | Command Interpreter         |
 | -------------- | -------------------------------------------------- | ------------- | --------------------------- |
 | Windows x64    | Windows 11 x64                                     | NSIS `.exe`   | Git for Windows 提供的 Bash |
-| Ubuntu x64     | Ubuntu 24.04 LTS、GNOME Wayland                    | `.deb`        | 系统 Bash                   |
-| Arch Linux x64 | 原生 Arch Linux，2026-08-13 滚动快照、niri Wayland | `.pacman`     | 系统 Bash                   |
+| Ubuntu x64     | Ubuntu 24.04 LTS                                   | `.deb`        | 系统 Bash                   |
+| Arch Linux x64 | 原生 Arch Linux，2026-08-14 滚动快照、niri Wayland | `.pacman`     | 系统 Bash                   |
 
 Wayland 会话可以由 Electron 使用 XWayland，不承诺强制原生 Wayland。Ubuntu 衍生版、Arch
 衍生版和其他 Linux 发行版不属于正式支持范围，即使某些环境可能可以运行。所有平台还需要：
@@ -34,7 +34,7 @@ Wayland 会话可以由 Electron 使用 XWayland，不承诺强制原生 Wayland
 - 一个兼容 OpenAI Chat Completions 或 Responses、SSE 流式响应和函数工具调用的模型端点。
 
 Linux 缺少 Bash 时，Pictor 仍可启动并使用不依赖命令执行的功能；界面会主动提示，命令工具
-会返回明确错误。首期固定使用非登录 Bash，并以 `--noprofile --norc -lc` 执行每条获批命令，
+会返回明确错误。首期固定使用非登录 Bash，并以 `--noprofile --norc -c` 执行每条获批命令，
 不读取用户的登录 Shell 配置。
 
 ## 安装与卸载
@@ -141,7 +141,8 @@ CI 门禁和发行版验收见 [`docs/TESTING.md`](docs/TESTING.md)。
 ## 已知限制
 
 - Windows、Ubuntu 和 Arch 发布包及应用可执行文件未签名，应用图标仍使用 Electron 默认图标。
-- Windows 安装验收尚未取得净机证据；Ubuntu 的正式发布仍要求真实 GNOME Wayland 环境证据。
+- Windows 安装验收尚未取得净机证据；Ubuntu 由 hosted runner + Xvfb 自动验收，未单独覆盖
+  GNOME Wayland 实机桌面。
 - Arch 是滚动发行版，正式支持以发布说明记录的快照日期为验收基线，不承诺未来系统更新永不
   影响已发布版本。
 - Chat Completions 和 Responses 均由本地确定性 OpenAI 兼容端点覆盖。尚未用真实第三方

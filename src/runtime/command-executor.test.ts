@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -11,6 +11,7 @@ import { BashCommandExecutor } from './command-executor.js'
 const roots: string[] = []
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -44,6 +45,40 @@ async function waitForPid(path: string): Promise<number> {
   )
   return pid
 }
+
+it.runIf(process.platform !== 'win32')(
+  'does not load unapproved Bash startup files or exported functions',
+  async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'pictor-command-environment-'))
+    roots.push(projectRoot)
+    const startupOutput = join(projectRoot, 'startup-output')
+    const functionOutput = join(projectRoot, 'function-output')
+    const logoutOutput = join(projectRoot, 'logout-output')
+    const approvedOutput = join(projectRoot, 'approved-output')
+    const bashEnvironment = join(projectRoot, 'bash-environment')
+    await writeFile(bashEnvironment, `printf startup > '${startupOutput}'\n`, 'utf8')
+    await writeFile(
+      join(projectRoot, '.bash_logout'),
+      `printf logout > '${logoutOutput}'\n`,
+      'utf8',
+    )
+    vi.stubEnv('HOME', projectRoot)
+    vi.stubEnv('BASH_ENV', bashEnvironment)
+    vi.stubEnv('BASH_FUNC_pictor_injected%%', `() { printf function > '${functionOutput}'; }`)
+    const executor = new BashCommandExecutor('/bin/bash', 5_000)
+
+    const result = await executor.execute(
+      `if type pictor_injected >/dev/null 2>&1; then pictor_injected; fi; printf approved > '${approvedOutput}'; exit 0`,
+      projectRoot,
+    )
+
+    expect(result.exitCode).toBe(0)
+    await expect(readFile(approvedOutput, 'utf8')).resolves.toBe('approved')
+    await expect(readFile(startupOutput, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(functionOutput, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(logoutOutput, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  },
+)
 
 it.runIf(process.platform !== 'win32')(
   'terminates the complete POSIX process group when aborted',

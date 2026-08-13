@@ -55,6 +55,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   Smoke；设置迁移、故障恢复、第二协议和中断恢复属于 Full。
 - 测试不得访问真实模型、用户目录或网络服务。E2E 必须使用 `testInfo.outputPath()` 隔离数据，
   并在 `finally` 中关闭 Electron 和本地服务。
+- 目标桌面验收可设置 `PICTOR_E2E_EXECUTABLE`，让核心委托 Smoke 直接启动已安装或已解包的
+  发布应用；变量未设置时继续使用仓库构建产物。
 - Main、Preload、Renderer、Runtime 和 Shared 的测试归属及允许依赖方向见
   [`ARCHITECTURE.md`](ARCHITECTURE.md)。测试不得用不安全类型强转穿透 module interface。
 
@@ -62,8 +64,10 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 
 - 路径守卫必须在大小写敏感文件系统上拒绝绝对路径大小写兄弟目录和符号链接逃逸；`/Repo`
   与 `/repo` 可以注册为不同项目。Windows 路径身份继续忽略大小写。
-- Bash 发现覆盖 `PICTOR_BASH_PATH`、`PATH` 和受支持平台的固定候选。缺少 Bash 只禁用命令工具，
-  不阻止应用启动。
+- Bash 发现覆盖 `PICTOR_BASH_PATH`、`PATH` 和受支持平台的固定候选；Main 必须传递经过
+  `realpath` 验证的绝对普通可执行文件。缺少 Bash 只禁用命令工具，不阻止应用启动。
+- 命令环境必须移除 `BASH_ENV`、`ENV`、导出的 Bash 函数和其他隐式启动变量，避免审批框未
+  展示的脚本先于获批命令运行。
 - 命令执行覆盖用户停止和超时；两种情况都要证明外层 Bash 及后台/孙进程不再存活。
 - 更新资产选择覆盖 Windows NSIS、Ubuntu deb、Arch pacman、错误平台/架构/版本、非官方 URL、
   不受支持发行版和无匹配资产回退。
@@ -71,22 +75,23 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 
 ## 发行版验收
 
-| 基线                 | 自动化证据                                       | 发布前桌面证据                                 |
-| -------------------- | ------------------------------------------------ | ---------------------------------------------- |
-| Windows 11 x64       | Windows hosted runner，Smoke/Full、NSIS 结构验证 | 安装、启动、卸载                               |
-| Ubuntu 24.04 LTS x64 | `ubuntu-24.04` + Xvfb，Smoke/Full、deb 安装/移除 | 真实 GNOME Wayland 会话启动与核心委托          |
-| 原生 Arch Linux x64  | `archlinux:base` 包生命周期、结构验证            | 发布快照日期的 niri Wayland 会话启动与核心委托 |
+| 基线                 | 自动化证据                                          | 补充桌面证据                                   |
+| -------------------- | --------------------------------------------------- | ---------------------------------------------- |
+| Windows 11 x64       | Windows hosted runner，Smoke/Full、NSIS 结构验证    | 安装、启动、卸载                               |
+| Ubuntu 24.04 LTS x64 | `ubuntu-24.04` + Xvfb，Smoke/Full、deb 完整生命周期 | 不要求单独的实机桌面验收                       |
+| 原生 Arch Linux x64  | `archlinux:base` 包生命周期、结构验证               | 发布快照日期的 niri Wayland 会话启动与核心委托 |
 
-Arch 衍生版和 Ubuntu 衍生版不是替代验收环境。Wayland 桌面证据允许 Electron 使用 XWayland，
-但必须记录发行版、架构、内核、桌面会话、Bash 版本、产物摘要和验收日期。发布包安装/移除不得
-删除既有用户数据；用户数据清理由独立、明确的手工步骤验证。
+Arch 衍生版和 Ubuntu 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electron 使用
+XWayland，并记录发行版、架构、内核、桌面会话、Bash 版本、产物摘要和验收日期。Ubuntu
+不要求真实桌面证据，以 hosted runner 的原生 Ubuntu 用户态、Xvfb、完整 E2E 和 deb 生命周期
+作为发布门禁。发布包安装/移除不得删除既有用户数据；用户数据清理由独立、明确的手工步骤验证。
 
 ## 稳定性规则
 
 - 不用固定延时等待业务状态；优先使用可见状态、事件或 `expect.poll`。
 - 不通过提高全局重试掩盖失败。出现不稳定测试时，先记录失败证据和根因，再修复或临时隔离。
 - Electron E2E 在 CI 中保持单 worker，避免共享桌面资源和用户数据竞争。
-- Linux hosted runner 通过 `xvfb-run -a` 提供确定性显示服务；它不代替真实 Wayland 发布证据。
+- Linux hosted runner 通过 `xvfb-run -a` 提供确定性显示服务，并作为 Ubuntu 发布验收环境。
 - Windows E2E 可以隐藏窗口；Linux E2E 必须让窗口进入当前显示服务的合成器，否则隐藏的
   Wayland 窗口不会产生 Playwright actionability 所需的帧。CI 窗口只显示在 Xvfb 虚拟屏幕。
 - 失败证据写入 Playwright `test-results/`，CI 仅在失败时上传，保留 7 天。
@@ -96,7 +101,8 @@ Arch 衍生版和 Ubuntu 衍生版不是替代验收环境。Wayland 桌面证�
 
 PR 并行运行质量检查和 Vitest 全量，通过后分别执行 `Windows acceptance` 与独立的
 `Linux acceptance`。两端都构建一次并执行 E2E Smoke；推送 `develop` 时执行 E2E Full。
-Linux acceptance 固定使用 Ubuntu 24.04 hosted runner 和 Xvfb。
+Linux acceptance 固定使用 Ubuntu 24.04 hosted runner 和 Xvfb，并在原生 Arch 容器中复用
+与 Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。
 
 合并到 `main` 后，Release 工作流在 Windows 与 Ubuntu runner 上并行执行完整验证，分别生成
 Windows NSIS、Ubuntu deb 和 Arch pacman。Ubuntu runner 通过 `apt` 验证 deb 安装/移除，Arch
@@ -104,4 +110,5 @@ Windows NSIS、Ubuntu deb 和 Arch pacman。Ubuntu runner 通过 `apt` 验证 de
 GitHub Release，避免只发布部分平台资产。
 
 分支保护应要求 `Quality`、`Unit and integration`、`Windows acceptance` 和
-`Linux acceptance` 四个检查。结构校验和容器生命周期不代替真实目标桌面验收、签名或净机证据。
+`Linux acceptance` 四个检查。结构校验和容器生命周期不代替签名或 Windows 净机证据；
+Ubuntu 不额外要求实机桌面门禁，Arch 桌面证据按发布快照记录。

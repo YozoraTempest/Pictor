@@ -112,7 +112,7 @@ jobs:
       - quality
       - tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - name: Install Linux acceptance dependencies
@@ -161,6 +161,8 @@ jobs:
           test ! -e /usr/share/applications/pictor.desktop
           test ! -e /usr/bin/pictor
           test -f "$user_data/keep-after-uninstall"
+      - name: Verify Arch package lifecycle in a native container
+        run: bash scripts/verify-arch-package-lifecycle.sh
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@v4

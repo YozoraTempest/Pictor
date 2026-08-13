@@ -45,7 +45,8 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 2. 在 `docs/RELEASE_NOTES.md` 顶部新增 `## <version> - YYYY-MM-DD`，说明变化、验证和已知风险。
 3. 更新 README 中的当前安装版本、支持基线和对应限制。
 4. 本地运行 `npm run verify:release`，并在可用目标平台运行对应包验证。
-5. 为 Ubuntu 与 Arch 记录发布前桌面验收环境和日期；不能用发行版衍生版替代。
+5. 确认 Ubuntu 24.04 hosted runner 的完整 E2E 与 deb 生命周期、Arch 容器生命周期和可用的
+   本机 Arch Wayland 证据均通过；不能用发行版衍生版代替受支持发行版。
 6. 创建 `develop` 到 `main` 的 Pull Request，等待全部必需检查通过后使用 merge commit 合并。
 
 合并到 `main` 后，Release 工作流会再次执行完整发布验证，并构建以下同版本 x64 资产：

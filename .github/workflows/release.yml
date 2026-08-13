@@ -133,25 +133,7 @@ jobs:
       - name: Verify Arch package lifecycle in a native container
         env:
           RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
-        run: |
-          docker run --rm \
-            --env RELEASE_VERSION="$RELEASE_VERSION" \
-            --volume "$PWD/dist:/artifacts:ro" \
-            archlinux:base \
-            bash -lc '
-              package_path="/artifacts/Pictor-$RELEASE_VERSION-arch-x64.pacman" &&
-              mapfile -t dependencies < <(bsdtar -xOf "$package_path" .PKGINFO | sed -n "s/^depend = //p") &&
-              user_data=/root/.config/pictor &&
-              pacman -Syu --needed --noconfirm "${dependencies[@]}" &&
-              pacman -U --noconfirm "$package_path" &&
-              test -x /opt/Pictor/pictor &&
-              test -f /usr/share/applications/pictor.desktop &&
-              mkdir -p "$user_data" &&
-              touch "$user_data/keep-after-uninstall" &&
-              pacman -Rns --noconfirm pictor &&
-              test ! -e /opt/Pictor/pictor &&
-              test -f "$user_data/keep-after-uninstall"
-            '
+        run: bash scripts/verify-arch-package-lifecycle.sh
       - name: Upload Linux release assets
         uses: actions/upload-artifact@v4
         with:

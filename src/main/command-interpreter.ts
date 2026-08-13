@@ -1,6 +1,6 @@
 import { constants } from 'node:fs'
-import { access } from 'node:fs/promises'
-import { basename, delimiter, dirname, join } from 'node:path'
+import { access, realpath, stat } from 'node:fs/promises'
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import type { AppInfo } from '../shared/desktop-bridge.js'
 
@@ -9,7 +9,8 @@ type SupportedPlatform = AppInfo['platform']
 interface DiscoveryOptions {
   platform?: SupportedPlatform
   env?: NodeJS.ProcessEnv
-  canExecute?: (path: string) => Promise<boolean>
+  cwd?: string
+  resolveExecutable?: (path: string) => Promise<string | null>
 }
 
 export interface CommandInterpreterDiscovery {
@@ -17,11 +18,16 @@ export interface CommandInterpreterDiscovery {
   status: AppInfo['commandInterpreter']
 }
 
-async function canExecuteFile(path: string): Promise<boolean> {
-  return access(path, constants.X_OK).then(
-    () => true,
-    () => false,
-  )
+async function resolveExecutableFile(path: string): Promise<string | null> {
+  try {
+    const canonicalPath = await realpath(path)
+    const metadata = await stat(canonicalPath)
+    if (!metadata.isFile()) return null
+    await access(canonicalPath, constants.X_OK)
+    return canonicalPath
+  } catch {
+    return null
+  }
 }
 
 function candidates(platform: SupportedPlatform, env: NodeJS.ProcessEnv): string[] {
@@ -58,11 +64,16 @@ export async function discoverCommandInterpreter(
 ): Promise<CommandInterpreterDiscovery> {
   const platform = options.platform ?? (process.platform === 'win32' ? 'win32' : 'linux')
   const env = options.env ?? process.env
-  const canExecute = options.canExecute ?? canExecuteFile
-  for (const candidate of [...new Set(candidates(platform, env))]) {
-    if (await canExecute(candidate)) {
+  const cwd = options.cwd ?? process.cwd()
+  const resolveCandidate = options.resolveExecutable ?? resolveExecutableFile
+  const absoluteCandidates = candidates(platform, env).map((candidate) =>
+    isAbsolute(candidate) ? candidate : resolve(cwd, candidate),
+  )
+  for (const candidate of [...new Set(absoluteCandidates)]) {
+    const executablePath = await resolveCandidate(candidate)
+    if (executablePath) {
       return {
-        executablePath: candidate,
+        executablePath,
         status: { kind: 'bash', available: true, message: null },
       }
     }

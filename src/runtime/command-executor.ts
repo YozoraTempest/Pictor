@@ -3,6 +3,18 @@ import { spawn } from 'node:child_process'
 const OUTPUT_LIMIT = 100_000
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
 const TERMINATION_GRACE_MS = 250
+const BLOCKED_BASH_ENVIRONMENT_VARIABLES = new Set([
+  'BASHOPTS',
+  'BASH_COMPAT',
+  'BASH_ENV',
+  'BASH_XTRACEFD',
+  'CDPATH',
+  'ENV',
+  'GLOBIGNORE',
+  'PROMPT_COMMAND',
+  'PS4',
+  'SHELLOPTS',
+])
 
 export interface CommandResult {
   exitCode: number | null
@@ -20,6 +32,18 @@ function appendBounded(current: string, chunk: Buffer): string {
   return next.length > OUTPUT_LIMIT ? `${next.slice(0, OUTPUT_LIMIT)}\n[输出已截断]` : next
 }
 
+function commandEnvironment(): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => {
+      const normalizedName = name.toUpperCase()
+      return (
+        !BLOCKED_BASH_ENVIRONMENT_VARIABLES.has(normalizedName) &&
+        !normalizedName.startsWith('BASH_')
+      )
+    }),
+  )
+}
+
 export class BashCommandExecutor implements CommandExecutor {
   constructor(
     private readonly executablePath: string | null,
@@ -33,9 +57,9 @@ export class BashCommandExecutor implements CommandExecutor {
     }
 
     return new Promise<CommandResult>((resolve, reject) => {
-      const child = spawn(this.executablePath!, ['--noprofile', '--norc', '-lc', command], {
+      const child = spawn(this.executablePath!, ['--noprofile', '--norc', '-c', command], {
         cwd,
-        env: process.env,
+        env: commandEnvironment(),
         windowsHide: true,
         detached: process.platform !== 'win32',
       })
