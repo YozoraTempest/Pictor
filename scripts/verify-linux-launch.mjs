@@ -5,6 +5,8 @@ import { dirname, resolve } from 'node:path'
 import process, { stdout } from 'node:process'
 import { fileURLToPath } from 'node:url'
 
+import { collectLaunchEvidence } from './linux-launch-readiness.mjs'
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageMetadata = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'))
 const executablePath = resolve(
@@ -26,20 +28,18 @@ const electronApp = await electron.launch({
   executablePath,
   args: [`--user-data-dir=${userDataDirectory}`],
 })
+let window
+
+const captureScreenshot = async () => {
+  if (!window || !process.env.PICTOR_SCREENSHOT_PATH) return
+  const screenshotPath = resolve(process.env.PICTOR_SCREENSHOT_PATH)
+  await mkdir(dirname(screenshotPath), { recursive: true })
+  await window.screenshot({ path: screenshotPath })
+}
 
 try {
-  const window = await electronApp.firstWindow()
-  await window.waitForLoadState('domcontentloaded')
-  const evidence = await window.evaluate(async () => {
-    const appInfo = await globalThis.pictor.getAppInfo()
-    const shell = globalThis.document.querySelector('.app-shell')?.getBoundingClientRect()
-    return {
-      appInfo,
-      title: globalThis.document.title,
-      bodyTextLength: globalThis.document.body.innerText.trim().length,
-      shell: shell ? { width: shell.width, height: shell.height } : null,
-    }
-  })
+  window = await electronApp.firstWindow()
+  const evidence = await collectLaunchEvidence(window)
 
   const appInfo = evidence.appInfo
   if (appInfo.platform !== 'linux' || appInfo.arch !== 'x64') {
@@ -65,9 +65,7 @@ try {
   ) {
     throw new Error(`Packaged renderer did not mount: ${JSON.stringify(evidence)}`)
   }
-  if (process.env.PICTOR_SCREENSHOT_PATH) {
-    await window.screenshot({ path: resolve(process.env.PICTOR_SCREENSHOT_PATH) })
-  }
+  await captureScreenshot()
 
   stdout.write(
     `${JSON.stringify(
@@ -86,6 +84,13 @@ try {
       2,
     )}\n`,
   )
+} catch (error) {
+  try {
+    await captureScreenshot()
+  } catch (screenshotError) {
+    process.stderr.write(`Failed to capture packaged renderer evidence: ${screenshotError}\n`)
+  }
+  throw error
 } finally {
   await electronApp.close()
   if (!explicitUserData) await rm(userDataDirectory, { recursive: true, force: true })

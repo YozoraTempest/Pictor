@@ -1,11 +1,15 @@
 # 发布说明
 
-## 0.2.0 - 2026-08-14
+## 0.2.1 - 2026-08-14
 
-Pictor 0.2.0 将正式桌面支持扩展到 Ubuntu 24.04 LTS x64 和原生 Arch Linux x64，同时保留
+Pictor 0.2.1 将正式桌面支持扩展到 Ubuntu 24.04 LTS x64 和原生 Arch Linux x64，同时保留
 Windows 11 x64。关于页和命令审批现在显示实际平台；Linux 缺少 Bash 时应用仍能启动并主动
 提示，命令工具则返回明确错误。获批命令使用固定的非登录 Bash 参数，Linux 停止或超时会终止
 独立 POSIX 进程组，避免后台子进程残留。
+
+0.2.0 发布候选在创建标签和 GitHub Release 前被原子发布流程停止：Ubuntu 安装包已成功安装，
+但启动探针在 Renderer 离开加载态前过早取证。0.2.1 改为等待 `.app-shell` 或 `.fatal-state`
+明确终态；前者继续验证可见尺寸，后者保留错误证据并让发布失败，不使用固定延时或宽松重试。
 
 项目边界现在遵循宿主平台的大小写语义：Linux 会拒绝大小写兄弟目录和符号链接逃逸，并允许
 `/Repo` 与 `/repo` 作为不同项目；Windows 继续按不区分大小写的路径身份去重。更新检查只会
@@ -25,10 +29,10 @@ Ubuntu runner 与 Arch 容器验证安装和移除。PR 新增独立 `Linux acce
   Bash 5.3.15；允许 Electron 使用 XWayland。
 - Windows 11 x64；现有 CI、E2E、NSIS 和更新资产行为必须继续通过。
 
-2026-08-14 的本机 Arch 快照已通过格式、类型和 lint、126 项单元/集成测试、6 项真实 Electron
-桌面 E2E、0.2.0 双包结构校验，以及用户命名空间替代根中的 pacman 安装、注册与移除。来自
+2026-08-14 的本机 Arch 快照已通过格式、类型和 lint、128 项单元/集成测试、6 项真实 Electron
+桌面 E2E、0.2.1 双包结构校验，以及用户命名空间替代根中的 pacman 安装、注册与移除。来自
 `.pacman` 的 x64 应用已在 niri Wayland 会话完成启动和核心委托，Preload 返回 `linux`、`x64`、
-`arch`、Bash 可用和版本 0.2.0；卸载验证保留了隔离用户数据。原生 Arch 容器会在 required check
+`arch`、Bash 可用和版本 0.2.1；卸载验证保留了隔离用户数据。原生 Arch 容器会在 required check
 中复验完整安装脚本。Ubuntu 由对应 required check 和正式 Release 工作流验收。
 
 ### 已知风险

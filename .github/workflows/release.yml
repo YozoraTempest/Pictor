@@ -123,6 +123,7 @@ jobs:
           PICTOR_LINUX_EXECUTABLE=/opt/Pictor/pictor \
             PICTOR_EXPECTED_DISTRIBUTION=ubuntu \
             PICTOR_USER_DATA_DIR="$user_data" \
+            PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
             xvfb-run --auto-servernum npm run package:verify:linux:launch
           touch "$user_data/keep-after-uninstall"
           sudo apt-get remove --yes pictor

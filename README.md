@@ -39,12 +39,12 @@ Linux 缺少 Bash 时，Pictor 仍可启动并使用不依赖命令执行的功�
 
 ## 安装与卸载
 
-0.2.0 同一个 GitHub Release 提供以下 x64 发布包及 `SHA256SUMS`：
+0.2.1 同一个 GitHub Release 提供以下 x64 发布包及 `SHA256SUMS`：
 
 ```text
-Pictor-0.2.0-windows-x64-setup.exe
-Pictor-0.2.0-ubuntu-x64.deb
-Pictor-0.2.0-arch-x64.pacman
+Pictor-0.2.1-windows-x64-setup.exe
+Pictor-0.2.1-ubuntu-x64.deb
+Pictor-0.2.1-arch-x64.pacman
 ```
 
 Windows：运行 NSIS 安装程序并按向导选择安装位置。要卸载，请在“已安装的应用”中选择
@@ -53,14 +53,14 @@ Pictor，或运行安装目录中的卸载程序。
 Ubuntu 24.04 LTS：
 
 ```bash
-sudo apt install ./Pictor-0.2.0-ubuntu-x64.deb
+sudo apt install ./Pictor-0.2.1-ubuntu-x64.deb
 sudo apt remove pictor
 ```
 
 原生 Arch Linux：
 
 ```bash
-sudo pacman -U ./Pictor-0.2.0-arch-x64.pacman
+sudo pacman -U ./Pictor-0.2.1-arch-x64.pacman
 sudo pacman -Rns pictor
 ```
 
