@@ -1,0 +1,13 @@
+{
+  "id": "pictor.model-openai-compatible",
+  "name": "OpenAI-compatible Model",
+  "version": "0.2.1",
+  "description": "Chat Completions and Responses model provider",
+  "engines": {
+    "pictor": "^0.2.0"
+  },
+  "dependencies": {},
+  "modules": {
+    "runtime": "./dist/runtime.js"
+  }
+}

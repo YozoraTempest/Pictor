@@ -20,14 +20,12 @@ import {
   type RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
 import { createSecretRedactor, type SecretRedactor } from '../shared/secret-redaction.js'
-import type { AgentRuntimeResources } from './plugin-interface.js'
+import type { AgentRuntimeResources, ModelRuntimeProvider } from './plugin-interface.js'
 import { ApprovalBroker } from './approval-broker.js'
 import { BashCommandExecutor, type CommandExecutor } from './command-executor.js'
 import { ExtensionUiBroker } from './extension-ui.js'
 import { ProjectPathGuard } from './path-guard.js'
 import { createPictorTools } from './tools.js'
-
-const PROVIDER_ID = 'pictor-openai-compatible'
 
 const toolKinds = {
   pictor_list: 'list',
@@ -53,6 +51,7 @@ interface SessionFactoryInput {
   config: RuntimeStartConfig
   tools: ToolDefinition[]
   extensionPaths: readonly string[]
+  modelProvider: ModelRuntimeProvider
 }
 
 type SessionFactory = (input: SessionFactoryInput) => Promise<PiSessionLike>
@@ -154,6 +153,7 @@ async function createProductionSession({
   config,
   tools,
   extensionPaths,
+  modelProvider,
 }: SessionFactoryInput): Promise<PiSessionLike> {
   await mkdir(config.agentDirectory, { recursive: true })
   await mkdir(config.sessionDirectory, { recursive: true })
@@ -175,37 +175,7 @@ async function createProductionSession({
       { projectTrusted: true },
     )
     const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false })
-    const api =
-      config.settings.apiProtocol === 'responses' ? 'openai-responses' : 'openai-completions'
-    const reasoningEnabled = config.settings.reasoningEffort !== null
-    modelRuntime.registerProvider(PROVIDER_ID, {
-      name: 'Pictor OpenAI-compatible endpoint',
-      api,
-      baseUrl: config.settings.baseUrl,
-      apiKey: config.apiKey,
-      authHeader: true,
-      models: [
-        {
-          id: config.settings.modelId,
-          name: config.settings.modelId,
-          api,
-          reasoning: reasoningEnabled,
-          ...(reasoningEnabled ? { thinkingLevelMap: { xhigh: 'xhigh', max: 'max' } } : {}),
-          input: ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128_000,
-          maxTokens: config.settings.maxOutputTokens ?? 8192,
-          ...(api === 'openai-completions' && reasoningEnabled
-            ? { compat: { supportsReasoningEffort: true } }
-            : {}),
-          ...(config.settings.temperature === null
-            ? {}
-            : { samplingParams: { temperature: config.settings.temperature } }),
-        },
-      ],
-    })
-    const model = modelRuntime.getModel(PROVIDER_ID, config.settings.modelId)
-    if (!model) throw new Error(`Model is unavailable: ${config.settings.modelId}`)
+    const model = modelProvider.register(modelRuntime, config.settings, config.apiKey)
     const services = await createAgentSessionServices({
       cwd,
       agentDir,
@@ -298,6 +268,7 @@ export class PiAgentRuntime {
   readonly id = 'pictor.pi-agent-runtime'
   private current: ActiveRuntime | undefined
   private extensionPaths: readonly string[] = []
+  private modelProviders: readonly ModelRuntimeProvider[] = []
 
   constructor(
     private readonly emit: (event: RuntimeEvent) => void,
@@ -307,6 +278,7 @@ export class PiAgentRuntime {
 
   configure(resources: AgentRuntimeResources): void {
     this.extensionPaths = [...resources.extensionPaths]
+    this.modelProviders = [...resources.modelProviders]
   }
 
   async start(config: RuntimeStartConfig): Promise<void> {
@@ -358,6 +330,7 @@ export class PiAgentRuntime {
         config,
         tools,
         extensionPaths: this.extensionPaths,
+        modelProvider: this.getModelProvider(),
       })
       current.session = session
       if (current.cancelled) {
@@ -436,6 +409,13 @@ export class PiAgentRuntime {
 
   respondToExtensionUi(requestId: string, value: string | boolean | null): void {
     this.current?.extensionUi.respond(requestId, value)
+  }
+
+  private getModelProvider(): ModelRuntimeProvider {
+    if (this.modelProviders.length === 0) throw new Error('No Model Runtime Provider is active')
+    if (this.modelProviders.length > 1)
+      throw new Error('Multiple Model Runtime Providers are active')
+    return this.modelProviders[0]!
   }
 
   private handlePiEvent(current: ActiveRuntime, event: AgentSessionEvent): void {

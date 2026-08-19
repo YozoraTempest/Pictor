@@ -42,6 +42,17 @@ describe('PiAgentRuntime cleanup', () => {
         }
         events.push(event)
       }, sessionFactory)
+      runtime.configure({
+        extensionPaths: [],
+        modelProviders: [
+          {
+            id: 'test-model-provider',
+            register: () => {
+              throw new Error('not used by the test Session factory')
+            },
+          },
+        ],
+      })
       const baseConfig = {
         type: 'start',
         sessionId: '11234567-89ab-4def-8123-456789abcdef',

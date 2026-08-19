@@ -11,6 +11,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import { SessionManager } from '@earendil-works/pi-coding-agent'
 
 import type { RuntimeEvent } from '../shared/runtime-protocol.js'
+import { openAiCompatibleModelProvider } from './openai-model-provider.js'
 import { PiAgentRuntime } from './pi-adapter.js'
 
 let server: Server
@@ -24,6 +25,12 @@ let chatToolName: string
 let chatToolCallId: string
 let chatRequestCount: number
 const localApiKey = ['local', 'test', 'key'].join('-')
+
+function createRuntime(emit: (event: RuntimeEvent) => void): PiAgentRuntime {
+  const runtime = new PiAgentRuntime(emit)
+  runtime.configure({ extensionPaths: [], modelProviders: [openAiCompatibleModelProvider] })
+  return runtime
+}
 
 beforeEach(async () => {
   testRoot = await mkdtemp(join(tmpdir(), 'pictor-pi-runtime-'))
@@ -266,7 +273,7 @@ afterEach(async () => {
 
 it('streams normalized text events through the real Pi SDK', async () => {
   const events: RuntimeEvent[] = []
-  const runtime = new PiAgentRuntime((event) => events.push(event))
+  const runtime = createRuntime((event) => events.push(event))
   await runtime.start({
     type: 'start',
     runId: '01234567-89ab-4def-8123-456789abcdef',
@@ -302,7 +309,7 @@ it('streams normalized text events through the real Pi SDK', async () => {
 
 it('streams Responses API events through the real Pi SDK', async () => {
   const events: RuntimeEvent[] = []
-  const runtime = new PiAgentRuntime((event) => events.push(event))
+  const runtime = createRuntime((event) => events.push(event))
   await runtime.start({
     type: 'start',
     runId: '31234567-89ab-4def-8123-456789abcdef',
@@ -344,11 +351,12 @@ it('loads an unmodified official Pi Extension and exposes its custom tool', asyn
   chatToolName = 'hello'
   chatToolCallId = 'call-official-hello'
   chatToolArguments = { name: 'Pictor' }
-  const runtime = new PiAgentRuntime((event) => events.push(event))
+  const runtime = createRuntime((event) => events.push(event))
   runtime.configure({
     extensionPaths: [
       resolve('node_modules/@earendil-works/pi-coding-agent/examples/extensions/hello.ts'),
     ],
+    modelProviders: [openAiCompatibleModelProvider],
   })
 
   await runAgent(runtime, 'chat-completions', 'Use the hello tool.')
@@ -387,7 +395,7 @@ it.each(['a', 'id', 'running', ['pi', 'transcript', 'credential'].join('-')])(
       role: secret,
       name: secret,
     }
-    const runtime = new PiAgentRuntime((event) => events.push(event))
+    const runtime = createRuntime((event) => events.push(event))
 
     await runtime.start({
       type: 'start',
@@ -478,7 +486,7 @@ it.each([
   'fails a %s Agent run for %s and accepts a recovery run',
   async (protocol, mode, category, readableMessage) => {
     const events: RuntimeEvent[] = []
-    const runtime = new PiAgentRuntime((event) => events.push(event))
+    const runtime = createRuntime((event) => events.push(event))
     failureMode = mode
 
     await runAgent(runtime, protocol, `Trigger ${mode}.`)

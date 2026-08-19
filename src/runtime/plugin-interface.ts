@@ -1,8 +1,20 @@
 import { ContributionPoint } from '../kernel/module.js'
+import type { ModelRuntime } from '@earendil-works/pi-coding-agent'
+import type { ModelSettingsInput } from '../shared/model.js'
 import type { RuntimeStartConfig } from '../shared/runtime-protocol.js'
+
+export interface ModelRuntimeProvider {
+  id: string
+  register(
+    runtime: ModelRuntime,
+    settings: ModelSettingsInput,
+    apiKey: string,
+  ): NonNullable<ReturnType<ModelRuntime['getModel']>>
+}
 
 export interface AgentRuntimeResources {
   extensionPaths: readonly string[]
+  modelProviders: readonly ModelRuntimeProvider[]
 }
 
 export interface AgentRuntimeProvider {
@@ -20,3 +32,7 @@ export const agentRuntimeContributions = new ContributionPoint<AgentRuntimeProvi
 )
 
 export const piExtensionPathContributions = new ContributionPoint<string>('pi.extension-paths')
+
+export const modelRuntimeProviderContributions = new ContributionPoint<ModelRuntimeProvider>(
+  'model.providers',
+)

@@ -6,6 +6,7 @@ import { runtimePluginBootstrapSchema } from '../shared/plugins.js'
 import { runtimeCommandSchema, type RuntimeEvent } from '../shared/runtime-protocol.js'
 import {
   agentRuntimeContributions,
+  modelRuntimeProviderContributions,
   piExtensionPathContributions,
   type AgentRuntimeProvider,
 } from './plugin-interface.js'
@@ -56,6 +57,7 @@ const statePromise = (async (): Promise<RuntimeHostState> => {
   if (runtimes.length > 1) throw new Error('Multiple Agent Runtime Providers are active')
   runtimes[0]?.configure({
     extensionPaths: host.getContributions(piExtensionPathContributions),
+    modelProviders: host.getContributions(modelRuntimeProviderContributions),
   })
   parentPort.postMessage({ type: 'host.ready' })
   return { host, runtime: runtimes[0] ?? null }

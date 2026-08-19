@@ -24,6 +24,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
   Bundled Plugin 后，Core Shell 仍可启动并打开 Plugin Manager。
 - `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Main contract 与 Renderer 设置页显示
   当前项目的 Git working tree；它验证了真实 Plugin 间依赖与组合。
+- `pictor.model-openai-compatible` 作为独立 Runtime Provider 注册 Chat Completions/Responses
+  模型；Pi Runtime 只消费 `model.providers` Contribution，不硬编码模型供应商。
 
 首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、第三方 Plugin 分发、远程项目、WSL、
 容器、macOS、Linux ARM64、静默更新、系统密钥环、包签名和软件源不在当前范围内。
