@@ -4,7 +4,12 @@ import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 
 import type { PictorBridge } from '../src/shared/desktop-bridge.js'
-import { credentialFixtures, readSelectedRunStatus } from './support.js'
+import {
+  bridgeKeys,
+  credentialFixtures,
+  moduleBridgeKeys,
+  readSelectedRunStatus,
+} from './support.js'
 
 test('@smoke completes the delegate flow through the GUI and utility-process boundary', async ({
   browserName: _browserName,
@@ -175,6 +180,19 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
   try {
     const window = await electronApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
+    await expect(window).toHaveTitle('Pictor')
+    const rendererGlobals = await window.evaluate(() => ({
+      bodyTextLength: document.body.innerText.length,
+      bridgeKeys: Object.keys((globalThis as typeof globalThis & { pictor: object }).pictor),
+      moduleBridgeKeys: Object.keys(
+        (globalThis as typeof globalThis & { pictorModules: object }).pictorModules,
+      ),
+      nodeProcessType: typeof Reflect.get(globalThis, 'process'),
+    }))
+    expect(rendererGlobals.bodyTextLength).toBeGreaterThan(0)
+    expect(rendererGlobals.bridgeKeys.sort()).toEqual(bridgeKeys.toSorted())
+    expect(rendererGlobals.moduleBridgeKeys.sort()).toEqual(moduleBridgeKeys.toSorted())
+    expect(rendererGlobals.nodeProcessType).toBe('undefined')
 
     await window.getByRole('button', { name: '设置' }).click()
     await expect(window.getByRole('button', { name: 'Chat Completions' })).toHaveAttribute(

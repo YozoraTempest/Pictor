@@ -35,8 +35,8 @@ npm run deps:verify
 | E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Windows/Linux PR，复用 `out/`   |
 | E2E Full       | `npm run test:e2e:run`                              | 全部桌面用户场景                              | `develop`、正式发布、本地发布前 |
 | Windows 包验证 | `npm run package:verify:windows`                    | NSIS、ASAR、x64 PE                            | 正式发布、本地发布前            |
-| Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | 正式发布、本地发布前            |
-| Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer 终态与平台信息 | 正式发布、目标桌面验收          |
+| Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | `develop`、正式发布、本地发布前 |
+| Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer 终态与平台信息 | `develop`、正式发布、桌面验收   |
 
 聚合命令：
 
@@ -57,8 +57,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。
 - Electron 用户场景放在 `e2e/*.spec.ts`，每个文件描述一个完整行为，不按页面或组件拆分。
 - 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；不要在场景之间共享可变状态。
-- Smoke 用例在标题中添加 `@smoke`。只有“应用能启动”和“一条核心委托链路能完成”进入
-  Smoke；设置迁移、故障恢复、第二协议和中断恢复属于 Full。
+- Smoke 用例在标题中添加 `@smoke`。单一核心委托场景同时验证应用启动、Renderer 隔离和完整
+  委托链路；独立 Shell、设置迁移、故障恢复、第二协议和中断恢复属于 Full。
 - 测试不得访问真实模型、用户目录或网络服务。E2E 必须使用 `testInfo.outputPath()` 隔离数据，
   并在 `finally` 中关闭 Electron 和本地服务。
 - 目标桌面验收可设置 `PICTOR_E2E_EXECUTABLE`，让核心委托 Smoke 直接启动已安装或已解包的
@@ -77,6 +77,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - 命令执行覆盖用户停止和超时；两种情况都要证明外层 Bash 及后台/孙进程不再存活。
 - 更新资产选择覆盖 Windows NSIS、Arch pacman、便携 AppImage、错误平台/架构/版本、非官方 URL
   和无匹配资产回退。
+- Pacman 使用 `zstd` 压缩，优先缩短 develop 与 Release 的包构建反馈；不为减小附件体积改回
+  明显更慢的 `xz`。
 - API Key 在 Unix 写入后验证权限为 `0600`，且不得进入 Renderer、Session 或测试证据。
 
 ## 发行版验收
@@ -108,11 +110,13 @@ Arch 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electro
 
 ## CI 门禁
 
-PR 并行运行质量检查和 Vitest 全量，通过后分别执行 `Windows acceptance` 与独立的
-`Linux acceptance`。两端都构建一次并执行 E2E Smoke；推送 `develop` 时执行 E2E Full。
-Linux acceptance 使用 hosted runner 构建并启动 AppImage，并在原生 Arch 容器中复用与
-Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。原生 niri 桌面证据仍在发布前
-由 Arch 工作站补充。
+PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和 `Linux acceptance`
+四项必需检查，不用静态检查串行阻塞桌面 Smoke。Quality 与全量 Vitest 在 Linux 运行，以覆盖
+大小写敏感文件系统及全部 POSIX 用例；Windows 由真实 Electron Smoke 覆盖。Linux acceptance
+只构建应用并执行 E2E Smoke，不重复 Vitest，也不构建发行包。推送 `develop` 时两端执行 E2E
+Full，Linux 额外构建并校验 AppImage/Pacman、启动 AppImage，并在原生 Arch 容器中复用与
+Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。原生 niri 桌面证据仍在发布前由
+Arch 工作站补充。
 
 合并到 `main` 后，Release 工作流在 Windows 与 Linux hosted runner 上并行执行完整验证，生成
 Windows NSIS、Arch pacman 和便携 AppImage。Arch 容器通过 `pacman` 验证原生包生命周期，
