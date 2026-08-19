@@ -111,10 +111,12 @@ Arch 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electro
 ## CI 门禁
 
 PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和 `Linux acceptance`
-四项必需检查，不用静态检查串行阻塞桌面 Smoke。PR 的 Linux acceptance 运行完整 Vitest、构建
-应用并执行 E2E Smoke，不构建发行包。推送 `develop` 时两端执行 E2E Full，Linux 额外构建并
-校验 AppImage/Pacman、启动 AppImage，并在原生 Arch 容器中复用与 Release 相同的 pacman
-安装、注册、移除和用户数据保留脚本。原生 niri 桌面证据仍在发布前由 Arch 工作站补充。
+四项必需检查，不用静态检查串行阻塞桌面 Smoke。Quality 与全量 Vitest 在 Linux 运行，以覆盖
+大小写敏感文件系统及全部 POSIX 用例；Windows 由真实 Electron Smoke 覆盖。Linux acceptance
+只构建应用并执行 E2E Smoke，不重复 Vitest，也不构建发行包。推送 `develop` 时两端执行 E2E
+Full，Linux 额外构建并校验 AppImage/Pacman、启动 AppImage，并在原生 Arch 容器中复用与
+Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。原生 niri 桌面证据仍在发布前由
+Arch 工作站补充。
 
 合并到 `main` 后，Release 工作流在 Windows 与 Linux hosted runner 上并行执行完整验证，生成
 Windows NSIS、Arch pacman 和便携 AppImage。Arch 容器通过 `pacman` 验证原生包生命周期，
