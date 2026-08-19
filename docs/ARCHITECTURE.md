@@ -96,6 +96,11 @@ Command 与事件。未知 Tool 映射为通用 `custom` Tool event。`Extension
 select/confirm/input/editor 映射到 Renderer modal，把 notify/status/文本 widget 映射到会话 UI；
 raw terminal input、TUI Component、theme、header/footer/editor 等能力明确返回 unavailable。
 
+Core Renderer 只渲染不可卸载的 `CoreShell` 和 Plugin Manager。`pictor.agent-workspace` 通过
+`shell.applications` Contribution 提供 Project、Session 与 Conversation GUI；移除或阻塞该
+Plugin 时，CoreShell 显示空 Plugin Manager，而不是让 Renderer bootstrap 因缺少业务 Provider
+失败。设置页 Contribution 只在 Agent Workspace 存在时组合到该应用中。
+
 `AppRepository` 是 Main 进程的工作区状态入口，只协调 Project、Settings、导航选择和持久化
 初始化。Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全
 集中在内部 `SessionPersistence` module；它直接使用本地文件系统和现有凭据迁移函数，不增加

@@ -101,6 +101,39 @@ textarea:disabled {
   background: var(--bg);
 }
 
+.core-shell {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-rows: 62px minmax(0, 1fr);
+  background: var(--bg);
+}
+
+.core-shell__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 14px;
+}
+
+.core-shell__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--text-muted);
+}
+
+.core-shell__empty h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+}
+
 .app-loading,
 .fatal-state {
   display: flex;

@@ -5,9 +5,10 @@ import * as jsxDevRuntime from 'react/jsx-dev-runtime'
 import * as jsxRuntime from 'react/jsx-runtime'
 
 import { settingsSectionContributions } from '../modules/shell/settings'
+import { shellApplicationContributions } from '../modules/shell/application'
 import { readPluginEntrypoint, type RendererPluginContext } from '../plugin/entry'
 import { PluginHost, type PluginDefinition } from '../plugin/host'
-import { App } from './App'
+import { CoreShell } from './CoreShell'
 import './styles.css'
 
 const root = document.getElementById('root')
@@ -54,9 +55,12 @@ void (async () => {
   })
   const rendererPluginStatuses = await host.start(definitions)
   activePluginHost = host
+  const applications = host.getContributions(shellApplicationContributions)
+  if (applications.length > 1) throw new Error('Multiple Shell applications are active')
   createRoot(root).render(
     <StrictMode>
-      <App
+      <CoreShell
+        application={applications[0] ?? null}
         settingsSections={host.getContributions(settingsSectionContributions)}
         rendererPluginStatuses={rendererPluginStatuses}
       />
