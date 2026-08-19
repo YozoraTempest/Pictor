@@ -223,7 +223,12 @@ void app.whenReady().then(() => {
     })
     const mainPluginHost = new PluginHost({ pictorVersion: currentVersion, safeMode })
     await mainPluginHost.start(createMainPluginDefinitions(pluginStoreSnapshot, appInfo))
-    const pluginManager = new PluginManager(pluginStore, mainPluginHost.getStatuses(), safeMode)
+    const pluginManager = new PluginManager(
+      pluginStore,
+      mainPluginHost.getStatuses(),
+      safeMode,
+      pluginStoreSnapshot.registry.entries,
+    )
     const moduleIpc = registerModuleIpc(
       new ModuleRouter(mainPluginHost.getContributions(moduleHandlerContributions)),
       validateSender,

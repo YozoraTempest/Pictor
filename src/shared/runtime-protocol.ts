@@ -61,6 +61,25 @@ export const runtimeEventSchema = z.discriminatedUnion('type', [
     category: z.enum(['authentication', 'connectivity', 'model', 'server', 'runtime']),
     message: z.string().min(1),
   }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('extension.ui.requested'),
+    requestId: z.uuid(),
+    kind: z.enum(['select', 'confirm', 'input', 'editor']),
+    title: z.string(),
+    message: z.string().nullable(),
+    options: z.array(z.string()),
+    value: z.string().nullable(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('extension.ui.notification'),
+    level: z.enum(['info', 'warning', 'error']),
+    message: z.string(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('extension.ui.status'),
+    key: z.string(),
+    text: z.string().nullable(),
+  }),
 ])
 
 export const runtimeStartConfigSchema = z.object({
@@ -83,6 +102,12 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('approve'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('reject'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('abort'), runId: idSchema }),
+  z.object({
+    type: z.literal('extension.ui.respond'),
+    runId: idSchema,
+    requestId: z.uuid(),
+    value: z.union([z.string(), z.boolean(), z.null()]),
+  }),
   z.object({ type: z.literal('dispose') }),
 ])
 

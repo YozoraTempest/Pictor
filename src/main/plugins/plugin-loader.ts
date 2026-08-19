@@ -47,5 +47,10 @@ export function createRuntimePluginBootstrap(
         ? resolve(rootPath, manifest.modules.runtime)
         : null,
     })),
+    extensions: snapshot.nativeExtensions.map(({ entry, runtimePath }) => ({
+      kind: entry.kind,
+      id: entry.id,
+      path: runtimePath,
+    })),
   })
 }

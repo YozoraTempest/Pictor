@@ -52,6 +52,10 @@ function createBridge(
       ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
     installLocalPlugin: async () =>
       ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    installPiExtension: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    installPiPackage: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
     setPluginEnabled: async () =>
       ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
     removePlugin: async () =>
@@ -77,6 +81,7 @@ function createBridge(
     approveCommand,
     rejectCommand: async () => ok(null),
     stopRun: async () => ok(null),
+    respondToExtensionUi: async () => ok(null),
     onRuntimeEvent: (_listener: (event: RuntimeEvent) => void) => () => undefined,
   }
 }

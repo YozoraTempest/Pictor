@@ -80,6 +80,11 @@ export const approvalResolutionRequestSchema = z.object({
   runId: idSchema,
   callId: z.string().min(1),
 })
+export const extensionUiResponseRequestSchema = z.object({
+  runId: idSchema,
+  requestId: z.uuid(),
+  value: z.union([z.string(), z.boolean(), z.null()]),
+})
 
 export const appSnapshotResultSchema = ipcResultSchema(appSnapshotSchema)
 export const appInfoResultSchema = ipcResultSchema(appInfoSchema)
@@ -105,6 +110,8 @@ export interface PictorBridge {
   getPluginBootstrap: () => Promise<IpcResult<PluginBootstrap>>
   getPluginManagerSnapshot: () => Promise<IpcResult<PluginManagerSnapshot>>
   installLocalPlugin: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installPiExtension: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installPiPackage: () => Promise<IpcResult<PluginManagerSnapshot>>
   setPluginEnabled: (
     request: z.infer<typeof setPluginEnabledRequestSchema>,
   ) => Promise<IpcResult<PluginManagerSnapshot>>
@@ -145,6 +152,9 @@ export interface PictorBridge {
     request: z.infer<typeof approvalResolutionRequestSchema>,
   ) => Promise<IpcResult<null>>
   stopRun: (request: z.infer<typeof runIdRequestSchema>) => Promise<IpcResult<null>>
+  respondToExtensionUi: (
+    request: z.infer<typeof extensionUiResponseRequestSchema>,
+  ) => Promise<IpcResult<null>>
   onRuntimeEvent: (listener: (event: RuntimeEvent) => void) => () => void
 }
 

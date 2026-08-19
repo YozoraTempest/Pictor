@@ -85,6 +85,18 @@ export class SecretRedactor {
         }
       case 'runtime.error':
         return { ...event, message: this.redactText(event.message) }
+      case 'extension.ui.requested':
+        return {
+          ...event,
+          title: this.redactText(event.title),
+          message: event.message === null ? null : this.redactText(event.message),
+          options: event.options.map((option) => this.redactText(option)),
+          value: event.value === null ? null : this.redactText(event.value),
+        }
+      case 'extension.ui.notification':
+        return { ...event, message: this.redactText(event.message) }
+      case 'extension.ui.status':
+        return { ...event, text: event.text === null ? null : this.redactText(event.text) }
       case 'message.started':
       case 'approval.resolved':
         return event

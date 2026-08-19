@@ -50,6 +50,11 @@ export class RuntimeSupervisor {
     this.post({ type: 'abort', runId })
   }
 
+  respondToExtensionUi(runId: string, requestId: string, value: string | boolean | null): void {
+    this.assertActive(runId)
+    this.post({ type: 'extension.ui.respond', runId, requestId, value })
+  }
+
   isActive(): boolean {
     return this.activeRunId !== null
   }

@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   Square,
   TerminalSquare,
+  Wrench,
   X,
   XCircle,
 } from 'lucide-react'
@@ -72,10 +73,12 @@ const toolLabels: Record<ToolEvent['kind'], string> = {
   move: '移动文件',
   delete: '删除文件',
   command: '执行命令',
+  custom: 'Extension Tool',
 }
 
 function ToolIcon({ kind }: { kind: ToolEvent['kind'] }): React.JSX.Element {
   if (kind === 'command') return <TerminalSquare size={15} />
+  if (kind === 'custom') return <Wrench size={15} />
   if (kind === 'edit' || kind === 'write' || kind === 'move' || kind === 'delete') {
     return <FilePenLine size={15} />
   }

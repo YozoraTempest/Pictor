@@ -7,6 +7,19 @@ const sourceRoot = resolve('plugins')
 const outputRoot = resolve('.pictor', 'bundled-plugins')
 const processNames = ['main', 'renderer', 'runtime']
 
+function bundledPiExtensionModules() {
+  return {
+    name: 'pictor-bundled-pi-extension-modules',
+    transform(code, id) {
+      if (!id.endsWith('/pi-coding-agent/dist/core/extensions/loader.js')) return null
+      return code.replace(
+        /const isTypeScriptSourceRuntime = [^;]+;/,
+        'const isTypeScriptSourceRuntime = true;',
+      )
+    },
+  }
+}
+
 await rm(outputRoot, { recursive: true, force: true })
 await mkdir(outputRoot, { recursive: true })
 
@@ -36,6 +49,7 @@ for (const directory of directories.toSorted((left, right) =>
     await build({
       configFile: false,
       logLevel: 'warn',
+      plugins: runtime ? [bundledPiExtensionModules()] : [],
       define: { 'process.env.NODE_ENV': JSON.stringify('production') },
       ...(runtime ? { ssr: { noExternal: true } } : {}),
       build: {

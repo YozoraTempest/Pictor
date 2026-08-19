@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { afterEach, beforeEach, expect, it } from 'vitest'
 
@@ -20,6 +20,8 @@ let lastRequestBody: Record<string, unknown>
 let failureMode: 'success' | 'authentication' | 'server' | 'malformed' | 'disconnect'
 let chatResponseText: string
 let chatToolArguments: Record<string, string> | null
+let chatToolName: string
+let chatToolCallId: string
 let chatRequestCount: number
 const localApiKey = ['local', 'test', 'key'].join('-')
 
@@ -30,6 +32,8 @@ beforeEach(async () => {
   failureMode = 'success'
   chatResponseText = 'Hello from Pi'
   chatToolArguments = null
+  chatToolName = 'pictor_write'
+  chatToolCallId = 'call-pictor-redaction'
   chatRequestCount = 0
   server = createServer(async (request, response) => {
     let requestBody = ''
@@ -166,10 +170,10 @@ beforeEach(async () => {
                 tool_calls: [
                   {
                     index: 0,
-                    id: 'call-pictor-redaction',
+                    id: chatToolCallId,
                     type: 'function',
                     function: {
-                      name: 'pictor_write',
+                      name: chatToolName,
                       arguments: JSON.stringify(chatToolArguments),
                     },
                   },
@@ -333,6 +337,38 @@ it('streams Responses API events through the real Pi SDK', async () => {
     expect.objectContaining({ type: 'run.stateChanged', status: 'completed' }),
   )
   expect(lastRequestBody.reasoning).toEqual(expect.objectContaining({ effort: 'xhigh' }))
+}, 20_000)
+
+it('loads an unmodified official Pi Extension and exposes its custom tool', async () => {
+  const events: RuntimeEvent[] = []
+  chatToolName = 'hello'
+  chatToolCallId = 'call-official-hello'
+  chatToolArguments = { name: 'Pictor' }
+  const runtime = new PiAgentRuntime((event) => events.push(event))
+  runtime.configure({
+    extensionPaths: [
+      resolve('node_modules/@earendil-works/pi-coding-agent/examples/extensions/hello.ts'),
+    ],
+  })
+
+  await runAgent(runtime, 'chat-completions', 'Use the hello tool.')
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'tool.started',
+      callId: 'call-official-hello',
+      kind: 'custom',
+      label: 'hello',
+    }),
+  )
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'tool.completed',
+      callId: 'call-official-hello',
+      output: 'Hello, Pictor!',
+      isError: false,
+    }),
+  )
 }, 20_000)
 
 it.each(['a', 'id', 'running', ['pi', 'transcript', 'credential'].join('-')])(

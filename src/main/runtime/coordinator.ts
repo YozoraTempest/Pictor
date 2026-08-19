@@ -33,6 +33,7 @@ export interface RuntimeHost {
   approve(runId: string, callId: string): void
   reject(runId: string, callId: string): void
   stop(runId: string): void
+  respondToExtensionUi(runId: string, requestId: string, value: string | boolean | null): void
   isActive(): boolean
 }
 
@@ -155,6 +156,10 @@ export class RuntimeCoordinator {
 
   stop(runId: string): void {
     this.supervisor.stop(runId)
+  }
+
+  respondToExtensionUi(runId: string, requestId: string, value: string | boolean | null): void {
+    this.supervisor.respondToExtensionUi(runId, requestId, value)
   }
 
   isActive(): boolean {

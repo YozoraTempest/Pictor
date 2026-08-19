@@ -18,6 +18,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
   架构匹配的 Windows、Arch 或便携 Linux 官方发布包，否则安全回退到对应发布页；
 - 通过 Plugin Host 从用户 Store 动态装配 Main/Renderer Module，支持 SemVer 依赖、故障隔离、
   安全模式和独立 Plugin 测试循环；Updater 已作为可删除、可恢复的 Bundled Plugin 运行。
+- `pictor.pi-extension-host` 可直接安装、禁用和删除原生 `.ts/.js` Pi Extension、Extension 目录
+  与本地 Pi Package；自定义 Tool 和 RPC UI dialog 无需 Pictor wrapper 即可进入会话 GUI。
 
 首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、第三方 Plugin 分发、远程项目、WSL、
 容器、macOS、Linux ARM64、静默更新、系统密钥环、包签名和软件源不在当前范围内。
@@ -173,6 +175,8 @@ Renderer，也不会写入项目或 Session 数据。不要共享该文件或整
 Renderer 启用 Chromium sandbox、context isolation 和限制性 CSP，不开放 Node 或原始
 Electron API。Pi Runtime Plugin 从用户 Store 动态加载到独立 utility process，只能调用 Pictor
 提供且经过路径守卫的工具；删除或禁用该 Plugin 后，项目与历史仍可查看，但不能启动新 Run。
+Pi Extension 是以当前用户权限运行的可信代码，并不受 Pictor 命令逐条审批限制；安装前必须确认
+来源。Pictor 的模型 API Key 不进入 Extension 配置、Runtime event 或 Pi JSONL。
 
 更新检查只在用户点击“检查更新”后由 Main Process 请求 Pictor 官方 GitHub Release API；
 应用不会在后台轮询。Linux 只在本机读取 `/etc/os-release` 识别原生 Arch，不上传或记录该

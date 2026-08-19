@@ -16,6 +16,11 @@ export interface RuntimePluginContext {
   process: 'runtime'
   dataPath: string
   emit(event: RuntimeEvent): void
+  extensions: readonly {
+    kind: 'pi-extension' | 'pi-package'
+    id: string
+    path: string
+  }[]
 }
 
 export type PluginProcessContext = MainPluginContext | RendererPluginContext | RuntimePluginContext

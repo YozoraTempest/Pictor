@@ -138,4 +138,61 @@ describe('PluginStore', () => {
     expect(snapshot.plugins).toEqual([])
     expect(snapshot.issues).toHaveLength(1)
   })
+
+  it('installs native Pi Extension files without wrapping or rewriting their source', async () => {
+    const fixture = await createStoreFixture()
+    const extensionPath = join(fixture.root, 'hello.ts')
+    const source = 'export default function hello(pi) { pi.on("agent_start", () => {}) }\n'
+    await writeFile(extensionPath, source)
+    const store = new PluginStore({
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    })
+    await store.initialize()
+
+    const installed = await store.installPiExtension(extensionPath)
+
+    expect(installed.entry).toMatchObject({
+      kind: 'pi-extension',
+      id: 'hello',
+      desiredState: 'enabled',
+    })
+    await expect(readFile(join(installed.runtimePath, 'index.ts'), 'utf8')).resolves.toBe(source)
+    expect((await store.getSnapshot()).nativeExtensions).toHaveLength(1)
+
+    await store.setNativeExtensionEnabled('pi-extension', 'hello', false)
+    expect((await store.getSnapshot()).nativeExtensions).toEqual([])
+    await store.removeNativeExtension('pi-extension', 'hello')
+    expect((await store.getSnapshot()).registry.entries[0]).toMatchObject({
+      kind: 'pi-extension',
+      desiredState: 'removed',
+    })
+  })
+
+  it('keeps a local Pi Package in its native package layout', async () => {
+    const fixture = await createStoreFixture()
+    const packagePath = join(fixture.root, 'pi-package')
+    await mkdir(join(packagePath, 'extensions'), { recursive: true })
+    await writeFile(
+      join(packagePath, 'package.json'),
+      `${JSON.stringify({ name: 'example-pi-package', version: '1.2.3' })}\n`,
+    )
+    await writeFile(join(packagePath, 'extensions', 'hello.js'), 'export default function () {}\n')
+    const store = new PluginStore({
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    })
+    await store.initialize()
+
+    const installed = await store.installPiPackage(packagePath)
+
+    expect(installed.entry).toMatchObject({
+      kind: 'pi-package',
+      id: 'example-pi-package',
+      version: '1.2.3',
+    })
+    await expect(
+      readFile(join(installed.runtimePath, 'extensions', 'hello.js'), 'utf8'),
+    ).resolves.toContain('export default')
+  })
 })

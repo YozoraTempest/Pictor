@@ -4,6 +4,7 @@ export const defaultPluginProfile = pluginProfileSchema.parse({
   id: 'pictor.default',
   plugins: {
     'pictor.pi-agent-runtime': '^0.2.0',
+    'pictor.pi-extension-host': '^0.2.0',
     'pictor.updater': '^0.2.0',
   },
 })

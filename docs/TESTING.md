@@ -60,6 +60,9 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   安全模式、Bundled 删除后不自动恢复，以及代码与数据的独立删除语义。
 - 核心委托 Smoke 必须通过从用户 Store 动态加载的 Runtime Plugin 完成真实 Pi SDK 与 utility
   process 闭环；Main 构建产物中不得依赖静态 Pi adapter 启动路径。
+- Native Pi Extension 集成必须至少使用一个上游未修改示例，验证 Store 安装、Runtime bundle 的
+  Jiti virtual module 解析、动态 Tool、通用 Tool card 和结果；另用 RPC UI Extension 验证 dialog
+  event/response 在 Renderer 与 utility process 之间完整往返。
 - `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，
   并能被 `npm run build:plugins` 构建；Plugin 测试不要求启动开发服务器。
 - 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。

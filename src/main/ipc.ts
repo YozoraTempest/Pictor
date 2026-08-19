@@ -5,6 +5,7 @@ import { dialog, ipcMain, type WebFrameMain } from 'electron'
 import {
   approvalResolutionRequestSchema,
   createSessionRequestSchema,
+  extensionUiResponseRequestSchema,
   listModelsRequestSchema,
   projectIdRequestSchema,
   pluginIdRequestSchema,
@@ -83,11 +84,38 @@ export function registerIpc(dependencies: IpcDependencies): void {
     })
   })
 
+  ipcMain.handle('plugin:install-pi-extension', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '选择 Pi Extension 文件或目录',
+        properties: ['openFile', 'openDirectory'],
+        filters: [{ name: 'Pi Extension', extensions: ['ts', 'js'] }],
+      })
+      const path = selection.filePaths[0]
+      if (selection.canceled || !path) return pluginManager.getSnapshot()
+      return pluginManager.installPiExtension(path)
+    })
+  })
+
+  ipcMain.handle('plugin:install-pi-package', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '选择 Pi Package 目录',
+        properties: ['openDirectory'],
+      })
+      const path = selection.filePaths[0]
+      if (selection.canceled || !path) return pluginManager.getSnapshot()
+      return pluginManager.installPiPackage(path)
+    })
+  })
+
   ipcMain.handle('plugin:set-enabled', (event, input: unknown) => {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = setPluginEnabledRequestSchema.parse(input)
-      return pluginManager.setEnabled(request.id, request.enabled)
+      return pluginManager.setEnabled(request.kind, request.id, request.enabled)
     })
   })
 
@@ -95,7 +123,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = removePluginRequestSchema.parse(input)
-      return pluginManager.remove(request.id, request.deleteData)
+      return pluginManager.remove(request.kind, request.id, request.deleteData)
     })
   })
 
@@ -257,6 +285,15 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = runIdRequestSchema.parse(input)
       runtimeCoordinator.stop(request.runId)
+      return null
+    })
+  })
+
+  ipcMain.handle('runtime:extension-ui-response', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = extensionUiResponseRequestSchema.parse(input)
+      runtimeCoordinator.respondToExtensionUi(request.runId, request.requestId, request.value)
       return null
     })
   })

@@ -5,6 +5,7 @@ import type { Project, SessionSummary } from '../shared/domain'
 import type { SettingsSection } from '../modules/shell/settings'
 import type { AppInfo } from '../shared/app-info'
 import type { PluginStatus } from '../plugin/host'
+import type { RuntimeEvent } from '../shared/desktop-bridge'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { Modal } from './ui/Modal'
 import { Conversation } from './workspace/Conversation'
@@ -18,6 +19,8 @@ type Confirmation =
   | { type: 'remove-project'; project: Project }
   | { type: 'delete-session'; session: SessionSummary }
   | null
+
+type ExtensionUiRequest = Extract<RuntimeEvent, { type: 'extension.ui.requested' }>
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error) return String(error.message)
@@ -43,6 +46,9 @@ export function App({
   const [renameTarget, setRenameTarget] = useState<SessionSummary | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [modalBusy, setModalBusy] = useState(false)
+  const [extensionUiRequest, setExtensionUiRequest] = useState<ExtensionUiRequest | null>(null)
+  const [extensionUiValue, setExtensionUiValue] = useState('')
+  const [extensionNotice, setExtensionNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -63,6 +69,21 @@ export function App({
       active = false
     }
   }, [])
+
+  useEffect(
+    () =>
+      window.pictor.onRuntimeEvent((event) => {
+        if (event.type === 'extension.ui.requested') {
+          setExtensionUiRequest(event)
+          setExtensionUiValue(event.value ?? event.options[0] ?? '')
+        } else if (event.type === 'extension.ui.notification') {
+          setExtensionNotice(event.message)
+        } else if (event.type === 'extension.ui.status' && event.text) {
+          setExtensionNotice(event.text)
+        }
+      }),
+    [],
+  )
 
   const pickProject = async (relinkProjectId: string | null = null) => {
     const request = await workspace.pickProject(relinkProjectId)
@@ -108,6 +129,19 @@ export function App({
     const completed = await workspace.renameSession(renameTarget.id, renameValue.trim())
     setModalBusy(false)
     if (completed) setRenameTarget(null)
+  }
+
+  const respondToExtensionUi = async (value: string | boolean | null) => {
+    if (!extensionUiRequest) return
+    setModalBusy(true)
+    const response = await window.pictor.respondToExtensionUi({
+      runId: extensionUiRequest.runId,
+      requestId: extensionUiRequest.requestId,
+      value,
+    })
+    setModalBusy(false)
+    if (response.ok) setExtensionUiRequest(null)
+    else workspace.reportActionError(response.error.message)
   }
 
   if (workspace.loading || appInfoLoading) {
@@ -182,6 +216,12 @@ export function App({
         onRelinkProject={(project) => void pickProject(project.id)}
       />
 
+      {extensionNotice ? (
+        <button className="extension-notice" type="button" onClick={() => setExtensionNotice(null)}>
+          {extensionNotice}
+        </button>
+      ) : null}
+
       {settingsOpen ? (
         <SettingsDialog
           initial={workspace.snapshot.settings}
@@ -190,6 +230,81 @@ export function App({
           onClose={() => setSettingsOpen(false)}
           onSaved={workspace.applySettings}
         />
+      ) : null}
+
+      {extensionUiRequest ? (
+        <Modal
+          title={extensionUiRequest.title}
+          description={extensionUiRequest.message ?? ''}
+          onClose={() =>
+            void respondToExtensionUi(extensionUiRequest.kind === 'confirm' ? false : null)
+          }
+        >
+          <div className="extension-ui-dialog">
+            {extensionUiRequest.kind === 'select' ? (
+              <label className="field field--full">
+                <span>选择</span>
+                <select
+                  aria-label={extensionUiRequest.title}
+                  value={extensionUiValue}
+                  onChange={(event) => setExtensionUiValue(event.target.value)}
+                >
+                  {extensionUiRequest.options.map((option) => (
+                    <option value={option} key={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : extensionUiRequest.kind === 'input' ? (
+              <label className="field field--full">
+                <span>输入</span>
+                <input
+                  autoFocus
+                  value={extensionUiValue}
+                  placeholder={extensionUiRequest.value ?? ''}
+                  onChange={(event) => setExtensionUiValue(event.target.value)}
+                />
+              </label>
+            ) : extensionUiRequest.kind === 'editor' ? (
+              <label className="field field--full">
+                <span>内容</span>
+                <textarea
+                  autoFocus
+                  value={extensionUiValue}
+                  onChange={(event) => setExtensionUiValue(event.target.value)}
+                />
+              </label>
+            ) : (
+              <p>{extensionUiRequest.message}</p>
+            )}
+          </div>
+          <footer className="modal-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={modalBusy}
+              onClick={() =>
+                void respondToExtensionUi(extensionUiRequest.kind === 'confirm' ? false : null)
+              }
+            >
+              取消
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={modalBusy}
+              onClick={() =>
+                void respondToExtensionUi(
+                  extensionUiRequest.kind === 'confirm' ? true : extensionUiValue,
+                )
+              }
+            >
+              {modalBusy ? <LoaderCircle className="spin" size={15} /> : null}
+              确认
+            </button>
+          </footer>
+        </Modal>
       ) : null}
 
       {trustRequest ? (

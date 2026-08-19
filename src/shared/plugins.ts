@@ -44,10 +44,13 @@ export const pluginManagerSnapshotSchema = z.object({
 })
 
 export const pluginIdRequestSchema = z.object({ id: z.string().min(1) })
-export const setPluginEnabledRequestSchema = pluginIdRequestSchema.extend({
+export const extensionIdentitySchema = pluginIdRequestSchema.extend({
+  kind: z.enum(['pictor-plugin', 'pi-extension', 'pi-package']),
+})
+export const setPluginEnabledRequestSchema = extensionIdentitySchema.extend({
   enabled: z.boolean(),
 })
-export const removePluginRequestSchema = pluginIdRequestSchema.extend({
+export const removePluginRequestSchema = extensionIdentitySchema.extend({
   deleteData: z.boolean().default(false),
 })
 
@@ -62,6 +65,13 @@ export const runtimePluginBootstrapSchema = z.object({
       desiredState: pluginDesiredStateSchema,
       dataPath: z.string().min(1),
       runtimeEntryPath: z.string().min(1).nullable(),
+    }),
+  ),
+  extensions: z.array(
+    z.object({
+      kind: z.enum(['pi-extension', 'pi-package']),
+      id: z.string().min(1),
+      path: z.string().min(1),
     }),
   ),
 })

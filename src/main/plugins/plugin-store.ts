@@ -1,18 +1,29 @@
 import { randomUUID } from 'node:crypto'
-import { cp, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { cp, copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { basename, extname, join, resolve } from 'node:path'
 
-import { pluginManifestSchema, type PluginManifest } from '../../plugin/manifest.js'
+import { z } from 'zod'
+
+import {
+  pluginManifestSchema,
+  pluginVersionSchema,
+  type PluginManifest,
+} from '../../plugin/manifest.js'
 import { resolvePluginProfile, type PluginProfile } from '../../plugin/profile.js'
 import {
   createEmptyPluginRegistry,
   pluginRegistrySchema,
   type InstalledPictorPlugin,
+  type InstalledExtension,
   type PluginRegistry,
 } from '../../plugin/registry.js'
 import { isNodeError, readJsonFile, writeJsonFile } from '../persistence/atomic-json.js'
 
 const MANIFEST_FILE = 'manifest.json'
+const pluginPackageJsonSchema = z.object({
+  name: z.string().min(1),
+  version: pluginVersionSchema.optional(),
+})
 
 export interface PluginStoreOptions {
   userDataDirectory: string
@@ -35,7 +46,13 @@ export interface PluginStoreIssue {
 export interface PluginStoreSnapshot {
   registry: PluginRegistry
   plugins: readonly StoredPluginPackage[]
+  nativeExtensions: readonly StoredNativeExtension[]
   issues: readonly PluginStoreIssue[]
+}
+
+export interface StoredNativeExtension {
+  entry: Exclude<InstalledExtension, { kind: 'pictor-plugin' }>
+  runtimePath: string
 }
 
 interface BundledPluginPackage {
@@ -118,9 +135,23 @@ export class PluginStore {
     this.ensureInitialized()
     const issues = [...this.issues]
     const plugins: StoredPluginPackage[] = []
+    const nativeExtensions: StoredNativeExtension[] = []
 
     for (const entry of this.registry.entries) {
-      if (entry.kind !== 'pictor-plugin' || entry.desiredState === 'removed') continue
+      if (entry.desiredState === 'removed') continue
+      if (entry.kind !== 'pictor-plugin') {
+        if (entry.desiredState !== 'enabled') continue
+        const runtimePath =
+          entry.kind === 'pi-extension'
+            ? join(this.piExtensionsDirectory, entry.id)
+            : join(this.piPackagesDirectory, entry.id)
+        if ((await stat(runtimePath).catch(() => null))?.isDirectory()) {
+          nativeExtensions.push({ entry: { ...entry }, runtimePath })
+        } else {
+          issues.push({ source: runtimePath, message: `Installed ${entry.kind} is missing` })
+        }
+        continue
+      }
       const rootPath = this.packagePath(entry)
       try {
         const manifest = await this.readManifest(rootPath)
@@ -143,6 +174,7 @@ export class PluginStore {
     return {
       registry: pluginRegistrySchema.parse(this.registry),
       plugins,
+      nativeExtensions,
       issues,
     }
   }
@@ -177,6 +209,76 @@ export class PluginStore {
       throw new Error(`Removed Plugin must be reinstalled or restored before enabling: ${id}`)
     }
     entry.desiredState = enabled ? 'enabled' : 'disabled'
+    await this.persistRegistry()
+  }
+
+  async installPiExtension(sourcePath: string): Promise<StoredNativeExtension> {
+    this.ensureInitialized()
+    const source = resolve(sourcePath)
+    const sourceStat = await stat(source)
+    const id = this.nativeExtensionId(source)
+    const target = join(this.piExtensionsDirectory, id)
+    await rm(target, { recursive: true, force: true })
+    await mkdir(target, { recursive: true })
+    if (sourceStat.isDirectory()) {
+      await cp(source, target, { recursive: true })
+    } else if (sourceStat.isFile() && ['.ts', '.js'].includes(extname(source))) {
+      await copyFile(source, join(target, `index${extname(source)}`))
+    } else {
+      throw new Error('Pi Extension must be a .ts/.js file or directory')
+    }
+    const entry = {
+      kind: 'pi-extension' as const,
+      id,
+      source,
+      desiredState: 'enabled' as const,
+    }
+    this.replaceExtensionEntry(entry)
+    await this.persistRegistry()
+    return { entry, runtimePath: target }
+  }
+
+  async installPiPackage(sourcePath: string): Promise<StoredNativeExtension> {
+    this.ensureInitialized()
+    const source = resolve(sourcePath)
+    const packageJson = await readJsonFile(join(source, 'package.json'), pluginPackageJsonSchema)
+    if (!packageJson) throw new Error('Pi Package is missing package.json')
+    const id = this.nativeExtensionId(packageJson.name)
+    const target = join(this.piPackagesDirectory, id)
+    await rm(target, { recursive: true, force: true })
+    await cp(source, target, { recursive: true })
+    const entry = {
+      kind: 'pi-package' as const,
+      id,
+      source,
+      version: packageJson.version ?? null,
+      desiredState: 'enabled' as const,
+    }
+    this.replaceExtensionEntry(entry)
+    await this.persistRegistry()
+    return { entry, runtimePath: target }
+  }
+
+  async setNativeExtensionEnabled(
+    kind: 'pi-extension' | 'pi-package',
+    id: string,
+    enabled: boolean,
+  ): Promise<void> {
+    this.ensureInitialized()
+    const entry = this.findNativeExtensionEntry(kind, id)
+    if (entry.desiredState === 'removed')
+      throw new Error(`Removed extension must be reinstalled: ${id}`)
+    entry.desiredState = enabled ? 'enabled' : 'disabled'
+    await this.persistRegistry()
+  }
+
+  async removeNativeExtension(kind: 'pi-extension' | 'pi-package', id: string): Promise<void> {
+    this.ensureInitialized()
+    const entry = this.findNativeExtensionEntry(kind, id)
+    const directory =
+      kind === 'pi-extension' ? this.piExtensionsDirectory : this.piPackagesDirectory
+    await rm(join(directory, id), { recursive: true, force: true })
+    entry.desiredState = 'removed'
     await this.persistRegistry()
   }
 
@@ -265,6 +367,34 @@ export class PluginStore {
     )
     if (index >= 0) this.registry.entries[index] = replacement
     else this.registry.entries.push(replacement)
+  }
+
+  private replaceExtensionEntry(replacement: InstalledExtension): void {
+    const index = this.registry.entries.findIndex(
+      (entry) => entry.kind === replacement.kind && entry.id === replacement.id,
+    )
+    if (index >= 0) this.registry.entries[index] = replacement
+    else this.registry.entries.push(replacement)
+  }
+
+  private findNativeExtensionEntry(
+    kind: 'pi-extension' | 'pi-package',
+    id: string,
+  ): Exclude<InstalledExtension, { kind: 'pictor-plugin' }> {
+    const entry = this.registry.entries.find(
+      (candidate) => candidate.kind === kind && candidate.id === id,
+    )
+    if (!entry || entry.kind === 'pictor-plugin') throw new Error(`Unknown ${kind}: ${id}`)
+    return entry
+  }
+
+  private nativeExtensionId(pathOrName: string): string {
+    const name = basename(pathOrName, extname(pathOrName))
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    if (!name) throw new Error('Cannot derive an extension ID from the source')
+    return name
   }
 
   private findPluginEntry(id: string): InstalledPictorPlugin {

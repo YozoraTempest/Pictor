@@ -38,7 +38,7 @@ export const messageSchema = z.object({
 export const toolEventSchema = z.object({
   id: idSchema,
   callId: z.string().min(1),
-  kind: z.enum(['list', 'search', 'read', 'write', 'edit', 'move', 'delete', 'command']),
+  kind: z.enum(['list', 'search', 'read', 'write', 'edit', 'move', 'delete', 'command', 'custom']),
   label: z.string().min(1),
   path: z.string().nullable(),
   command: z

@@ -1353,6 +1353,46 @@ textarea:disabled {
   color: #d97b78;
 }
 
+.extension-notice {
+  position: fixed;
+  z-index: 45;
+  top: 18px;
+  right: 18px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 10px 12px;
+  border: 1px solid #46675c;
+  border-radius: 6px;
+  background: #17251f;
+  color: #a8d8c8;
+  box-shadow: 0 12px 35px rgb(0 0 0 / 35%);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.extension-ui-dialog {
+  padding: 18px;
+}
+
+.extension-ui-dialog p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.extension-ui-dialog textarea {
+  min-height: 180px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  outline: none;
+  background: #111416;
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
 .field {
   display: flex;
   min-width: 0;

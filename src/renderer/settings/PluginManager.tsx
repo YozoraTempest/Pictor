@@ -1,4 +1,12 @@
-import { DatabaseZap, FolderPlus, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react'
+import {
+  DatabaseZap,
+  FileCode2,
+  FolderPlus,
+  LoaderCircle,
+  PackagePlus,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { PluginManagerSnapshot } from '../../shared/plugins'
@@ -75,6 +83,26 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
           )}
           安装本地 Plugin
         </button>
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={busy !== null}
+          onClick={() =>
+            void apply('install-pi-extension', () => window.pictor.installPiExtension())
+          }
+        >
+          <FileCode2 size={14} />
+          Pi Extension
+        </button>
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void apply('install-pi-package', () => window.pictor.installPiPackage())}
+        >
+          <PackagePlus size={14} />
+          Pi Package
+        </button>
       </header>
 
       {snapshot.safeMode ? (
@@ -134,7 +162,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
                       <RotateCcw size={14} />
                       恢复
                     </button>
-                  ) : item.desiredState !== 'removed' && item.kind === 'pictor-plugin' ? (
+                  ) : item.desiredState !== 'removed' ? (
                     <>
                       <label className="plugin-toggle">
                         <input
@@ -144,6 +172,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
                           onChange={(event) =>
                             void apply(item.id, () =>
                               window.pictor.setPluginEnabled({
+                                kind: item.kind,
                                 id: item.id,
                                 enabled: event.target.checked,
                               }),
@@ -160,27 +189,37 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
                         disabled={busy !== null}
                         onClick={() =>
                           void apply(item.id, () =>
-                            window.pictor.removePlugin({ id: item.id, deleteData: false }),
+                            window.pictor.removePlugin({
+                              kind: item.kind,
+                              id: item.id,
+                              deleteData: false,
+                            }),
                           )
                         }
                       >
                         <Trash2 size={15} />
                       </button>
-                      <button
-                        className="icon-button danger-icon-button"
-                        type="button"
-                        title="移除 Plugin 及数据"
-                        aria-label={`移除 ${item.name} 及数据`}
-                        disabled={busy !== null}
-                        onClick={() => {
-                          if (!window.confirm(`移除 ${item.name} 及其全部数据？`)) return
-                          void apply(item.id, () =>
-                            window.pictor.removePlugin({ id: item.id, deleteData: true }),
-                          )
-                        }}
-                      >
-                        <DatabaseZap size={15} />
-                      </button>
+                      {item.kind === 'pictor-plugin' ? (
+                        <button
+                          className="icon-button danger-icon-button"
+                          type="button"
+                          title="移除 Plugin 及数据"
+                          aria-label={`移除 ${item.name} 及数据`}
+                          disabled={busy !== null}
+                          onClick={() => {
+                            if (!window.confirm(`移除 ${item.name} 及其全部数据？`)) return
+                            void apply(item.id, () =>
+                              window.pictor.removePlugin({
+                                kind: item.kind,
+                                id: item.id,
+                                deleteData: true,
+                              }),
+                            )
+                          }}
+                        >
+                          <DatabaseZap size={15} />
+                        </button>
+                      ) : null}
                     </>
                   ) : null}
                 </div>

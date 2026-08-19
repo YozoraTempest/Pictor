@@ -10,6 +10,7 @@ import {
   SettingsManager,
   type AgentSessionRuntime,
   type AgentSessionEvent,
+  type ExtensionUIContext,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
 
@@ -19,8 +20,10 @@ import {
   type RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
 import { createSecretRedactor, type SecretRedactor } from '../shared/secret-redaction.js'
+import type { AgentRuntimeResources } from './plugin-interface.js'
 import { ApprovalBroker } from './approval-broker.js'
 import { BashCommandExecutor, type CommandExecutor } from './command-executor.js'
+import { ExtensionUiBroker } from './extension-ui.js'
 import { ProjectPathGuard } from './path-guard.js'
 import { createPictorTools } from './tools.js'
 
@@ -43,11 +46,13 @@ interface PiSessionLike {
   abort(): Promise<void>
   waitForIdle(): Promise<void>
   dispose(): void | Promise<void>
+  bindExtensionUi?(context: ExtensionUIContext): Promise<void>
 }
 
 interface SessionFactoryInput {
   config: RuntimeStartConfig
   tools: ToolDefinition[]
+  extensionPaths: readonly string[]
 }
 
 type SessionFactory = (input: SessionFactoryInput) => Promise<PiSessionLike>
@@ -62,6 +67,7 @@ interface ActiveRuntime {
   text: string
   failure: RuntimeFailure | null
   redactor: SecretRedactor
+  extensionUi: ExtensionUiBroker
 }
 
 type RuntimeFailure = Pick<Extract<RuntimeEvent, { type: 'runtime.error' }>, 'category' | 'message'>
@@ -147,6 +153,7 @@ function toolPath(projectRoot: string, args: unknown): string | null {
 async function createProductionSession({
   config,
   tools,
+  extensionPaths,
 }: SessionFactoryInput): Promise<PiSessionLike> {
   await mkdir(config.agentDirectory, { recursive: true })
   await mkdir(config.sessionDirectory, { recursive: true })
@@ -205,7 +212,8 @@ async function createProductionSession({
       settingsManager,
       modelRuntime,
       resourceLoaderOptions: {
-        noExtensions: true,
+        noExtensions: extensionPaths.length === 0,
+        ...(extensionPaths.length > 0 ? { additionalExtensionPaths: [...extensionPaths] } : {}),
         noSkills: true,
         noPromptTemplates: true,
         noThemes: true,
@@ -219,7 +227,7 @@ async function createProductionSession({
       ...(sessionStartEvent ? { sessionStartEvent } : {}),
       model,
       thinkingLevel: config.settings.reasoningEffort ?? 'off',
-      tools: tools.map((tool) => tool.name),
+      noTools: 'builtin',
       customTools: tools,
     })
     return { ...result, services, diagnostics: services.diagnostics }
@@ -254,6 +262,10 @@ class PiSessionRuntime implements PiSessionLike {
   dispose(): Promise<void> {
     return this.runtime.dispose()
   }
+
+  bindExtensionUi(context: ExtensionUIContext): Promise<void> {
+    return this.runtime.session.bindExtensions({ uiContext: context, mode: 'rpc' })
+  }
 }
 
 async function sanitizePiTranscripts(
@@ -283,13 +295,19 @@ async function sanitizePiTranscripts(
 }
 
 export class PiAgentRuntime {
+  readonly id = 'pictor.pi-agent-runtime'
   private current: ActiveRuntime | undefined
+  private extensionPaths: readonly string[] = []
 
   constructor(
     private readonly emit: (event: RuntimeEvent) => void,
     private readonly sessionFactory: SessionFactory = createProductionSession,
     private readonly commandExecutor?: CommandExecutor,
   ) {}
+
+  configure(resources: AgentRuntimeResources): void {
+    this.extensionPaths = [...resources.extensionPaths]
+  }
 
   async start(config: RuntimeStartConfig): Promise<void> {
     if (this.current) throw new Error('Only one runtime run can be active')
@@ -313,6 +331,7 @@ export class PiAgentRuntime {
       text: '',
       failure: null,
       redactor: createSecretRedactor([config.apiKey]),
+      extensionUi: new ExtensionUiBroker((event) => this.emitEvent(config, event)),
     }
     this.current = current
 
@@ -335,13 +354,18 @@ export class PiAgentRuntime {
           })
         },
       })
-      const session = await this.sessionFactory({ config, tools })
+      const session = await this.sessionFactory({
+        config,
+        tools,
+        extensionPaths: this.extensionPaths,
+      })
       current.session = session
       if (current.cancelled) {
         await session.abort()
         return
       }
       current.unsubscribe = session.subscribe((event) => this.handlePiEvent(current, event))
+      await session.bindExtensionUi?.(current.extensionUi.createContext())
       await session.prompt(current.redactor.redactText(config.prompt), {
         expandPromptTemplates: false,
       })
@@ -382,6 +406,7 @@ export class PiAgentRuntime {
       }
     } finally {
       current.approvals.cancelAll()
+      current.extensionUi.cancelAll()
       current.unsubscribe?.()
       await current.session?.dispose()
       if (this.current === current) this.current = undefined
@@ -399,6 +424,7 @@ export class PiAgentRuntime {
     current.cancelled = true
     current.abortController.abort(new Error('Run stopped'))
     current.approvals.cancelAll()
+    current.extensionUi.cancelAll()
     this.emitEvent(current.config, { type: 'run.stateChanged', status: 'stopping', error: null })
     await current.session?.abort()
     return true
@@ -406,6 +432,10 @@ export class PiAgentRuntime {
 
   async dispose(): Promise<void> {
     if (this.current) await this.abort(this.current.config.runId)
+  }
+
+  respondToExtensionUi(requestId: string, value: string | boolean | null): void {
+    this.current?.extensionUi.respond(requestId, value)
   }
 
   private handlePiEvent(current: ActiveRuntime, event: AgentSessionEvent): void {
@@ -420,8 +450,7 @@ export class PiAgentRuntime {
       return
     }
     if (event.type === 'tool_execution_start') {
-      const kind = toolKinds[event.toolName as keyof typeof toolKinds]
-      if (!kind) return
+      const kind = toolKinds[event.toolName as keyof typeof toolKinds] ?? 'custom'
       const path = toolPath(config.projectRoot, event.args)
       this.emitEvent(config, {
         type: 'tool.started',

@@ -4,7 +4,11 @@ import { readPluginEntrypoint, type RuntimePluginContext } from '../plugin/entry
 import { PluginHost, type PluginDefinition } from '../plugin/host.js'
 import { runtimePluginBootstrapSchema } from '../shared/plugins.js'
 import { runtimeCommandSchema, type RuntimeEvent } from '../shared/runtime-protocol.js'
-import { agentRuntimeContributions, type AgentRuntimeProvider } from './plugin-interface.js'
+import {
+  agentRuntimeContributions,
+  piExtensionPathContributions,
+  type AgentRuntimeProvider,
+} from './plugin-interface.js'
 
 const parentPort = process.parentPort
 if (!parentPort) throw new Error('Pictor runtime host requires an Electron utility-process parent')
@@ -39,7 +43,7 @@ const statePromise = (async (): Promise<RuntimeHostState> => {
         const entrypoint = readPluginEntrypoint<RuntimePluginContext>(
           namespace as Record<string, unknown>,
         )
-        return entrypoint({ process: 'runtime', dataPath, emit })
+        return entrypoint({ process: 'runtime', dataPath, emit, extensions: bootstrap.extensions })
       },
     }),
   )
@@ -50,6 +54,9 @@ const statePromise = (async (): Promise<RuntimeHostState> => {
   await host.start(definitions)
   const runtimes = host.getContributions(agentRuntimeContributions)
   if (runtimes.length > 1) throw new Error('Multiple Agent Runtime Providers are active')
+  runtimes[0]?.configure({
+    extensionPaths: host.getContributions(piExtensionPathContributions),
+  })
   parentPort.postMessage({ type: 'host.ready' })
   return { host, runtime: runtimes[0] ?? null }
 })().catch((error) => {
@@ -98,6 +105,10 @@ parentPort.on('message', (messageEvent) => {
       }
       if (command.type === 'reject') {
         runtime.resolveApproval(command.runId, command.callId, false)
+        return
+      }
+      if (command.type === 'extension.ui.respond') {
+        runtime.respondToExtensionUi(command.requestId, command.value)
         return
       }
       return runtime.abort(command.runId)

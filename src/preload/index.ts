@@ -11,6 +11,7 @@ import {
   appSnapshotResultSchema,
   connectionTestIpcResultSchema,
   createSessionRequestSchema,
+  extensionUiResponseRequestSchema,
   listModelsRequestSchema,
   modelCatalogIpcResultSchema,
   projectCandidateResultSchema,
@@ -50,6 +51,10 @@ const bridge = Object.freeze({
     pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:get-manager-snapshot')),
   installLocalPlugin: async () =>
     pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-local')),
+  installPiExtension: async () =>
+    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-pi-extension')),
+  installPiPackage: async () =>
+    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-pi-package')),
   setPluginEnabled: async (input) =>
     pluginManagerResultSchema.parse(
       await ipcRenderer.invoke('plugin:set-enabled', setPluginEnabledRequestSchema.parse(input)),
@@ -124,6 +129,13 @@ const bridge = Object.freeze({
   stopRun: async (input) =>
     voidResultSchema.parse(
       await ipcRenderer.invoke('runtime:stop', runIdRequestSchema.parse(input)),
+    ),
+  respondToExtensionUi: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke(
+        'runtime:extension-ui-response',
+        extensionUiResponseRequestSchema.parse(input),
+      ),
     ),
   onRuntimeEvent: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, value: unknown) => {

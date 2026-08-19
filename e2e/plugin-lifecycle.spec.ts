@@ -99,7 +99,7 @@ test('starts the Core Plugin Manager with all Plugins ignored in safe mode', asy
     await expect(window.getByRole('button', { name: '关于' })).toHaveCount(0)
     await window.getByRole('button', { name: 'Plugins' }).click()
     await expect(window.getByText('安全模式已忽略全部 Plugin')).toBeVisible()
-    await expect(window.getByText('已禁用')).toHaveCount(2)
+    await expect(window.getByText('已禁用')).toHaveCount(3)
   } finally {
     await electronApp.close()
   }

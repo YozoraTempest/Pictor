@@ -89,6 +89,13 @@ Contribution 选择 Provider。`pictor.pi-agent-runtime` 使用 Pi `AgentSession
 `AgentSession` 及其可替换生命周期；Main 不静态 import Pi adapter。Pi 所需 WASM 与 Runtime
 bundle 一同进入 Store，Node 内置模块保持外部导入，npm 实现依赖内联到 bundle。
 
+`pictor.pi-extension-host` 依赖 `pictor.pi-agent-runtime`，但不包装 Pi Extension。Plugin Store
+把原生 Extension 与 Pi Package 作为独立 Registry entry 保存，Runtime 入口只贡献原生资源路径；
+Pi `DefaultResourceLoader`、Jiti virtual modules 和 ExtensionRunner 负责加载原文件、注册 Tool、
+Command 与事件。未知 Tool 映射为通用 `custom` Tool event。`ExtensionUiBroker` 以 RPC mode 把
+select/confirm/input/editor 映射到 Renderer modal，把 notify/status/文本 widget 映射到会话 UI；
+raw terminal input、TUI Component、theme、header/footer/editor 等能力明确返回 unavailable。
+
 `AppRepository` 是 Main 进程的工作区状态入口，只协调 Project、Settings、导航选择和持久化
 初始化。Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全
 集中在内部 `SessionPersistence` module；它直接使用本地文件系统和现有凭据迁移函数，不增加
