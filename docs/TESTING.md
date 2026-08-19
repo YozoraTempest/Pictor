@@ -35,8 +35,8 @@ npm run deps:verify
 | E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Windows/Linux PR，复用 `out/`   |
 | E2E Full       | `npm run test:e2e:run`                              | 全部桌面用户场景                              | `develop`、正式发布、本地发布前 |
 | Windows 包验证 | `npm run package:verify:windows`                    | NSIS、ASAR、x64 PE                            | 正式发布、本地发布前            |
-| Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | 正式发布、本地发布前            |
-| Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer 终态与平台信息 | 正式发布、目标桌面验收          |
+| Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | `develop`、正式发布、本地发布前 |
+| Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer 终态与平台信息 | `develop`、正式发布、桌面验收   |
 
 聚合命令：
 
@@ -77,6 +77,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - 命令执行覆盖用户停止和超时；两种情况都要证明外层 Bash 及后台/孙进程不再存活。
 - 更新资产选择覆盖 Windows NSIS、Arch pacman、便携 AppImage、错误平台/架构/版本、非官方 URL
   和无匹配资产回退。
+- Pacman 使用 `zstd` 压缩，优先缩短 develop 与 Release 的包构建反馈；不为减小附件体积改回
+  明显更慢的 `xz`。
 - API Key 在 Unix 写入后验证权限为 `0600`，且不得进入 Renderer、Session 或测试证据。
 
 ## 发行版验收
@@ -108,11 +110,11 @@ Arch 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electro
 
 ## CI 门禁
 
-PR 并行运行质量检查和 Vitest 全量，通过后分别执行 `Windows acceptance` 与独立的
-`Linux acceptance`。两端都构建一次并执行 E2E Smoke；推送 `develop` 时执行 E2E Full。
-Linux acceptance 使用 hosted runner 构建并启动 AppImage，并在原生 Arch 容器中复用与
-Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。原生 niri 桌面证据仍在发布前
-由 Arch 工作站补充。
+PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和 `Linux acceptance`
+四项必需检查，不用静态检查串行阻塞桌面 Smoke。PR 的 Linux acceptance 运行完整 Vitest、构建
+应用并执行 E2E Smoke，不构建发行包。推送 `develop` 时两端执行 E2E Full，Linux 额外构建并
+校验 AppImage/Pacman、启动 AppImage，并在原生 Arch 容器中复用与 Release 相同的 pacman
+安装、注册、移除和用户数据保留脚本。原生 niri 桌面证据仍在发布前由 Arch 工作站补充。
 
 合并到 `main` 后，Release 工作流在 Windows 与 Linux hosted runner 上并行执行完整验证，生成
 Windows NSIS、Arch pacman 和便携 AppImage。Arch 容器通过 `pacman` 验证原生包生命周期，

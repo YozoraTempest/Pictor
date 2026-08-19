@@ -75,9 +75,6 @@ jobs:
 
   windows-acceptance:
     name: Windows acceptance
-    needs:
-      - quality
-      - tests
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -108,17 +105,15 @@ jobs:
 
   linux-acceptance:
     name: Linux acceptance
-    needs:
-      - quality
-      - tests
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - name: Install Linux acceptance dependencies
+      - name: Install Linux packaging dependency
+        if: github.event_name == 'push'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libarchive-tools xauth xvfb
+          sudo apt-get install --yes --no-install-recommends libarchive-tools
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -133,7 +128,7 @@ jobs:
         env:
           ELECTRON_GET_USE_PROXY: 'true'
       - run: npm run deps:verify
-      - run: npm run verify:fast
+      - run: npm test
       - run: npm run build:app
       - name: Run pull-request smoke tests
         if: github.event_name == 'pull_request'
@@ -142,8 +137,11 @@ jobs:
         if: github.event_name == 'push'
         run: xvfb-run --auto-servernum npm run test:e2e:run
       - run: npm run package:linux:build
+        if: github.event_name == 'push'
       - run: npm run package:verify:linux
+        if: github.event_name == 'push'
       - name: Verify portable AppImage launch
+        if: github.event_name == 'push'
         run: |
           release_version="$(node --print "require('./package.json').version")"
           lifecycle_root="$(mktemp -d)"
@@ -155,6 +153,7 @@ jobs:
             PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
             xvfb-run --auto-servernum npm run package:verify:linux:launch
       - name: Verify Arch package lifecycle in a native container
+        if: github.event_name == 'push'
         run: bash scripts/verify-arch-package-lifecycle.sh
       - name: Upload failure evidence
         if: failure()

@@ -143,6 +143,7 @@
     },
     "pacman": {
       "artifactName": "${productName}-${version}-arch-x64.${ext}",
+      "compression": "zstd",
       "depends": [
         "alsa-lib",
         "at-spi2-core",
