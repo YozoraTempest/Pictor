@@ -24,7 +24,7 @@
     "node": ">=22.22.2"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --watch",
     "start": "electron-vite preview",
     "deps:prepare": "install-electron --no",
     "deps:verify": "node scripts/verify-electron.mjs",
@@ -39,6 +39,8 @@
     "test:unit": "vitest run --exclude **/*.integration.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
+    "test:module": "node scripts/test-module.mjs",
+    "module:new": "node scripts/create-module.mjs",
     "test:e2e:run": "playwright test",
     "test:e2e:smoke:run": "playwright test --grep @smoke",
     "test:e2e": "npm run build:app && npm run test:e2e:run",
@@ -51,7 +53,7 @@
     "package:dir:build": "electron-builder --dir --x64",
     "package:build": "electron-builder --x64 --publish never",
     "package:windows:build": "electron-builder --win nsis --x64 --publish never",
-    "package:linux:build": "electron-builder --linux deb pacman --x64 --publish never",
+    "package:linux:build": "electron-builder --linux pacman AppImage --x64 --publish never",
     "package:dir": "npm run build:app && npm run package:dir:build",
     "package:verify": "node scripts/verify-package.mjs",
     "package:verify:windows": "node scripts/verify-windows-package.mjs",
@@ -103,6 +105,9 @@
       "out/**/*",
       "package.json"
     ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
     "win": {
       "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}",
       "target": [
@@ -117,13 +122,13 @@
     "linux": {
       "target": [
         {
-          "target": "deb",
+          "target": "pacman",
           "arch": [
             "x64"
           ]
         },
         {
-          "target": "pacman",
+          "target": "AppImage",
           "arch": [
             "x64"
           ]
@@ -133,20 +138,8 @@
       "executableName": "pictor",
       "syncDesktopName": true
     },
-    "deb": {
-      "artifactName": "${productName}-${version}-ubuntu-x64.${ext}",
-      "depends": [
-        "libgtk-3-0t64",
-        "libnotify4",
-        "libnss3",
-        "libxss1",
-        "libxtst6",
-        "xdg-utils",
-        "libatspi2.0-0t64",
-        "libuuid1",
-        "libsecret-1-0"
-      ],
-      "recommends": []
+    "appImage": {
+      "artifactName": "${productName}-${version}-linux-x64.${ext}"
     },
     "pacman": {
       "artifactName": "${productName}-${version}-arch-x64.${ext}",

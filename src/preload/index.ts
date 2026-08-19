@@ -1,7 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import {
-  appInfoSchema,
+  moduleEventEnvelopeSchema,
+  moduleInvocationSchema,
+  type ModuleTransport,
+} from '../kernel/contract.js'
+import {
   approvalResolutionRequestSchema,
   appSnapshotResultSchema,
   connectionTestIpcResultSchema,
@@ -26,16 +30,11 @@ import {
   startRunRequestSchema,
   startRunResultSchema,
   testSettingsRequestSchema,
-  updateCheckIpcResultSchema,
   voidResultSchema,
   type PictorBridge,
 } from '../shared/desktop-bridge.js'
 
 const bridge = Object.freeze({
-  getAppInfo: async () => appInfoSchema.parse(await ipcRenderer.invoke('app:get-info')),
-  checkForUpdates: async () =>
-    updateCheckIpcResultSchema.parse(await ipcRenderer.invoke('app:check-for-updates')),
-  openUpdate: async () => voidResultSchema.parse(await ipcRenderer.invoke('app:open-update')),
   getSnapshot: async () =>
     appSnapshotResultSchema.parse(await ipcRenderer.invoke('app:get-snapshot')),
   pickProjectDirectory: async () =>
@@ -110,4 +109,18 @@ const bridge = Object.freeze({
   },
 } satisfies PictorBridge)
 
+const moduleTransport = Object.freeze({
+  invoke: async (moduleId, method, input) =>
+    ipcRenderer.invoke('module:invoke', moduleInvocationSchema.parse({ moduleId, method, input })),
+  onEvent: (moduleId, eventName, listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, input: unknown) => {
+      const event = moduleEventEnvelopeSchema.parse(input)
+      if (event.moduleId === moduleId && event.event === eventName) listener(event.payload)
+    }
+    ipcRenderer.on('module:event', handler)
+    return () => ipcRenderer.removeListener('module:event', handler)
+  },
+} satisfies ModuleTransport)
+
 contextBridge.exposeInMainWorld('pictor', bridge)
+contextBridge.exposeInMainWorld('pictorModules', moduleTransport)

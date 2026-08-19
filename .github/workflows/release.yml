@@ -111,26 +111,18 @@ jobs:
       - run: xvfb-run --auto-servernum npm run test:e2e:run
       - run: npm run package:linux:build
       - run: npm run package:verify:linux
-      - name: Verify Ubuntu package lifecycle
+      - name: Verify portable AppImage launch
         env:
           RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
         run: |
           lifecycle_root="$(mktemp -d)"
           user_data="$lifecycle_root/Pictor"
-          sudo apt-get install --yes "./dist/Pictor-$RELEASE_VERSION-ubuntu-x64.deb"
-          test -x /opt/Pictor/pictor
-          test -f /usr/share/applications/pictor.desktop
-          PICTOR_LINUX_EXECUTABLE=/opt/Pictor/pictor \
-            PICTOR_EXPECTED_DISTRIBUTION=ubuntu \
+          chmod +x "./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage"
+          PICTOR_LINUX_EXECUTABLE="./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
+            PICTOR_EXPECTED_DISTRIBUTION=unsupported-linux \
             PICTOR_USER_DATA_DIR="$user_data" \
             PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
             xvfb-run --auto-servernum npm run package:verify:linux:launch
-          touch "$user_data/keep-after-uninstall"
-          sudo apt-get remove --yes pictor
-          test ! -e /opt/Pictor/pictor
-          test ! -e /usr/share/applications/pictor.desktop
-          test ! -e /usr/bin/pictor
-          test -f "$user_data/keep-after-uninstall"
       - name: Verify Arch package lifecycle in a native container
         env:
           RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
@@ -140,8 +132,8 @@ jobs:
         with:
           name: linux-release-assets
           path: |
-            dist/Pictor-${{ needs.metadata.outputs.version }}-ubuntu-x64.deb
             dist/Pictor-${{ needs.metadata.outputs.version }}-arch-x64.pacman
+            dist/Pictor-${{ needs.metadata.outputs.version }}-linux-x64.AppImage
           if-no-files-found: error
           retention-days: 1
       - name: Upload failure evidence
@@ -182,8 +174,8 @@ jobs:
           cd release-assets
           sha256sum \
             "Pictor-$RELEASE_VERSION-windows-x64-setup.exe" \
-            "Pictor-$RELEASE_VERSION-ubuntu-x64.deb" \
-            "Pictor-$RELEASE_VERSION-arch-x64.pacman" > SHA256SUMS
+            "Pictor-$RELEASE_VERSION-arch-x64.pacman" \
+            "Pictor-$RELEASE_VERSION-linux-x64.AppImage" > SHA256SUMS
           {
             echo
             echo '### SHA-256'
@@ -225,8 +217,8 @@ jobs:
           draft_created=1
           gh release upload "$RELEASE_TAG" \
             release-assets/Pictor-$RELEASE_VERSION-windows-x64-setup.exe \
-            release-assets/Pictor-$RELEASE_VERSION-ubuntu-x64.deb \
             release-assets/Pictor-$RELEASE_VERSION-arch-x64.pacman \
+            release-assets/Pictor-$RELEASE_VERSION-linux-x64.AppImage \
             release-assets/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY"
           gh release edit "$RELEASE_TAG" \

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 
-import type { AppInfo } from '../shared/desktop-bridge.js'
+import type { AppInfo } from '../modules/updater/shared.js'
 
 type DesktopDistribution = AppInfo['distribution']
 
@@ -40,7 +40,6 @@ export function parseOsRelease(content: string): OsReleaseIdentity {
 }
 
 export function classifyLinuxDistribution(identity: OsReleaseIdentity): DesktopDistribution {
-  if (identity.id === 'ubuntu' && identity.versionId === '24.04') return 'ubuntu'
   if (identity.id === 'arch') return 'arch'
   return 'unsupported-linux'
 }

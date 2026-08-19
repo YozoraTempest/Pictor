@@ -2,7 +2,7 @@ import { constants } from 'node:fs'
 import { access, realpath, stat } from 'node:fs/promises'
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 
-import type { AppInfo } from '../shared/desktop-bridge.js'
+import type { AppInfo } from '../modules/updater/shared.js'
 
 type SupportedPlatform = AppInfo['platform']
 

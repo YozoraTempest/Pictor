@@ -20,6 +20,10 @@ _Avoid_: Recommended system, any compatible distribution
 A platform-specific Pictor distribution attached to a formal product release.
 _Avoid_: Build output, preview artifact
 
+**Portable Linux Asset**:
+An AppImage published for convenient use on x64 Linux without implying a Supported Distribution or compatibility promise.
+_Avoid_: Universal Linux package, Supported Distribution
+
 **Command Interpreter**:
 The deterministic shell environment used to execute an individually approved Agent command. It is independent of the user's login shell.
 _Avoid_: Terminal, user shell, Git Bash

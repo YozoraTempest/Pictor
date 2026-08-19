@@ -14,7 +14,7 @@ const executablePath = resolve(
     resolve(repositoryRoot, 'dist', 'linux-unpacked', 'pictor'),
 )
 const expectedDistribution = process.env.PICTOR_EXPECTED_DISTRIBUTION
-if (expectedDistribution && !['ubuntu', 'arch'].includes(expectedDistribution)) {
+if (expectedDistribution && !['arch', 'unsupported-linux'].includes(expectedDistribution)) {
   throw new Error(`Unsupported expected distribution: ${expectedDistribution}`)
 }
 

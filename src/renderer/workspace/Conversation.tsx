@@ -26,7 +26,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import type { Project, RunRecord, SessionRecord, ToolEvent } from '../../shared/domain'
-import type { AppInfo } from '../../shared/desktop-bridge'
+import type { AppInfo } from '../../modules/updater/shared'
 
 interface ConversationProps {
   project: Project | null

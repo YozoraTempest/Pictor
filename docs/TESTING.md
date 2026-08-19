@@ -20,18 +20,22 @@ npm run deps:verify
 环境变量。依赖升级时应同时查看 `npm approve-scripts --allow-scripts-pending --json`，逐项审查
 安装脚本，不得为了消除提示而批量放行。
 
+应用开发与测试使用独立进程：`npm run dev` 只运行 electron-vite watch/HMR，`npm run test:watch`
+单独运行 Vitest。开发模式使用 `pictor-dev` userData，自动化测试继续使用独占临时目录。
+
 ## 测试分层
 
 | 层级           | 命令                                                | 覆盖范围                                      | 运行时机                        |
 | -------------- | --------------------------------------------------- | --------------------------------------------- | ------------------------------- |
 | 静态检查       | `npm run check:format`、`check:types`、`check:lint` | 格式、类型、Lint                              | 本地提交前、每个 PR             |
+| Module 测试    | `npm run test:module -- <name>`                     | 单个 Feature 目录                             | 对应 Feature 开发循环           |
 | 单元测试       | `npm run test:unit`                                 | 纯函数、组件、服务边界                        | 开发循环、每个 PR               |
 | 集成测试       | `npm run test:integration`                          | Pi adapter 与运行时协议集成                   | 修改运行时边界时、每个 PR       |
 | Vitest 全量    | `npm test`                                          | 单元与集成测试一次完成                        | 本地提交前、每个 PR             |
 | E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Windows/Linux PR，复用 `out/`   |
 | E2E Full       | `npm run test:e2e:run`                              | 全部桌面用户场景                              | `develop`、正式发布、本地发布前 |
 | Windows 包验证 | `npm run package:verify:windows`                    | NSIS、ASAR、x64 PE                            | 正式发布、本地发布前            |
-| Linux 包验证   | `npm run package:verify:linux`                      | deb/pacman 元数据、桌面入口、ASAR、x64 ELF    | 正式发布、本地发布前            |
+| Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | 正式发布、本地发布前            |
 | Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer 终态与平台信息 | 正式发布、目标桌面验收          |
 
 聚合命令：
@@ -48,6 +52,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 ## 用例放置
 
 - 与实现同层的 `*.test.ts(x)` 默认属于单元测试。
+- Kernel 测试通过公开 Interface 验证依赖排序、Provider、Contribution 和逆序释放；Feature 测试
+  通过 Module Interface 或 contract router 验证，不读取 Kernel 内部状态。
 - 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。
 - Electron 用户场景放在 `e2e/*.spec.ts`，每个文件描述一个完整行为，不按页面或组件拆分。
 - 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；不要在场景之间共享可变状态。
@@ -69,29 +75,30 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - 命令环境必须移除 `BASH_ENV`、`ENV`、导出的 Bash 函数和其他隐式启动变量，避免审批框未
   展示的脚本先于获批命令运行。
 - 命令执行覆盖用户停止和超时；两种情况都要证明外层 Bash 及后台/孙进程不再存活。
-- 更新资产选择覆盖 Windows NSIS、Ubuntu deb、Arch pacman、错误平台/架构/版本、非官方 URL、
-  不受支持发行版和无匹配资产回退。
+- 更新资产选择覆盖 Windows NSIS、Arch pacman、便携 AppImage、错误平台/架构/版本、非官方 URL
+  和无匹配资产回退。
 - API Key 在 Unix 写入后验证权限为 `0600`，且不得进入 Renderer、Session 或测试证据。
 
 ## 发行版验收
 
-| 基线                 | 自动化证据                                          | 补充桌面证据                                   |
-| -------------------- | --------------------------------------------------- | ---------------------------------------------- |
-| Windows 11 x64       | Windows hosted runner，Smoke/Full、NSIS 结构验证    | 安装、启动、卸载                               |
-| Ubuntu 24.04 LTS x64 | `ubuntu-24.04` + Xvfb，Smoke/Full、deb 完整生命周期 | 不要求单独的实机桌面验收                       |
-| 原生 Arch Linux x64  | `archlinux:base` 包生命周期、结构验证               | 发布快照日期的 niri Wayland 会话启动与核心委托 |
+| 基线                    | 自动化证据                                      | 补充桌面证据                                   |
+| ----------------------- | ----------------------------------------------- | ---------------------------------------------- |
+| Windows 11 x64          | Windows hosted runner，Smoke/Full、NSIS 验证    | 安装、启动、卸载                               |
+| 原生 Arch Linux x64     | `archlinux:base` Pacman 生命周期、结构验证      | 发布快照日期的 niri Wayland 会话启动与核心委托 |
+| 便携 AppImage（非基线） | Linux hosted runner，结构验证和 Xvfb 启动 Smoke | 不构成其他发行版兼容承诺                       |
 
-Arch 衍生版和 Ubuntu 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electron 使用
-XWayland，并记录发行版、架构、内核、桌面会话、Bash 版本、产物摘要和验收日期。Ubuntu
-不要求真实桌面证据，以 hosted runner 的原生 Ubuntu 用户态、Xvfb、完整 E2E 和 deb 生命周期
-作为发布门禁。发布包安装/移除不得删除既有用户数据；用户数据清理由独立、明确的手工步骤验证。
+Arch 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electron 使用 XWayland，并记录
+发行版、架构、内核、桌面会话、Bash 版本、产物摘要和验收日期。Ubuntu hosted runner 只是
+构建与 AppImage Smoke 基础设施，不是 Supported Distribution。Pacman 安装/移除不得删除既有
+用户数据；用户数据清理由独立、明确的手工步骤验证。
 
 ## 稳定性规则
 
 - 不用固定延时等待业务状态；优先使用可见状态、事件或 `expect.poll`。
 - 不通过提高全局重试掩盖失败。出现不稳定测试时，先记录失败证据和根因，再修复或临时隔离。
 - Electron E2E 在 CI 中保持单 worker，避免共享桌面资源和用户数据竞争。
-- Linux hosted runner 通过 `xvfb-run -a` 提供确定性显示服务，并作为 Ubuntu 发布验收环境。
+- Linux hosted runner 通过 `xvfb-run -a` 提供确定性显示服务，用于 AppImage 启动 Smoke，不
+  代表该 runner 的发行版获得正式支持。
 - 已安装包启动探针必须等待 Renderer 进入 `.app-shell` 或 `.fatal-state` 明确终态；不得在
   `DOMContentLoaded` 后立即采样，也不得用固定延时掩盖异步初始化。
 - Windows E2E 可以隐藏窗口；Linux E2E 必须让窗口进入当前显示服务的合成器，否则隐藏的
@@ -103,14 +110,15 @@ XWayland，并记录发行版、架构、内核、桌面会话、Bash 版本、�
 
 PR 并行运行质量检查和 Vitest 全量，通过后分别执行 `Windows acceptance` 与独立的
 `Linux acceptance`。两端都构建一次并执行 E2E Smoke；推送 `develop` 时执行 E2E Full。
-Linux acceptance 固定使用 Ubuntu 24.04 hosted runner 和 Xvfb，并在原生 Arch 容器中复用
-与 Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。
+Linux acceptance 使用 hosted runner 构建并启动 AppImage，并在原生 Arch 容器中复用与
+Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。原生 niri 桌面证据仍在发布前
+由 Arch 工作站补充。
 
-合并到 `main` 后，Release 工作流在 Windows 与 Ubuntu runner 上并行执行完整验证，分别生成
-Windows NSIS、Ubuntu deb 和 Arch pacman。Ubuntu runner 通过 `apt` 验证 deb 安装/移除，Arch
-容器通过 `pacman` 验证 pacman 包安装/移除。所有构建成功后，单一 publish job 才创建标签与
-GitHub Release，避免只发布部分平台资产。
+合并到 `main` 后，Release 工作流在 Windows 与 Linux hosted runner 上并行执行完整验证，生成
+Windows NSIS、Arch pacman 和便携 AppImage。Arch 容器通过 `pacman` 验证原生包生命周期，
+hosted runner 对 AppImage 执行结构与启动 Smoke。所有构建成功后，单一 publish job 才创建
+标签与 GitHub Release，避免只发布部分平台资产。
 
 分支保护应要求 `Quality`、`Unit and integration`、`Windows acceptance` 和
-`Linux acceptance` 四个检查。结构校验和容器生命周期不代替签名或 Windows 净机证据；
-Ubuntu 不额外要求实机桌面门禁，Arch 桌面证据按发布快照记录。
+`Linux acceptance` 四个检查。结构校验和容器生命周期不代替签名、Windows 净机证据或 Arch
+niri 桌面证据；Arch 桌面证据按发布快照记录。

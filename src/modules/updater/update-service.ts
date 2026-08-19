@@ -1,15 +1,15 @@
 import { z } from 'zod'
 
-import type { UpdateCheckResult } from '../shared/desktop-bridge.js'
-import { PictorError } from '../shared/errors.js'
+import { PictorError } from '../../shared/errors.js'
+import type { UpdateCheckResult } from './shared.js'
 
 type Fetch = typeof globalThis.fetch
 
-interface UpdateServiceOptions {
+export interface UpdateServiceOptions {
   currentVersion: string
   platform: 'win32' | 'linux'
   arch: 'x64'
-  distribution: 'windows' | 'ubuntu' | 'arch' | 'unsupported-linux'
+  distribution: 'windows' | 'arch' | 'unsupported-linux'
   fetch: Fetch
   openExternal: (url: string) => Promise<void>
 }
@@ -119,19 +119,16 @@ function expectedPackage(
       pattern: new RegExp(`^Pictor-${escapedVersion}-windows-x64-setup\\.exe$`),
     }
   }
-  if (options.distribution === 'ubuntu') {
-    return {
-      kind: 'ubuntu-deb',
-      pattern: new RegExp(`^Pictor-${escapedVersion}-ubuntu-x64\\.deb$`),
-    }
-  }
   if (options.distribution === 'arch') {
     return {
       kind: 'arch-pacman',
       pattern: new RegExp(`^Pictor-${escapedVersion}-arch-x64\\.pacman$`),
     }
   }
-  return null
+  return {
+    kind: 'linux-appimage',
+    pattern: new RegExp(`^Pictor-${escapedVersion}-linux-x64\\.AppImage$`),
+  }
 }
 
 function trustedPackageUrl(
@@ -222,9 +219,7 @@ export class UpdateService {
   }
 
   async openUpdate(): Promise<null> {
-    if (!this.updateTarget) {
-      throw new PictorError('invalid-input', '请先检查更新')
-    }
+    if (!this.updateTarget) throw new PictorError('invalid-input', '请先检查更新')
     await this.options.openExternal(this.updateTarget)
     return null
   }

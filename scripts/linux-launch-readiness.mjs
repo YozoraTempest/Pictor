@@ -31,6 +31,8 @@ export async function collectLaunchEvidence(window) {
     )
   }
 
-  const appInfo = await window.evaluate(async () => globalThis.pictor.getAppInfo())
+  const appInfo = await window.evaluate(async () =>
+    globalThis.pictorModules.invoke('updater', 'getAppInfo', null),
+  )
   return { ...renderer, appInfo }
 }

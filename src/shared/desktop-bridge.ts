@@ -10,7 +10,7 @@ import {
   type SessionRecord,
   type SessionSummary,
 } from './domain.js'
-import { ipcErrorSchema, type IpcError } from './errors.js'
+import { ipcResultSchema, type IpcResult } from './errors.js'
 import {
   connectionTestResultSchema,
   listModelsRequestSchema,
@@ -26,28 +26,6 @@ import {
   type TestSettingsRequest,
 } from './model.js'
 import { runtimeEventSchema, type RuntimeEvent } from './runtime-protocol.js'
-
-export const appInfoSchema = z.object({
-  name: z.string().min(1),
-  version: z.string().min(1),
-  platform: z.enum(['win32', 'linux']),
-  arch: z.literal('x64'),
-  distribution: z.enum(['windows', 'ubuntu', 'arch', 'unsupported-linux']),
-  commandInterpreter: z.object({
-    kind: z.literal('bash'),
-    available: z.boolean(),
-    message: z.string().min(1).nullable(),
-  }),
-})
-
-export const updateCheckResultSchema = z.object({
-  currentVersion: z.string().min(1),
-  latestVersion: z.string().min(1),
-  updateAvailable: z.boolean(),
-  packageAvailable: z.boolean(),
-  packageKind: z.enum(['windows-nsis', 'ubuntu-deb', 'arch-pacman']).nullable(),
-  publishedAt: z.iso.datetime().nullable(),
-})
 
 export const appSnapshotSchema = z.object({
   projects: z.array(projectSchema),
@@ -94,13 +72,6 @@ export const approvalResolutionRequestSchema = z.object({
   callId: z.string().min(1),
 })
 
-export function ipcResultSchema<T extends z.ZodType>(valueSchema: T) {
-  return z.discriminatedUnion('ok', [
-    z.object({ ok: z.literal(true), value: valueSchema }),
-    z.object({ ok: z.literal(false), error: ipcErrorSchema }),
-  ])
-}
-
 export const appSnapshotResultSchema = ipcResultSchema(appSnapshotSchema)
 export const projectCandidateResultSchema = ipcResultSchema(projectCandidateSchema.nullable())
 export const projectResultSchema = ipcResultSchema(projectSchema)
@@ -110,20 +81,13 @@ export const settingsResultSchema = ipcResultSchema(modelSettingsSchema.nullable
 export const savedSettingsResultSchema = ipcResultSchema(modelSettingsSchema)
 export const connectionTestIpcResultSchema = ipcResultSchema(connectionTestResultSchema)
 export const modelCatalogIpcResultSchema = ipcResultSchema(modelCatalogResultSchema)
-export const updateCheckIpcResultSchema = ipcResultSchema(updateCheckResultSchema)
 export const voidResultSchema = ipcResultSchema(z.null())
 export const startRunResultSchema = ipcResultSchema(z.object({ runId: idSchema }))
 
-export type AppInfo = z.infer<typeof appInfoSchema>
-export type UpdateCheckResult = z.infer<typeof updateCheckResultSchema>
 export type AppSnapshot = z.infer<typeof appSnapshotSchema>
 export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
-export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: IpcError }
 
 export interface PictorBridge {
-  getAppInfo: () => Promise<AppInfo>
-  checkForUpdates: () => Promise<IpcResult<UpdateCheckResult>>
-  openUpdate: () => Promise<IpcResult<null>>
   getSnapshot: () => Promise<IpcResult<AppSnapshot>>
   pickProjectDirectory: () => Promise<IpcResult<ProjectCandidate | null>>
   registerProject: (
@@ -166,3 +130,4 @@ export {
   testSettingsRequestSchema,
 }
 export type { RuntimeEvent } from './runtime-protocol.js'
+export type { IpcResult } from './errors.js'
