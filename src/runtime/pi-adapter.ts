@@ -1,13 +1,14 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 
 import {
-  createAgentSession,
-  DefaultResourceLoader,
+  createAgentSessionFromServices,
+  createAgentSessionRuntime,
+  createAgentSessionServices,
   ModelRuntime,
   SessionManager,
   SettingsManager,
-  type AgentSession,
+  type AgentSessionRuntime,
   type AgentSessionEvent,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
@@ -41,7 +42,7 @@ interface PiSessionLike {
   prompt(text: string, options?: { expandPromptTemplates?: boolean }): Promise<void>
   abort(): Promise<void>
   waitForIdle(): Promise<void>
-  dispose(): void
+  dispose(): void | Promise<void>
 }
 
 interface SessionFactoryInput {
@@ -146,87 +147,139 @@ function toolPath(projectRoot: string, args: unknown): string | null {
 async function createProductionSession({
   config,
   tools,
-}: SessionFactoryInput): Promise<AgentSession> {
+}: SessionFactoryInput): Promise<PiSessionLike> {
   await mkdir(config.agentDirectory, { recursive: true })
   await mkdir(config.sessionDirectory, { recursive: true })
-  const settingsManager = SettingsManager.inMemory(
-    {
-      retry: { enabled: false },
-      enableAnalytics: false,
-      compaction: { enabled: true },
-    },
-    { projectTrusted: true },
-  )
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: config.projectRoot,
-    agentDir: config.agentDirectory,
-    settingsManager,
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-    systemPrompt:
-      'You are Pictor, a delegate coding agent. Work only through the provided Pictor tools. Keep changes scoped to the selected project, explain progress briefly, and finish with results, changed files, verification, and remaining work.',
-  })
-  await resourceLoader.reload()
-
-  const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false })
-  const api =
-    config.settings.apiProtocol === 'responses' ? 'openai-responses' : 'openai-completions'
-  const reasoningEnabled = config.settings.reasoningEffort !== null
-  modelRuntime.registerProvider(PROVIDER_ID, {
-    name: 'Pictor OpenAI-compatible endpoint',
-    api,
-    baseUrl: config.settings.baseUrl,
-    apiKey: config.apiKey,
-    authHeader: true,
-    models: [
-      {
-        id: config.settings.modelId,
-        name: config.settings.modelId,
-        api,
-        reasoning: reasoningEnabled,
-        ...(reasoningEnabled ? { thinkingLevelMap: { xhigh: 'xhigh', max: 'max' } } : {}),
-        input: ['text'],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128_000,
-        maxTokens: config.settings.maxOutputTokens ?? 8192,
-        ...(api === 'openai-completions' && reasoningEnabled
-          ? { compat: { supportsReasoningEffort: true } }
-          : {}),
-        ...(config.settings.temperature === null
-          ? {}
-          : { samplingParams: { temperature: config.settings.temperature } }),
-      },
-    ],
-  })
-  const model = modelRuntime.getModel(PROVIDER_ID, config.settings.modelId)
-  if (!model) throw new Error(`Model is unavailable: ${config.settings.modelId}`)
-
   const sessionManager = config.resumeSession
     ? SessionManager.continueRecent(config.projectRoot, config.sessionDirectory)
     : SessionManager.create(config.projectRoot, config.sessionDirectory)
-  const redactor = createSecretRedactor([config.apiKey])
-  // Pi appends synchronously; mutating the pending entry here keeps its in-memory context and JSONL identical.
-  const internalManager = sessionManager as unknown as {
-    _persist: (entry: unknown) => void
+  const createRuntime = async ({
+    cwd,
+    agentDir,
+    sessionManager: targetSessionManager,
+    sessionStartEvent,
+  }: Parameters<Parameters<typeof createAgentSessionRuntime>[0]>[0]) => {
+    const settingsManager = SettingsManager.inMemory(
+      {
+        retry: { enabled: false },
+        enableAnalytics: false,
+        compaction: { enabled: true },
+      },
+      { projectTrusted: true },
+    )
+    const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false })
+    const api =
+      config.settings.apiProtocol === 'responses' ? 'openai-responses' : 'openai-completions'
+    const reasoningEnabled = config.settings.reasoningEffort !== null
+    modelRuntime.registerProvider(PROVIDER_ID, {
+      name: 'Pictor OpenAI-compatible endpoint',
+      api,
+      baseUrl: config.settings.baseUrl,
+      apiKey: config.apiKey,
+      authHeader: true,
+      models: [
+        {
+          id: config.settings.modelId,
+          name: config.settings.modelId,
+          api,
+          reasoning: reasoningEnabled,
+          ...(reasoningEnabled ? { thinkingLevelMap: { xhigh: 'xhigh', max: 'max' } } : {}),
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128_000,
+          maxTokens: config.settings.maxOutputTokens ?? 8192,
+          ...(api === 'openai-completions' && reasoningEnabled
+            ? { compat: { supportsReasoningEffort: true } }
+            : {}),
+          ...(config.settings.temperature === null
+            ? {}
+            : { samplingParams: { temperature: config.settings.temperature } }),
+        },
+      ],
+    })
+    const model = modelRuntime.getModel(PROVIDER_ID, config.settings.modelId)
+    if (!model) throw new Error(`Model is unavailable: ${config.settings.modelId}`)
+    const services = await createAgentSessionServices({
+      cwd,
+      agentDir,
+      settingsManager,
+      modelRuntime,
+      resourceLoaderOptions: {
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        systemPrompt:
+          'You are Pictor, a delegate coding agent. Work only through the provided Pictor tools. Keep changes scoped to the selected project, explain progress briefly, and finish with results, changed files, verification, and remaining work.',
+      },
+    })
+    const result = await createAgentSessionFromServices({
+      services,
+      sessionManager: targetSessionManager,
+      ...(sessionStartEvent ? { sessionStartEvent } : {}),
+      model,
+      thinkingLevel: config.settings.reasoningEffort ?? 'off',
+      tools: tools.map((tool) => tool.name),
+      customTools: tools,
+    })
+    return { ...result, services, diagnostics: services.diagnostics }
   }
-  const persist = internalManager._persist.bind(sessionManager)
-  internalManager._persist = (entry) => persist(redactor.redactPiEntryInPlace(entry))
-
-  const { session } = await createAgentSession({
+  const runtime = await createAgentSessionRuntime(createRuntime, {
     cwd: config.projectRoot,
     agentDir: config.agentDirectory,
-    modelRuntime,
-    model,
-    thinkingLevel: config.settings.reasoningEffort ?? 'off',
-    tools: tools.map((tool) => tool.name),
-    customTools: tools,
-    resourceLoader,
-    settingsManager,
     sessionManager,
   })
-  return session
+  return new PiSessionRuntime(runtime)
+}
+
+class PiSessionRuntime implements PiSessionLike {
+  constructor(private readonly runtime: AgentSessionRuntime) {}
+
+  subscribe(listener: (event: AgentSessionEvent) => void): () => void {
+    return this.runtime.session.subscribe(listener)
+  }
+
+  prompt(text: string, options?: { expandPromptTemplates?: boolean }): Promise<void> {
+    return this.runtime.session.prompt(text, options)
+  }
+
+  abort(): Promise<void> {
+    return this.runtime.session.abort()
+  }
+
+  waitForIdle(): Promise<void> {
+    return this.runtime.session.waitForIdle()
+  }
+
+  dispose(): Promise<void> {
+    return this.runtime.dispose()
+  }
+}
+
+async function sanitizePiTranscripts(
+  sessionDirectory: string,
+  redactor: SecretRedactor,
+): Promise<void> {
+  let files: string[]
+  try {
+    files = await readdir(sessionDirectory)
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return
+    throw error
+  }
+  for (const file of files) {
+    if (!file.endsWith('.jsonl')) continue
+    const path = resolve(sessionDirectory, file)
+    const content = await readFile(path, 'utf8')
+    const entries = content
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => redactor.redactPiEntry(JSON.parse(line)))
+    const temporaryPath = `${path}.redacting`
+    await writeFile(temporaryPath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`)
+    await rename(temporaryPath, path)
+  }
 }
 
 export class PiAgentRuntime {
@@ -289,8 +342,11 @@ export class PiAgentRuntime {
         return
       }
       current.unsubscribe = session.subscribe((event) => this.handlePiEvent(current, event))
-      await session.prompt(config.prompt, { expandPromptTemplates: false })
+      await session.prompt(current.redactor.redactText(config.prompt), {
+        expandPromptTemplates: false,
+      })
       await session.waitForIdle()
+      await sanitizePiTranscripts(config.sessionDirectory, current.redactor)
 
       if (current.cancelled) {
         this.emitEvent(config, { type: 'run.stateChanged', status: 'stopped', error: null })
@@ -327,7 +383,7 @@ export class PiAgentRuntime {
     } finally {
       current.approvals.cancelAll()
       current.unsubscribe?.()
-      current.session?.dispose()
+      await current.session?.dispose()
       if (this.current === current) this.current = undefined
     }
   }

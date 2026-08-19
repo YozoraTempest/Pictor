@@ -25,7 +25,10 @@ import { registerModuleIpc } from './module-ipc.js'
 import { ModelConnectionTester } from './model-connection.js'
 import { AppRepository } from './persistence/app-repository.js'
 import { SecretStore } from './persistence/secret-store.js'
-import { createMainPluginDefinitions } from './plugins/plugin-loader.js'
+import {
+  createMainPluginDefinitions,
+  createRuntimePluginBootstrap,
+} from './plugins/plugin-loader.js'
 import { PluginManager } from './plugins/plugin-manager.js'
 import { PluginStore } from './plugins/plugin-store.js'
 import { defaultPluginProfile } from './plugins/default-profile.js'
@@ -192,9 +195,12 @@ void app.whenReady().then(() => {
     discoverCommandInterpreter(),
     detectDesktopDistribution(),
   ]).then(async ([, , commandInterpreter, distribution]) => {
+    const safeMode = process.argv.includes('--safe-mode')
+    const pluginStoreSnapshot = await pluginStore.getSnapshot()
     const coordinatorReference: { current?: RuntimeCoordinator } = {}
-    const runtimeSupervisor = new RuntimeSupervisor((event) =>
-      coordinatorReference.current?.handleEvent(event),
+    const runtimeSupervisor = new RuntimeSupervisor(
+      (event) => coordinatorReference.current?.handleEvent(event),
+      createRuntimePluginBootstrap(pluginStoreSnapshot, currentVersion, safeMode),
     )
     const runtimeCoordinator = new RuntimeCoordinator(
       repository,
@@ -215,11 +221,8 @@ void app.whenReady().then(() => {
       distribution,
       commandInterpreter: commandInterpreter.status,
     })
-    const safeMode = process.argv.includes('--safe-mode')
     const mainPluginHost = new PluginHost({ pictorVersion: currentVersion, safeMode })
-    await mainPluginHost.start(
-      createMainPluginDefinitions(await pluginStore.getSnapshot(), appInfo),
-    )
+    await mainPluginHost.start(createMainPluginDefinitions(pluginStoreSnapshot, appInfo))
     const pluginManager = new PluginManager(pluginStore, mainPluginHost.getStatuses(), safeMode)
     const moduleIpc = registerModuleIpc(
       new ModuleRouter(mainPluginHost.getContributions(moduleHandlerContributions)),

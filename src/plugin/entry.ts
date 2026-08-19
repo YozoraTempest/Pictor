@@ -1,4 +1,5 @@
 import type { PictorModule } from '../kernel/module.js'
+import type { RuntimeEvent } from '../shared/runtime-protocol.js'
 
 export interface MainPluginContext {
   process: 'main'
@@ -14,6 +15,7 @@ export interface RendererPluginContext {
 export interface RuntimePluginContext {
   process: 'runtime'
   dataPath: string
+  emit(event: RuntimeEvent): void
 }
 
 export type PluginProcessContext = MainPluginContext | RendererPluginContext | RuntimePluginContext

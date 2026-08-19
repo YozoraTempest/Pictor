@@ -1,4 +1,4 @@
-import { appendFile, cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, cp, copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 
 import { build } from 'vite'
@@ -32,11 +32,14 @@ for (const directory of directories.toSorted((left, right) =>
     const sourceEntry = join(pluginRoot, `${processName}.ts`)
     const outputName = basename(manifestEntry)
     const renderer = processName === 'renderer'
+    const runtime = processName === 'runtime'
     await build({
       configFile: false,
       logLevel: 'warn',
       define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+      ...(runtime ? { ssr: { noExternal: true } } : {}),
       build: {
+        ...(runtime ? { ssr: true } : {}),
         target: 'es2023',
         outDir: distRoot,
         emptyOutDir: false,
@@ -65,12 +68,29 @@ for (const directory of directories.toSorted((left, right) =>
                   'react/jsx-dev-runtime': '__PICTOR_JSX_DEV_RUNTIME__',
                 },
               }
-            : { inlineDynamicImports: true, entryFileNames: outputName },
+            : {
+                inlineDynamicImports: true,
+                entryFileNames: outputName,
+                ...(runtime
+                  ? {
+                      banner:
+                        "import { createRequire as __pictorCreateRequire } from 'node:module'; import { fileURLToPath as __pictorFileURLToPath } from 'node:url'; import { dirname as __pictorDirname } from 'node:path'; const require = __pictorCreateRequire(import.meta.url); const __filename = __pictorFileURLToPath(import.meta.url); const __dirname = __pictorDirname(__filename);",
+                    }
+                  : {}),
+              },
         },
       },
     })
     if (renderer) {
       await appendFile(join(distRoot, outputName), '\nexport default __pictorPluginBundle;\n')
+    }
+    if (runtime && manifest.id === 'pictor.pi-agent-runtime') {
+      await copyFile(
+        resolve(
+          'node_modules/@earendil-works/pi-coding-agent/node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm',
+        ),
+        join(distRoot, 'photon_rs_bg.wasm'),
+      )
     }
   }
 

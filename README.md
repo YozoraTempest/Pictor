@@ -7,7 +7,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 
 - 添加、移除和重新关联本地项目，项目路径经过规范化后作为访问边界；
 - 创建、切换、重命名和删除 Session，重启后保留消息、运行与工具记录；
-- 通过 `@earendil-works/pi-coding-agent` 接入支持流式文本和工具调用的模型端点；
+- 通过可删除的 `pictor.pi-agent-runtime` Bundled Plugin 原生使用 Pi `AgentSessionRuntime`，接入
+  支持流式文本和工具调用的模型端点；
 - 列出、搜索、读取、创建、编辑、移动和删除项目内文件；
 - 在显示完整命令、工作目录和用途后，允许一次或拒绝 Bash 命令；
 - 展示 Markdown 回复、工具状态、命令输出、错误、停止和中断状态；
@@ -170,8 +171,8 @@ Renderer，也不会写入项目或 Session 数据。不要共享该文件或整
 源码开发默认把数据写入独立的 `pictor-dev/data-v1`，自动化测试继续使用各自的临时目录。
 
 Renderer 启用 Chromium sandbox、context isolation 和限制性 CSP，不开放 Node 或原始
-Electron API。Pi 运行在独立 utility process 中，内置工具和项目扩展均被禁用，只能调用
-Pictor 提供且经过路径守卫的工具。
+Electron API。Pi Runtime Plugin 从用户 Store 动态加载到独立 utility process，只能调用 Pictor
+提供且经过路径守卫的工具；删除或禁用该 Plugin 后，项目与历史仍可查看，但不能启动新 Run。
 
 更新检查只在用户点击“检查更新”后由 Main Process 请求 Pictor 官方 GitHub Release API；
 应用不会在后台轮询。Linux 只在本机读取 `/etc/os-release` 识别原生 Arch，不上传或记录该

@@ -1,17 +1,75 @@
-import { runtimeCommandSchema } from '../shared/runtime-protocol.js'
+import { pathToFileURL } from 'node:url'
+
+import { readPluginEntrypoint, type RuntimePluginContext } from '../plugin/entry.js'
+import { PluginHost, type PluginDefinition } from '../plugin/host.js'
+import { runtimePluginBootstrapSchema } from '../shared/plugins.js'
+import { runtimeCommandSchema, type RuntimeEvent } from '../shared/runtime-protocol.js'
+import { agentRuntimeContributions, type AgentRuntimeProvider } from './plugin-interface.js'
 
 const parentPort = process.parentPort
 if (!parentPort) throw new Error('Pictor runtime host requires an Electron utility-process parent')
 
-const runtimePromise = import('./pi-adapter.js').then(
-  ({ PiAgentRuntime }) => new PiAgentRuntime((event) => parentPort.postMessage(event)),
-)
+interface RuntimeHostState {
+  host: PluginHost
+  runtime: AgentRuntimeProvider | null
+}
 
 function reportFatal(error: unknown): void {
   parentPort.postMessage({
     type: 'host.fatal',
     message: error instanceof Error ? error.message : 'Agent Runtime 加载失败',
   })
+}
+
+const statePromise = (async (): Promise<RuntimeHostState> => {
+  const bootstrapSource = process.env.PICTOR_RUNTIME_PLUGIN_BOOTSTRAP
+  if (!bootstrapSource) throw new Error('Missing Runtime Plugin bootstrap')
+  const bootstrap = runtimePluginBootstrapSchema.parse(JSON.parse(bootstrapSource))
+  const emit = (event: RuntimeEvent) => parentPort.postMessage(event)
+  const definitions: PluginDefinition[] = bootstrap.plugins.map(
+    ({ manifest, desiredState, dataPath, runtimeEntryPath }) => ({
+      manifest,
+      desiredState,
+      async createModules() {
+        if (!runtimeEntryPath) return []
+        const namespace: unknown = await import(pathToFileURL(runtimeEntryPath).toString())
+        if (!namespace || typeof namespace !== 'object') {
+          throw new Error(`Invalid Runtime Plugin entry: ${manifest.id}`)
+        }
+        const entrypoint = readPluginEntrypoint<RuntimePluginContext>(
+          namespace as Record<string, unknown>,
+        )
+        return entrypoint({ process: 'runtime', dataPath, emit })
+      },
+    }),
+  )
+  const host = new PluginHost({
+    pictorVersion: bootstrap.pictorVersion,
+    safeMode: bootstrap.safeMode,
+  })
+  await host.start(definitions)
+  const runtimes = host.getContributions(agentRuntimeContributions)
+  if (runtimes.length > 1) throw new Error('Multiple Agent Runtime Providers are active')
+  parentPort.postMessage({ type: 'host.ready' })
+  return { host, runtime: runtimes[0] ?? null }
+})().catch((error) => {
+  reportFatal(error)
+  throw error
+})
+
+function requireRuntime(state: RuntimeHostState): AgentRuntimeProvider {
+  if (!state.runtime) {
+    const failures = state.host
+      .getStatuses()
+      .filter(({ effectiveState }) => effectiveState === 'failed' || effectiveState === 'blocked')
+      .map(({ id, reason }) => `${id}: ${reason ?? 'unavailable'}`)
+    throw new Error(
+      failures.length > 0
+        ? `Agent Runtime Provider is unavailable (${failures.join('; ')})`
+        : 'Agent Runtime Provider is not installed or enabled',
+    )
+  }
+  return state.runtime
 }
 
 parentPort.on('message', (messageEvent) => {
@@ -22,30 +80,27 @@ parentPort.on('message', (messageEvent) => {
   }
 
   const command = parsed.data
-  if (command.type === 'start') {
-    void runtimePromise.then((runtime) => runtime.start(command)).catch(reportFatal)
-    return
-  }
-  if (command.type === 'approve') {
-    void runtimePromise
-      .then((runtime) => runtime.resolveApproval(command.runId, command.callId, true))
+  if (command.type === 'dispose') {
+    void statePromise
+      .then(({ host }) => host.stop())
       .catch(reportFatal)
+      .finally(() => process.exit(0))
     return
   }
-  if (command.type === 'reject') {
-    void runtimePromise
-      .then((runtime) => runtime.resolveApproval(command.runId, command.callId, false))
-      .catch(reportFatal)
-    return
-  }
-  if (command.type === 'abort') {
-    void runtimePromise.then((runtime) => runtime.abort(command.runId)).catch(reportFatal)
-    return
-  }
-  void runtimePromise
-    .then((runtime) => runtime.dispose())
-    .catch(reportFatal)
-    .finally(() => process.exit(0))
-})
 
-parentPort.postMessage({ type: 'host.ready' })
+  void statePromise
+    .then((state) => {
+      const runtime = requireRuntime(state)
+      if (command.type === 'start') return runtime.start(command)
+      if (command.type === 'approve') {
+        runtime.resolveApproval(command.runId, command.callId, true)
+        return
+      }
+      if (command.type === 'reject') {
+        runtime.resolveApproval(command.runId, command.callId, false)
+        return
+      }
+      return runtime.abort(command.runId)
+    })
+    .catch(reportFatal)
+})

@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { readPluginEntrypoint, type MainPluginContext } from '../../plugin/entry.js'
 import type { PluginDefinition } from '../../plugin/host.js'
 import type { AppInfo } from '../../shared/app-info.js'
+import { runtimePluginBootstrapSchema, type RuntimePluginBootstrap } from '../../shared/plugins.js'
 import type { PluginStoreSnapshot } from './plugin-store.js'
 
 export function createMainPluginDefinitions(
@@ -28,4 +29,23 @@ export function createMainPluginDefinitions(
       return entrypoint({ process: 'main', dataPath, appInfo })
     },
   }))
+}
+
+export function createRuntimePluginBootstrap(
+  snapshot: PluginStoreSnapshot,
+  pictorVersion: string,
+  safeMode: boolean,
+): RuntimePluginBootstrap {
+  return runtimePluginBootstrapSchema.parse({
+    pictorVersion,
+    safeMode,
+    plugins: snapshot.plugins.map(({ entry, manifest, rootPath, dataPath }) => ({
+      manifest,
+      desiredState: entry.desiredState,
+      dataPath,
+      runtimeEntryPath: manifest.modules.runtime
+        ? resolve(rootPath, manifest.modules.runtime)
+        : null,
+    })),
+  })
 }

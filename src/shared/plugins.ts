@@ -52,3 +52,18 @@ export const removePluginRequestSchema = pluginIdRequestSchema.extend({
 })
 
 export type PluginManagerSnapshot = z.infer<typeof pluginManagerSnapshotSchema>
+
+export const runtimePluginBootstrapSchema = z.object({
+  safeMode: z.boolean(),
+  pictorVersion: z.string().min(1),
+  plugins: z.array(
+    z.object({
+      manifest: pluginManifestSchema,
+      desiredState: pluginDesiredStateSchema,
+      dataPath: z.string().min(1),
+      runtimeEntryPath: z.string().min(1).nullable(),
+    }),
+  ),
+})
+
+export type RuntimePluginBootstrap = z.infer<typeof runtimePluginBootstrapSchema>

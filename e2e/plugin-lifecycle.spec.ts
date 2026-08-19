@@ -20,7 +20,8 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
     await window.getByRole('button', { name: '设置' }).click()
     await window.getByRole('button', { name: 'Plugins' }).click()
     await expect(window.getByText('pictor.updater', { exact: true })).toBeVisible()
-    await expect(window.getByText('运行中')).toBeVisible()
+    const updaterRow = window.locator('.plugin-row').filter({ hasText: 'pictor.updater' })
+    await expect(updaterRow.getByText('运行中')).toBeVisible()
     expect(rendererErrors).toEqual([])
     const rendererImport = await window.evaluate(async () => {
       const bridge = (
@@ -32,7 +33,9 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
         ok: boolean
         value?: { plugins: Array<{ rendererEntryUrl: string | null }> }
       }
-      const url = bootstrap.value?.plugins[0]?.rendererEntryUrl
+      const url = bootstrap.value?.plugins.find(
+        (plugin) => plugin.rendererEntryUrl,
+      )?.rendererEntryUrl
       if (!url) return { ok: false, error: 'missing renderer URL' }
       try {
         const namespace = await import(url)
@@ -96,7 +99,7 @@ test('starts the Core Plugin Manager with all Plugins ignored in safe mode', asy
     await expect(window.getByRole('button', { name: '关于' })).toHaveCount(0)
     await window.getByRole('button', { name: 'Plugins' }).click()
     await expect(window.getByText('安全模式已忽略全部 Plugin')).toBeVisible()
-    await expect(window.getByText('已禁用')).toBeVisible()
+    await expect(window.getByText('已禁用')).toHaveCount(2)
   } finally {
     await electronApp.close()
   }

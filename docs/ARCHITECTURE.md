@@ -55,7 +55,7 @@ interface 保持可见且范围明确。
 
 ```text
 Renderer -> Desktop bridge / Module contract -> Preload adapter -> IPC -> Main
-Main -> Runtime protocol -> Runtime Host -> Pi adapter
+Main -> Runtime protocol -> Runtime Plugin Host -> Pi Agent Runtime Plugin
 Main / Preload / Renderer / Runtime -> Shared
 Main / Renderer / Runtime -> Plugin Host -> per-plugin Kernel
 Kernel -X-> Electron / React / Pi / 业务实现
@@ -82,6 +82,12 @@ runtime，不携带第二套 React 实例。
 `RuntimeCoordinator` 拥有自身需要的窄 persistence 和 Runtime host interface。现有
 `AppRepository` 与 `RuntimeSupervisor` 直接满足它们；测试使用 in-memory adapter，不依赖具体
 实现类型。不要为整个持久化模块添加只有一个 production adapter 的抽象。
+
+`RuntimeSupervisor` 只启动 utility process 并传入已安装 Plugin 的 Runtime catalog。utility
+process 自己运行 Plugin Host，从用户 Store 动态导入 Runtime 入口，并通过 `agent.runtimes`
+Contribution 选择 Provider。`pictor.pi-agent-runtime` 使用 Pi `AgentSessionRuntime` 管理当前
+`AgentSession` 及其可替换生命周期；Main 不静态 import Pi adapter。Pi 所需 WASM 与 Runtime
+bundle 一同进入 Store，Node 内置模块保持外部导入，npm 实现依赖内联到 bundle。
 
 `AppRepository` 是 Main 进程的工作区状态入口，只协调 Project、Settings、导航选择和持久化
 初始化。Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全
