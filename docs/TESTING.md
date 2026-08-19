@@ -57,8 +57,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。
 - Electron 用户场景放在 `e2e/*.spec.ts`，每个文件描述一个完整行为，不按页面或组件拆分。
 - 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；不要在场景之间共享可变状态。
-- Smoke 用例在标题中添加 `@smoke`。只有“应用能启动”和“一条核心委托链路能完成”进入
-  Smoke；设置迁移、故障恢复、第二协议和中断恢复属于 Full。
+- Smoke 用例在标题中添加 `@smoke`。单一核心委托场景同时验证应用启动、Renderer 隔离和完整
+  委托链路；独立 Shell、设置迁移、故障恢复、第二协议和中断恢复属于 Full。
 - 测试不得访问真实模型、用户目录或网络服务。E2E 必须使用 `testInfo.outputPath()` 隔离数据，
   并在 `finally` 中关闭 Electron 和本地服务。
 - 目标桌面验收可设置 `PICTOR_E2E_EXECUTABLE`，让核心委托 Smoke 直接启动已安装或已解包的

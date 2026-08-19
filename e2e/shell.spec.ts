@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 
 import { bridgeKeys, moduleBridgeKeys } from './support.js'
 
-test('@smoke launches a sandboxed, nonblank desktop shell', async ({
+test('launches a sandboxed, nonblank desktop shell', async ({
   browserName: _browserName,
 }, testInfo) => {
   const electronApp = await electron.launch({

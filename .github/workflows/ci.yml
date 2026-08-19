@@ -89,7 +89,12 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm install --global npm@11.17.0
+      - name: Install pinned npm without replacing the runner copy
+        shell: pwsh
+        run: |
+          $npmPrefix = Join-Path $env:RUNNER_TEMP 'pictor-npm'
+          npm install --global --prefix $npmPrefix npm@11.17.0
+          $npmPrefix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: npm ci
       - run: npm run deps:prepare
       - run: npm run deps:verify
