@@ -124,8 +124,9 @@ Updater Interface 与设置页 Contribution。内部
 - 无业务语义且可复用的视图元素：`src/renderer/ui/`。
 - 跨进程 schema 或类型：放入对应的 `src/shared/` 协议 module。
 
-使用 `npm run module:new -- <name>` 生成最小 Feature 骨架；生成器不会隐式修改 Catalog，开发者
-必须在对应进程的显式 Catalog 中注册入口。
+使用 `npm run plugin:new -- <name>` 生成 Manifest、Main/Renderer 入口和测试骨架；
+`npm run build:plugins` 将 `plugins/` 中的包构建到本地 Bundled 恢复源。`npm run module:new --
+<name>` 只用于已有 Plugin 内部尚未迁移的 Module 源码，不会安装或登记 Plugin。
 
 不要创建模糊的 `utils/`、`common/` 或 `services/`。文件较大不是拆分理由；只有出现更小且稳定的
 interface、真实变化点或明显 locality 收益时才提取 module。

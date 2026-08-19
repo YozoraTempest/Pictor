@@ -58,6 +58,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - Plugin 测试通过 Manifest、Registry、依赖规划、Plugin Host 或 Plugin Store 的公开 Interface
   验证。必须覆盖拓扑顺序、完整循环链、缺失/禁用/版本不兼容依赖、激活失败隔离、零 Plugin、
   安全模式、Bundled 删除后不自动恢复，以及代码与数据的独立删除语义。
+- `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，
+  并能被 `npm run build:plugins` 构建；Plugin 测试不要求启动开发服务器。
 - 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。
 - Electron 用户场景放在 `e2e/*.spec.ts`，每个文件描述一个完整行为，不按页面或组件拆分。
 - 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；不要在场景之间共享可变状态。

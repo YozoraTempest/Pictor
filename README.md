@@ -83,8 +83,9 @@ npm run deps:verify
 npm run dev
 ```
 
-`npm run dev` 只启动 electron-vite watch/HMR，并使用独立的 `pictor-dev` userData，不会读取或
-修改正式安装的数据。新建仓库内 Feature 使用 `npm run module:new -- <name>`。
+`npm run dev` 先构建本地 Bundled Plugin，再启动 electron-vite watch/HMR，并使用独立的
+`pictor-dev` userData，不会读取或修改正式安装的数据。新建可安装能力使用
+`npm run plugin:new -- <name>`；只新增 Plugin 内部执行单元时使用 `npm run module:new -- <name>`。
 
 首次启动后，在“设置 > 模型”中完成以下配置，再添加本地项目并创建 Session：
 

@@ -42,6 +42,7 @@
     "test:module": "node scripts/test-module.mjs",
     "test:plugin": "node scripts/test-plugin.mjs",
     "build:plugins": "node scripts/build-plugins.mjs",
+    "plugin:new": "node scripts/create-plugin.mjs",
     "module:new": "node scripts/create-module.mjs",
     "test:e2e:run": "playwright test",
     "test:e2e:smoke:run": "playwright test --grep @smoke",

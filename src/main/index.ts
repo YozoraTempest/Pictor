@@ -28,6 +28,7 @@ import { SecretStore } from './persistence/secret-store.js'
 import { createMainPluginDefinitions } from './plugins/plugin-loader.js'
 import { PluginManager } from './plugins/plugin-manager.js'
 import { PluginStore } from './plugins/plugin-store.js'
+import { defaultPluginProfile } from './plugins/default-profile.js'
 import { RuntimeCoordinator } from './runtime/coordinator.js'
 import { RuntimeSupervisor } from './runtime/supervisor.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
@@ -181,6 +182,7 @@ void app.whenReady().then(() => {
   const pluginStore = new PluginStore({
     userDataDirectory,
     bundledPluginsDirectory: bundledPluginsDirectory(),
+    profile: defaultPluginProfile,
   })
 
   registerAppProtocol(pluginStore)

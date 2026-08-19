@@ -3,6 +3,7 @@ import { cp, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import { pluginManifestSchema, type PluginManifest } from '../../plugin/manifest.js'
+import { resolvePluginProfile, type PluginProfile } from '../../plugin/profile.js'
 import {
   createEmptyPluginRegistry,
   pluginRegistrySchema,
@@ -16,6 +17,7 @@ const MANIFEST_FILE = 'manifest.json'
 export interface PluginStoreOptions {
   userDataDirectory: string
   bundledPluginsDirectory: string
+  profile?: PluginProfile
 }
 
 export interface StoredPluginPackage {
@@ -71,7 +73,17 @@ export class PluginStore {
     this.issues = []
 
     let registryChanged = false
-    for (const bundled of await this.discoverBundledPlugins()) {
+    const bundledPlugins = await this.discoverBundledPlugins()
+    const selected = this.options.profile
+      ? new Set(
+          resolvePluginProfile(
+            this.options.profile,
+            bundledPlugins.map(({ manifest }) => manifest),
+          ),
+        )
+      : null
+    for (const bundled of bundledPlugins) {
+      if (selected && !selected.has(bundled.manifest.id)) continue
       const entryIndex = this.registry.entries.findIndex(
         (entry) => entry.kind === 'pictor-plugin' && entry.id === bundled.manifest.id,
       )
