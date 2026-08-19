@@ -20,6 +20,7 @@
     "src/renderer/**/*.ts",
     "src/renderer/**/*.tsx",
     "src/kernel/**/*.ts",
+    "src/plugin/**/*.ts",
     "src/modules/**/shared.ts",
     "src/modules/**/renderer.ts",
     "src/modules/**/*.tsx",

@@ -26,6 +26,7 @@ import { registerModuleIpc } from './module-ipc.js'
 import { ModelConnectionTester } from './model-connection.js'
 import { AppRepository } from './persistence/app-repository.js'
 import { SecretStore } from './persistence/secret-store.js'
+import { PluginStore } from './plugins/plugin-store.js'
 import { RuntimeCoordinator } from './runtime/coordinator.js'
 import { RuntimeSupervisor } from './runtime/supervisor.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
@@ -140,16 +141,22 @@ function createMainWindow(runtimeCoordinator: RuntimeCoordinator): BrowserWindow
 
 void app.whenReady().then(() => {
   const currentVersion = app.isPackaged ? app.getVersion() : packageMetadata.version
-  const dataDirectory = join(app.getPath('userData'), 'data-v1')
+  const userDataDirectory = app.getPath('userData')
+  const dataDirectory = join(userDataDirectory, 'data-v1')
   const secretStore = new SecretStore(dataDirectory, safeStorage)
   const repository = new AppRepository(dataDirectory, secretStore)
+  const pluginStore = new PluginStore({
+    userDataDirectory,
+    bundledPluginsDirectory: join(process.resourcesPath, 'bundled-plugins'),
+  })
 
   registerAppProtocol()
   return Promise.all([
     repository.initialize(),
+    pluginStore.initialize(),
     discoverCommandInterpreter(),
     detectDesktopDistribution(),
-  ]).then(async ([, commandInterpreter, distribution]) => {
+  ]).then(async ([, , commandInterpreter, distribution]) => {
     const coordinatorReference: { current?: RuntimeCoordinator } = {}
     const runtimeSupervisor = new RuntimeSupervisor((event) =>
       coordinatorReference.current?.handleEvent(event),

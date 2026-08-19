@@ -29,6 +29,7 @@ npm run deps:verify
 | -------------- | --------------------------------------------------- | --------------------------------------------- | ------------------------------- |
 | 静态检查       | `npm run check:format`、`check:types`、`check:lint` | 格式、类型、Lint                              | 本地提交前、每个 PR             |
 | Module 测试    | `npm run test:module -- <name>`                     | 单个 Feature 目录                             | 对应 Feature 开发循环           |
+| Plugin 测试    | `npm run test:plugin -- <name>`                     | 单个 Plugin 或 `host` 底座                    | Plugin 开发循环                 |
 | 单元测试       | `npm run test:unit`                                 | 纯函数、组件、服务边界                        | 开发循环、每个 PR               |
 | 集成测试       | `npm run test:integration`                          | Pi adapter 与运行时协议集成                   | 修改运行时边界时、每个 PR       |
 | Vitest 全量    | `npm test`                                          | 单元与集成测试一次完成                        | 本地提交前、每个 PR             |
@@ -54,6 +55,9 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - 与实现同层的 `*.test.ts(x)` 默认属于单元测试。
 - Kernel 测试通过公开 Interface 验证依赖排序、Provider、Contribution 和逆序释放；Feature 测试
   通过 Module Interface 或 contract router 验证，不读取 Kernel 内部状态。
+- Plugin 测试通过 Manifest、Registry、依赖规划、Plugin Host 或 Plugin Store 的公开 Interface
+  验证。必须覆盖拓扑顺序、完整循环链、缺失/禁用/版本不兼容依赖、激活失败隔离、零 Plugin、
+  安全模式、Bundled 删除后不自动恢复，以及代码与数据的独立删除语义。
 - 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。
 - Electron 用户场景放在 `e2e/*.spec.ts`，每个文件描述一个完整行为，不按页面或组件拆分。
 - 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；不要在场景之间共享可变状态。

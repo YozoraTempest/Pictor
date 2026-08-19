@@ -16,8 +16,10 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 - 在设置的“关于”页查看版本，并按需检查 GitHub Release；有新版本时只打开与当前平台、
   架构匹配的 Windows、Arch 或便携 Linux 官方发布包，否则安全回退到对应发布页；
 - 通过可信静态 Module Kernel 装配仓库内功能，并支持独立的 Module 开发与测试循环。
+- 已建立可安装 Plugin 的 Manifest、Registry、用户 Store、SemVer 依赖规划和隔离生命周期底座；
+  既有功能正按纵向 Feature 迁移到可删除的 Bundled Plugin。
 
-首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、插件、远程项目、WSL、
+首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、第三方 Plugin 分发、远程项目、WSL、
 容器、macOS、Linux ARM64、静默更新、系统密钥环、包签名和软件源不在当前范围内。
 
 ## 支持基线
@@ -107,6 +109,7 @@ npm run dev
 
 ```bash
 npm run test:module -- updater
+npm run test:plugin -- host
 npm run test:watch
 npm run verify:fast
 npm run verify:pr

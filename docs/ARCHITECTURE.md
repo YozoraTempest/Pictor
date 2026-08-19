@@ -1,7 +1,8 @@
 # 当前代码架构
 
-本文描述 Pictor 当前已经实现的代码结构和依赖规则。产品长期方向见架构草稿；当前只实现可信
-静态 Module Kernel，不等同于运行期第三方插件系统。
+本文描述 Pictor 当前已经实现的代码结构和依赖规则。当前处于从可信静态 Module Catalog 向
+可安装 Plugin Host 迁移的阶段；Plugin SDK、依赖规划、Registry、Store 和隔离 Host 已经存在，
+既有业务 Feature 仍会按纵向切片逐步迁移，不能把尚未迁移的静态 Catalog 当作最终结构。
 
 ## 源码域
 
@@ -10,8 +11,9 @@
 ```text
 src/
 ├── kernel/     纯 TypeScript Module 生命周期、Token、Contribution 和 Contract Router
+├── plugin/     Manifest、Registry、Plugin 依赖规划和进程级 Plugin Host
 ├── modules/    按 Feature 聚合的新代码及 Main/Renderer/Runtime 入口
-├── main/       Electron Main、既有 IPC、持久化和 Runtime 监管
+├── main/       Electron Main、Plugin Store、既有 IPC、持久化和 Runtime 监管
 ├── preload/    Desktop bridge 的 Electron adapter
 ├── renderer/   React 界面
 ├── runtime/    独立 Agent Runtime Host、Pi adapter 和项目工具
@@ -22,9 +24,14 @@ src/
 并列保存该 Feature 的共享 contract 和可选进程入口，以提高修改 locality；跨进程调用仍必须
 经过共享 contract，不能直接导入另一个进程的实现。
 
-`kernel` 不依赖 Electron、React、Pi 或业务模型。它只按 Token 依赖排序并激活静态 Catalog 中的
-可信 Module，保存 Provider，收集 Contribution，并在关闭时逆序释放 Disposable。Module 默认是
-仓库内可信代码；当前没有权限 manifest、动态发现、版本协商、热卸载或独立 Plugin Host。
+`kernel` 不依赖 Electron、React、Pi 或业务模型。它只按 Token 依赖排序并激活一个 Plugin 在
+当前进程中的 Module，保存 Provider，收集 Contribution，并在关闭时逆序释放 Disposable。
+
+`plugin` 定义安装和组合 seam：Manifest 声明 Pictor engine、SemVer 依赖、进程 Module 入口和
+Pi 资源；Registry 保存用户期望状态；依赖规划计算拓扑顺序与阻塞原因；每个 Plugin 在每个进程
+拥有独立 Module Kernel。Main 的 `plugins/PluginStore` 管理用户目录中的安装副本、Registry、
+Bundled 恢复源和独立数据目录。第一版按重启应用生效，不实现热卸载、复杂依赖求解、签名链或
+细粒度权限矩阵。
 
 `e2e/` 保存 Electron 用户场景，`scripts/` 保存构建和发布验证，`tests/` 只保存 Vitest 全局
 测试基础设施。这些工程文件不属于应用源码，不迁入 `src/`。
@@ -51,6 +58,7 @@ Renderer -> Desktop bridge / Module contract -> Preload adapter -> IPC -> Main
 Main -> Runtime protocol -> Runtime Host -> Pi adapter
 Main / Preload / Renderer / Runtime -> Shared
 Main / Renderer -> Kernel + process-matching Feature Module entry
+Main / Renderer / Runtime -> Plugin Host -> per-plugin Kernel
 Kernel -X-> Electron / React / Pi / 业务实现
 Shared -X-> 任何进程实现
 Runtime -X-> Main / Preload / Renderer
@@ -65,6 +73,11 @@ Main 与 Renderer 分别从显式静态 Catalog 启动自己的 Module。跨进�
 `module:invoke` / `module:event` Electron transport 通信，输入和结果只在进程 seam 校验；同一
 进程内的 Module 调用依赖 TypeScript。Updater 是首个迁移样例，其 Main 入口贡献 contract
 handler，Renderer 入口提供 `UpdaterClient` 并向 `settings.sections` 贡献“关于”页面。
+
+静态 Catalog 是迁移期间的兼容路径，不得继续作为新 Plugin 的最终注册方式。Plugin 是安装、
+版本和依赖组合单元；Module 只属于一个 Plugin 的单个进程入口；Contribution 是 Plugin 通过 SDK
+公开的可组合值。Plugin Host 管理 Plugin DAG，Module Kernel 只管理一个 Plugin 的内部 DAG，
+两者不能合并成同一层依赖图。
 
 `RuntimeCoordinator` 拥有自身需要的窄 persistence 和 Runtime host interface。现有
 `AppRepository` 与 `RuntimeSupervisor` 直接满足它们；测试使用 in-memory adapter，不依赖具体
@@ -98,6 +111,8 @@ Updater Interface 与设置页 Contribution。内部
 ## 新代码放置
 
 - Module 生命周期、Token、Contribution 和通用 contract 路由：`src/kernel/`。
+- Plugin Manifest、Registry schema、依赖规划与隔离 Host：`src/plugin/`。
+- Plugin Store、安装副本和 Bundled 恢复：`src/main/plugins/`。
 - 新增业务 Feature：`src/modules/<feature>/`，按需要创建 `shared.ts`、`main.ts`、
   `renderer.tsx` 或 `runtime.ts`。
 - Electron 生命周期、窗口、安全或 IPC adapter：`src/main/`。
