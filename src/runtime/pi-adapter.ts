@@ -193,6 +193,15 @@ async function createProductionSession({
       resourceLoaderOptions: {
         noExtensions: extensionPaths.length === 0,
         ...(extensionPaths.length > 0 ? { additionalExtensionPaths: [...extensionPaths] } : {}),
+        extensionsOverride: (base) => ({
+          ...base,
+          extensions: base.extensions.filter((extension) =>
+            extensionPaths.some((allowedPath) => isPathWithin(allowedPath, extension.resolvedPath)),
+          ),
+          errors: base.errors.filter((error) =>
+            extensionPaths.some((allowedPath) => isPathWithin(allowedPath, error.path)),
+          ),
+        }),
         ...(skillPaths.length > 0 ? { additionalSkillPaths: [...skillPaths] } : {}),
         noSkills: skillPaths.length === 0,
         ...(promptPaths.length > 0 ? { additionalPromptTemplatePaths: [...promptPaths] } : {}),
@@ -219,6 +228,13 @@ async function createProductionSession({
     sessionManager,
   })
   return new PiSessionRuntime(runtime)
+}
+
+function isPathWithin(rootPath: string, candidatePath: string): boolean {
+  const root = resolve(rootPath)
+  const candidate = resolve(candidatePath)
+  const relativePath = relative(root, candidate)
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
 }
 
 class PiSessionRuntime implements PiSessionLike {

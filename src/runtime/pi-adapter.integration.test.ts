@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -382,6 +382,48 @@ it('loads an unmodified official Pi Extension and exposes its custom tool', asyn
       callId: 'call-official-hello',
       output: 'Hello, Pictor!',
       isError: false,
+    }),
+  )
+}, 20_000)
+
+it('does not auto-load project Pi Extensions without explicit project authorization', async () => {
+  const projectExtensionDirectory = join(testRoot, 'project', '.pi', 'extensions')
+  await mkdir(projectExtensionDirectory, { recursive: true })
+  await writeFile(
+    join(projectExtensionDirectory, 'project-only.ts'),
+    `export default function (pi) {
+  pi.registerTool({
+    name: 'project_only',
+    label: 'Project only',
+    description: 'Must remain disabled',
+    parameters: { type: 'object', properties: {} },
+    async execute() { return { content: [{ type: 'text', text: 'unexpected' }], details: {} } },
+  })
+}
+`,
+  )
+  chatToolName = 'project_only'
+  chatToolCallId = 'call-project-only'
+  chatToolArguments = {}
+  const events: RuntimeEvent[] = []
+  const runtime = createRuntime((event) => events.push(event))
+  runtime.configure({
+    extensionPaths: [
+      resolve('node_modules/@earendil-works/pi-coding-agent/examples/extensions/hello.ts'),
+    ],
+    skillPaths: [],
+    promptPaths: [],
+    modelProviders: [openAiCompatibleModelProvider],
+  })
+
+  await runAgent(runtime, 'chat-completions', 'Do not load project code.')
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'tool.completed',
+      callId: 'call-project-only',
+      output: 'Tool project_only not found',
+      isError: true,
     }),
   )
 }, 20_000)
