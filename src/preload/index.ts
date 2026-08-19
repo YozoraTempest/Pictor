@@ -7,6 +7,7 @@ import {
 } from '../kernel/contract.js'
 import {
   approvalResolutionRequestSchema,
+  appInfoResultSchema,
   appSnapshotResultSchema,
   connectionTestIpcResultSchema,
   createSessionRequestSchema,
@@ -15,9 +16,13 @@ import {
   projectCandidateResultSchema,
   projectIdRequestSchema,
   projectResultSchema,
+  pluginBootstrapResultSchema,
+  pluginIdRequestSchema,
+  pluginManagerResultSchema,
   registerProjectRequestSchema,
   relinkProjectRequestSchema,
   renameSessionRequestSchema,
+  removePluginRequestSchema,
   runIdRequestSchema,
   runtimeEventSchema,
   savedSettingsResultSchema,
@@ -27,6 +32,7 @@ import {
   sessionRecordResultSchema,
   sessionSummaryResultSchema,
   settingsResultSchema,
+  setPluginEnabledRequestSchema,
   startRunRequestSchema,
   startRunResultSchema,
   testSettingsRequestSchema,
@@ -37,6 +43,25 @@ import {
 const bridge = Object.freeze({
   getSnapshot: async () =>
     appSnapshotResultSchema.parse(await ipcRenderer.invoke('app:get-snapshot')),
+  getAppInfo: async () => appInfoResultSchema.parse(await ipcRenderer.invoke('app:get-info')),
+  getPluginBootstrap: async () =>
+    pluginBootstrapResultSchema.parse(await ipcRenderer.invoke('plugin:get-bootstrap')),
+  getPluginManagerSnapshot: async () =>
+    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:get-manager-snapshot')),
+  installLocalPlugin: async () =>
+    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-local')),
+  setPluginEnabled: async (input) =>
+    pluginManagerResultSchema.parse(
+      await ipcRenderer.invoke('plugin:set-enabled', setPluginEnabledRequestSchema.parse(input)),
+    ),
+  removePlugin: async (input) =>
+    pluginManagerResultSchema.parse(
+      await ipcRenderer.invoke('plugin:remove', removePluginRequestSchema.parse(input)),
+    ),
+  restoreBundledPlugin: async (input) =>
+    pluginManagerResultSchema.parse(
+      await ipcRenderer.invoke('plugin:restore-bundled', pluginIdRequestSchema.parse(input)),
+    ),
   pickProjectDirectory: async () =>
     projectCandidateResultSchema.parse(await ipcRenderer.invoke('project:pick-directory')),
   registerProject: async (input) =>

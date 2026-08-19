@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { Token, defineModule } from '../kernel/module.js'
+import { ContributionPoint, Token, defineModule } from '../kernel/module.js'
 import { PluginHost, type PluginDefinition } from './host.js'
 import { pluginManifestSchema } from './manifest.js'
 
@@ -102,6 +102,30 @@ describe('PluginHost', () => {
       expect.objectContaining({ id: 'pictor.example', effectiveState: 'disabled' }),
     ])
     expect(factory).not.toHaveBeenCalled()
+    await host.stop()
+  })
+
+  it('aggregates contributions from active Plugin Kernels by stable ID', async () => {
+    const contributed = new ContributionPoint<string>('example.labels')
+    const queried = new ContributionPoint<string>('example.labels')
+    const host = new PluginHost({ pictorVersion: '0.2.1' })
+
+    await host.start([
+      plugin('pictor.first', {}, () => [
+        defineModule({
+          id: 'first.main',
+          activate: (context) => context.contribute(contributed, 'first'),
+        }),
+      ]),
+      plugin('pictor.second', {}, () => [
+        defineModule({
+          id: 'second.main',
+          activate: (context) => context.contribute(contributed, 'second'),
+        }),
+      ]),
+    ])
+
+    expect(host.getContributions(queried)).toEqual(['first', 'second'])
     await host.stop()
   })
 })

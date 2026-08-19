@@ -1,8 +1,8 @@
 # 当前代码架构
 
-本文描述 Pictor 当前已经实现的代码结构和依赖规则。当前处于从可信静态 Module Catalog 向
-可安装 Plugin Host 迁移的阶段；Plugin SDK、依赖规划、Registry、Store 和隔离 Host 已经存在，
-既有业务 Feature 仍会按纵向切片逐步迁移，不能把尚未迁移的静态 Catalog 当作最终结构。
+本文描述 Pictor 当前已经实现的代码结构和依赖规则。Main 和 Renderer 已经由可安装 Plugin Host
+装配，Updater 是首个真实 Bundled Plugin；尚未迁移的业务能力仍位于 Core 启动链路中，后续按
+纵向切片迁移，不能把这些兼容代码当作最终结构。
 
 ## 源码域
 
@@ -57,7 +57,6 @@ interface 保持可见且范围明确。
 Renderer -> Desktop bridge / Module contract -> Preload adapter -> IPC -> Main
 Main -> Runtime protocol -> Runtime Host -> Pi adapter
 Main / Preload / Renderer / Runtime -> Shared
-Main / Renderer -> Kernel + process-matching Feature Module entry
 Main / Renderer / Runtime -> Plugin Host -> per-plugin Kernel
 Kernel -X-> Electron / React / Pi / 业务实现
 Shared -X-> 任何进程实现
@@ -69,15 +68,16 @@ ESLint 对进程方向执行静态检查。`tsconfig.node.json` 覆盖 Main、Pr
 Node Module 入口、Shared 和 E2E；`tsconfig.web.json` 覆盖 Renderer、Kernel、Renderer Module
 入口、Shared 和 Web 测试基础设施。
 
-Main 与 Renderer 分别从显式静态 Catalog 启动自己的 Module。跨进程 Feature 通过固定的
+Main 与 Renderer 分别从用户 Plugin Store 动态加载当前进程的 Plugin 入口。跨进程 Feature 通过固定的
 `module:invoke` / `module:event` Electron transport 通信，输入和结果只在进程 seam 校验；同一
-进程内的 Module 调用依赖 TypeScript。Updater 是首个迁移样例，其 Main 入口贡献 contract
-handler，Renderer 入口提供 `UpdaterClient` 并向 `settings.sections` 贡献“关于”页面。
+进程内的 Module 调用依赖 TypeScript。Updater 的独立 ESM 包在构建时进入 Bundled 恢复源，首次
+启动复制到用户 Store 后运行；其 Main 入口贡献 contract handler，Renderer 入口提供
+`UpdaterClient` 并向 `settings.sections` 贡献“关于”页面。
 
-静态 Catalog 是迁移期间的兼容路径，不得继续作为新 Plugin 的最终注册方式。Plugin 是安装、
-版本和依赖组合单元；Module 只属于一个 Plugin 的单个进程入口；Contribution 是 Plugin 通过 SDK
-公开的可组合值。Plugin Host 管理 Plugin DAG，Module Kernel 只管理一个 Plugin 的内部 DAG，
-两者不能合并成同一层依赖图。
+Plugin 是安装、版本和依赖组合单元；Module 只属于一个 Plugin 的单个进程入口；Contribution 是
+Plugin 通过 SDK 公开的可组合值。Plugin Host 管理 Plugin DAG，Module Kernel 只管理一个 Plugin
+的内部 DAG，两者不能合并成同一层依赖图。独立 Renderer bundle 复用 Core 提供的 React/JSX
+runtime，不携带第二套 React 实例。
 
 `RuntimeCoordinator` 拥有自身需要的窄 persistence 和 Runtime host interface。现有
 `AppRepository` 与 `RuntimeSupervisor` 直接满足它们；测试使用 in-memory adapter，不依赖具体

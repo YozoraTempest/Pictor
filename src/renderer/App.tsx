@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 
 import type { Project, SessionSummary } from '../shared/domain'
 import type { SettingsSection } from '../modules/shell/settings'
-import type { AppInfo, UpdaterClient } from '../modules/updater/shared'
+import type { AppInfo } from '../shared/app-info'
+import type { PluginStatus } from '../plugin/host'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { Modal } from './ui/Modal'
 import { Conversation } from './workspace/Conversation'
@@ -24,11 +25,14 @@ function errorMessage(error: unknown): string {
 }
 
 interface AppProps {
-  updater: UpdaterClient
   settingsSections: readonly SettingsSection[]
+  rendererPluginStatuses?: readonly PluginStatus[]
 }
 
-export function App({ updater, settingsSections }: AppProps): React.JSX.Element {
+export function App({
+  settingsSections,
+  rendererPluginStatuses = [],
+}: AppProps): React.JSX.Element {
   const workspace = useWorkspaceController(window.pictor)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [appInfoLoading, setAppInfoLoading] = useState(true)
@@ -42,10 +46,12 @@ export function App({ updater, settingsSections }: AppProps): React.JSX.Element 
 
   useEffect(() => {
     let active = true
-    void updater
+    void window.pictor
       .getAppInfo()
-      .then((value) => {
-        if (active) setAppInfo(value)
+      .then((result) => {
+        if (!active) return
+        if (result.ok) setAppInfo(result.value)
+        else setAppInfoError(result.error.message)
       })
       .catch((error: unknown) => {
         if (active) setAppInfoError(errorMessage(error))
@@ -56,7 +62,7 @@ export function App({ updater, settingsSections }: AppProps): React.JSX.Element 
     return () => {
       active = false
     }
-  }, [updater])
+  }, [])
 
   const pickProject = async (relinkProjectId: string | null = null) => {
     const request = await workspace.pickProject(relinkProjectId)
@@ -180,6 +186,7 @@ export function App({ updater, settingsSections }: AppProps): React.JSX.Element 
         <SettingsDialog
           initial={workspace.snapshot.settings}
           sections={settingsSections}
+          rendererPluginStatuses={rendererPluginStatuses}
           onClose={() => setSettingsOpen(false)}
           onSaved={workspace.applySettings}
         />

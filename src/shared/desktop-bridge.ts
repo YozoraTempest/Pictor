@@ -26,6 +26,15 @@ import {
   type TestSettingsRequest,
 } from './model.js'
 import { runtimeEventSchema, type RuntimeEvent } from './runtime-protocol.js'
+import { appInfoSchema, type AppInfo } from './app-info.js'
+import { pluginBootstrapSchema, type PluginBootstrap } from './plugins.js'
+import type {
+  pluginIdRequestSchema,
+  removePluginRequestSchema,
+  setPluginEnabledRequestSchema,
+  PluginManagerSnapshot,
+} from './plugins.js'
+import { pluginManagerSnapshotSchema } from './plugins.js'
 
 export const appSnapshotSchema = z.object({
   projects: z.array(projectSchema),
@@ -73,6 +82,9 @@ export const approvalResolutionRequestSchema = z.object({
 })
 
 export const appSnapshotResultSchema = ipcResultSchema(appSnapshotSchema)
+export const appInfoResultSchema = ipcResultSchema(appInfoSchema)
+export const pluginBootstrapResultSchema = ipcResultSchema(pluginBootstrapSchema)
+export const pluginManagerResultSchema = ipcResultSchema(pluginManagerSnapshotSchema)
 export const projectCandidateResultSchema = ipcResultSchema(projectCandidateSchema.nullable())
 export const projectResultSchema = ipcResultSchema(projectSchema)
 export const sessionSummaryResultSchema = ipcResultSchema(sessionSummarySchema)
@@ -89,6 +101,19 @@ export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
 
 export interface PictorBridge {
   getSnapshot: () => Promise<IpcResult<AppSnapshot>>
+  getAppInfo: () => Promise<IpcResult<AppInfo>>
+  getPluginBootstrap: () => Promise<IpcResult<PluginBootstrap>>
+  getPluginManagerSnapshot: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installLocalPlugin: () => Promise<IpcResult<PluginManagerSnapshot>>
+  setPluginEnabled: (
+    request: z.infer<typeof setPluginEnabledRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
+  removePlugin: (
+    request: z.infer<typeof removePluginRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
+  restoreBundledPlugin: (
+    request: z.infer<typeof pluginIdRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
   pickProjectDirectory: () => Promise<IpcResult<ProjectCandidate | null>>
   registerProject: (
     request: z.infer<typeof registerProjectRequestSchema>,
@@ -129,5 +154,10 @@ export {
   saveSettingsRequestSchema,
   testSettingsRequestSchema,
 }
+export {
+  pluginIdRequestSchema,
+  removePluginRequestSchema,
+  setPluginEnabledRequestSchema,
+} from './plugins.js'
 export type { RuntimeEvent } from './runtime-protocol.js'
 export type { IpcResult } from './errors.js'

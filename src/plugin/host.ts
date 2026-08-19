@@ -1,5 +1,5 @@
 import { ModuleKernel } from '../kernel/kernel.js'
-import type { PictorModule } from '../kernel/module.js'
+import type { ContributionPoint, PictorModule, Token } from '../kernel/module.js'
 import { planPluginDependencies, type PluginCandidate } from './dependencies.js'
 import type { PluginManifest } from './manifest.js'
 import type { PluginDesiredState } from './registry.js'
@@ -107,6 +107,17 @@ export class PluginHost {
 
   getStatuses(): readonly PluginStatus[] {
     return this.statuses.map((status) => ({ ...status }))
+  }
+
+  get<T>(token: Token<T>): T {
+    const providers = this.activePlugins.filter(({ kernel }) => kernel.has(token))
+    if (providers.length === 0) throw new Error(`Plugin capability is unavailable: ${token.id}`)
+    if (providers.length > 1) throw new Error(`Duplicate Plugin capability: ${token.id}`)
+    return providers[0]!.kernel.get(token)
+  }
+
+  getContributions<T>(point: ContributionPoint<T>): readonly T[] {
+    return this.activePlugins.flatMap(({ kernel }) => kernel.getContributions(point))
   }
 
   async stop(): Promise<void> {

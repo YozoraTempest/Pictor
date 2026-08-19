@@ -1,5 +1,6 @@
 import {
   CheckCircle2,
+  Blocks,
   KeyRound,
   LoaderCircle,
   RefreshCw,
@@ -16,11 +17,14 @@ import {
   type ModelSettings,
 } from '../../shared/model'
 import type { SettingsSection } from '../../modules/shell/settings'
+import type { PluginStatus } from '../../plugin/host'
 import { Modal } from '../ui/Modal'
+import { PluginManager } from './PluginManager'
 
 interface SettingsDialogProps {
   initial: ModelSettings | null
   sections: readonly SettingsSection[]
+  rendererPluginStatuses: readonly PluginStatus[]
   onClose: () => void
   onSaved: (settings: ModelSettings) => void
 }
@@ -52,6 +56,7 @@ function createFormState(settings: ModelSettings | null): FormState {
 export function SettingsDialog({
   initial,
   sections,
+  rendererPluginStatuses,
   onClose,
   onSaved,
 }: SettingsDialogProps): React.JSX.Element {
@@ -173,7 +178,7 @@ export function SettingsDialog({
   return (
     <Modal
       title="设置"
-      description="配置模型连接，查看版本并获取更新。"
+      description="管理模型连接、Plugins 与应用信息。"
       onClose={onClose}
       width="wide"
     >
@@ -186,6 +191,15 @@ export function SettingsDialog({
         >
           <SlidersHorizontal size={15} />
           模型
+        </button>
+        <button
+          type="button"
+          className={activeTab === 'plugins' ? 'is-active' : ''}
+          aria-current={activeTab === 'plugins' ? 'page' : undefined}
+          onClick={() => setActiveTab('plugins')}
+        >
+          <Blocks size={15} />
+          Plugins
         </button>
         {sections.map((section) => {
           const Icon = section.icon
@@ -426,6 +440,9 @@ export function SettingsDialog({
             </button>
           </footer>
         </>
+      ) : null}
+      {activeTab === 'plugins' ? (
+        <PluginManager rendererPluginStatuses={rendererPluginStatuses} />
       ) : null}
       {sections.find((section) => section.id === activeTab)?.render() ?? null}
     </Modal>
