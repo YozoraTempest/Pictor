@@ -95,6 +95,9 @@ Pi `DefaultResourceLoader`、Jiti virtual modules 和 ExtensionRunner 负责加�
 Command 与事件。未知 Tool 映射为通用 `custom` Tool event。`ExtensionUiBroker` 以 RPC mode 把
 select/confirm/input/editor 映射到 Renderer modal，把 notify/status/文本 widget 映射到会话 UI；
 raw terminal input、TUI Component、theme、header/footer/editor 等能力明确返回 unavailable。
+Pi Package 的 `package.json#pi.extensions` 和约定 `extensions/` 由 Store 使用结构化 glob 展开为
+原生入口；禁用条目不会进入 Runtime bootstrap。跨进程 Module contract ID 使用完整 Plugin ID，
+避免不同 Plugin 的短名在 Router 中碰撞。
 
 Core Renderer 只渲染不可卸载的 `CoreShell` 和 Plugin Manager。`pictor.agent-workspace` 通过
 `shell.applications` Contribution 提供 Project、Session 与 Conversation GUI；移除或阻塞该

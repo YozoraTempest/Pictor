@@ -66,7 +66,7 @@ export default pluginEntrypoint<RendererPluginContext>(() => [
     activate(context) {
       const client = createGitChangesClient(window.pictorModules)
       context.contribute(settingsSectionContributions, {
-        id: 'git-changes',
+        id: 'pictor.git-changes',
         label: 'Git',
         icon: GitBranch,
         render: () => createElement(GitChangesSettings, { client }),

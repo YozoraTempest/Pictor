@@ -21,7 +21,7 @@ export const updateCheckResultSchema = z.object({
 })
 
 export const updaterContract = defineModuleContract({
-  id: 'updater',
+  id: 'pictor.updater',
   methods: {
     getAppInfo: { input: z.null(), output: appInfoSchema },
     checkForUpdates: { input: z.null(), output: ipcResultSchema(updateCheckResultSchema) },

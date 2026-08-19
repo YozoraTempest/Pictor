@@ -47,11 +47,9 @@ export function createRuntimePluginBootstrap(
         ? resolve(rootPath, manifest.modules.runtime)
         : null,
     })),
-    extensions: snapshot.nativeExtensions.map(({ entry, runtimePath }) => ({
-      kind: entry.kind,
-      id: entry.id,
-      path: runtimePath,
-    })),
+    extensions: snapshot.nativeExtensions.flatMap(({ entry, runtimePaths }) =>
+      runtimePaths.map((path) => ({ kind: entry.kind, id: entry.id, path })),
+    ),
     skills: snapshot.plugins.flatMap(({ manifest, rootPath }) =>
       (manifest.pi?.skills ?? []).map((path) => resolve(rootPath, path)),
     ),

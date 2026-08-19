@@ -4,7 +4,7 @@ import { defineModuleContract, invokeModuleMethod } from '../../src/kernel/contr
 import type { ModuleTransport } from '../../src/kernel/contract.js'
 
 export const gitChangesContract = defineModuleContract({
-  id: 'git-changes',
+  id: 'pictor.git-changes',
   methods: {
     getStatus: {
       input: z.object({ projectRoot: z.string().min(1) }),

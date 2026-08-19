@@ -191,6 +191,7 @@ describe('PluginStore', () => {
       id: 'example-pi-package',
       version: '1.2.3',
     })
+    expect(installed.runtimePaths).toEqual([join(installed.runtimePath, 'extensions', 'hello.js')])
     await expect(
       readFile(join(installed.runtimePath, 'extensions', 'hello.js'), 'utf8'),
     ).resolves.toContain('export default')

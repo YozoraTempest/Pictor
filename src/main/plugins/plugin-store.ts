@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { cp, copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { cp, copyFile, glob, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 
 import { z } from 'zod'
@@ -23,6 +23,11 @@ const MANIFEST_FILE = 'manifest.json'
 const pluginPackageJsonSchema = z.object({
   name: z.string().min(1),
   version: pluginVersionSchema.optional(),
+  pi: z
+    .object({
+      extensions: z.array(z.string().min(1)).optional(),
+    })
+    .optional(),
 })
 
 export interface PluginStoreOptions {
@@ -53,6 +58,7 @@ export interface PluginStoreSnapshot {
 export interface StoredNativeExtension {
   entry: Exclude<InstalledExtension, { kind: 'pictor-plugin' }>
   runtimePath: string
+  runtimePaths: readonly string[]
 }
 
 interface BundledPluginPackage {
@@ -146,7 +152,14 @@ export class PluginStore {
             ? join(this.piExtensionsDirectory, entry.id)
             : join(this.piPackagesDirectory, entry.id)
         if ((await stat(runtimePath).catch(() => null))?.isDirectory()) {
-          nativeExtensions.push({ entry: { ...entry }, runtimePath })
+          nativeExtensions.push({
+            entry: { ...entry },
+            runtimePath,
+            runtimePaths:
+              entry.kind === 'pi-package'
+                ? await this.discoverPiPackageExtensionPaths(runtimePath)
+                : [runtimePath],
+          })
         } else {
           issues.push({ source: runtimePath, message: `Installed ${entry.kind} is missing` })
         }
@@ -235,7 +248,7 @@ export class PluginStore {
     }
     this.replaceExtensionEntry(entry)
     await this.persistRegistry()
-    return { entry, runtimePath: target }
+    return { entry, runtimePath: target, runtimePaths: [target] }
   }
 
   async installPiPackage(sourcePath: string): Promise<StoredNativeExtension> {
@@ -256,7 +269,11 @@ export class PluginStore {
     }
     this.replaceExtensionEntry(entry)
     await this.persistRegistry()
-    return { entry, runtimePath: target }
+    return {
+      entry,
+      runtimePath: target,
+      runtimePaths: await this.discoverPiPackageExtensionPaths(target),
+    }
   }
 
   async setNativeExtensionEnabled(
@@ -395,6 +412,25 @@ export class PluginStore {
       .replace(/^-+|-+$/g, '')
     if (!name) throw new Error('Cannot derive an extension ID from the source')
     return name
+  }
+
+  private async discoverPiPackageExtensionPaths(rootPath: string): Promise<string[]> {
+    const packageJson = await readJsonFile(join(rootPath, 'package.json'), pluginPackageJsonSchema)
+    if (!packageJson) return []
+    const patterns = packageJson.pi?.extensions ?? [
+      'extensions/*.{ts,js}',
+      'extensions/*/index.{ts,js}',
+    ]
+    const paths = new Set<string>()
+    for (const pattern of patterns) {
+      for await (const match of glob(pattern, { cwd: rootPath })) {
+        const path = resolve(rootPath, match)
+        const relativePath = path.slice(resolve(rootPath).length + 1)
+        if (!relativePath.startsWith('..') && ['.ts', '.js'].includes(extname(path)))
+          paths.add(path)
+      }
+    }
+    return [...paths].toSorted()
   }
 
   private findPluginEntry(id: string): InstalledPictorPlugin {
