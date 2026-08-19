@@ -46,14 +46,15 @@ for (const directory of directories.toSorted((left, right) =>
     const outputName = basename(manifestEntry)
     const renderer = processName === 'renderer'
     const runtime = processName === 'runtime'
+    const nodeProcess = processName === 'main' || runtime
     await build({
       configFile: false,
       logLevel: 'warn',
       plugins: runtime ? [bundledPiExtensionModules()] : [],
       define: { 'process.env.NODE_ENV': JSON.stringify('production') },
-      ...(runtime ? { ssr: { noExternal: true } } : {}),
+      ...(nodeProcess ? { ssr: { noExternal: true } } : {}),
       build: {
-        ...(runtime ? { ssr: true } : {}),
+        ...(nodeProcess ? { ssr: true } : {}),
         target: 'es2023',
         outDir: distRoot,
         emptyOutDir: false,

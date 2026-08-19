@@ -22,6 +22,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
   与本地 Pi Package；自定义 Tool 和 RPC UI dialog 无需 Pictor wrapper 即可进入会话 GUI。
 - Project、Session 与 Conversation GUI 由可删除的 `pictor.agent-workspace` 提供；删除全部
   Bundled Plugin 后，Core Shell 仍可启动并打开 Plugin Manager。
+- `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Main contract 与 Renderer 设置页显示
+  当前项目的 Git working tree；它验证了真实 Plugin 间依赖与组合。
 
 首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、第三方 Plugin 分发、远程项目、WSL、
 容器、macOS、Linux ARM64、静默更新、系统密钥环、包签名和软件源不在当前范围内。

@@ -101,6 +101,10 @@ Core Renderer 只渲染不可卸载的 `CoreShell` 和 Plugin Manager。`pictor.
 Plugin 时，CoreShell 显示空 Plugin Manager，而不是让 Renderer bootstrap 因缺少业务 Provider
 失败。设置页 Contribution 只在 Agent Workspace 存在时组合到该应用中。
 
+`pictor.git-changes` 是第二个跨进程 Bundled Plugin，并声明对 `pictor.agent-workspace` 的硬依赖。
+Main 入口通过 Module contract 提供当前项目的 `git status`，Renderer 入口贡献 Git 设置页；删除
+Workspace 后 Git Changes 保持安装但进入 `blocked`，不做级联删除。
+
 `AppRepository` 是 Main 进程的工作区状态入口，只协调 Project、Settings、导航选择和持久化
 初始化。Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全
 集中在内部 `SessionPersistence` module；它直接使用本地文件系统和现有凭据迁移函数，不增加

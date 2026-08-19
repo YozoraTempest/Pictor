@@ -1426,6 +1426,37 @@ textarea:disabled {
   resize: vertical;
 }
 
+.git-changes-settings {
+  padding: 18px;
+}
+
+.git-changes-settings header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.git-changes-settings h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.git-changes-settings pre {
+  min-height: 180px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #111416;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .field {
   display: flex;
   min-width: 0;
