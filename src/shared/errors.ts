@@ -14,6 +14,14 @@ export const ipcErrorSchema = z.object({
 })
 
 export type IpcError = z.infer<typeof ipcErrorSchema>
+export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: IpcError }
+
+export function ipcResultSchema<T extends z.ZodType>(valueSchema: T) {
+  return z.discriminatedUnion('ok', [
+    z.object({ ok: z.literal(true), value: valueSchema }),
+    z.object({ ok: z.literal(false), error: ipcErrorSchema }),
+  ])
+}
 
 export class PictorError extends Error {
   constructor(

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, relative, resolve } from 'node:path'
 import { stdout } from 'node:process'
@@ -11,20 +11,9 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageMetadata = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'))
 const outputDirectory = resolve(repositoryRoot, 'dist')
 const artifacts = {
-  ubuntu: resolve(outputDirectory, `Pictor-${packageMetadata.version}-ubuntu-x64.deb`),
   arch: resolve(outputDirectory, `Pictor-${packageMetadata.version}-arch-x64.pacman`),
+  appImage: resolve(outputDirectory, `Pictor-${packageMetadata.version}-linux-x64.AppImage`),
 }
-const expectedUbuntuDependencies = [
-  'libatspi2.0-0t64',
-  'libgtk-3-0t64',
-  'libnotify4',
-  'libnss3',
-  'libsecret-1-0',
-  'libuuid1',
-  'libxss1',
-  'libxtst6',
-  'xdg-utils',
-]
 const expectedArchDependencies = [
   'alsa-lib',
   'at-spi2-core',
@@ -66,13 +55,6 @@ async function extract(path, destination) {
   await execute('bsdtar', ['-xf', path, '-C', destination])
 }
 
-async function findArchive(directory, prefix) {
-  const entries = await readdir(directory)
-  const name = entries.find((entry) => entry.startsWith(prefix))
-  if (!name) throw new Error(`Expected ${prefix} archive in ${directory}`)
-  return resolve(directory, name)
-}
-
 function parseMetadataEntries(content) {
   return content
     .split(/\r?\n/)
@@ -94,7 +76,7 @@ async function verifyElfX64(path) {
   }
 }
 
-async function verifyPayload(root) {
+async function verifyInstalledPayload(root) {
   const executable = resolve(root, 'opt', 'Pictor', 'pictor')
   const applicationArchive = resolve(root, 'opt', 'Pictor', 'resources', 'app.asar')
   const desktopEntry = resolve(root, 'usr', 'share', 'applications', 'pictor.desktop')
@@ -106,48 +88,44 @@ async function verifyPayload(root) {
   await verifyElfX64(executable)
   const desktopContent = await readFile(desktopEntry, 'utf8')
   if (!desktopContent.includes('Exec=/opt/Pictor/pictor %U')) {
-    throw new Error('Expected the Linux desktop entry to launch /opt/Pictor/pictor')
+    throw new Error('Expected the Pacman desktop entry to launch /opt/Pictor/pictor')
   }
   if (!desktopContent.includes('StartupWMClass=pictor')) {
-    throw new Error('Expected the Linux desktop entry and Electron app_id to use pictor')
+    throw new Error('Expected the Pacman desktop entry and Electron app_id to use pictor')
+  }
+  return sizes
+}
+
+async function verifyAppImage(temporaryRoot) {
+  await requireNonEmptyFile(artifacts.appImage)
+  await verifyElfX64(artifacts.appImage)
+  await chmod(artifacts.appImage, 0o755)
+  const extractionDirectory = resolve(temporaryRoot, 'appimage')
+  await mkdir(extractionDirectory, { recursive: true })
+  await execute(artifacts.appImage, ['--appimage-extract'], {
+    cwd: extractionDirectory,
+    maxBuffer: 10 * 1024 * 1024,
+  })
+  const payload = resolve(extractionDirectory, 'squashfs-root')
+  const desktopEntryName = (await readdir(payload)).find((entry) => entry.endsWith('.desktop'))
+  if (!desktopEntryName) throw new Error('Expected a desktop entry inside the AppImage')
+  const executable = resolve(payload, 'pictor')
+  const sizes = {
+    appRun: await requireNonEmptyFile(resolve(payload, 'AppRun')),
+    executable: await requireNonEmptyFile(executable),
+    applicationArchive: await requireNonEmptyFile(resolve(payload, 'resources', 'app.asar')),
+    desktopEntry: await requireNonEmptyFile(resolve(payload, desktopEntryName)),
+  }
+  await verifyElfX64(executable)
+  const desktopContent = await readFile(resolve(payload, desktopEntryName), 'utf8')
+  if (!desktopContent.includes('StartupWMClass=pictor')) {
+    throw new Error('Expected the AppImage desktop entry and Electron app_id to use pictor')
   }
   return sizes
 }
 
 const temporaryRoot = await mkdtemp(resolve(tmpdir(), 'pictor-linux-package-'))
 try {
-  const ubuntuArchive = resolve(temporaryRoot, 'ubuntu-archive')
-  await extract(artifacts.ubuntu, ubuntuArchive)
-  const ubuntuData = resolve(temporaryRoot, 'ubuntu-data')
-  const ubuntuControl = resolve(temporaryRoot, 'ubuntu-control')
-  await extract(await findArchive(ubuntuArchive, 'data.tar'), ubuntuData)
-  await extract(await findArchive(ubuntuArchive, 'control.tar'), ubuntuControl)
-  const debianControl = parseMetadata(await readFile(resolve(ubuntuControl, 'control'), 'utf8'))
-  if (debianControl.get('Architecture') !== 'amd64') {
-    throw new Error(
-      `Expected Debian architecture amd64, received ${debianControl.get('Architecture')}`,
-    )
-  }
-  if (
-    debianControl.get('Package') !== packageMetadata.name ||
-    debianControl.get('Version') !== packageMetadata.version
-  ) {
-    throw new Error('Debian package name or version does not match package.json')
-  }
-  const ubuntuDependencies = (debianControl.get('Depends') ?? '')
-    .split(',')
-    .map((dependency) => dependency.trim())
-    .filter(Boolean)
-    .toSorted()
-  if (JSON.stringify(ubuntuDependencies) !== JSON.stringify(expectedUbuntuDependencies)) {
-    throw new Error(
-      `Debian dependencies do not match the Ubuntu 24.04 baseline: ${ubuntuDependencies.join(', ')}`,
-    )
-  }
-  if (debianControl.has('Recommends')) {
-    throw new Error('Debian package must not recommend unrelated desktop indicator packages')
-  }
-
   const archData = resolve(temporaryRoot, 'arch-data')
   await extract(artifacts.arch, archData)
   const packageInfoContent = await readFile(resolve(archData, '.PKGINFO'), 'utf8')
@@ -172,12 +150,12 @@ try {
   }
 
   const packageSizes = {
-    ubuntu: await requireNonEmptyFile(artifacts.ubuntu),
     arch: await requireNonEmptyFile(artifacts.arch),
+    appImage: await requireNonEmptyFile(artifacts.appImage),
   }
   const payloads = {
-    ubuntu: await verifyPayload(ubuntuData),
-    arch: await verifyPayload(archData),
+    arch: await verifyInstalledPayload(archData),
+    appImage: await verifyAppImage(temporaryRoot),
   }
   stdout.write(
     `${JSON.stringify(

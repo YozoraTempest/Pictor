@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { Info } from 'lucide-react'
 import { vi } from 'vitest'
 
+import { AboutSettings } from '../modules/updater/AboutSettings'
+import type { UpdaterClient } from '../modules/updater/shared'
 import type { SessionRecord } from '../shared/domain'
 import type { AppSnapshot, IpcResult, PictorBridge, RuntimeEvent } from '../shared/desktop-bridge'
 import { App } from './App'
@@ -34,24 +37,6 @@ function createBridge(
 ): PictorBridge & { approveCommand: ReturnType<typeof vi.fn> } {
   const approveCommand = vi.fn(async () => ok(null))
   return {
-    getAppInfo: async () => ({
-      name: 'Pictor',
-      version: '0.1.0',
-      platform: 'win32',
-      arch: 'x64',
-      distribution: 'windows',
-      commandInterpreter: { kind: 'bash', available: true, message: null },
-    }),
-    checkForUpdates: async () =>
-      ok({
-        currentVersion: '0.1.0',
-        latestVersion: '0.2.0',
-        updateAvailable: true,
-        packageAvailable: true,
-        packageKind: 'windows-nsis',
-        publishedAt: now,
-      }),
-    openUpdate: async () => ok(null),
     getSnapshot: async () => ok(snapshot),
     pickProjectDirectory: async () => ok(null),
     registerProject: async () => ok(snapshot.projects[0]!),
@@ -80,9 +65,49 @@ function installBridge(bridge: PictorBridge): void {
   Object.defineProperty(window, 'pictor', { configurable: true, value: bridge })
 }
 
+function createUpdater(overrides: Partial<UpdaterClient> = {}): UpdaterClient {
+  return {
+    getAppInfo: async () => ({
+      name: 'Pictor',
+      version: '0.1.0',
+      platform: 'win32',
+      arch: 'x64',
+      distribution: 'windows',
+      commandInterpreter: { kind: 'bash', available: true, message: null },
+    }),
+    checkForUpdates: async () =>
+      ok({
+        currentVersion: '0.1.0',
+        latestVersion: '0.2.0',
+        updateAvailable: true,
+        packageAvailable: true,
+        packageKind: 'windows-nsis',
+        publishedAt: now,
+      }),
+    openUpdate: async () => ok(null),
+    ...overrides,
+  }
+}
+
+function renderApp(bridge: PictorBridge, updater: UpdaterClient = createUpdater()) {
+  installBridge(bridge)
+  return render(
+    <App
+      updater={updater}
+      settingsSections={[
+        {
+          id: 'about',
+          label: '关于',
+          icon: Info,
+          render: () => <AboutSettings client={updater} />,
+        },
+      ]}
+    />,
+  )
+}
+
 it('renders the empty delegate workspace from a persisted snapshot', async () => {
-  installBridge(createBridge(emptySnapshot()))
-  render(<App />)
+  renderApp(createBridge(emptySnapshot()))
 
   expect(await screen.findByRole('heading', { name: '选择一个项目开始' })).toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: '新建项目' })).toHaveLength(3)
@@ -101,14 +126,13 @@ it('shows app information and downloads an available update from settings', asyn
     }),
   )
   const openUpdate = vi.fn(async () => ok(null))
-  installBridge({ ...createBridge(emptySnapshot()), checkForUpdates, openUpdate })
-  render(<App />)
+  renderApp(createBridge(emptySnapshot()), createUpdater({ checkForUpdates, openUpdate }))
 
   await screen.findByRole('heading', { name: '选择一个项目开始' })
   fireEvent.click(screen.getByRole('button', { name: '设置' }))
   fireEvent.click(screen.getByRole('button', { name: '关于' }))
 
-  expect(screen.getAllByText('v0.1.0')).toHaveLength(2)
+  await waitFor(() => expect(screen.getAllByText('v0.1.0')).toHaveLength(2))
   fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
   expect(await screen.findByText('发现新版本 v0.2.0')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '下载发行包' }))
@@ -116,28 +140,29 @@ it('shows app information and downloads an available update from settings', asyn
 })
 
 it('shows the Linux platform in app information', async () => {
-  installBridge({
-    ...createBridge(emptySnapshot()),
-    getAppInfo: async () => ({
-      name: 'Pictor',
-      version: '0.1.0',
-      platform: 'linux',
-      arch: 'x64',
-      distribution: 'arch',
-      commandInterpreter: {
-        kind: 'bash',
-        available: false,
-        message: '未找到 Bash；命令工具不可用。',
-      },
+  renderApp(
+    createBridge(emptySnapshot()),
+    createUpdater({
+      getAppInfo: async () => ({
+        name: 'Pictor',
+        version: '0.1.0',
+        platform: 'linux',
+        arch: 'x64',
+        distribution: 'arch',
+        commandInterpreter: {
+          kind: 'bash',
+          available: false,
+          message: '未找到 Bash；命令工具不可用。',
+        },
+      }),
     }),
-  })
-  render(<App />)
+  )
 
   await screen.findByRole('heading', { name: '选择一个项目开始' })
   fireEvent.click(screen.getByRole('button', { name: '设置' }))
   fireEvent.click(screen.getByRole('button', { name: '关于' }))
 
-  expect(screen.getByText('Linux x64')).toBeInTheDocument()
+  expect(await screen.findByText('Linux x64')).toBeInTheDocument()
   expect(screen.getByText('未找到 Bash；命令工具不可用。')).toBeInTheDocument()
 })
 
@@ -155,8 +180,7 @@ it('saves the selected Responses compatibility mode', async () => {
     }),
   )
   const bridge = { ...createBridge(snapshot), saveSettings }
-  installBridge(bridge)
-  render(<App />)
+  renderApp(bridge)
 
   await screen.findByRole('heading', { name: '选择一个项目开始' })
   fireEvent.click(screen.getByRole('button', { name: '设置' }))
@@ -190,8 +214,7 @@ it('fetches and selects a model from the compatible endpoint', async () => {
       models: ['gpt-4.1', 'gpt-5.6-sol'],
     }),
   )
-  installBridge({ ...createBridge(snapshot), listModels })
-  render(<App />)
+  renderApp({ ...createBridge(snapshot), listModels })
 
   await screen.findByRole('heading', { name: '选择一个项目开始' })
   fireEvent.click(screen.getByRole('button', { name: '设置' }))
@@ -298,8 +321,7 @@ it('renders an exact command approval and allows it once', async () => {
     updatedAt: now,
   }
   const bridge = createBridge(snapshot, session)
-  installBridge(bridge)
-  render(<App />)
+  renderApp(bridge)
 
   expect(await screen.findByRole('heading', { name: '运行验证' })).toBeInTheDocument()
   expect(screen.getByText('npm test')).toBeInTheDocument()

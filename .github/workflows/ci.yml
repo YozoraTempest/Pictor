@@ -143,25 +143,17 @@ jobs:
         run: xvfb-run --auto-servernum npm run test:e2e:run
       - run: npm run package:linux:build
       - run: npm run package:verify:linux
-      - name: Verify Ubuntu package install, launch, and removal
+      - name: Verify portable AppImage launch
         run: |
           release_version="$(node --print "require('./package.json').version")"
           lifecycle_root="$(mktemp -d)"
           user_data="$lifecycle_root/pictor"
-          sudo apt-get install --yes "./dist/Pictor-$release_version-ubuntu-x64.deb"
-          test -x /opt/Pictor/pictor
-          test -f /usr/share/applications/pictor.desktop
-          PICTOR_LINUX_EXECUTABLE=/opt/Pictor/pictor \
-            PICTOR_EXPECTED_DISTRIBUTION=ubuntu \
+          chmod +x "./dist/Pictor-$release_version-linux-x64.AppImage"
+          PICTOR_LINUX_EXECUTABLE="./dist/Pictor-$release_version-linux-x64.AppImage" \
+            PICTOR_EXPECTED_DISTRIBUTION=unsupported-linux \
             PICTOR_USER_DATA_DIR="$user_data" \
             PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
             xvfb-run --auto-servernum npm run package:verify:linux:launch
-          touch "$user_data/keep-after-uninstall"
-          sudo apt-get remove --yes pictor
-          test ! -e /opt/Pictor/pictor
-          test ! -e /usr/share/applications/pictor.desktop
-          test ! -e /usr/bin/pictor
-          test -f "$user_data/keep-after-uninstall"
       - name: Verify Arch package lifecycle in a native container
         run: bash scripts/verify-arch-package-lifecycle.sh
       - name: Upload failure evidence

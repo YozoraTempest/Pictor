@@ -7,18 +7,18 @@ import { UpdateService, compareVersions } from './update-service.js'
 const releaseUrl = 'https://github.com/YozoraTempest/Pictor/releases/tag/v0.2.0'
 const windowsPackageUrl =
   'https://github.com/YozoraTempest/Pictor/releases/download/v0.2.0/Pictor-0.2.0-windows-x64-setup.exe'
-const ubuntuPackageUrl =
-  'https://github.com/YozoraTempest/Pictor/releases/download/v0.2.0/Pictor-0.2.0-ubuntu-x64.deb'
 const archPackageUrl =
   'https://github.com/YozoraTempest/Pictor/releases/download/v0.2.0/Pictor-0.2.0-arch-x64.pacman'
+const appImageUrl =
+  'https://github.com/YozoraTempest/Pictor/releases/download/v0.2.0/Pictor-0.2.0-linux-x64.AppImage'
 
 const releaseAssets = [
   {
     name: 'Pictor-0.2.0-windows-x64-setup.exe',
     browser_download_url: windowsPackageUrl,
   },
-  { name: 'Pictor-0.2.0-ubuntu-x64.deb', browser_download_url: ubuntuPackageUrl },
   { name: 'Pictor-0.2.0-arch-x64.pacman', browser_download_url: archPackageUrl },
+  { name: 'Pictor-0.2.0-linux-x64.AppImage', browser_download_url: appImageUrl },
 ]
 
 function releaseResponse(overrides: Record<string, unknown> = {}): Response {
@@ -34,7 +34,7 @@ function releaseResponse(overrides: Record<string, unknown> = {}): Response {
 function createService(
   context:
     | { platform: 'win32'; distribution: 'windows' }
-    | { platform: 'linux'; distribution: 'ubuntu' | 'arch' | 'unsupported-linux' },
+    | { platform: 'linux'; distribution: 'arch' | 'unsupported-linux' },
   overrides: { currentVersion?: string; response?: Response } = {},
 ) {
   const openExternal = vi.fn(async () => undefined)
@@ -52,8 +52,12 @@ function createService(
 describe('UpdateService', () => {
   it.each([
     [{ platform: 'win32', distribution: 'windows' } as const, windowsPackageUrl, 'windows-nsis'],
-    [{ platform: 'linux', distribution: 'ubuntu' } as const, ubuntuPackageUrl, 'ubuntu-deb'],
     [{ platform: 'linux', distribution: 'arch' } as const, archPackageUrl, 'arch-pacman'],
+    [
+      { platform: 'linux', distribution: 'unsupported-linux' } as const,
+      appImageUrl,
+      'linux-appimage',
+    ],
   ])('opens only the trusted package for %j', async (context, packageUrl, packageKind) => {
     const { openExternal, service } = createService(context)
 
@@ -79,11 +83,11 @@ describe('UpdateService', () => {
     await expect(service.openUpdate()).rejects.toThrow('请先检查更新')
   })
 
-  it('falls back to the trusted release page for an unsupported distribution', async () => {
-    const { openExternal, service } = createService({
-      platform: 'linux',
-      distribution: 'unsupported-linux',
-    })
+  it('falls back to the trusted release page when the expected asset is absent', async () => {
+    const { openExternal, service } = createService(
+      { platform: 'linux', distribution: 'unsupported-linux' },
+      { response: releaseResponse({ assets: releaseAssets.slice(0, 2) }) },
+    )
 
     await expect(service.check()).resolves.toMatchObject({
       packageAvailable: false,
@@ -121,11 +125,6 @@ describe('UpdateService', () => {
           browser_download_url:
             'https://example.test/YozoraTempest/Pictor/releases/download/v0.2.0/Pictor-0.2.0-arch-x64.pacman',
         },
-        {
-          name: 'Pictor-0.2.0-arch-x64.pacman',
-          browser_download_url:
-            'https://github.com:444/YozoraTempest/Pictor/releases/download/v0.2.0/Pictor-0.2.0-arch-x64.pacman',
-        },
       ],
     })
     const { openExternal, service } = createService(
@@ -140,7 +139,7 @@ describe('UpdateService', () => {
 
   it('rejects release URLs outside the official repository', async () => {
     const { service } = createService(
-      { platform: 'linux', distribution: 'ubuntu' },
+      { platform: 'linux', distribution: 'unsupported-linux' },
       { response: releaseResponse({ html_url: 'https://example.test/release' }) },
     )
 
@@ -149,7 +148,7 @@ describe('UpdateService', () => {
 
   it('rejects an official release URL whose tag does not match the payload', async () => {
     const { service } = createService(
-      { platform: 'linux', distribution: 'ubuntu' },
+      { platform: 'linux', distribution: 'unsupported-linux' },
       {
         response: releaseResponse({
           html_url: 'https://github.com/YozoraTempest/Pictor/releases/tag/v0.1.9',

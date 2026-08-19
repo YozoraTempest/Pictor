@@ -14,10 +14,15 @@ import {
 } from 'electron'
 
 import packageMetadata from '../../package.json' with { type: 'json' }
-import { appInfoSchema } from '../shared/desktop-bridge.js'
+import { ModuleRouter, moduleHandlerContributions } from '../kernel/contract.js'
+import { ModuleKernel } from '../kernel/kernel.js'
+import { createMainModules } from '../modules/catalog/main.js'
+import { appInfoSchema } from '../modules/updater/shared.js'
 import { discoverCommandInterpreter } from './command-interpreter.js'
+import { developmentUserDataPath } from './development-profile.js'
 import { detectDesktopDistribution } from './linux-distribution.js'
 import { registerIpc } from './ipc.js'
+import { registerModuleIpc } from './module-ipc.js'
 import { ModelConnectionTester } from './model-connection.js'
 import { AppRepository } from './persistence/app-repository.js'
 import { SecretStore } from './persistence/secret-store.js'
@@ -25,7 +30,6 @@ import { RuntimeCoordinator } from './runtime/coordinator.js'
 import { RuntimeSupervisor } from './runtime/supervisor.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
 import { shouldShowMainWindow } from './window-visibility.js'
-import { UpdateService } from './update-service.js'
 
 const APP_SCHEME = 'app'
 const APP_HOST = 'bundle'
@@ -42,6 +46,13 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 app.enableSandbox()
+
+const developmentData = developmentUserDataPath(
+  app.getPath('appData'),
+  app.isPackaged,
+  process.argv,
+)
+if (developmentData) app.setPath('userData', developmentData)
 
 function isPathWithin(root: string, candidate: string): boolean {
   const relativePath = relative(root, candidate)
@@ -138,7 +149,7 @@ void app.whenReady().then(() => {
     repository.initialize(),
     discoverCommandInterpreter(),
     detectDesktopDistribution(),
-  ]).then(([, commandInterpreter, distribution]) => {
+  ]).then(async ([, commandInterpreter, distribution]) => {
     const coordinatorReference: { current?: RuntimeCoordinator } = {}
     const runtimeSupervisor = new RuntimeSupervisor((event) =>
       coordinatorReference.current?.handleEvent(event),
@@ -154,28 +165,37 @@ void app.whenReady().then(() => {
       commandInterpreter.executablePath,
     )
     coordinatorReference.current = runtimeCoordinator
+    const mainKernel = new ModuleKernel()
+    await mainKernel.start(
+      createMainModules({
+        updater: {
+          currentVersion,
+          platform: process.platform === 'win32' ? 'win32' : 'linux',
+          arch: 'x64',
+          distribution,
+          fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+          openExternal: (url) => shell.openExternal(url),
+          getAppInfo: () =>
+            appInfoSchema.parse({
+              name: app.getName(),
+              version: currentVersion,
+              platform: process.platform,
+              arch: process.arch,
+              distribution,
+              commandInterpreter: commandInterpreter.status,
+            }),
+        },
+      }),
+    )
+    const moduleIpc = registerModuleIpc(
+      new ModuleRouter(mainKernel.getContributions(moduleHandlerContributions)),
+      validateSender,
+    )
     registerIpc({
       repository,
       connectionTester: new ModelConnectionTester(),
-      updateService: new UpdateService({
-        currentVersion,
-        platform: process.platform === 'win32' ? 'win32' : 'linux',
-        arch: 'x64',
-        distribution,
-        fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
-        openExternal: (url) => shell.openExternal(url),
-      }),
       validateSender,
       runtimeCoordinator,
-      getAppInfo: () =>
-        appInfoSchema.parse({
-          name: app.getName(),
-          version: currentVersion,
-          platform: process.platform,
-          arch: process.arch,
-          distribution,
-          commandInterpreter: commandInterpreter.status,
-        }),
     })
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
       callback(false)
@@ -188,7 +208,13 @@ void app.whenReady().then(() => {
         createMainWindow(runtimeCoordinator)
       }
     })
-    app.once('before-quit', () => void runtimeSupervisor.dispose())
+    app.once('before-quit', () => {
+      void (async () => {
+        await runtimeSupervisor.dispose()
+        await moduleIpc.dispose()
+        await mainKernel.stop()
+      })()
+    })
   })
 })
 

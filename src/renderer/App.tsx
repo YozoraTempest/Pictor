@@ -2,7 +2,8 @@ import { AlertTriangle, FolderOpen, LoaderCircle, ShieldCheck } from 'lucide-rea
 import { useEffect, useState } from 'react'
 
 import type { Project, SessionSummary } from '../shared/domain'
-import type { AppInfo } from '../shared/desktop-bridge'
+import type { SettingsSection } from '../modules/shell/settings'
+import type { AppInfo, UpdaterClient } from '../modules/updater/shared'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { Modal } from './ui/Modal'
 import { Conversation } from './workspace/Conversation'
@@ -22,7 +23,12 @@ function errorMessage(error: unknown): string {
   return '操作失败，请稍后重试'
 }
 
-export function App(): React.JSX.Element {
+interface AppProps {
+  updater: UpdaterClient
+  settingsSections: readonly SettingsSection[]
+}
+
+export function App({ updater, settingsSections }: AppProps): React.JSX.Element {
   const workspace = useWorkspaceController(window.pictor)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [appInfoLoading, setAppInfoLoading] = useState(true)
@@ -36,7 +42,7 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     let active = true
-    void window.pictor
+    void updater
       .getAppInfo()
       .then((value) => {
         if (active) setAppInfo(value)
@@ -50,7 +56,7 @@ export function App(): React.JSX.Element {
     return () => {
       active = false
     }
-  }, [])
+  }, [updater])
 
   const pickProject = async (relinkProjectId: string | null = null) => {
     const request = await workspace.pickProject(relinkProjectId)
@@ -172,8 +178,8 @@ export function App(): React.JSX.Element {
 
       {settingsOpen ? (
         <SettingsDialog
-          appInfo={appInfo}
           initial={workspace.snapshot.settings}
+          sections={settingsSections}
           onClose={() => setSettingsOpen(false)}
           onSaved={workspace.applySettings}
         />

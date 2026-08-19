@@ -15,10 +15,10 @@ describe('Linux distribution detection', () => {
     ).toEqual({ id: 'ubuntu', idLike: ['debian', 'ubuntu'], versionId: '24.04' })
   })
 
-  it('supports only Ubuntu 24.04 and native Arch identities', () => {
+  it('supports only native Arch as a Linux acceptance environment', () => {
     expect(
       classifyLinuxDistribution({ id: 'ubuntu', idLike: ['debian'], versionId: '24.04' }),
-    ).toBe('ubuntu')
+    ).toBe('unsupported-linux')
     expect(
       classifyLinuxDistribution({ id: 'ubuntu', idLike: ['debian'], versionId: '22.04' }),
     ).toBe('unsupported-linux')

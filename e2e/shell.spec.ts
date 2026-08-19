@@ -1,7 +1,7 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { resolve } from 'node:path'
 
-import { bridgeKeys } from './support.js'
+import { bridgeKeys, moduleBridgeKeys } from './support.js'
 
 test('@smoke launches a sandboxed, nonblank desktop shell', async ({
   browserName: _browserName,
@@ -41,13 +41,15 @@ test('@smoke launches a sandboxed, nonblank desktop shell', async ({
     }
 
     const rendererGlobals = await window.evaluate(() => ({
-      bridgeKeys: Object.keys(
-        (globalThis as typeof globalThis & { pictor: { getAppInfo: unknown } }).pictor,
+      bridgeKeys: Object.keys((globalThis as typeof globalThis & { pictor: object }).pictor),
+      moduleBridgeKeys: Object.keys(
+        (globalThis as typeof globalThis & { pictorModules: object }).pictorModules,
       ),
       nodeProcessType: typeof Reflect.get(globalThis, 'process'),
     }))
 
     expect(rendererGlobals.bridgeKeys.sort()).toEqual(bridgeKeys.toSorted())
+    expect(rendererGlobals.moduleBridgeKeys.sort()).toEqual(moduleBridgeKeys.toSorted())
     expect(rendererGlobals.nodeProcessType).toBe('undefined')
 
     await window.getByRole('button', { name: '设置' }).click()
