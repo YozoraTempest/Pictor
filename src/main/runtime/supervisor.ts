@@ -55,6 +55,16 @@ export class RuntimeSupervisor {
     this.post({ type: 'extension.ui.respond', runId, requestId, value })
   }
 
+  queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): void {
+    this.assertActive(runId)
+    this.post({ type: mode, runId, message })
+  }
+
+  clearQueue(runId: string): void {
+    this.assertActive(runId)
+    this.post({ type: 'clear-queue', runId })
+  }
+
   isActive(): boolean {
     return this.activeRunId !== null
   }

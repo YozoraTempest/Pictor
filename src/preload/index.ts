@@ -17,6 +17,7 @@ import {
   projectCandidateResultSchema,
   projectIdRequestSchema,
   projectResultSchema,
+  queueRuntimeMessageRequestSchema,
   pluginBootstrapResultSchema,
   pluginIdRequestSchema,
   pluginManagerResultSchema,
@@ -136,6 +137,17 @@ const bridge = Object.freeze({
         'runtime:extension-ui-response',
         extensionUiResponseRequestSchema.parse(input),
       ),
+    ),
+  queueRuntimeMessage: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke(
+        'runtime:queue-message',
+        queueRuntimeMessageRequestSchema.parse(input),
+      ),
+    ),
+  clearRuntimeQueue: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke('runtime:clear-queue', runIdRequestSchema.parse(input)),
     ),
   onRuntimeEvent: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, value: unknown) => {

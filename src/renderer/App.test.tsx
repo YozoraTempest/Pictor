@@ -82,6 +82,8 @@ function createBridge(
     rejectCommand: async () => ok(null),
     stopRun: async () => ok(null),
     respondToExtensionUi: async () => ok(null),
+    queueRuntimeMessage: async () => ok(null),
+    clearRuntimeQueue: async () => ok(null),
     onRuntimeEvent: (_listener: (event: RuntimeEvent) => void) => () => undefined,
   }
 }

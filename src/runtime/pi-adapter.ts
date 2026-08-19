@@ -11,6 +11,7 @@ import {
   type AgentSessionRuntime,
   type AgentSessionEvent,
   type ExtensionUIContext,
+  type SessionStats,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
 
@@ -43,6 +44,10 @@ interface PiSessionLike {
   prompt(text: string, options?: { expandPromptTemplates?: boolean }): Promise<void>
   abort(): Promise<void>
   waitForIdle(): Promise<void>
+  steer(text: string): Promise<void>
+  followUp(text: string): Promise<void>
+  clearQueue(): { steering: string[]; followUp: string[] }
+  getSessionStats(): SessionStats
   dispose(): void | Promise<void>
   bindExtensionUi?(context: ExtensionUIContext): Promise<void>
 }
@@ -51,6 +56,8 @@ interface SessionFactoryInput {
   config: RuntimeStartConfig
   tools: ToolDefinition[]
   extensionPaths: readonly string[]
+  skillPaths: readonly string[]
+  promptPaths: readonly string[]
   modelProvider: ModelRuntimeProvider
 }
 
@@ -153,6 +160,8 @@ async function createProductionSession({
   config,
   tools,
   extensionPaths,
+  skillPaths,
+  promptPaths,
   modelProvider,
 }: SessionFactoryInput): Promise<PiSessionLike> {
   await mkdir(config.agentDirectory, { recursive: true })
@@ -184,8 +193,10 @@ async function createProductionSession({
       resourceLoaderOptions: {
         noExtensions: extensionPaths.length === 0,
         ...(extensionPaths.length > 0 ? { additionalExtensionPaths: [...extensionPaths] } : {}),
-        noSkills: true,
-        noPromptTemplates: true,
+        ...(skillPaths.length > 0 ? { additionalSkillPaths: [...skillPaths] } : {}),
+        noSkills: skillPaths.length === 0,
+        ...(promptPaths.length > 0 ? { additionalPromptTemplatePaths: [...promptPaths] } : {}),
+        noPromptTemplates: promptPaths.length === 0,
         noThemes: true,
         systemPrompt:
           'You are Pictor, a delegate coding agent. Work only through the provided Pictor tools. Keep changes scoped to the selected project, explain progress briefly, and finish with results, changed files, verification, and remaining work.',
@@ -229,6 +240,22 @@ class PiSessionRuntime implements PiSessionLike {
     return this.runtime.session.waitForIdle()
   }
 
+  steer(text: string): Promise<void> {
+    return this.runtime.session.steer(text)
+  }
+
+  followUp(text: string): Promise<void> {
+    return this.runtime.session.followUp(text)
+  }
+
+  clearQueue(): { steering: string[]; followUp: string[] } {
+    return this.runtime.session.clearQueue()
+  }
+
+  getSessionStats(): SessionStats {
+    return this.runtime.session.getSessionStats()
+  }
+
   dispose(): Promise<void> {
     return this.runtime.dispose()
   }
@@ -268,6 +295,8 @@ export class PiAgentRuntime {
   readonly id = 'pictor.pi-agent-runtime'
   private current: ActiveRuntime | undefined
   private extensionPaths: readonly string[] = []
+  private skillPaths: readonly string[] = []
+  private promptPaths: readonly string[] = []
   private modelProviders: readonly ModelRuntimeProvider[] = []
 
   constructor(
@@ -278,6 +307,8 @@ export class PiAgentRuntime {
 
   configure(resources: AgentRuntimeResources): void {
     this.extensionPaths = [...resources.extensionPaths]
+    this.skillPaths = [...resources.skillPaths]
+    this.promptPaths = [...resources.promptPaths]
     this.modelProviders = [...resources.modelProviders]
   }
 
@@ -330,6 +361,8 @@ export class PiAgentRuntime {
         config,
         tools,
         extensionPaths: this.extensionPaths,
+        skillPaths: this.skillPaths,
+        promptPaths: this.promptPaths,
         modelProvider: this.getModelProvider(),
       })
       current.session = session
@@ -344,6 +377,13 @@ export class PiAgentRuntime {
       })
       await session.waitForIdle()
       await sanitizePiTranscripts(config.sessionDirectory, current.redactor)
+      const stats = session.getSessionStats()
+      this.emitEvent(config, {
+        type: 'usage.updated',
+        tokens: stats.tokens,
+        cost: stats.cost,
+        context: stats.contextUsage ?? null,
+      })
 
       if (current.cancelled) {
         this.emitEvent(config, { type: 'run.stateChanged', status: 'stopped', error: null })
@@ -407,6 +447,22 @@ export class PiAgentRuntime {
     if (this.current) await this.abort(this.current.config.runId)
   }
 
+  async queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void> {
+    const current = this.current
+    if (!current || current.config.runId !== runId || !current.session) {
+      throw new Error('运行不存在或尚未准备好接收队列消息')
+    }
+    const sanitized = current.redactor.redactText(message)
+    if (mode === 'steer') await current.session.steer(sanitized)
+    else await current.session.followUp(sanitized)
+  }
+
+  clearQueue(runId: string): void {
+    const current = this.current
+    if (!current || current.config.runId !== runId || !current.session) return
+    current.session.clearQueue()
+  }
+
   respondToExtensionUi(requestId: string, value: string | boolean | null): void {
     this.current?.extensionUi.respond(requestId, value)
   }
@@ -426,6 +482,14 @@ export class PiAgentRuntime {
         type: 'message.delta',
         messageId: config.messageId,
         delta: event.assistantMessageEvent.delta,
+      })
+      return
+    }
+    if (event.type === 'queue_update') {
+      this.emitEvent(config, {
+        type: 'queue.updated',
+        steering: [...event.steering],
+        followUp: [...event.followUp],
       })
       return
     }

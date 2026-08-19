@@ -52,5 +52,11 @@ export function createRuntimePluginBootstrap(
       id: entry.id,
       path: runtimePath,
     })),
+    skills: snapshot.plugins.flatMap(({ manifest, rootPath }) =>
+      (manifest.pi?.skills ?? []).map((path) => resolve(rootPath, path)),
+    ),
+    prompts: snapshot.plugins.flatMap(({ manifest, rootPath }) =>
+      (manifest.pi?.prompts ?? []).map((path) => resolve(rootPath, path)),
+    ),
   })
 }

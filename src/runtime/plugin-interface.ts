@@ -14,6 +14,8 @@ export interface ModelRuntimeProvider {
 
 export interface AgentRuntimeResources {
   extensionPaths: readonly string[]
+  skillPaths: readonly string[]
+  promptPaths: readonly string[]
   modelProviders: readonly ModelRuntimeProvider[]
 }
 
@@ -23,6 +25,8 @@ export interface AgentRuntimeProvider {
   start(config: RuntimeStartConfig): Promise<void>
   resolveApproval(runId: string, callId: string, allowed: boolean): void
   abort(runId: string): Promise<void>
+  queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void>
+  clearQueue(runId: string): void
   respondToExtensionUi(requestId: string, value: string | boolean | null): void
   dispose(): Promise<void>
 }

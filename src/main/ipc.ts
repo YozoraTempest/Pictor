@@ -8,6 +8,7 @@ import {
   extensionUiResponseRequestSchema,
   listModelsRequestSchema,
   projectIdRequestSchema,
+  queueRuntimeMessageRequestSchema,
   pluginIdRequestSchema,
   registerProjectRequestSchema,
   relinkProjectRequestSchema,
@@ -294,6 +295,24 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = extensionUiResponseRequestSchema.parse(input)
       runtimeCoordinator.respondToExtensionUi(request.runId, request.requestId, request.value)
+      return null
+    })
+  })
+
+  ipcMain.handle('runtime:queue-message', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = queueRuntimeMessageRequestSchema.parse(input)
+      runtimeCoordinator.queueMessage(request.runId, request.mode, request.message)
+      return null
+    })
+  })
+
+  ipcMain.handle('runtime:clear-queue', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = runIdRequestSchema.parse(input)
+      runtimeCoordinator.clearQueue(request.runId)
       return null
     })
   })

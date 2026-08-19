@@ -97,6 +97,14 @@ export class SecretRedactor {
         return { ...event, message: this.redactText(event.message) }
       case 'extension.ui.status':
         return { ...event, text: event.text === null ? null : this.redactText(event.text) }
+      case 'queue.updated':
+        return {
+          ...event,
+          steering: event.steering.map((message) => this.redactText(message)),
+          followUp: event.followUp.map((message) => this.redactText(message)),
+        }
+      case 'usage.updated':
+        return event
       case 'message.started':
       case 'approval.resolved':
         return event

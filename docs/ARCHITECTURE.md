@@ -109,6 +109,11 @@ Workspace 后 Git Changes 保持安装但进入 `blocked`，不做级联删除�
 注册到 Pi `ModelRuntime` 并返回可用 Model；`pictor.pi-agent-runtime` 只消费唯一的 Provider，
 没有 Provider 或同时出现多个 Provider 时明确拒绝启动 Run。Workspace 不 import 模型实现。
 
+Manifest 的 `pi.skills` 与 `pi.prompts` 直接展开为 Runtime resource path；
+`pictor.agent-resources` 是首个纯资源 Plugin，不需要空 Module。Pi ResourceLoader 在每个新 Run
+重新加载这些路径。运行中的 Composer 通过 Runtime protocol 调用 Pi `steer()` 或 `followUp()`，
+`queue_update` 与 Session stats 作为事件回到 Renderer；Pictor 不自行实现第二套队列。
+
 `AppRepository` 是 Main 进程的工作区状态入口，只协调 Project、Settings、导航选择和持久化
 初始化。Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全
 集中在内部 `SessionPersistence` module；它直接使用本地文件系统和现有凭据迁移函数，不增加

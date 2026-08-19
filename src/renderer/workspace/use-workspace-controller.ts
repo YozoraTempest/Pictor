@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Project, RunRecord, SessionRecord, SessionSummary } from '../../shared/domain'
-import type { AppSnapshot, PictorBridge, ProjectCandidate } from '../../shared/desktop-bridge'
+import type {
+  AppSnapshot,
+  PictorBridge,
+  ProjectCandidate,
+  RuntimeEvent,
+} from '../../shared/desktop-bridge'
 import type { ModelSettings } from '../../shared/model'
 
 const activeStatuses = new Set(['queued', 'running', 'awaiting-approval', 'stopping'])
+type RuntimeUsage = Extract<RuntimeEvent, { type: 'usage.updated' }>
 
 export type WorkspaceBridge = Pick<
   PictorBridge,
@@ -22,6 +28,8 @@ export type WorkspaceBridge = Pick<
   | 'approveCommand'
   | 'rejectCommand'
   | 'stopRun'
+  | 'queueRuntimeMessage'
+  | 'clearRuntimeQueue'
   | 'onRuntimeEvent'
 >
 
@@ -48,6 +56,8 @@ export interface WorkspaceController {
   loadError: string | null
   actionError: string | null
   approvalBusyCallId: string | null
+  queuedMessages: { steering: number; followUp: number }
+  runtimeUsage: RuntimeUsage | null
   selectProject: (projectId: string) => Promise<void>
   selectSession: (projectId: string, sessionId: string) => Promise<void>
   pickProject: (relinkProjectId?: string | null) => Promise<WorkspaceTrustRequest | null>
@@ -57,6 +67,8 @@ export interface WorkspaceController {
   deleteSession: (sessionId: string) => Promise<boolean>
   renameSession: (sessionId: string, title: string) => Promise<boolean>
   startRun: () => Promise<void>
+  queueMessage: (mode: 'steer' | 'follow-up') => Promise<void>
+  clearQueue: () => Promise<void>
   stopRun: (runId: string) => Promise<void>
   resolveApproval: (runId: string, callId: string, allowed: boolean) => Promise<void>
   setDraft: (value: string) => void
@@ -80,6 +92,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const [actionError, setActionError] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [approvalBusyCallId, setApprovalBusyCallId] = useState<string | null>(null)
+  const [queuedMessages, setQueuedMessages] = useState({ steering: 0, followUp: 0 })
+  const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsage | null>(null)
   const sessionRequestId = useRef(0)
   const snapshotRequestId = useRef(0)
   const navigationRequestId = useRef(0)
@@ -187,6 +201,13 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
               }
             : current,
         )
+      } else if (event.sessionId === currentSessionId && event.type === 'queue.updated') {
+        setQueuedMessages({
+          steering: event.steering.length,
+          followUp: event.followUp.length,
+        })
+      } else if (event.sessionId === currentSessionId && event.type === 'usage.updated') {
+        setRuntimeUsage(event)
       } else if (event.sessionId === currentSessionId) {
         void loadSession(event.sessionId, false).catch((error: unknown) =>
           setActionError(errorMessage(error)),
@@ -383,6 +404,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     const prompt = sessionId ? (drafts[sessionId] ?? '').trim() : ''
     if (!sessionId || !prompt || disabledReason) return
     setActionError(null)
+    setRuntimeUsage(null)
     const response = await bridge.startRun({ sessionId, prompt })
     if (!response.ok) {
       setActionError(response.error.message)
@@ -413,6 +435,26 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     },
     [bridge],
   )
+
+  const queueMessage = useCallback(
+    async (mode: 'steer' | 'follow-up'): Promise<void> => {
+      const sessionId = selectedSessionIdRef.current
+      const prompt = sessionId ? (drafts[sessionId] ?? '').trim() : ''
+      const runId = session?.runs.at(-1)?.id
+      if (!sessionId || !runId || !prompt || !selectedRunIsActive) return
+      const response = await bridge.queueRuntimeMessage({ runId, mode, message: prompt })
+      if (response.ok) setDrafts((current) => ({ ...current, [sessionId]: '' }))
+      else setActionError(response.error.message)
+    },
+    [bridge, drafts, selectedRunIsActive, session],
+  )
+
+  const clearQueue = useCallback(async (): Promise<void> => {
+    const runId = session?.runs.at(-1)?.id
+    if (!runId || !selectedRunIsActive) return
+    const response = await bridge.clearRuntimeQueue({ runId })
+    if (!response.ok) setActionError(response.error.message)
+  }, [bridge, selectedRunIsActive, session])
 
   const resolveApproval = useCallback(
     async (runId: string, callId: string, allowed: boolean): Promise<void> => {
@@ -454,6 +496,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     loadError,
     actionError,
     approvalBusyCallId,
+    queuedMessages,
+    runtimeUsage,
     selectProject,
     selectSession,
     pickProject,
@@ -463,6 +507,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     deleteSession,
     renameSession,
     startRun,
+    queueMessage,
+    clearQueue,
     stopRun,
     resolveApproval,
     setDraft,

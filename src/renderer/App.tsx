@@ -205,8 +205,12 @@ export function App({
         anotherSessionRunning={workspace.anotherSessionRunning}
         actionError={workspace.actionError ?? workspace.snapshot.issues[0]?.message ?? null}
         approvalBusyCallId={workspace.approvalBusyCallId}
+        queuedMessages={workspace.queuedMessages}
+        runtimeUsage={workspace.runtimeUsage}
         onDraftChange={workspace.setDraft}
         onSend={() => void workspace.startRun()}
+        onQueue={(mode) => void workspace.queueMessage(mode)}
+        onClearQueue={() => void workspace.clearQueue()}
         onStop={(runId) => void workspace.stopRun(runId)}
         onApprove={(runId, callId) => void workspace.resolveApproval(runId, callId, true)}
         onReject={(runId, callId) => void workspace.resolveApproval(runId, callId, false)}

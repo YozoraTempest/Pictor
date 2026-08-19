@@ -244,6 +244,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
     await expect(window.getByText('Task completed.')).toBeVisible()
     await expect(window.getByText('Changed files:')).toBeVisible()
+    await expect(window.getByText(/tokens/)).toBeVisible()
     expect(await readSelectedRunStatus(window)).toBe('completed')
 
     await window.setViewportSize({ width: 900, height: 620 })

@@ -85,6 +85,11 @@ export const extensionUiResponseRequestSchema = z.object({
   requestId: z.uuid(),
   value: z.union([z.string(), z.boolean(), z.null()]),
 })
+export const queueRuntimeMessageRequestSchema = z.object({
+  runId: idSchema,
+  mode: z.enum(['steer', 'follow-up']),
+  message: z.string().trim().min(1).max(200_000),
+})
 
 export const appSnapshotResultSchema = ipcResultSchema(appSnapshotSchema)
 export const appInfoResultSchema = ipcResultSchema(appInfoSchema)
@@ -155,6 +160,10 @@ export interface PictorBridge {
   respondToExtensionUi: (
     request: z.infer<typeof extensionUiResponseRequestSchema>,
   ) => Promise<IpcResult<null>>
+  queueRuntimeMessage: (
+    request: z.infer<typeof queueRuntimeMessageRequestSchema>,
+  ) => Promise<IpcResult<null>>
+  clearRuntimeQueue: (request: z.infer<typeof runIdRequestSchema>) => Promise<IpcResult<null>>
   onRuntimeEvent: (listener: (event: RuntimeEvent) => void) => () => void
 }
 

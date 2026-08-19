@@ -74,6 +74,8 @@ export const runtimePluginBootstrapSchema = z.object({
       path: z.string().min(1),
     }),
   ),
+  skills: z.array(z.string().min(1)),
+  prompts: z.array(z.string().min(1)),
 })
 
 export type RuntimePluginBootstrap = z.infer<typeof runtimePluginBootstrapSchema>

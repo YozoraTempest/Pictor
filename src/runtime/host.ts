@@ -57,6 +57,8 @@ const statePromise = (async (): Promise<RuntimeHostState> => {
   if (runtimes.length > 1) throw new Error('Multiple Agent Runtime Providers are active')
   runtimes[0]?.configure({
     extensionPaths: host.getContributions(piExtensionPathContributions),
+    skillPaths: bootstrap.skills,
+    promptPaths: bootstrap.prompts,
     modelProviders: host.getContributions(modelRuntimeProviderContributions),
   })
   parentPort.postMessage({ type: 'host.ready' })
@@ -111,6 +113,13 @@ parentPort.on('message', (messageEvent) => {
       }
       if (command.type === 'extension.ui.respond') {
         runtime.respondToExtensionUi(command.requestId, command.value)
+        return
+      }
+      if (command.type === 'steer' || command.type === 'follow-up') {
+        return runtime.queueMessage(command.runId, command.type, command.message)
+      }
+      if (command.type === 'clear-queue') {
+        runtime.clearQueue(command.runId)
         return
       }
       return runtime.abort(command.runId)

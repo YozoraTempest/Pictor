@@ -28,7 +28,12 @@ const localApiKey = ['local', 'test', 'key'].join('-')
 
 function createRuntime(emit: (event: RuntimeEvent) => void): PiAgentRuntime {
   const runtime = new PiAgentRuntime(emit)
-  runtime.configure({ extensionPaths: [], modelProviders: [openAiCompatibleModelProvider] })
+  runtime.configure({
+    extensionPaths: [],
+    skillPaths: [],
+    promptPaths: [],
+    modelProviders: [openAiCompatibleModelProvider],
+  })
   return runtime
 }
 
@@ -356,6 +361,8 @@ it('loads an unmodified official Pi Extension and exposes its custom tool', asyn
     extensionPaths: [
       resolve('node_modules/@earendil-works/pi-coding-agent/examples/extensions/hello.ts'),
     ],
+    skillPaths: [],
+    promptPaths: [],
     modelProviders: [openAiCompatibleModelProvider],
   })
 

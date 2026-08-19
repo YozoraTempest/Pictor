@@ -22,12 +22,15 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
-import { isValidElement, useEffect, useRef, type ReactNode } from 'react'
+import { isValidElement, useEffect, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import type { Project, RunRecord, SessionRecord, ToolEvent } from '../../shared/domain'
 import type { AppInfo } from '../../shared/app-info'
+import type { RuntimeEvent } from '../../shared/desktop-bridge'
+
+type RuntimeUsage = Extract<RuntimeEvent, { type: 'usage.updated' }>
 
 interface ConversationProps {
   project: Project | null
@@ -42,8 +45,12 @@ interface ConversationProps {
   anotherSessionRunning: boolean
   actionError: string | null
   approvalBusyCallId: string | null
+  queuedMessages: { steering: number; followUp: number }
+  runtimeUsage: RuntimeUsage | null
   onDraftChange: (value: string) => void
   onSend: () => void
+  onQueue: (mode: 'steer' | 'follow-up') => void
+  onClearQueue: () => void
   onStop: (runId: string) => void
   onApprove: (runId: string, callId: string) => void
   onReject: (runId: string, callId: string) => void
@@ -335,8 +342,12 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     anotherSessionRunning,
     actionError,
     approvalBusyCallId,
+    queuedMessages,
+    runtimeUsage,
     onDraftChange,
     onSend,
+    onQueue,
+    onClearQueue,
     onStop,
     onApprove,
     onReject,
@@ -345,6 +356,10 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     onOpenSettings,
     onRelinkProject,
   } = props
+  const [queueMode, setQueueMode] = useState<'steer' | 'follow-up'>('steer')
+  const runActive = Boolean(
+    activeRun && ['queued', 'running', 'awaiting-approval', 'stopping'].includes(activeRun.status),
+  )
 
   if (!project) {
     return (
@@ -424,6 +439,14 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           <h1>{session.title}</h1>
         </div>
         <div className="header-actions">
+          {runtimeUsage ? (
+            <span className="usage-summary">
+              {runtimeUsage.tokens.total.toLocaleString()} tokens
+              {runtimeUsage.context?.percent === null || runtimeUsage.context === null
+                ? ''
+                : ` · ${Math.round(runtimeUsage.context.percent)}% context`}
+            </span>
+          ) : null}
           {activeRun ? <StatusBadge status={activeRun.status} /> : null}
           {activeRun &&
           ['queued', 'running', 'awaiting-approval', 'stopping'].includes(activeRun.status) ? (
@@ -481,12 +504,39 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
       </div>
 
       <div className="composer-wrap">
-        {disabledReason ? (
+        {disabledReason && !runActive ? (
           <div className="composer-reason">
             {disabledReason}
             {disabledReason.includes('模型') ? (
               <button type="button" onClick={onOpenSettings}>
                 打开设置
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {runActive ? (
+          <div className="queue-controls">
+            <div className="protocol-switch" role="group" aria-label="队列模式">
+              <button
+                type="button"
+                className={queueMode === 'steer' ? 'is-active' : ''}
+                aria-pressed={queueMode === 'steer'}
+                onClick={() => setQueueMode('steer')}
+              >
+                引导 ({queuedMessages.steering})
+              </button>
+              <button
+                type="button"
+                className={queueMode === 'follow-up' ? 'is-active' : ''}
+                aria-pressed={queueMode === 'follow-up'}
+                onClick={() => setQueueMode('follow-up')}
+              >
+                跟进 ({queuedMessages.followUp})
+              </button>
+            </div>
+            {queuedMessages.steering + queuedMessages.followUp > 0 ? (
+              <button className="secondary-button" type="button" onClick={onClearQueue}>
+                清空队列
               </button>
             ) : null}
           </div>
@@ -510,9 +560,9 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             className="send-button"
             type="button"
             aria-label="发送任务"
-            title="发送任务"
-            disabled={Boolean(disabledReason) || !draft.trim() || loading}
-            onClick={onSend}
+            title={runActive ? '加入队列' : '发送任务'}
+            disabled={(!runActive && Boolean(disabledReason)) || !draft.trim() || loading}
+            onClick={() => (runActive ? onQueue(queueMode) : onSend())}
           >
             <Send size={17} />
           </button>

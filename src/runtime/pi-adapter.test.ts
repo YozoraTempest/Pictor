@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RuntimeEvent, RuntimeStartConfig } from '../shared/runtime-protocol.js'
 import { REDACTED_SECRET } from '../shared/secret-redaction.js'
@@ -15,6 +15,20 @@ const sessionFactory = async () => ({
   prompt: async () => undefined,
   abort: async () => undefined,
   waitForIdle: async () => undefined,
+  steer: async () => undefined,
+  followUp: async () => undefined,
+  clearQueue: () => ({ steering: [], followUp: [] }),
+  getSessionStats: () => ({
+    sessionFile: undefined,
+    sessionId: 'test-session',
+    userMessages: 0,
+    assistantMessages: 0,
+    toolCalls: 0,
+    toolResults: 0,
+    totalMessages: 0,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+  }),
   dispose: () => undefined,
 })
 
@@ -44,6 +58,8 @@ describe('PiAgentRuntime cleanup', () => {
       }, sessionFactory)
       runtime.configure({
         extensionPaths: [],
+        skillPaths: [],
+        promptPaths: [],
         modelProviders: [
           {
             id: 'test-model-provider',
@@ -107,4 +123,87 @@ describe('PiAgentRuntime cleanup', () => {
       })
     },
   )
+
+  it('delegates steering, follow-up, and queue clearing to the active Pi Session', async () => {
+    let finishIdle: (() => void) | undefined
+    const prompt = vi.fn(async () => undefined)
+    const steer = vi.fn(async () => undefined)
+    const followUp = vi.fn(async () => undefined)
+    const clearQueue = vi.fn(() => ({ steering: [], followUp: [] }))
+    const waitForIdle = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishIdle = resolve
+        }),
+    )
+    const runtime = new PiAgentRuntime(
+      () => undefined,
+      async () => ({
+        subscribe: () => () => undefined,
+        prompt,
+        steer,
+        followUp,
+        clearQueue,
+        abort: async () => undefined,
+        waitForIdle,
+        dispose: () => undefined,
+        getSessionStats: () => ({
+          sessionFile: undefined,
+          sessionId: 'test-session',
+          userMessages: 0,
+          assistantMessages: 0,
+          toolCalls: 0,
+          toolResults: 0,
+          totalMessages: 0,
+          tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          cost: 0,
+        }),
+      }),
+    )
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const runId = '71234567-89ab-4def-8123-456789abcdef'
+    const running = runtime.start({
+      type: 'start',
+      runId,
+      sessionId: '81234567-89ab-4def-8123-456789abcdef',
+      messageId: '91234567-89ab-4def-8123-456789abcdef',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-queue'),
+      sessionDirectory: join(root, 'session-queue'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+      prompt: 'start',
+    })
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalled())
+
+    await runtime.queueMessage(runId, 'steer', 'redirect')
+    await runtime.queueMessage(runId, 'follow-up', 'continue')
+    runtime.clearQueue(runId)
+
+    expect(steer).toHaveBeenCalledWith('redirect')
+    expect(followUp).toHaveBeenCalledWith('continue')
+    expect(clearQueue).toHaveBeenCalledOnce()
+    finishIdle?.()
+    await running
+  })
 })

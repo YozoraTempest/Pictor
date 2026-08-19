@@ -26,6 +26,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
   当前项目的 Git working tree；它验证了真实 Plugin 间依赖与组合。
 - `pictor.model-openai-compatible` 作为独立 Runtime Provider 注册 Chat Completions/Responses
   模型；Pi Runtime 只消费 `model.providers` Contribution，不硬编码模型供应商。
+- `pictor.agent-resources` 以原生 Pi 目录提供 Skills 与 Prompt Templates；活跃 Run 支持 Steering
+  与 Follow-up 队列，并在会话标题区显示 Pi token/context usage。
 
 首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、第三方 Plugin 分发、远程项目、WSL、
 容器、macOS、Linux ARM64、静默更新、系统密钥环、包签名和软件源不在当前范围内。
