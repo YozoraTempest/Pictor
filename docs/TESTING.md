@@ -69,6 +69,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   event/response 在 Renderer 与 utility process 之间完整往返。
 - Pi Runtime 集成覆盖原生 queue event、Session stats、Skills/Prompt resource path 和凭据脱敏；
   E2E 必须看到由真实 Pi Session 产生的 token usage，而不是 Renderer 计算的替代值。
+- Pi Runtime 可见状态测试必须覆盖 `thinking_delta` 与 text delta 顺序、`auto_retry_start/end`、错误
+  脱敏和 Session Tree Label operation；Label 必须由 Pi 追加 entry 并更新实际 active leaf。
 - Pi Session 投影测试使用真实 JSONL 形态覆盖 parent/branch、compaction、Tool、usage 和终态错误；
   相同 JSONL 必须产生稳定投影。持久化测试必须覆盖首次 identity 绑定、重启重建、已有 Pi identity
   的 schema v1 迁移，以及无 Pi JSONL 的 v1 只读归档，不能用旧平面消息自动制造新上下文。

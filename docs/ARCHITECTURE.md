@@ -166,6 +166,11 @@ Thinking clamp、Tool registry 过滤和 queue delivery。Model/Thinking 的当�
 Runtime restore 时通过 Pi `setSessionName()` 同步；“重新加载资源”释放空闲 Runtime Host，使下一次
 Run 重新装配 Plugin Host、ResourceLoader、Extensions、Skills、Prompts 和 context files。
 
+Pi 自动 Retry 保持启用并把 start/end 映射为脱敏状态事件；Thinking delta 与 Text delta 进入同一
+assistant stream，终态仍由 JSONL thinking/text block 重建。Session Tree Label 是独立的原生 Runtime
+operation，调用 `SessionManager.appendLabelChange()`，保存 Pi 返回的新 active leaf 后重建 Tree；
+Pictor 不直接拼接 label JSONL。
+
 Pi Image Message 的文件路径只存在于 Electron Main 原生选择器；Main 读取支持的图片并把 base64、
 MIME 和显示名称交给 Renderer，Runtime 去掉显示名称后直接传入 Pi `prompt(..., { images })`。
 Pi JSONL image block 是重启后的 authority，Projection 只重建可显示附件，不保存源路径。Composer
