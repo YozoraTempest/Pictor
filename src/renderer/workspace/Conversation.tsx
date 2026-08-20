@@ -192,6 +192,8 @@ function ToolActivity({
   tool,
   busy,
   platform,
+  outputOpen,
+  onOutputOpenChange,
   onApprove,
   onReject,
 }: {
@@ -199,6 +201,8 @@ function ToolActivity({
   tool: ToolEvent
   busy: boolean
   platform: AppInfo['platform'] | null
+  outputOpen: boolean
+  onOutputOpenChange: (callId: string, open: boolean) => void
   onApprove: (runId: string, callId: string) => void
   onReject: (runId: string, callId: string) => void
 }): React.JSX.Element {
@@ -268,8 +272,13 @@ function ToolActivity({
       ) : null}
 
       {tool.output ? (
-        <details className="tool-output" open={tool.status === 'failed'}>
-          <summary>
+        <details className="tool-output" open={outputOpen}>
+          <summary
+            onClick={(event) => {
+              event.preventDefault()
+              onOutputOpenChange(tool.callId, !outputOpen)
+            }}
+          >
             <ChevronDown size={14} />
             查看输出
           </summary>
@@ -291,7 +300,18 @@ function Timeline({
   'session' | 'approvalBusyCallId' | 'platform' | 'onApprove' | 'onReject'
 >): React.JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(() => new Set())
   const contentKey = session?.messages.map((message) => message.content.length).join(':') ?? ''
+
+  const updateToolOutput = (callId: string, open: boolean): void => {
+    setExpandedToolCalls((current) => {
+      if (current.has(callId) === open) return current
+      const next = new Set(current)
+      if (open) next.add(callId)
+      else next.delete(callId)
+      return next
+    })
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ block: 'end' })
@@ -322,6 +342,8 @@ function Timeline({
                 tool={tool}
                 busy={approvalBusyCallId === tool.callId}
                 platform={platform}
+                outputOpen={tool.status === 'failed' || expandedToolCalls.has(tool.callId)}
+                onOutputOpenChange={updateToolOutput}
                 onApprove={onApprove}
                 onReject={onReject}
               />
@@ -686,6 +708,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             </div>
           ) : (
             <Timeline
+              key={session.id}
               session={session}
               approvalBusyCallId={approvalBusyCallId}
               platform={platform}
