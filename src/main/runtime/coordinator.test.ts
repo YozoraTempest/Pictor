@@ -2,7 +2,12 @@
 
 import { expect, it, vi } from 'vitest'
 
-import type { Project, SessionHistoryState, SessionRecord } from '../../shared/domain.js'
+import type {
+  Project,
+  SessionHistoryState,
+  SessionRecord,
+  SessionSummary,
+} from '../../shared/domain.js'
 import type { ModelSettings } from '../../shared/model.js'
 import { RuntimeCoordinator, type RuntimeHost, type RuntimePersistence } from './coordinator.js'
 
@@ -53,6 +58,9 @@ it.each(['a', 'id', 'running'])(
         }
       }),
       rebuildSessionProjection: vi.fn(async () => session),
+      createForkedSession: vi.fn(async () => {
+        throw new Error('not used')
+      }),
       getProject: vi.fn(
         () =>
           ({
@@ -89,6 +97,9 @@ it.each(['a', 'id', 'running'])(
     const supervisor: RuntimeHost = {
       isActive: vi.fn(() => false),
       start,
+      fork: vi.fn(async () => {
+        throw new Error('not used')
+      }),
       approve: vi.fn(),
       reject: vi.fn(),
       stop: vi.fn(),
@@ -233,6 +244,9 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     ),
     bindPiSession: vi.fn(async () => undefined),
     rebuildSessionProjection,
+    createForkedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
     getProject: vi.fn(
       () =>
         ({
@@ -268,6 +282,9 @@ it('persists a terminal failure when Pi Session identity was never bound', async
   const supervisor: RuntimeHost = {
     isActive: vi.fn(() => false),
     start: vi.fn(async () => undefined),
+    fork: vi.fn(async () => {
+      throw new Error('not used')
+    }),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -324,6 +341,9 @@ it('keeps a pending Legacy Session Import read-only', async () => {
     ),
     bindPiSession: vi.fn(async () => undefined),
     rebuildSessionProjection: vi.fn(async () => session),
+    createForkedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
     getProject: vi.fn(() => {
       throw new Error('must not resolve the project for read-only history')
     }),
@@ -339,6 +359,9 @@ it('keeps a pending Legacy Session Import read-only', async () => {
   const supervisor: RuntimeHost = {
     isActive: () => false,
     start,
+    fork: vi.fn(async () => {
+      throw new Error('not used')
+    }),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -350,4 +373,132 @@ it('keeps a pending Legacy Session Import read-only', async () => {
 
   await expect(coordinator.start(sessionId, 'continue')).rejects.toThrow('此会话是旧版只读历史')
   expect(start).not.toHaveBeenCalled()
+})
+
+it('creates a new Pictor Session only after native Pi Fork completes', async () => {
+  const now = new Date().toISOString()
+  const session: SessionRecord = {
+    schemaVersion: 1,
+    id: sessionId,
+    projectId,
+    title: 'Source session',
+    messages: [],
+    runs: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+  const forkedSummary: SessionSummary = {
+    id: '61234567-89ab-4def-8123-456789abcdef',
+    projectId,
+    title: 'Source session (Fork)',
+    lastRunStatus: 'completed',
+    historyAuthority: 'pi-jsonl',
+    createdAt: now,
+    updatedAt: now,
+  }
+  let releaseCommit!: () => void
+  const commitGate = new Promise<void>((resolve) => {
+    releaseCommit = resolve
+  })
+  const createForkedSession = vi.fn(async () => {
+    await commitGate
+    return forkedSummary
+  })
+  const repository: RuntimePersistence = {
+    getSession: vi.fn(async () => session),
+    getSessionHistory: vi.fn(
+      () =>
+        ({
+          authority: 'pi-jsonl',
+          piSessionId: 'source-pi-session',
+          piSessionFile: 'source.jsonl',
+          legacyImport: { status: 'not-required', sourceFile: null },
+        }) satisfies SessionHistoryState,
+    ),
+    bindPiSession: vi.fn(async () => undefined),
+    rebuildSessionProjection: vi.fn(async () => session),
+    createForkedSession,
+    getProject: vi.fn(
+      () =>
+        ({
+          id: projectId,
+          name: 'fixture',
+          rootPath: '/fixture',
+          trustedAt: now,
+          availability: 'available',
+          createdAt: now,
+          updatedAt: now,
+        }) satisfies Project,
+    ),
+    getSettings: vi.fn(
+      async () =>
+        ({
+          apiProtocol: 'responses',
+          baseUrl: 'https://example.test/v1',
+          modelId: 'test-model',
+          reasoningEffort: null,
+          temperature: null,
+          maxOutputTokens: null,
+          hasApiKey: true,
+        }) satisfies ModelSettings,
+    ),
+    getApiKey: vi.fn(async () => 'test-key'),
+    getRuntimePaths: vi.fn((_projectId, targetSessionId) => ({
+      agentDirectory: '/agent',
+      sessionDirectory: `/sessions/${targetSessionId}`,
+      resumeSession: targetSessionId === sessionId,
+    })),
+    saveSession: vi.fn(async () => undefined),
+  }
+  const fork = vi.fn<RuntimeHost['fork']>(async (config) => ({
+    type: 'host.forkResult',
+    operationId: config.operationId,
+    targetSessionId: config.targetSessionId,
+    outcome: 'completed',
+    piSessionId: 'forked-pi-session',
+    piSessionFile: 'forked.jsonl',
+  }))
+  const supervisor: RuntimeHost = {
+    isActive: () => false,
+    start: vi.fn(async () => undefined),
+    fork,
+    approve: vi.fn(),
+    reject: vi.fn(),
+    stop: vi.fn(),
+    respondToExtensionUi: vi.fn(),
+    queueMessage: vi.fn(),
+    clearQueue: vi.fn(),
+  }
+  const coordinator = new RuntimeCoordinator(repository, supervisor, vi.fn())
+
+  const forking = coordinator.forkSession(sessionId, 'selected-entry')
+  await vi.waitFor(() => expect(createForkedSession).toHaveBeenCalledOnce())
+  expect(coordinator.isActive()).toBe(true)
+  releaseCommit()
+  await expect(forking).resolves.toEqual(forkedSummary)
+  expect(coordinator.isActive()).toBe(false)
+  expect(fork).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'fork',
+      sourceSessionId: sessionId,
+      entryId: 'selected-entry',
+      sourceSessionDirectory: `/sessions/${sessionId}`,
+      sourcePiSessionFile: 'source.jsonl',
+      targetSessionDirectory: expect.stringMatching(/^\/sessions\//),
+    }),
+  )
+  const forkConfig = fork.mock.calls[0]![0]
+  expect(createForkedSession).toHaveBeenCalledWith(sessionId, forkConfig.targetSessionId, {
+    id: 'forked-pi-session',
+    file: 'forked.jsonl',
+  })
+
+  fork.mockResolvedValueOnce({
+    type: 'host.forkResult',
+    operationId: '31234567-89ab-4def-8123-456789abcdef',
+    targetSessionId: '41234567-89ab-4def-8123-456789abcdef',
+    outcome: 'cancelled',
+  })
+  await expect(coordinator.forkSession(sessionId, 'cancelled-entry')).resolves.toBeNull()
+  expect(createForkedSession).toHaveBeenCalledTimes(1)
 })

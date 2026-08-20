@@ -99,6 +99,29 @@ parentPort.on('message', (messageEvent) => {
     return
   }
 
+  if (command.type === 'fork') {
+    void statePromise
+      .then((state) => requireRuntime(state).fork(command))
+      .then((result) =>
+        parentPort.postMessage({
+          type: 'host.forkResult',
+          operationId: command.operationId,
+          targetSessionId: command.targetSessionId,
+          ...result,
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.forkResult',
+          operationId: command.operationId,
+          targetSessionId: command.targetSessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Pi Session Fork failed',
+        }),
+      )
+    return
+  }
+
   void statePromise
     .then((state) => {
       const runtime = requireRuntime(state)

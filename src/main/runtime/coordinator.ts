@@ -8,10 +8,16 @@ import {
   type Project,
   type SessionHistoryState,
   type SessionRecord,
+  type SessionSummary,
 } from '../../shared/domain.js'
 import { PictorError } from '../../shared/errors.js'
 import type { ModelSettings } from '../../shared/model.js'
-import { type RuntimeEvent, type RuntimeStartConfig } from '../../shared/runtime-protocol.js'
+import {
+  type RuntimeEvent,
+  type RuntimeForkConfig,
+  type RuntimeForkResult,
+  type RuntimeStartConfig,
+} from '../../shared/runtime-protocol.js'
 import { createSecretRedactor, type SecretRedactor } from '../../shared/secret-redaction.js'
 
 export interface RuntimePersistence {
@@ -19,6 +25,11 @@ export interface RuntimePersistence {
   getSessionHistory(sessionId: string): SessionHistoryState
   bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void>
   rebuildSessionProjection(sessionId: string): Promise<SessionRecord>
+  createForkedSession(
+    sourceSessionId: string,
+    targetSessionId: string,
+    identity: { id: string; file: string },
+  ): Promise<SessionSummary>
   getProject(projectId: string): Project
   getSettings(): Promise<ModelSettings | null>
   getApiKey(): Promise<string | null>
@@ -35,6 +46,7 @@ export interface RuntimePersistence {
 
 export interface RuntimeHost {
   start(config: RuntimeStartConfig): Promise<void>
+  fork(config: RuntimeForkConfig): Promise<RuntimeForkResult>
   approve(runId: string, callId: string): void
   reject(runId: string, callId: string): void
   stop(runId: string): void
@@ -53,6 +65,7 @@ interface ActiveRun {
 
 export class RuntimeCoordinator {
   private active: ActiveRun | null = null
+  private forkOperationId: string | null = null
   private persistenceQueue = Promise.resolve()
 
   constructor(
@@ -63,7 +76,7 @@ export class RuntimeCoordinator {
   ) {}
 
   async start(sessionId: string, prompt: string): Promise<{ runId: string }> {
-    if (this.active || this.supervisor.isActive()) {
+    if (this.active || this.forkOperationId || this.supervisor.isActive()) {
       throw new PictorError('invalid-input', '已有 Agent 运行正在执行，请先等待或停止该运行')
     }
     const session = await this.repository.getSession(sessionId)
@@ -160,6 +173,70 @@ export class RuntimeCoordinator {
     return { runId }
   }
 
+  async forkSession(sourceSessionId: string, entryId: string): Promise<SessionSummary | null> {
+    if (this.active || this.forkOperationId || this.supervisor.isActive()) {
+      throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
+    }
+    await this.persistenceQueue
+    const source = await this.repository.getSession(sourceSessionId)
+    const history = this.repository.getSessionHistory(sourceSessionId)
+    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+      throw new PictorError('invalid-input', '当前 Session 没有可 Fork 的 Pi JSONL 历史')
+    }
+    const project = this.repository.getProject(source.projectId)
+    if (project.availability !== 'available') {
+      throw new PictorError('project-unavailable', '项目目录当前不可用，请重新关联后再 Fork')
+    }
+    const settings = await this.repository.getSettings()
+    const apiKey = await this.repository.getApiKey()
+    if (!settings || !apiKey) {
+      throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
+    }
+
+    const operationId = randomUUID()
+    const targetSessionId = randomUUID()
+    const sourcePaths = this.repository.getRuntimePaths(project.id, sourceSessionId)
+    if (!sourcePaths.resumeSession) {
+      throw new PictorError(
+        'credential-unavailable',
+        'Pi Session 凭据迁移尚未完成，当前历史不能安全 Fork',
+      )
+    }
+    const targetPaths = this.repository.getRuntimePaths(project.id, targetSessionId)
+    this.forkOperationId = operationId
+    try {
+      const result = await this.supervisor.fork({
+        type: 'fork',
+        operationId,
+        sourceSessionId,
+        targetSessionId,
+        entryId,
+        projectRoot: project.rootPath,
+        agentDirectory: sourcePaths.agentDirectory,
+        sourceSessionDirectory: sourcePaths.sessionDirectory,
+        sourcePiSessionFile: history.piSessionFile,
+        targetSessionDirectory: targetPaths.sessionDirectory,
+        settings: {
+          apiProtocol: settings.apiProtocol,
+          baseUrl: settings.baseUrl,
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          temperature: settings.temperature,
+          maxOutputTokens: settings.maxOutputTokens,
+        },
+        apiKey,
+      })
+      if (result.outcome === 'cancelled') return null
+      if (result.outcome === 'failed') throw new Error(result.message)
+      return await this.repository.createForkedSession(sourceSessionId, targetSessionId, {
+        id: result.piSessionId,
+        file: result.piSessionFile,
+      })
+    } finally {
+      if (this.forkOperationId === operationId) this.forkOperationId = null
+    }
+  }
+
   approve(runId: string, callId: string): void {
     this.supervisor.approve(runId, callId)
   }
@@ -185,7 +262,7 @@ export class RuntimeCoordinator {
   }
 
   isActive(): boolean {
-    return this.active !== null || this.supervisor.isActive()
+    return this.active !== null || this.forkOperationId !== null || this.supervisor.isActive()
   }
 
   handleEvent(event: RuntimeEvent): void {

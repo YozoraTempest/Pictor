@@ -15,6 +15,7 @@ import {
   FileSearch,
   FolderSearch2,
   GitBranch,
+  GitFork,
   LoaderCircle,
   LocateFixed,
   MessageSquareText,
@@ -63,11 +64,13 @@ interface ConversationProps {
   sessionTree: SessionTreeView | null
   sessionTreeLoading: boolean
   canInspectSessionTree: boolean
+  forkingEntryId: string | null
   onDraftChange: (value: string) => void
   onSend: () => void
   onQueue: (mode: 'steer' | 'follow-up') => void
   onClearQueue: () => void
   onInspectSessionHistory: (entryId: string | null) => void
+  onForkSession: (entryId: string) => void
   onStop: (runId: string) => void
   onApprove: (runId: string, callId: string) => void
   onReject: (runId: string, callId: string) => void
@@ -359,14 +362,20 @@ function TreeNodeIcon({ kind }: { kind: SessionTreeNode['kind'] }): React.JSX.El
 function SessionTreePanel({
   tree,
   loading,
+  forkingEntryId,
   onSelect,
+  onFork,
   onClose,
 }: {
   tree: SessionTreeView | null
   loading: boolean
+  forkingEntryId: string | null
   onSelect: (entryId: string | null) => void
+  onFork: (entryId: string) => void
   onClose: () => void
 }): React.JSX.Element {
+  const selectedEntryId = tree?.selectedEntryId ?? null
+  const canFork = Boolean(selectedEntryId && selectedEntryId !== tree?.activeLeafId)
   return (
     <aside className="session-tree-panel" aria-label="Session Tree">
       <div className="session-tree-header">
@@ -376,6 +385,18 @@ function SessionTreePanel({
           {tree ? <span>{tree.nodes.length}</span> : null}
         </div>
         <div className="session-tree-actions">
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="Fork 为新 Session"
+            title="Fork 为新 Session"
+            disabled={!canFork || forkingEntryId !== null}
+            onClick={() => {
+              if (selectedEntryId) onFork(selectedEntryId)
+            }}
+          >
+            {forkingEntryId ? <LoaderCircle className="spin" size={14} /> : <GitFork size={14} />}
+          </button>
           <button
             className="mini-icon-button"
             type="button"
@@ -455,11 +476,13 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     sessionTree,
     sessionTreeLoading,
     canInspectSessionTree,
+    forkingEntryId,
     onDraftChange,
     onSend,
     onQueue,
     onClearQueue,
     onInspectSessionHistory,
+    onForkSession,
     onStop,
     onApprove,
     onReject,
@@ -627,7 +650,9 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           <SessionTreePanel
             tree={sessionTree}
             loading={sessionTreeLoading}
+            forkingEntryId={forkingEntryId}
             onSelect={onInspectSessionHistory}
+            onFork={onForkSession}
             onClose={() => setTreeOpen(false)}
           />
         ) : null}

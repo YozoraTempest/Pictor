@@ -27,6 +27,7 @@ export type WorkspaceBridge = Pick<
   | 'deleteSession'
   | 'getSession'
   | 'inspectSessionHistory'
+  | 'forkSession'
   | 'startRun'
   | 'approveCommand'
   | 'rejectCommand'
@@ -52,6 +53,7 @@ export interface WorkspaceController {
   sessionTree: SessionTreeView | null
   sessionTreeLoading: boolean
   canInspectSessionTree: boolean
+  forkingEntryId: string | null
   activeSessionSummary: SessionSummary | null
   activeRun: RunRecord | null
   anotherSessionRunning: boolean
@@ -73,6 +75,7 @@ export interface WorkspaceController {
   deleteSession: (sessionId: string) => Promise<boolean>
   renameSession: (sessionId: string, title: string) => Promise<boolean>
   inspectSessionHistory: (entryId: string | null) => Promise<void>
+  forkSession: (entryId: string) => Promise<boolean>
   startRun: () => Promise<void>
   queueMessage: (mode: 'steer' | 'follow-up') => Promise<void>
   clearQueue: () => Promise<void>
@@ -95,6 +98,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const [session, setSession] = useState<SessionRecord | null>(null)
   const [sessionTree, setSessionTree] = useState<SessionTreeView | null>(null)
   const [sessionTreeLoading, setSessionTreeLoading] = useState(false)
+  const [forkingEntryId, setForkingEntryId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [sessionLoading, setSessionLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -301,6 +305,31 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       ])
     },
     [bridge, loadSession, refreshSnapshot, updateSelectedSessionId],
+  )
+
+  const forkSession = useCallback(
+    async (entryId: string): Promise<boolean> => {
+      const sourceSessionId = selectedSessionIdRef.current
+      if (!sourceSessionId || forkingEntryId) return false
+      setForkingEntryId(entryId)
+      setActionError(null)
+      try {
+        const response = await bridge.forkSession({ sessionId: sourceSessionId, entryId })
+        if (!response.ok) {
+          setActionError(response.error.message)
+          return false
+        }
+        if (!response.value) return false
+        await selectSession(response.value.projectId, response.value.id)
+        return true
+      } catch (error) {
+        setActionError(errorMessage(error))
+        return false
+      } finally {
+        setForkingEntryId(null)
+      }
+    },
+    [bridge, forkingEntryId, selectSession],
   )
 
   const pickProject = useCallback(
@@ -549,6 +578,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     sessionTree,
     sessionTreeLoading,
     canInspectSessionTree,
+    forkingEntryId,
     activeSessionSummary,
     activeRun,
     anotherSessionRunning,
@@ -570,6 +600,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     deleteSession,
     renameSession,
     inspectSessionHistory,
+    forkSession,
     startRun,
     queueMessage,
     clearQueue,

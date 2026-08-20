@@ -7,6 +7,8 @@ import {
   runtimeHostMessageSchema,
   type RuntimeCommand,
   type RuntimeEvent,
+  type RuntimeForkConfig,
+  type RuntimeForkResult,
   type RuntimeStartConfig,
 } from '../../shared/runtime-protocol.js'
 import type { RuntimePluginBootstrap } from '../../shared/plugins.js'
@@ -21,6 +23,11 @@ export class RuntimeSupervisor {
   private readyPromise: Promise<void> | null = null
   private resolveReady: (() => void) | null = null
   private rejectReady: ((error: Error) => void) | null = null
+  private pendingFork: {
+    operationId: string
+    resolve: (result: RuntimeForkResult) => void
+    reject: (error: Error) => void
+  } | null = null
 
   constructor(
     private readonly onEvent: (event: RuntimeEvent) => void,
@@ -33,6 +40,24 @@ export class RuntimeSupervisor {
     this.activeRunId = config.runId
     this.activeSessionId = config.sessionId
     this.post(config)
+  }
+
+  async fork(config: RuntimeForkConfig): Promise<RuntimeForkResult> {
+    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
+    await this.ensureChild()
+    this.activeRunId = config.operationId
+    this.activeSessionId = config.sourceSessionId
+    return new Promise<RuntimeForkResult>((resolve, reject) => {
+      this.pendingFork = { operationId: config.operationId, resolve, reject }
+      try {
+        this.post(config)
+      } catch (error) {
+        this.pendingFork = null
+        this.activeRunId = null
+        this.activeSessionId = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
   }
 
   approve(runId: string, callId: string): void {
@@ -84,6 +109,8 @@ export class RuntimeSupervisor {
       })
     })
     this.child = null
+    this.pendingFork?.reject(new Error('Agent Runtime 已关闭'))
+    this.pendingFork = null
     this.activeRunId = null
     this.activeSessionId = null
   }
@@ -136,7 +163,22 @@ export class RuntimeSupervisor {
     }
     if (parsed.data.type === 'host.fatal') {
       this.rejectReady?.(new Error(parsed.data.message))
+      if (this.pendingFork) {
+        this.pendingFork.reject(new Error(parsed.data.message))
+        this.pendingFork = null
+        this.activeRunId = null
+        this.activeSessionId = null
+      }
       this.emitSyntheticFailure(parsed.data.message)
+      return
+    }
+    if (parsed.data.type === 'host.forkResult') {
+      const pending = this.pendingFork
+      if (!pending || pending.operationId !== parsed.data.operationId) return
+      this.pendingFork = null
+      this.activeRunId = null
+      this.activeSessionId = null
+      pending.resolve(parsed.data)
       return
     }
     const event = runtimeEventSchema.parse(parsed.data)
@@ -154,6 +196,12 @@ export class RuntimeSupervisor {
     this.resolveReady = null
     this.rejectReady?.(new Error('Agent Runtime 在就绪前退出'))
     this.rejectReady = null
+    if (this.pendingFork) {
+      this.pendingFork.reject(new Error('Agent Runtime 在 Fork 完成前退出'))
+      this.pendingFork = null
+      this.activeRunId = null
+      this.activeSessionId = null
+    }
     if (this.activeRunId) this.emitSyntheticFailure('Agent Runtime 进程意外退出')
   }
 

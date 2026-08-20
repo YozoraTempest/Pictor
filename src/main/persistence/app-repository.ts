@@ -281,6 +281,39 @@ export class AppRepository {
     return this.sessionPersistence.inspectHistory(sessionId, selectedEntryId)
   }
 
+  async createForkedSession(
+    sourceSessionId: string,
+    targetSessionId: string,
+    identity: { id: string; file: string },
+  ): Promise<SessionSummary> {
+    this.ensureInitialized()
+    if (this.state.sessions.some((session) => session.id === targetSessionId)) {
+      throw new PictorError('invalid-input', '目标 Session 已存在')
+    }
+    const source = await this.getSession(sourceSessionId)
+    const now = new Date().toISOString()
+    const target = sessionRecordSchema.parse({
+      schemaVersion: 1,
+      id: targetSessionId,
+      projectId: source.projectId,
+      title: `${source.title} (Fork)`.slice(0, 120),
+      messages: [],
+      runs: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    await this.sessionPersistence.bindPiSession(target, identity)
+    const rebuilt = await this.sessionPersistence.rebuildProjection(target.id)
+    rebuilt.createdAt = now
+    rebuilt.updatedAt = now
+    const summary = await this.sessionPersistence.save(rebuilt)
+    this.state.sessions.push(summary)
+    this.state.selectedProjectId = target.projectId
+    this.state.selectedSessionId = target.id
+    await this.persistState()
+    return summary
+  }
+
   async saveSession(session: SessionRecord): Promise<SessionSummary> {
     this.ensureInitialized()
     const parsed = sessionRecordSchema.parse(session)

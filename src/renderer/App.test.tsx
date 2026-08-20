@@ -76,6 +76,7 @@ function createBridge(
       session
         ? ok({ session, tree: null })
         : { ok: false, error: { code: 'not-found', message: '不存在' } },
+    forkSession: async () => ok(null),
     getSettings: async () => ok(snapshot.settings),
     saveSettings: async () => ok(snapshot.settings!),
     testSettings: async () => ok({ outcome: 'success', message: '连接成功' }),
@@ -212,6 +213,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   const activeSession = createProjectedSession('Active response details')
   const historicalSession = createProjectedSession('Archived response details')
   const bridge = createBridge(snapshot, activeSession)
+  bridge.forkSession = vi.fn(async () => ok(null))
   bridge.inspectSessionHistory = vi.fn(async ({ entryId }) => {
     const selectedEntryId = entryId ?? 'active-entry'
     return ok({
@@ -259,6 +261,11 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   expect(screen.getByText(/正在查看历史分支/)).toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: '任务描述' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '发送任务' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Fork 为新 Session' }))
+  expect(bridge.forkSession).toHaveBeenCalledWith({
+    sessionId,
+    entryId: 'historical-entry',
+  })
 
   fireEvent.click(screen.getByRole('button', { name: '返回当前节点' }))
   expect(await screen.findByText('Active response details')).toBeInTheDocument()

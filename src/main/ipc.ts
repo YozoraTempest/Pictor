@@ -6,6 +6,7 @@ import {
   approvalResolutionRequestSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
+  forkSessionRequestSchema,
   inspectSessionHistoryRequestSchema,
   listModelsRequestSchema,
   projectIdRequestSchema,
@@ -210,6 +211,14 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = inspectSessionHistoryRequestSchema.parse(input)
       return repository.inspectSessionHistory(request.sessionId, request.entryId)
+    })
+  })
+
+  ipcMain.handle('session:fork', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = forkSessionRequestSchema.parse(input)
+      return runtimeCoordinator.forkSession(request.sessionId, request.entryId)
     })
   })
 

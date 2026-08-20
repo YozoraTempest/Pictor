@@ -211,11 +211,13 @@ export function App({
         sessionTree={workspace.sessionTree}
         sessionTreeLoading={workspace.sessionTreeLoading}
         canInspectSessionTree={workspace.canInspectSessionTree}
+        forkingEntryId={workspace.forkingEntryId}
         onDraftChange={workspace.setDraft}
         onSend={() => void workspace.startRun()}
         onQueue={(mode) => void workspace.queueMessage(mode)}
         onClearQueue={() => void workspace.clearQueue()}
         onInspectSessionHistory={(entryId) => void workspace.inspectSessionHistory(entryId)}
+        onForkSession={(entryId) => void workspace.forkSession(entryId)}
         onStop={(runId) => void workspace.stopRun(runId)}
         onApprove={(runId, callId) => void workspace.resolveApproval(runId, callId, true)}
         onReject={(runId, callId) => void workspace.resolveApproval(runId, callId, false)}
