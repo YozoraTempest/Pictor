@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { Project, RunRecord, SessionRecord, SessionSummary } from '../../shared/domain'
 import type {
-  AppSnapshot,
-  PictorBridge,
-  ProjectCandidate,
-  RuntimeEvent,
-} from '../../shared/desktop-bridge'
+  Project,
+  RunRecord,
+  SessionRecord,
+  SessionSummary,
+  UsageSnapshot,
+} from '../../shared/domain'
+import type { AppSnapshot, PictorBridge, ProjectCandidate } from '../../shared/desktop-bridge'
 import type { ModelSettings } from '../../shared/model'
 
 const activeStatuses = new Set(['queued', 'running', 'awaiting-approval', 'stopping'])
-type RuntimeUsage = Extract<RuntimeEvent, { type: 'usage.updated' }>
+type RuntimeUsage = UsageSnapshot
 
 export type WorkspaceBridge = Pick<
   PictorBridge,
@@ -127,6 +128,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       const requestId = ++sessionRequestId.current
       if (!sessionId) {
         setSession(null)
+        setRuntimeUsage(null)
         setSessionLoading(false)
         return
       }
@@ -135,9 +137,11 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       if (requestId !== sessionRequestId.current) return
       if (response.ok) {
         setSession(response.value)
+        setRuntimeUsage(response.value.usage ?? null)
         setActionError(null)
       } else {
         setSession(null)
+        setRuntimeUsage(null)
         setActionError(response.error.message)
       }
       setSessionLoading(false)

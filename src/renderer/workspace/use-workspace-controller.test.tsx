@@ -36,6 +36,17 @@ function createSession(
     runStatus?: SessionRecord['runs'][number]['status']
     messageContent?: string
     toolOutput?: string | null
+    usage?: {
+      tokens: {
+        input: number
+        output: number
+        cacheRead: number
+        cacheWrite: number
+        total: number
+      }
+      cost: number
+      context: null
+    }
   } = {},
 ): SessionRecord {
   const runStatus = options.runStatus
@@ -44,6 +55,7 @@ function createSession(
     id,
     projectId,
     title: options.title ?? id,
+    usage: options.usage,
     messages:
       options.messageContent === undefined
         ? []
@@ -416,6 +428,42 @@ describe('useWorkspaceController', () => {
     expect(result.current.activeRun?.status).toBe('completed')
     await act(async () => staleRefresh.resolve(ok(running)))
     expect(result.current.activeRun?.status).toBe('completed')
+  })
+
+  it('restores usage from the terminal Session Projection without a live usage event', async () => {
+    let runtimeListener: ((event: RuntimeEvent) => void) | null = null
+    const usage = {
+      tokens: { input: 30, output: 13, cacheRead: 5, cacheWrite: 1, total: 49 },
+      cost: 3.75,
+      context: null,
+    }
+    const running = createSession(firstSessionId, { runStatus: 'running' })
+    const completed = createSession(firstSessionId, { runStatus: 'completed', usage })
+    const bridge = createBridge({
+      snapshot: createSnapshot(firstSessionId, 'running'),
+      sessions: { [firstSessionId]: running },
+      onRuntimeListener: (listener) => {
+        runtimeListener = listener
+      },
+    })
+    bridge.getSession.mockResolvedValueOnce(ok(running)).mockResolvedValue(ok(completed))
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.session).toEqual(running))
+    if (!runtimeListener) throw new Error('Runtime listener was not registered')
+
+    act(() => {
+      runtimeListener?.({
+        type: 'run.stateChanged',
+        runId,
+        sessionId: firstSessionId,
+        status: 'completed',
+        error: null,
+        at: now,
+      })
+    })
+
+    await waitFor(() => expect(result.current.activeRun?.status).toBe('completed'))
+    expect(result.current.runtimeUsage).toEqual(usage)
   })
 
   it('coordinates Run intents and reports bridge failures', async () => {

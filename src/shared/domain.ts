@@ -64,6 +64,24 @@ export const runRecordSchema = z.object({
   updatedAt: timestampSchema,
 })
 
+export const usageSnapshotSchema = z.object({
+  tokens: z.object({
+    input: z.number().nonnegative(),
+    output: z.number().nonnegative(),
+    cacheRead: z.number().nonnegative(),
+    cacheWrite: z.number().nonnegative(),
+    total: z.number().nonnegative(),
+  }),
+  cost: z.number().nonnegative(),
+  context: z
+    .object({
+      tokens: z.number().nonnegative().nullable(),
+      contextWindow: z.number().positive(),
+      percent: z.number().nonnegative().nullable(),
+    })
+    .nullable(),
+})
+
 export const sessionRecordSchema = z.object({
   schemaVersion: z.literal(1),
   id: idSchema,
@@ -71,6 +89,7 @@ export const sessionRecordSchema = z.object({
   title: z.string().trim().min(1).max(120),
   messages: z.array(messageSchema),
   runs: z.array(runRecordSchema),
+  usage: usageSnapshotSchema.nullable().optional(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
 })
@@ -107,6 +126,7 @@ export type Project = z.infer<typeof projectSchema>
 export type SessionRecord = z.infer<typeof sessionRecordSchema>
 export type SessionSummary = z.infer<typeof sessionSummarySchema>
 export type SessionHistoryState = z.infer<typeof sessionHistoryStateSchema>
+export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>
 export type RunRecord = z.infer<typeof runRecordSchema>
 export type ToolEvent = z.infer<typeof toolEventSchema>
 export type DataIssue = z.infer<typeof dataIssueSchema>

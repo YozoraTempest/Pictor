@@ -26,11 +26,16 @@ import { isValidElement, useEffect, useRef, useState, type ReactNode } from 'rea
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import type { Project, RunRecord, SessionRecord, ToolEvent } from '../../shared/domain'
+import type {
+  Project,
+  RunRecord,
+  SessionRecord,
+  ToolEvent,
+  UsageSnapshot,
+} from '../../shared/domain'
 import type { AppInfo } from '../../shared/app-info'
-import type { RuntimeEvent } from '../../shared/desktop-bridge'
 
-type RuntimeUsage = Extract<RuntimeEvent, { type: 'usage.updated' }>
+type RuntimeUsage = UsageSnapshot
 
 interface ConversationProps {
   project: Project | null

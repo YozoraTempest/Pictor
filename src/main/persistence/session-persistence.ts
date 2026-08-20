@@ -22,7 +22,11 @@ import type { SecretStore } from './secret-store.js'
 import { projectPiSessionJsonl } from './pi-session-projection.js'
 
 const activeRunStatuses = new Set(['queued', 'running', 'awaiting-approval', 'stopping'])
-const sessionProjectionSchema = sessionRecordSchema.pick({ messages: true, runs: true })
+const sessionProjectionSchema = sessionRecordSchema.pick({
+  messages: true,
+  runs: true,
+  usage: true,
+})
 const persistedSessionV2Schema = z.object({
   schemaVersion: z.literal(2),
   id: sessionRecordSchema.shape.id,
@@ -226,6 +230,7 @@ export class SessionPersistence {
     const projection = projectPiSessionJsonl(await readFile(transcriptPath, 'utf8'))
     session.messages = projection.messages
     session.runs = projection.runs
+    session.usage = projection.usage
     session.updatedAt =
       [
         ...session.messages.map((message) => message.updatedAt),
@@ -349,6 +354,7 @@ export class SessionPersistence {
       projection: {
         messages: session.messages,
         runs: session.runs,
+        usage: session.usage ?? null,
         generatedAt: new Date().toISOString(),
       },
       createdAt: session.createdAt,
@@ -365,6 +371,7 @@ export class SessionPersistence {
       title: session.title,
       messages: session.projection.messages,
       runs: session.projection.runs,
+      usage: session.projection.usage ?? null,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
     })

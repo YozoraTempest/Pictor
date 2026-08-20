@@ -38,6 +38,14 @@ describe('Pi Session Projection', () => {
             },
           ],
           stopReason: 'toolUse',
+          usage: {
+            input: 10,
+            output: 5,
+            cacheRead: 2,
+            cacheWrite: 1,
+            totalTokens: 18,
+            cost: { input: 0.5, output: 0.75, cacheRead: 0, cacheWrite: 0, total: 1.25 },
+          },
         },
       },
       {
@@ -62,6 +70,14 @@ describe('Pi Session Projection', () => {
           role: 'assistant',
           content: [{ type: 'text', text: 'Completed' }],
           stopReason: 'stop',
+          usage: {
+            input: 20,
+            output: 8,
+            cacheRead: 3,
+            cacheWrite: 0,
+            totalTokens: 31,
+            cost: { input: 1, output: 1.5, cacheRead: 0, cacheWrite: 0, total: 2.5 },
+          },
         },
       },
     ])
@@ -84,6 +100,11 @@ describe('Pi Session Projection', () => {
       output: 'written',
     })
     expect(first.runs[0]?.updatedAt).toBe(resultTimestamp)
+    expect(first.usage).toEqual({
+      tokens: { input: 30, output: 13, cacheRead: 5, cacheWrite: 1, total: 49 },
+      cost: 3.75,
+      context: null,
+    })
   })
 
   it('follows the latest leaf branch and preserves compaction summaries', () => {

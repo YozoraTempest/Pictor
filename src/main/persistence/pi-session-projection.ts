@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto'
 
+import { z } from 'zod'
+
 import {
   messageSchema,
   runRecordSchema,
   toolEventSchema,
+  usageSnapshotSchema,
   type RunRecord,
   type SessionRecord,
   type ToolEvent,
@@ -27,9 +30,19 @@ interface PiMessage {
   isError?: boolean
   errorMessage?: string
   stopReason?: string
+  usage?: unknown
 }
 
-export type SessionProjection = Pick<SessionRecord, 'messages' | 'runs'>
+const piUsageSchema = z.object({
+  input: z.number().nonnegative(),
+  output: z.number().nonnegative(),
+  cacheRead: z.number().nonnegative(),
+  cacheWrite: z.number().nonnegative(),
+  totalTokens: z.number().nonnegative(),
+  cost: z.object({ total: z.number().nonnegative() }),
+})
+
+export type SessionProjection = Pick<SessionRecord, 'messages' | 'runs' | 'usage'>
 
 export function projectPiSessionJsonl(content: string): SessionProjection {
   const entries = content
@@ -51,6 +64,15 @@ export function projectPiSessionJsonl(content: string): SessionProjection {
   const messages: SessionRecord['messages'] = []
   const runs: RunRecord[] = []
   const toolsByCallId = new Map<string, ToolEvent>()
+  const usageTotals = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0,
+    cost: 0,
+    entries: 0,
+  }
 
   for (const entry of branch) {
     if (entry.type === 'compaction' && typeof entry.summary === 'string') {
@@ -95,6 +117,16 @@ export function projectPiSessionJsonl(content: string): SessionProjection {
       continue
     }
     if (message.role === 'assistant') {
+      const usage = piUsageSchema.safeParse(message.usage)
+      if (usage.success) {
+        usageTotals.input += usage.data.input
+        usageTotals.output += usage.data.output
+        usageTotals.cacheRead += usage.data.cacheRead
+        usageTotals.cacheWrite += usage.data.cacheWrite
+        usageTotals.total += usage.data.totalTokens
+        usageTotals.cost += usage.data.cost.total
+        usageTotals.entries += 1
+      }
       const toolEvents = toolCalls(message.content, entry.id!, timestamp)
       const stopped = message.stopReason === 'aborted'
       const failed =
@@ -134,7 +166,24 @@ export function projectPiSessionJsonl(content: string): SessionProjection {
     }
   }
 
-  return { messages, runs }
+  return {
+    messages,
+    runs,
+    usage:
+      usageTotals.entries > 0
+        ? usageSnapshotSchema.parse({
+            tokens: {
+              input: usageTotals.input,
+              output: usageTotals.output,
+              cacheRead: usageTotals.cacheRead,
+              cacheWrite: usageTotals.cacheWrite,
+              total: usageTotals.total,
+            },
+            cost: usageTotals.cost,
+            context: null,
+          })
+        : null,
+  }
 }
 
 function toolCalls(content: unknown, entryId: string, timestamp: string): ToolEvent[] {

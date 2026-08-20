@@ -148,6 +148,14 @@ describe('SessionPersistence', () => {
             role: 'assistant',
             content: [{ type: 'text', text: 'Projected from JSONL' }],
             stopReason: 'stop',
+            usage: {
+              input: 12,
+              output: 8,
+              cacheRead: 2,
+              cacheWrite: 1,
+              totalTokens: 23,
+              cost: { input: 0.5, output: 0.75, cacheRead: 0, cacheWrite: 0, total: 1.25 },
+            },
           },
         }),
         '',
@@ -162,6 +170,11 @@ describe('SessionPersistence', () => {
       'Pi is authoritative',
       'Projected from JSONL',
     ])
+    expect(rebuilt.usage).toEqual({
+      tokens: { input: 12, output: 8, cacheRead: 2, cacheWrite: 1, total: 23 },
+      cost: 1.25,
+      context: null,
+    })
     expect(rebuilt.runs).toEqual([expect.objectContaining({ status: 'completed', toolEvents: [] })])
     const stored = JSON.parse(
       await readFile(join(dataDirectory, 'sessions', `${session.id}.json`), 'utf8'),
@@ -174,6 +187,11 @@ describe('SessionPersistence', () => {
         piSessionFile: piFile,
       },
       projection: {
+        usage: {
+          tokens: { input: 12, output: 8, cacheRead: 2, cacheWrite: 1, total: 23 },
+          cost: 1.25,
+          context: null,
+        },
         messages: expect.arrayContaining([
           expect.objectContaining({ content: 'Projected from JSONL' }),
         ]),

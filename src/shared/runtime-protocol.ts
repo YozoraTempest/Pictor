@@ -1,6 +1,12 @@
 import { z } from 'zod'
 
-import { idSchema, runStatusSchema, timestampSchema, toolEventSchema } from './domain.js'
+import {
+  idSchema,
+  runStatusSchema,
+  timestampSchema,
+  toolEventSchema,
+  usageSnapshotSchema,
+} from './domain.js'
 import { modelSettingsInputSchema } from './model.js'
 
 const runtimeEventBaseSchema = z.object({
@@ -92,21 +98,7 @@ export const runtimeEventSchema = z.discriminatedUnion('type', [
   }),
   runtimeEventBaseSchema.extend({
     type: z.literal('usage.updated'),
-    tokens: z.object({
-      input: z.number().nonnegative(),
-      output: z.number().nonnegative(),
-      cacheRead: z.number().nonnegative(),
-      cacheWrite: z.number().nonnegative(),
-      total: z.number().nonnegative(),
-    }),
-    cost: z.number().nonnegative(),
-    context: z
-      .object({
-        tokens: z.number().nonnegative().nullable(),
-        contextWindow: z.number().positive(),
-        percent: z.number().nonnegative().nullable(),
-      })
-      .nullable(),
+    ...usageSnapshotSchema.shape,
   }),
 ])
 

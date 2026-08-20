@@ -314,6 +314,17 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
         piSessionFile: expect.stringMatching(/\.jsonl$/),
       },
       projection: {
+        usage: {
+          tokens: {
+            input: expect.any(Number),
+            output: expect.any(Number),
+            cacheRead: expect.any(Number),
+            cacheWrite: expect.any(Number),
+            total: expect.any(Number),
+          },
+          cost: expect.any(Number),
+          context: null,
+        },
         messages: expect.arrayContaining([
           expect.objectContaining({ content: expect.stringContaining('Remaining work: none.') }),
         ]),
