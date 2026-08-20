@@ -77,10 +77,28 @@ export const sessionRecordSchema = z.object({
 
 export const sessionSummarySchema = sessionRecordSchema
   .pick({ id: true, projectId: true, title: true, createdAt: true, updatedAt: true })
-  .extend({ lastRunStatus: runStatusSchema.nullable() })
+  .extend({
+    lastRunStatus: runStatusSchema.nullable(),
+    historyAuthority: z.enum(['pi-jsonl', 'legacy-import']).optional(),
+  })
+
+export const sessionHistoryStateSchema = z.object({
+  authority: z.enum(['pi-jsonl', 'legacy-import']),
+  piSessionId: z.string().min(1).nullable(),
+  piSessionFile: z.string().min(1).nullable(),
+  legacyImport: z.object({
+    status: z.enum(['not-required', 'pending', 'imported']),
+    sourceFile: z.string().min(1).nullable(),
+  }),
+})
 
 export const dataIssueSchema = z.object({
-  code: z.enum(['session-corrupt', 'persistence-failed', 'credential-migration-failed']),
+  code: z.enum([
+    'session-corrupt',
+    'persistence-failed',
+    'credential-migration-failed',
+    'legacy-session-import-pending',
+  ]),
   sessionId: idSchema.nullable(),
   message: z.string().min(1),
 })
@@ -88,6 +106,7 @@ export const dataIssueSchema = z.object({
 export type Project = z.infer<typeof projectSchema>
 export type SessionRecord = z.infer<typeof sessionRecordSchema>
 export type SessionSummary = z.infer<typeof sessionSummarySchema>
+export type SessionHistoryState = z.infer<typeof sessionHistoryStateSchema>
 export type RunRecord = z.infer<typeof runRecordSchema>
 export type ToolEvent = z.infer<typeof toolEventSchema>
 export type DataIssue = z.infer<typeof dataIssueSchema>

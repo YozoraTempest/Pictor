@@ -51,3 +51,15 @@ _Avoid_: Plugin group, mandatory preset
 **Native Pi Extension**:
 A Pi Agent Extension installed and executed in its original Pi format without conversion into a Pictor Plugin or Module.
 _Avoid_: Pi Plugin wrapper, compatible Plugin
+
+**Pi Session History**:
+The authoritative Agent conversation history identified by a Pi Session and preserving its tree, compaction, usage, and extension entries.
+_Avoid_: Flat message history, Pictor transcript
+
+**Session Projection**:
+A rebuildable desktop representation of Pi Session History used for rendering and navigation.
+_Avoid_: Session source of truth, duplicate history
+
+**Legacy Session Import**:
+A preserved pre-authority Pictor Session awaiting explicit conversion into Pi Session History.
+_Avoid_: Automatic migration, discarded old Session
