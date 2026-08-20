@@ -317,7 +317,7 @@ function Timeline({
             <div className="turn-label">{message.role === 'user' ? '你' : 'Pictor'}</div>
             {run?.toolEvents.map((tool) => (
               <ToolActivity
-                key={tool.id}
+                key={tool.callId}
                 run={run}
                 tool={tool}
                 busy={approvalBusyCallId === tool.callId}
