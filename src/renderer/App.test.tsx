@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Info } from 'lucide-react'
 import { vi } from 'vitest'
 
@@ -144,6 +144,123 @@ it('renders the empty delegate workspace from a persisted snapshot', async () =>
   expect(await screen.findByRole('heading', { name: '选择一个项目开始' })).toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: '新建项目' })).toHaveLength(3)
   expect(screen.getByText('v0.1.0')).toBeInTheDocument()
+})
+
+it('keeps manually expanded tool output open across runtime updates', async () => {
+  const snapshot: AppSnapshot = {
+    projects: [
+      {
+        id: projectId,
+        name: 'Pictor',
+        rootPath: 'C:\\Pictor',
+        trustedAt: now,
+        availability: 'available',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    sessions: [
+      {
+        id: sessionId,
+        projectId,
+        title: 'Running session',
+        lastRunStatus: 'running',
+        historyAuthority: 'pi-jsonl',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    selectedProjectId: projectId,
+    selectedSessionId: sessionId,
+    settings: null,
+    issues: [],
+  }
+  const session: SessionRecord = {
+    schemaVersion: 1,
+    id: sessionId,
+    projectId,
+    title: 'Running session',
+    messages: [
+      {
+        id: messageId,
+        role: 'assistant',
+        content: 'Working',
+        status: 'streaming',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    runs: [
+      {
+        id: runId,
+        status: 'running',
+        error: null,
+        toolEvents: [
+          {
+            id: toolId,
+            callId: 'extension-call',
+            kind: 'custom',
+            label: 'ask_gui',
+            path: null,
+            command: null,
+            status: 'running',
+            output: 'GUI response',
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    createdAt: now,
+    updatedAt: now,
+  }
+  const listeners: Array<(event: RuntimeEvent) => void> = []
+  const bridge = createBridge(snapshot, session)
+  let currentSession = session
+  const getSession = vi.fn(async () => ok(currentSession))
+  bridge.getSession = getSession
+  bridge.onRuntimeEvent = (listener) => {
+    listeners.push(listener)
+    return () => undefined
+  }
+  renderApp(bridge)
+
+  const output = await screen.findByText('GUI response')
+  expect(output).not.toBeVisible()
+  fireEvent.click(screen.getByText('查看输出'))
+  expect(output).toBeVisible()
+
+  currentSession = {
+    ...session,
+    messages: session.messages.map((message) => ({ ...message, status: 'completed' as const })),
+    runs: session.runs.map((run) => ({
+      ...run,
+      status: 'completed' as const,
+      toolEvents: run.toolEvents.map((tool) => ({
+        ...tool,
+        id: '88888888-8888-4888-8888-888888888888',
+        status: 'completed' as const,
+      })),
+    })),
+  }
+  act(() => {
+    for (const listener of listeners) {
+      listener({
+        type: 'tool.completed',
+        runId,
+        sessionId,
+        callId: 'extension-call',
+        output: 'GUI response',
+        isError: false,
+        at: now,
+      })
+    }
+  })
+
+  await waitFor(() => expect(getSession).toHaveBeenCalledTimes(2))
+  expect(screen.getByText('GUI response')).toBeVisible()
 })
 
 it('opens the Session Tree, inspects a historical branch, and returns to the active leaf', async () => {
