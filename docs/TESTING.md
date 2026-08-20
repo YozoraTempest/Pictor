@@ -74,6 +74,10 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   的 schema v1 迁移，以及无 Pi JSONL 的 v1 只读归档，不能用旧平面消息自动制造新上下文。
 - Session Tree View 测试必须覆盖完整节点结构、active leaf、任意 selected entry Projection、显式
   label、历史节点只读状态和返回 active leaf；inspect 不得改写 JSONL 或持久化的 active Projection。
+- Pi Session Tree Navigation 测试必须覆盖 completed/cancelled/failed host result、持久化 active leaf
+  cursor、精确恢复已绑定 JSONL、同一 Session Projection 重建、并发互斥和 User/Custom Message
+  节点禁用。Linux E2E 必须观察 `session_before_tree`/`session_tree`，并证明下一次 Run 从导航后的
+  分支追加消息；第一版固定 `summarize: false`。
 - Pi Session Fork 测试必须覆盖 completed/cancelled/failed host result、精确源 JSONL、独立目标
   identity、源文件保留、目标文件移动和新 Pictor Session 提交；E2E 必须由原生 Extension 观察到
   `session_before_fork`、`session_shutdown(reason: "fork")` 与 `session_start(reason: "fork")`。
@@ -84,9 +88,9 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   脱敏、失效 cwd override、完整 Tree Projection 和新 Pictor Session 提交；文件路径只能由 Main
   的原生选择器取得。E2E 必须观察 `session_before_switch`、`session_shutdown(reason: "resume")`
   与 `session_start(reason: "resume")`。
-- Pi Session Export 测试必须覆盖 JSONL/HTML completed/failed host result、Main 原生保存选择器取消、源历史
-  保留和禁止覆盖权威 JSONL；Linux E2E 必须证明 JSONL 只含活跃分支、HTML 保留完整 Tree，并从
-  安装到用户 Store 的 Runtime Plugin 读取 Pi 导出模板与内置主题资产。
+- Pi Session Export 测试必须覆盖 JSONL/HTML completed/failed host result、Main 原生保存选择器
+  取消、源历史字节不变和禁止覆盖权威 JSONL；Linux E2E 必须证明 JSONL 只含活跃分支、HTML
+  保留完整 Tree，并从安装到用户 Store 的 Runtime Plugin 读取 Pi 导出模板与内置主题资产。
 - 零 Plugin E2E 先通过真实 Store 将全部 Bundled Plugin 标记为 `removed`，重启后只能由 Core
   Shell 提供 Plugin Manager；安全模式使用同一 Core Shell，但不改变用户 Registry。
 - `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，

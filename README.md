@@ -8,6 +8,7 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 - 添加、移除和重新关联本地项目，项目路径经过规范化后作为访问边界；
 - 创建、切换、重命名和删除 Session，重启后保留消息、运行与工具记录；
 - 打开 Pi Session Tree，查看完整分支结构并以只读 Projection 检查任意历史节点；
+- 从 Tree 中的历史非 User Message 节点执行 Pi 原生同文件导航，并从该分支继续下一次 Run；
 - 从 Session Tree 的历史节点执行 Pi 原生 Fork，创建并切换到独立的新 Pictor Session；
 - 从 Session Tree 的活跃叶节点 Clone 当前分支，创建并切换到独立的新 Pictor Session；
 - 从项目菜单导入原生 Pi Session JSONL 副本，保留完整 Tree 并绑定到当前项目；
