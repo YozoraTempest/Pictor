@@ -185,6 +185,7 @@ export function App({
     const response = await window.pictor.saveSessionRuntimeControls({
       sessionId: workspace.selectedSessionId,
       controls: {
+        modelId: sessionControls.modelId,
         thinkingLevel: sessionControls.thinkingLevel,
         activeTools: sessionControls.activeTools,
         steeringMode: sessionControls.steeringMode,
@@ -611,7 +612,14 @@ export function App({
           <div className="form-grid">
             <label className="field field--full">
               <span>Model</span>
-              <input value={sessionControls.modelId} readOnly />
+              <input
+                value={sessionControls.modelId}
+                onChange={(event) =>
+                  setSessionControls((current) =>
+                    current ? { ...current, modelId: event.target.value } : current,
+                  )
+                }
+              />
             </label>
             <label className="field field--full">
               <span>Thinking Level</span>

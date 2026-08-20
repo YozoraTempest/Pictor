@@ -91,6 +91,8 @@ bundle 一同进入 Store，Node 内置模块保持外部导入，npm 实现依�
 
 `pictor.pi-extension-host` 依赖 `pictor.pi-agent-runtime`，但不包装 Pi Extension。Plugin Store
 把原生 Extension 与 Pi Package 作为独立 Registry entry 保存，Runtime 入口只贡献原生资源路径；
+明确安装的本地 Extension 优先使用 live source path，使修改在下一次 Run 的 ResourceLoader 重建时
+生效；source 不可用时回退到 Store 副本。
 Pi `DefaultResourceLoader`、Jiti virtual modules 和 ExtensionRunner 负责加载原文件、注册 Tool、
 Command 与事件。未知 Tool 映射为通用 `custom` Tool event。`ExtensionUiBroker` 以 RPC mode 把
 select/confirm/input/editor 映射到 Renderer modal，把 notify/status/文本 widget 映射到会话 UI；
@@ -155,8 +157,9 @@ Pi Session Compaction 是可取消的同文件 Runtime operation。Main 复用 S
 观察已提交 entry。成功后 Main 保存新 active leaf 并从权威 JSONL 重建 Projection/Tree；取消或失败
 不制造摘要。Branch Summary 通过同一取消 seam 调用 `abortBranchSummary()`。
 
-Session Runtime Controls 是 schema v2 中的可选导航偏好，只保存 Thinking Level、Active Tools 和
-Steering/Follow-up delivery mode；Model endpoint 与凭据继续由 Model Provider Settings 管理。每次
+Session Runtime Controls 是 schema v2 中的可选导航偏好，只保存 Thinking Level、Active Tools、
+Steering/Follow-up delivery mode 和可选 Model ID override；endpoint 与凭据继续由 Model Provider
+Settings 管理。每次
 精确恢复 Pi Session 时，Runtime 把偏好注入 in-memory SettingsManager 和 AgentSession，Pi 负责
 Thinking clamp、Tool registry 过滤和 queue delivery。Model/Thinking 的当前值从 active JSONL branch
 的 change entry 或 assistant message 重建并显示，不把偏好误当作运行结果。Pictor title 在下一次

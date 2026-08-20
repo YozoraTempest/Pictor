@@ -282,6 +282,7 @@ describe('SessionPersistence', () => {
     expect((await persistence.read(session.id)).messages).toEqual([])
 
     await persistence.setRuntimePreferences(session.id, {
+      modelId: 'session-model',
       thinkingLevel: 'high',
       activeTools: ['pictor_read'],
       steeringMode: 'all',
@@ -289,6 +290,7 @@ describe('SessionPersistence', () => {
       projectExtensionsEnabled: true,
     })
     expect(persistence.getRuntimePaths(session.projectId, session.id).runtimePreferences).toEqual({
+      modelId: 'session-model',
       thinkingLevel: 'high',
       activeTools: ['pictor_read'],
       steeringMode: 'all',
@@ -302,6 +304,7 @@ describe('SessionPersistence', () => {
     expect(persistence.getRuntimePaths(session.projectId, session.id)).toMatchObject({
       activeLeafId: null,
       runtimePreferences: {
+        modelId: 'session-model',
         thinkingLevel: 'high',
         projectExtensionsEnabled: true,
       },

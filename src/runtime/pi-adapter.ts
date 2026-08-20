@@ -214,7 +214,14 @@ async function createProductionSession({
       { projectTrusted: true },
     )
     const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false })
-    const model = modelProvider.register(modelRuntime, config.settings, config.apiKey)
+    const model = modelProvider.register(
+      modelRuntime,
+      {
+        ...config.settings,
+        modelId: config.runtimePreferences?.modelId ?? config.settings.modelId,
+      },
+      config.apiKey,
+    )
     const services = await createAgentSessionServices({
       cwd,
       agentDir,

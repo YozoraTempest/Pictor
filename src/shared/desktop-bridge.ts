@@ -91,7 +91,7 @@ export const sessionRuntimeControlsSchema = z.object({
   projectExtensionsEnabled: z.boolean(),
 })
 export const saveSessionRuntimeControlsRequestSchema = sessionIdRequestSchema.extend({
-  controls: sessionRuntimeControlsSchema.omit({ modelId: true, availableTools: true }),
+  controls: sessionRuntimeControlsSchema.omit({ availableTools: true }),
 })
 export const forkSessionRequestSchema = sessionIdRequestSchema.extend({
   entryId: z.string().min(1),

@@ -159,6 +159,7 @@ export const sessionHistoryStateSchema = z.object({
   activeLeafId: z.string().min(1).nullable().optional(),
   runtimePreferences: z
     .object({
+      modelId: z.string().min(1).nullable().default(null),
       thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullable(),
       activeTools: z.array(z.string().min(1)).nullable(),
       steeringMode: z.enum(['all', 'one-at-a-time']),

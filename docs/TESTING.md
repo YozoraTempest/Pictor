@@ -83,7 +83,7 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   Linux E2E 必须观察 `session_before_compact`/`session_compact`、取消不追加 entry、Summary/Tree 可见，
   并证明 Compaction 后可以继续 Run。
 - Session Runtime Controls 测试必须覆盖 schema v2 偏好持久化、Thinking、Active Tools、Steering 与
-  Follow-up mode 注入；Model/Thinking Projection 从 active branch 的 change entry 或 assistant
+  Follow-up mode 注入和 per-Session Model override；Model/Thinking Projection 从 active branch 的 change entry 或 assistant
   message 重建。Linux E2E 必须验证 Controls 保存、Runtime Host resource reload、Pi Session Name
   同步和下一次 Run 恢复，不得把 API Key 或 Provider 凭据写入 controls metadata。
 - Pi Image Message 测试必须覆盖 Main 原生多选、Renderer 不接触路径、Composer 预览/移除、Runtime
@@ -111,6 +111,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   npm/git spec；不得在后台扫描或自动安装。Development Plugin 测试必须修改 live source 后重建
   Store snapshot，证明重启读取最新入口且不会覆盖 Bundled 删除选择。项目 `.pi/extensions` E2E
   必须证明默认不加载、显式启用并 reload 后 command 生效。
+- 本地 Pi Extension 测试必须修改原始 source 后重新读取 Store snapshot，证明 runtime path 保持 live；
+  source 丢失时才允许回退安装副本。重复 `session.bound` 不得清除 active leaf 或 Runtime Preferences。
 - 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。
 - Electron 用户场景放在 `e2e/*.spec.ts`，每个文件描述一个完整行为，不按页面或组件拆分。
 - 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；不要在场景之间共享可变状态。
