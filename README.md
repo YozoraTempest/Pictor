@@ -33,6 +33,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 - `pictor.pi-extension-host` 可直接安装、禁用和删除原生 `.ts/.js` Pi Extension、Extension 目录
   与本地 Pi Package；Package Manifest 和约定 `extensions/` 都会展开，自定义 Tool 和 RPC UI
   dialog 无需 Pictor wrapper 即可进入会话 GUI。
+- 明确安装的本地 Pi Extension 直接从 live source 加载，修改源文件后下一次 Run 使用新版本；源
+  不可用时回退到 Store 安装副本。
 - Project、Session 与 Conversation GUI 由可删除的 `pictor.agent-workspace` 提供；删除全部
   Bundled Plugin 后，Core Shell 仍可启动并打开 Plugin Manager。
 - `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Main contract 与 Renderer 设置页显示

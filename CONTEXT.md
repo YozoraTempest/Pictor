@@ -81,7 +81,7 @@ A Pi Session Tree Navigation that summarizes the abandoned branch before changin
 _Avoid_: Pi Session Compaction, Fork summary, flattened history
 
 **Session Runtime Controls**:
-Per-Session choices for Thinking Level, active Tools, and queued-message delivery that apply when its Pi Runtime is restored.
+Per-Session choices for Model, Thinking Level, active Tools, and queued-message delivery that apply when its Pi Runtime is restored.
 _Avoid_: Global model credentials, Plugin permissions, TUI settings
 
 **Pi Image Message**:
