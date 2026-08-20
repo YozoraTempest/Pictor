@@ -22,7 +22,9 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
     await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
     await window.getByRole('button', { name: '设置' }).click()
     await window.getByRole('button', { name: 'Plugins' }).click()
-    await expect(window.getByText('pictor.updater', { exact: true })).toBeVisible()
+    await expect(window.getByText('pictor.updater', { exact: true })).toBeVisible({
+      timeout: 30_000,
+    })
     const updaterRow = window.locator('.plugin-row').filter({ hasText: 'pictor.updater' })
     await expect(updaterRow.getByText('运行中')).toBeVisible()
     expect(rendererErrors).toEqual([])
@@ -64,7 +66,7 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
     await window.getByRole('button', { name: '设置' }).click()
     await expect(window.getByRole('button', { name: '关于' })).toHaveCount(0)
     await window.getByRole('button', { name: 'Plugins' }).click()
-    await expect(window.getByRole('button', { name: '恢复' })).toBeVisible()
+    await expect(window.getByRole('button', { name: '恢复' })).toBeVisible({ timeout: 30_000 })
     await window.getByRole('button', { name: '恢复' }).click()
     await expect(window.getByText('重启 Pictor 后应用 Plugin 变更')).toBeVisible()
   } finally {

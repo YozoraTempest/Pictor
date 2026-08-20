@@ -16,6 +16,12 @@ test('launches a sandboxed, nonblank desktop shell', async ({
 
   try {
     const window = await electronApp.firstWindow()
+    if (process.env.PICTOR_E2E_NO_FOCUS === '1') {
+      const focusedAtLaunch = await electronApp.evaluate(({ BrowserWindow }) =>
+        Boolean(BrowserWindow.getAllWindows()[0]?.isFocused()),
+      )
+      expect(focusedAtLaunch).toBe(false)
+    }
     const rendererErrors: string[] = []
     window.on('console', (message) => {
       if (message.type() === 'error') {
