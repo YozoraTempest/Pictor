@@ -107,6 +107,10 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   Shell 提供 Plugin Manager；安全模式使用同一 Core Shell，但不改变用户 Registry。
 - `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，
   并能被 `npm run build:plugins` 构建；Plugin 测试不要求启动开发服务器。
+- Pi Package spec 安装测试必须通过 Pi `DefaultPackageManager` 覆盖显式 local spec，并由同一实现处理
+  npm/git spec；不得在后台扫描或自动安装。Development Plugin 测试必须修改 live source 后重建
+  Store snapshot，证明重启读取最新入口且不会覆盖 Bundled 删除选择。项目 `.pi/extensions` E2E
+  必须证明默认不加载、显式启用并 reload 后 command 生效。
 - 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。
 - Electron 用户场景放在 `e2e/*.spec.ts`，每个文件描述一个完整行为，不按页面或组件拆分。
 - 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；不要在场景之间共享可变状态。

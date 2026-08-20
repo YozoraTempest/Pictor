@@ -88,6 +88,10 @@ _Avoid_: Global model credentials, Plugin permissions, TUI settings
 A User Message containing text and one or more Pi-native image content blocks.
 _Avoid_: Project file attachment, image path, embedded Markdown image
 
+**Local Development Plugin**:
+A Pictor Plugin whose installed Registry entry points at a live source directory instead of a copied Store package.
+_Avoid_: Local Plugin copy, hot reload, Bundled Plugin
+
 **Pi Session Fork**:
 A new independent Pi Session created from one entry in existing Pi Session History through Pi's native Fork lifecycle.
 _Avoid_: Session Tree selection, in-place branch switch, copied GUI history
