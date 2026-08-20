@@ -86,6 +86,10 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   Follow-up mode 注入；Model/Thinking Projection 从 active branch 的 change entry 或 assistant
   message 重建。Linux E2E 必须验证 Controls 保存、Runtime Host resource reload、Pi Session Name
   同步和下一次 Run 恢复，不得把 API Key 或 Provider 凭据写入 controls metadata。
+- Pi Image Message 测试必须覆盖 Main 原生多选、Renderer 不接触路径、Composer 预览/移除、Runtime
+  image block 和 JSONL Projection 重建。Extension command E2E 必须通过 Composer 调用未包装的
+  `registerCommand()`，验证 `sendMessage()`、`sendUserMessage()`、`appendEntry()` 和可见 diagnostic；
+  slash command、Skill 与 Prompt Template 必须使用 Pi 原生 expansion，不由 Pictor 重写解析器。
 - Pi Session Fork 测试必须覆盖 completed/cancelled/failed host result、精确源 JSONL、独立目标
   identity、源文件保留、目标文件移动和新 Pictor Session 提交；E2E 必须由原生 Extension 观察到
   `session_before_fork`、`session_shutdown(reason: "fork")` 与 `session_start(reason: "fork")`。

@@ -155,6 +155,14 @@ Thinking clamp、Tool registry 过滤和 queue delivery。Model/Thinking 的当�
 Runtime restore 时通过 Pi `setSessionName()` 同步；“重新加载资源”释放空闲 Runtime Host，使下一次
 Run 重新装配 Plugin Host、ResourceLoader、Extensions、Skills、Prompts 和 context files。
 
+Pi Image Message 的文件路径只存在于 Electron Main 原生选择器；Main 读取支持的图片并把 base64、
+MIME 和显示名称交给 Renderer，Runtime 去掉显示名称后直接传入 Pi `prompt(..., { images })`。
+Pi JSONL image block 是重启后的 authority，Projection 只重建可显示附件，不保存源路径。Composer
+使用 Pi 原生 prompt expansion，因此 `registerCommand()`、Skills 和 Prompt Templates 共用同一 slash
+入口；可见 `sendMessage()` 作为带稳定 completed Run 的 custom message 投影，`appendEntry()` 只在
+Tree 中保留状态。Pi Runtime diagnostics 经脱敏事件进入桌面通知；Extension `registerProvider()`
+继续直接作用于 Pi ModelRuntime，不转换成 Pictor Plugin 或复制 ExtensionAPI。
+
 Pi Session Fork 是独立的 Runtime operation，不伪装成 Run。Main 先生成 operation/target Session
 identity，但不写 Pictor metadata；utility host 精确打开已绑定的源 JSONL，绑定 Extension RPC UI，
 调用 Pi `AgentSessionRuntime.fork(position: "at")`，完整执行 `session_before_fork`、源
