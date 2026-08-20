@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import {
   messageSchema,
   runRecordSchema,
+  sessionRecordSchema,
   toolEventSchema,
   type Project,
   type SessionHistoryState,
@@ -230,9 +231,10 @@ export class RuntimeCoordinator {
     ) {
       this.broadcast(sanitizedEvent)
     } else {
+      const sessionSnapshot = terminalEvent ? null : sessionRecordSchema.parse(active.session)
       this.persistenceQueue = this.persistenceQueue
         .then(() => {
-          if (!terminalEvent) return this.repository.saveSession(active.session)
+          if (sessionSnapshot) return this.repository.saveSession(sessionSnapshot)
           const history = this.repository.getSessionHistory(active.session.id)
           return history.authority === 'pi-jsonl' && history.piSessionFile
             ? this.repository.rebuildSessionProjection(active.session.id)
