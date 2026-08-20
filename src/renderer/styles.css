@@ -803,6 +803,26 @@ textarea:disabled {
   opacity: 0.35;
 }
 
+.tool-toggle-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+
+.tool-toggle-list label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+}
+
+.tool-toggle-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .session-tree-list {
   min-height: 0;
   flex: 1;

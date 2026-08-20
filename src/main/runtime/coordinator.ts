@@ -65,6 +65,7 @@ export interface RuntimePersistence {
     resumeSession: boolean
     piSessionFile?: string | null
     activeLeafId?: string | null
+    runtimePreferences?: SessionHistoryState['runtimePreferences']
   }
   saveSession(session: SessionRecord): Promise<unknown>
 }
@@ -77,6 +78,7 @@ export interface RuntimeHost {
   navigateSession(config: RuntimeNavigateConfig): Promise<RuntimeNavigateResult>
   compactSession(config: RuntimeCompactConfig): Promise<RuntimeCompactResult>
   abortSessionOperation(operationId: string): void
+  reloadResources(): Promise<void>
   approve(runId: string, callId: string): void
   reject(runId: string, callId: string): void
   stop(runId: string): void
@@ -180,6 +182,7 @@ export class RuntimeCoordinator {
         type: 'start',
         runId,
         sessionId,
+        sessionName: session.title,
         messageId: assistantMessageId,
         projectRoot: project.rootPath,
         ...runtimePaths,
@@ -384,6 +387,17 @@ export class RuntimeCoordinator {
     if (!operation || operation.sessionId !== sessionId) return false
     this.supervisor.abortSessionOperation(operation.operationId)
     return true
+  }
+
+  async reloadSessionResources(sessionId: string): Promise<void> {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
+      throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
+    }
+    const history = this.repository.getSessionHistory(sessionId)
+    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+      throw new PictorError('invalid-input', '当前 Session 没有可重载的 Pi Runtime 资源')
+    }
+    await this.supervisor.reloadResources()
   }
 
   private async deriveSession(

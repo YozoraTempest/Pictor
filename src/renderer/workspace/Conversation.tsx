@@ -24,6 +24,7 @@ import {
   Route,
   Send,
   ShieldAlert,
+  SlidersHorizontal,
   Square,
   TerminalSquare,
   Wrench,
@@ -79,6 +80,7 @@ interface ConversationProps {
   onOpenBranchSummary: (entryId: string) => void
   onOpenCompaction: () => void
   onCancelSessionOperation: () => void
+  onOpenSessionControls: () => void
   onForkSession: (entryId: string) => void
   onCloneSession: () => void
   onStop: (runId: string) => void
@@ -570,6 +572,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     onOpenBranchSummary,
     onOpenCompaction,
     onCancelSessionOperation,
+    onOpenSessionControls,
     onForkSession,
     onCloneSession,
     onStop,
@@ -671,6 +674,16 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           <h1>{session.title}</h1>
         </div>
         <div className="header-actions">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Session Controls"
+            title="Session Controls"
+            disabled={!canInspectSessionTree || compactingSession}
+            onClick={onOpenSessionControls}
+          >
+            <SlidersHorizontal size={16} />
+          </button>
           {compactingSession ? (
             <button
               className="icon-button"
@@ -719,6 +732,12 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
               {runtimeUsage.context?.percent === null || runtimeUsage.context === null
                 ? ''
                 : ` · ${Math.round(runtimeUsage.context.percent)}% context`}
+            </span>
+          ) : null}
+          {session.runtimeState?.modelId ? (
+            <span className="usage-summary" title={session.runtimeState.modelId}>
+              {session.runtimeState.modelId}
+              {session.runtimeState.thinkingLevel ? ` · ${session.runtimeState.thinkingLevel}` : ''}
             </span>
           ) : null}
           {activeRun ? <StatusBadge status={activeRun.status} /> : null}

@@ -212,6 +212,7 @@ export class AppRepository {
     resumeSession: boolean
     piSessionFile: string | null
     activeLeafId?: string | null
+    runtimePreferences?: SessionHistoryState['runtimePreferences']
   } {
     this.ensureInitialized()
     return this.sessionPersistence.getRuntimePaths(projectId, sessionId)
@@ -236,6 +237,17 @@ export class AppRepository {
       throw new PictorError('not-found', '会话不存在或已被删除')
     }
     await this.sessionPersistence.setActiveLeaf(sessionId, activeLeafId)
+  }
+
+  async setSessionRuntimePreferences(
+    sessionId: string,
+    runtimePreferences: NonNullable<SessionHistoryState['runtimePreferences']>,
+  ): Promise<void> {
+    this.ensureInitialized()
+    if (!this.state.sessions.some((session) => session.id === sessionId)) {
+      throw new PictorError('not-found', '会话不存在或已被删除')
+    }
+    await this.sessionPersistence.setRuntimePreferences(sessionId, runtimePreferences)
   }
 
   async rebuildSessionProjection(sessionId: string): Promise<SessionRecord> {

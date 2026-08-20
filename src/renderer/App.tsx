@@ -5,7 +5,7 @@ import type { Project, SessionSummary } from '../shared/domain'
 import type { SettingsSection } from '../modules/shell/settings'
 import type { AppInfo } from '../shared/app-info'
 import type { PluginStatus } from '../plugin/host'
-import type { RuntimeEvent } from '../shared/desktop-bridge'
+import type { RuntimeEvent, SessionRuntimeControls } from '../shared/desktop-bridge'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { Modal } from './ui/Modal'
 import { Conversation } from './workspace/Conversation'
@@ -49,6 +49,7 @@ export function App({
   const [compactionInstructions, setCompactionInstructions] = useState('')
   const [branchSummaryTarget, setBranchSummaryTarget] = useState<string | null>(null)
   const [branchSummaryInstructions, setBranchSummaryInstructions] = useState('')
+  const [sessionControls, setSessionControls] = useState<SessionRuntimeControls | null>(null)
   const [modalBusy, setModalBusy] = useState(false)
   const [extensionUiRequest, setExtensionUiRequest] = useState<ExtensionUiRequest | null>(null)
   const [extensionUiValue, setExtensionUiValue] = useState('')
@@ -167,6 +168,45 @@ export function App({
     if (cancelled) setBranchSummaryTarget(null)
   }
 
+  const openSessionControls = async () => {
+    if (!workspace.selectedSessionId) return
+    const response = await window.pictor.getSessionRuntimeControls({
+      sessionId: workspace.selectedSessionId,
+    })
+    if (response.ok) setSessionControls(response.value)
+    else workspace.reportActionError(response.error.message)
+  }
+
+  const saveSessionControls = async () => {
+    if (!workspace.selectedSessionId || !sessionControls) return
+    setModalBusy(true)
+    const response = await window.pictor.saveSessionRuntimeControls({
+      sessionId: workspace.selectedSessionId,
+      controls: {
+        thinkingLevel: sessionControls.thinkingLevel,
+        activeTools: sessionControls.activeTools,
+        steeringMode: sessionControls.steeringMode,
+        followUpMode: sessionControls.followUpMode,
+      },
+    })
+    setModalBusy(false)
+    if (response.ok) setSessionControls(null)
+    else workspace.reportActionError(response.error.message)
+  }
+
+  const reloadSessionResources = async () => {
+    if (!workspace.selectedSessionId) return
+    setModalBusy(true)
+    const response = await window.pictor.reloadSessionResources({
+      sessionId: workspace.selectedSessionId,
+    })
+    setModalBusy(false)
+    if (response.ok) {
+      setSessionControls(null)
+      setExtensionNotice('Runtime 资源已重载')
+    } else workspace.reportActionError(response.error.message)
+  }
+
   const respondToExtensionUi = async (value: string | boolean | null) => {
     if (!extensionUiRequest) return
     setModalBusy(true)
@@ -265,6 +305,7 @@ export function App({
         onOpenBranchSummary={(entryId) => setBranchSummaryTarget(entryId)}
         onOpenCompaction={() => setCompactionOpen(true)}
         onCancelSessionOperation={() => void workspace.cancelSessionOperation()}
+        onOpenSessionControls={() => void openSessionControls()}
         onForkSession={(entryId) => void workspace.forkSession(entryId)}
         onCloneSession={() => void workspace.cloneSession()}
         onStop={(runId) => void workspace.stopRun(runId)}
@@ -554,6 +595,130 @@ export function App({
             >
               {workspace.navigatingEntryId ? <LoaderCircle className="spin" size={15} /> : null}
               总结并切换
+            </button>
+          </footer>
+        </Modal>
+      ) : null}
+
+      {sessionControls ? (
+        <Modal title="Session Controls" onClose={() => setSessionControls(null)}>
+          <div className="form-grid">
+            <label className="field field--full">
+              <span>Model</span>
+              <input value={sessionControls.modelId} readOnly />
+            </label>
+            <label className="field field--full">
+              <span>Thinking Level</span>
+              <select
+                value={sessionControls.thinkingLevel}
+                onChange={(event) =>
+                  setSessionControls((current) =>
+                    current
+                      ? {
+                          ...current,
+                          thinkingLevel: event.target
+                            .value as SessionRuntimeControls['thinkingLevel'],
+                        }
+                      : current,
+                  )
+                }
+              >
+                {['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((level) => (
+                  <option value={level} key={level}>
+                    {level}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Steering</span>
+              <select
+                value={sessionControls.steeringMode}
+                onChange={(event) =>
+                  setSessionControls((current) =>
+                    current
+                      ? {
+                          ...current,
+                          steeringMode: event.target.value as 'all' | 'one-at-a-time',
+                        }
+                      : current,
+                  )
+                }
+              >
+                <option value="one-at-a-time">one-at-a-time</option>
+                <option value="all">all</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Follow-up</span>
+              <select
+                value={sessionControls.followUpMode}
+                onChange={(event) =>
+                  setSessionControls((current) =>
+                    current
+                      ? {
+                          ...current,
+                          followUpMode: event.target.value as 'all' | 'one-at-a-time',
+                        }
+                      : current,
+                  )
+                }
+              >
+                <option value="one-at-a-time">one-at-a-time</option>
+                <option value="all">all</option>
+              </select>
+            </label>
+          </div>
+          <fieldset className="field field--full">
+            <legend>Active Tools</legend>
+            <div className="tool-toggle-list">
+              {sessionControls.availableTools.map((tool) => (
+                <label key={tool}>
+                  <input
+                    type="checkbox"
+                    checked={sessionControls.activeTools.includes(tool)}
+                    onChange={(event) =>
+                      setSessionControls((current) =>
+                        current
+                          ? {
+                              ...current,
+                              activeTools: event.target.checked
+                                ? [...current.activeTools, tool]
+                                : current.activeTools.filter((name) => name !== tool),
+                            }
+                          : current,
+                      )
+                    }
+                  />
+                  <span>{tool}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <footer className="modal-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={modalBusy}
+              onClick={() => void reloadSessionResources()}
+            >
+              重新加载资源
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={modalBusy}
+              onClick={() => setSessionControls(null)}
+            >
+              取消
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={modalBusy}
+              onClick={() => void saveSessionControls()}
+            >
+              保存
             </button>
           </footer>
         </Modal>

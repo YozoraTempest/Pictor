@@ -28,6 +28,7 @@ const sessionProjectionSchema = sessionRecordSchema.pick({
   messages: true,
   runs: true,
   usage: true,
+  runtimeState: true,
 })
 const persistedSessionV2Schema = z.object({
   schemaVersion: z.literal(2),
@@ -225,6 +226,7 @@ export class SessionPersistence {
     session.messages = projection.messages
     session.runs = projection.runs
     session.usage = projection.usage
+    session.runtimeState = projection.runtimeState
     session.updatedAt =
       [
         ...session.messages.map((message) => message.updatedAt),
@@ -257,6 +259,7 @@ export class SessionPersistence {
         messages: projection.messages,
         runs: projection.runs,
         usage: projection.usage,
+        runtimeState: projection.runtimeState,
       }),
     )
     return sessionHistoryViewSchema.parse({
@@ -298,6 +301,7 @@ export class SessionPersistence {
     resumeSession: boolean
     piSessionFile: string | null
     activeLeafId?: string | null
+    runtimePreferences?: SessionHistoryState['runtimePreferences']
   } {
     const sessionDirectory = join(this.dataDirectory, 'pi', projectId, sessionId)
     const history = this.getHistory(sessionId)
@@ -306,6 +310,7 @@ export class SessionPersistence {
       sessionDirectory,
       piSessionFile: history.piSessionFile,
       ...(history.activeLeafId !== undefined ? { activeLeafId: history.activeLeafId } : {}),
+      ...(history.runtimePreferences ? { runtimePreferences: history.runtimePreferences } : {}),
       resumeSession:
         history.authority === 'pi-jsonl' &&
         history.piSessionFile !== null &&
@@ -325,6 +330,20 @@ export class SessionPersistence {
       throw new Error('Pi Session identity is not bound')
     }
     const updated = sessionHistoryStateSchema.parse({ ...history, activeLeafId })
+    this.histories.set(sessionId, updated)
+    await this.writeV2(session, updated)
+  }
+
+  async setRuntimePreferences(
+    sessionId: string,
+    runtimePreferences: NonNullable<SessionHistoryState['runtimePreferences']>,
+  ): Promise<void> {
+    const session = await this.read(sessionId)
+    const history = this.getHistory(sessionId)
+    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+      throw new Error('Pi Session identity is not bound')
+    }
+    const updated = sessionHistoryStateSchema.parse({ ...history, runtimePreferences })
     this.histories.set(sessionId, updated)
     await this.writeV2(session, updated)
   }
@@ -399,6 +418,7 @@ export class SessionPersistence {
         messages: session.messages,
         runs: session.runs,
         usage: session.usage ?? null,
+        runtimeState: session.runtimeState,
         generatedAt: new Date().toISOString(),
       },
       createdAt: session.createdAt,
@@ -416,6 +436,7 @@ export class SessionPersistence {
       messages: session.projection.messages,
       runs: session.projection.runs,
       usage: session.projection.usage ?? null,
+      runtimeState: session.projection.runtimeState,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
     })

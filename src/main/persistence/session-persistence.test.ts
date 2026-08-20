@@ -280,6 +280,19 @@ describe('SessionPersistence', () => {
     })
     await persistence.rebuildProjection(session.id)
     expect((await persistence.read(session.id)).messages).toEqual([])
+
+    await persistence.setRuntimePreferences(session.id, {
+      thinkingLevel: 'high',
+      activeTools: ['pictor_read'],
+      steeringMode: 'all',
+      followUpMode: 'one-at-a-time',
+    })
+    expect(persistence.getRuntimePaths(session.projectId, session.id).runtimePreferences).toEqual({
+      thinkingLevel: 'high',
+      activeTools: ['pictor_read'],
+      steeringMode: 'all',
+      followUpMode: 'one-at-a-time',
+    })
   })
 
   it('repairs historical content, summaries, and unfinished runs during recovery', async () => {

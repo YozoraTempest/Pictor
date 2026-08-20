@@ -122,6 +122,13 @@ export const sessionRecordSchema = z.object({
   messages: z.array(messageSchema),
   runs: z.array(runRecordSchema),
   usage: usageSnapshotSchema.nullable().optional(),
+  runtimeState: z
+    .object({
+      modelId: z.string().min(1).nullable(),
+      modelProvider: z.string().min(1).nullable(),
+      thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullable(),
+    })
+    .optional(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
 })
@@ -143,6 +150,14 @@ export const sessionHistoryStateSchema = z.object({
   piSessionId: z.string().min(1).nullable(),
   piSessionFile: z.string().min(1).nullable(),
   activeLeafId: z.string().min(1).nullable().optional(),
+  runtimePreferences: z
+    .object({
+      thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullable(),
+      activeTools: z.array(z.string().min(1)).nullable(),
+      steeringMode: z.enum(['all', 'one-at-a-time']),
+      followUpMode: z.enum(['all', 'one-at-a-time']),
+    })
+    .optional(),
   legacyImport: z.object({
     status: z.enum(['not-required', 'pending', 'imported']),
     sourceFile: z.string().min(1).nullable(),

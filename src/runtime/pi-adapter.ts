@@ -191,6 +191,8 @@ async function createProductionSession({
         retry: { enabled: false },
         enableAnalytics: false,
         compaction: { enabled: true },
+        steeringMode: config.runtimePreferences?.steeringMode ?? 'one-at-a-time',
+        followUpMode: config.runtimePreferences?.followUpMode ?? 'one-at-a-time',
       },
       { projectTrusted: true },
     )
@@ -227,7 +229,8 @@ async function createProductionSession({
       sessionManager: targetSessionManager,
       ...(sessionStartEvent ? { sessionStartEvent } : {}),
       model,
-      thinkingLevel: config.settings.reasoningEffort ?? 'off',
+      thinkingLevel:
+        config.runtimePreferences?.thinkingLevel ?? config.settings.reasoningEffort ?? 'off',
       noTools: 'builtin',
       customTools: tools,
     })
@@ -238,6 +241,12 @@ async function createProductionSession({
     agentDir: config.agentDirectory,
     sessionManager,
   })
+  if (config.sessionName && runtime.session.sessionName !== config.sessionName) {
+    runtime.session.setSessionName(config.sessionName)
+  }
+  if (config.runtimePreferences?.activeTools) {
+    runtime.session.setActiveToolsByName(config.runtimePreferences.activeTools)
+  }
   return new PiSessionRuntime(runtime)
 }
 

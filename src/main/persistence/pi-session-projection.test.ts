@@ -254,6 +254,35 @@ describe('Pi Session Projection', () => {
     })
   })
 
+  it('projects the active branch Model and Thinking state', () => {
+    const projection = projectPiSessionJsonl(
+      jsonl([
+        { type: 'session', version: 3, id: 'pi-session', timestamp, cwd: '/project' },
+        {
+          type: 'model_change',
+          id: 'model-entry',
+          parentId: null,
+          timestamp,
+          provider: 'pictor-openai-compatible',
+          modelId: 'model-a',
+        },
+        {
+          type: 'thinking_level_change',
+          id: 'thinking-entry',
+          parentId: 'model-entry',
+          timestamp,
+          thinkingLevel: 'high',
+        },
+      ]),
+    )
+
+    expect(projection.runtimeState).toEqual({
+      modelId: 'model-a',
+      modelProvider: 'pictor-openai-compatible',
+      thinkingLevel: 'high',
+    })
+  })
+
   it('uses the same readable Runtime failure classification as live events', () => {
     const projection = projectPiSessionJsonl(
       jsonl([

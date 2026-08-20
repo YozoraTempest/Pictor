@@ -147,6 +147,14 @@ Pi Session Compaction 是可取消的同文件 Runtime operation。Main 复用 S
 观察已提交 entry。成功后 Main 保存新 active leaf 并从权威 JSONL 重建 Projection/Tree；取消或失败
 不制造摘要。Branch Summary 通过同一取消 seam 调用 `abortBranchSummary()`。
 
+Session Runtime Controls 是 schema v2 中的可选导航偏好，只保存 Thinking Level、Active Tools 和
+Steering/Follow-up delivery mode；Model endpoint 与凭据继续由 Model Provider Settings 管理。每次
+精确恢复 Pi Session 时，Runtime 把偏好注入 in-memory SettingsManager 和 AgentSession，Pi 负责
+Thinking clamp、Tool registry 过滤和 queue delivery。Model/Thinking 的当前值从 active JSONL branch
+的 change entry 或 assistant message 重建并显示，不把偏好误当作运行结果。Pictor title 在下一次
+Runtime restore 时通过 Pi `setSessionName()` 同步；“重新加载资源”释放空闲 Runtime Host，使下一次
+Run 重新装配 Plugin Host、ResourceLoader、Extensions、Skills、Prompts 和 context files。
+
 Pi Session Fork 是独立的 Runtime operation，不伪装成 Run。Main 先生成 operation/target Session
 identity，但不写 Pictor metadata；utility host 精确打开已绑定的源 JSONL，绑定 Extension RPC UI，
 调用 Pi `AgentSessionRuntime.fork(position: "at")`，完整执行 `session_before_fork`、源
