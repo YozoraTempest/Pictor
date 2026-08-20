@@ -8,6 +8,7 @@ import { useWorkspaceController, type WorkspaceBridge } from './use-workspace-co
 const projectId = '11111111-1111-4111-8111-111111111111'
 const firstSessionId = '22222222-2222-4222-8222-222222222222'
 const secondSessionId = '33333333-3333-4333-8333-333333333333'
+const thirdSessionId = '77777777-7777-4777-8777-777777777777'
 const runId = '44444444-4444-4444-8444-444444444444'
 const messageId = '55555555-5555-4555-8555-555555555555'
 const toolId = '66666666-6666-4666-8666-666666666666'
@@ -154,6 +155,7 @@ function createBridge(
   getSession: ReturnType<typeof vi.fn>
   inspectSessionHistory: ReturnType<typeof vi.fn>
   forkSession: ReturnType<typeof vi.fn>
+  cloneSession: ReturnType<typeof vi.fn>
   startRun: ReturnType<typeof vi.fn>
   stopRun: ReturnType<typeof vi.fn>
   approveCommand: ReturnType<typeof vi.fn>
@@ -179,6 +181,7 @@ function createBridge(
   )
   const startRun = vi.fn(async () => ok({ runId }))
   const forkSession = vi.fn(async () => ok(null))
+  const cloneSession = vi.fn(async () => ok(null))
   const stopRun = vi.fn(async () => ok(null))
   const approveCommand = vi.fn(async () => ok(null))
   const rejectCommand = vi.fn(async () => ok(null))
@@ -203,6 +206,7 @@ function createBridge(
     getSession,
     inspectSessionHistory,
     forkSession,
+    cloneSession,
     startRun,
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
@@ -523,8 +527,17 @@ describe('useWorkspaceController', () => {
       messageContent: 'Historical answer',
       runStatus: 'completed',
     })
+    const cloned = createSession(thirdSessionId, {
+      title: 'Source session (Clone)',
+      messageContent: 'Active answer',
+      runStatus: 'completed',
+    })
     const bridge = createBridge({
-      sessions: { [firstSessionId]: active, [secondSessionId]: forked },
+      sessions: {
+        [firstSessionId]: active,
+        [secondSessionId]: forked,
+        [thirdSessionId]: cloned,
+      },
     })
     bridge.inspectSessionHistory.mockImplementation(
       async ({ entryId }: { sessionId: string; entryId: string | null }) =>
@@ -572,6 +585,22 @@ describe('useWorkspaceController', () => {
     expect(result.current.session?.messages[0]?.content).toBe('Active answer')
     expect(result.current.sessionTree?.selectedEntryId).toBe('active-entry')
     expect(result.current.disabledReason).toBeNull()
+
+    bridge.cloneSession.mockResolvedValueOnce(
+      ok({
+        id: thirdSessionId,
+        projectId,
+        title: 'Source session (Clone)',
+        lastRunStatus: 'completed',
+        historyAuthority: 'pi-jsonl',
+        createdAt: now,
+        updatedAt: now,
+      }),
+    )
+    await act(async () => result.current.cloneSession())
+    expect(bridge.cloneSession).toHaveBeenCalledWith({ sessionId: firstSessionId })
+    expect(result.current.selectedSessionId).toBe(thirdSessionId)
+    expect(result.current.session?.title).toBe('Source session (Clone)')
   })
 
   it('coordinates Run intents and reports bridge failures', async () => {

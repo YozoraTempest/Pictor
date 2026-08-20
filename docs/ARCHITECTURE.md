@@ -139,6 +139,12 @@ identity，但不写 Pictor metadata；utility host 精确打开已绑定的源 
 创建 Pictor Session。Fork operation 复用现有 active-operation 与 Extension UI response 通道，不能
 和 Run 并发。
 
+Pi Session Clone 复用同一个 Runtime operation 与 Pi 原生 Fork lifecycle，但表达不同的产品意图：
+Renderer 只提交源 Pictor Session identity，Main 通过 `inspectSessionHistory` 从权威 JSONL 推导
+active leaf，并以 `fork(position: "at")` 复制当前完整分支。历史节点只允许 Fork，活跃叶节点只允许
+Clone；两者共享并发锁、取消语义、目标 JSONL 移动和 Repository 提交事务，目标标题分别使用
+`(Fork)` 与 `(Clone)` 区分。
+
 Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全集中在内部
 `SessionPersistence` module；Pi JSONL 到桌面模型的映射集中在纯投影 module。它们直接使用本地
 文件系统和现有凭据迁移函数，不增加通用 Repository、DAO 或存储 provider。相关测试通过真实

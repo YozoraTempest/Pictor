@@ -77,6 +77,7 @@ function createBridge(
         ? ok({ session, tree: null })
         : { ok: false, error: { code: 'not-found', message: '不存在' } },
     forkSession: async () => ok(null),
+    cloneSession: async () => ok(null),
     getSettings: async () => ok(snapshot.settings),
     saveSettings: async () => ok(snapshot.settings!),
     testSettings: async () => ok({ outcome: 'success', message: '连接成功' }),
@@ -214,6 +215,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   const historicalSession = createProjectedSession('Archived response details')
   const bridge = createBridge(snapshot, activeSession)
   bridge.forkSession = vi.fn(async () => ok(null))
+  bridge.cloneSession = vi.fn(async () => ok(null))
   bridge.inspectSessionHistory = vi.fn(async ({ entryId }) => {
     const selectedEntryId = entryId ?? 'active-entry'
     return ok({
@@ -255,12 +257,20 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   await screen.findByText('Active response details')
   fireEvent.click(screen.getByRole('button', { name: 'Session Tree' }))
   expect(await screen.findByRole('complementary', { name: 'Session Tree' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Fork 为新 Session' })).toBeDisabled()
+  const cloneButton = screen.getByRole('button', { name: 'Clone 当前分支为新 Session' })
+  expect(cloneButton).toBeEnabled()
+  fireEvent.click(cloneButton)
+  await waitFor(() => expect(bridge.cloneSession).toHaveBeenCalledWith({ sessionId }))
+  await waitFor(() => expect(cloneButton).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: 'Historical branch' }))
 
   expect(await screen.findByText('Archived response details')).toBeInTheDocument()
   expect(screen.getByText(/正在查看历史分支/)).toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: '任务描述' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '发送任务' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Clone 当前分支为新 Session' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Fork 为新 Session' })).toBeEnabled()
   fireEvent.click(screen.getByRole('button', { name: 'Fork 为新 Session' }))
   expect(bridge.forkSession).toHaveBeenCalledWith({
     sessionId,

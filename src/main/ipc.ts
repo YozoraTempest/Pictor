@@ -4,6 +4,7 @@ import { dialog, ipcMain, type WebFrameMain } from 'electron'
 
 import {
   approvalResolutionRequestSchema,
+  cloneSessionRequestSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
   forkSessionRequestSchema,
@@ -219,6 +220,14 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = forkSessionRequestSchema.parse(input)
       return runtimeCoordinator.forkSession(request.sessionId, request.entryId)
+    })
+  })
+
+  ipcMain.handle('session:clone', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = cloneSessionRequestSchema.parse(input)
+      return runtimeCoordinator.cloneSession(request.sessionId)
     })
   })
 

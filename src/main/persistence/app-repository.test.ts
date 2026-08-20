@@ -167,15 +167,18 @@ describe('AppRepository', () => {
     await expect(repository.saveSession(session)).rejects.toThrow('项目绑定不匹配')
   })
 
-  it('commits a forked Pi JSONL as a new selected Pictor Session', async () => {
+  it.each([
+    { kind: 'fork' as const, suffix: 'Fork' },
+    { kind: 'clone' as const, suffix: 'Clone' },
+  ])('commits a $kind Pi JSONL as a new selected Pictor Session', async ({ kind, suffix }) => {
     const repository = createRepository()
     await repository.initialize()
     const project = await repository.registerProject(projectDirectory)
     const source = await repository.createSession(project.id)
     await repository.renameSession(source.id, 'Source session')
     const targetSessionId = randomUUID()
-    const piSessionId = 'forked-pi-session'
-    const piSessionFile = 'forked.jsonl'
+    const piSessionId = `${kind}-pi-session`
+    const piSessionFile = `${kind}.jsonl`
     const targetDirectory = join(dataDirectory, 'pi', project.id, targetSessionId)
     await mkdir(targetDirectory, { recursive: true })
     await writeFile(
@@ -190,23 +193,23 @@ describe('AppRepository', () => {
         }),
         JSON.stringify({
           type: 'message',
-          id: 'forked-user',
+          id: `${kind}-user`,
           parentId: null,
           timestamp: new Date().toISOString(),
-          message: { role: 'user', content: 'Forked task' },
+          message: { role: 'user', content: 'Derived task' },
         }),
         JSON.stringify({
           type: 'message',
-          id: 'forked-assistant',
-          parentId: 'forked-user',
+          id: `${kind}-assistant`,
+          parentId: `${kind}-user`,
           timestamp: new Date().toISOString(),
-          message: { role: 'assistant', content: 'Forked answer', stopReason: 'stop' },
+          message: { role: 'assistant', content: 'Derived answer', stopReason: 'stop' },
         }),
         '',
       ].join('\n'),
     )
 
-    const summary = await repository.createForkedSession(source.id, targetSessionId, {
+    const summary = await repository.createDerivedSession(source.id, targetSessionId, kind, {
       id: piSessionId,
       file: piSessionFile,
     })
@@ -215,7 +218,7 @@ describe('AppRepository', () => {
     expect(summary).toMatchObject({
       id: targetSessionId,
       projectId: project.id,
-      title: 'Source session (Fork)',
+      title: `Source session (${suffix})`,
       historyAuthority: 'pi-jsonl',
       lastRunStatus: 'completed',
     })
@@ -223,8 +226,8 @@ describe('AppRepository', () => {
     expect(snapshot.sessions).toHaveLength(2)
     await expect(repository.getSession(targetSessionId)).resolves.toMatchObject({
       messages: [
-        expect.objectContaining({ content: 'Forked task' }),
-        expect.objectContaining({ content: 'Forked answer' }),
+        expect.objectContaining({ content: 'Derived task' }),
+        expect.objectContaining({ content: 'Derived answer' }),
       ],
     })
   })

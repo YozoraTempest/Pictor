@@ -10,6 +10,8 @@ import {
   appInfoResultSchema,
   appSnapshotResultSchema,
   connectionTestIpcResultSchema,
+  cloneSessionRequestSchema,
+  cloneSessionResultSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
   forkSessionRequestSchema,
@@ -116,6 +118,10 @@ const bridge = Object.freeze({
   forkSession: async (input) =>
     forkSessionResultSchema.parse(
       await ipcRenderer.invoke('session:fork', forkSessionRequestSchema.parse(input)),
+    ),
+  cloneSession: async (input) =>
+    cloneSessionResultSchema.parse(
+      await ipcRenderer.invoke('session:clone', cloneSessionRequestSchema.parse(input)),
     ),
   getSettings: async () => settingsResultSchema.parse(await ipcRenderer.invoke('settings:get')),
   saveSettings: async (input) =>

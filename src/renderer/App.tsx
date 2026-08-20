@@ -212,12 +212,14 @@ export function App({
         sessionTreeLoading={workspace.sessionTreeLoading}
         canInspectSessionTree={workspace.canInspectSessionTree}
         forkingEntryId={workspace.forkingEntryId}
+        cloningSession={workspace.cloningSession}
         onDraftChange={workspace.setDraft}
         onSend={() => void workspace.startRun()}
         onQueue={(mode) => void workspace.queueMessage(mode)}
         onClearQueue={() => void workspace.clearQueue()}
         onInspectSessionHistory={(entryId) => void workspace.inspectSessionHistory(entryId)}
         onForkSession={(entryId) => void workspace.forkSession(entryId)}
+        onCloneSession={() => void workspace.cloneSession()}
         onStop={(runId) => void workspace.stopRun(runId)}
         onApprove={(runId, callId) => void workspace.resolveApproval(runId, callId, true)}
         onReject={(runId, callId) => void workspace.resolveApproval(runId, callId, false)}

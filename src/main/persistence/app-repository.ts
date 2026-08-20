@@ -281,9 +281,10 @@ export class AppRepository {
     return this.sessionPersistence.inspectHistory(sessionId, selectedEntryId)
   }
 
-  async createForkedSession(
+  async createDerivedSession(
     sourceSessionId: string,
     targetSessionId: string,
+    kind: 'fork' | 'clone',
     identity: { id: string; file: string },
   ): Promise<SessionSummary> {
     this.ensureInitialized()
@@ -296,7 +297,7 @@ export class AppRepository {
       schemaVersion: 1,
       id: targetSessionId,
       projectId: source.projectId,
-      title: `${source.title} (Fork)`.slice(0, 120),
+      title: `${source.title} (${kind === 'clone' ? 'Clone' : 'Fork'})`.slice(0, 120),
       messages: [],
       runs: [],
       createdAt: now,
