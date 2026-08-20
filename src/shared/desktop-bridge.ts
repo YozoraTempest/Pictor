@@ -70,6 +70,7 @@ export const inspectSessionHistoryRequestSchema = sessionIdRequestSchema.extend(
 export const forkSessionRequestSchema = sessionIdRequestSchema.extend({
   entryId: z.string().min(1),
 })
+export const cloneSessionRequestSchema = sessionIdRequestSchema
 export const createSessionRequestSchema = z.object({ projectId: idSchema })
 export const selectContextRequestSchema = z.object({
   projectId: idSchema.nullable(),
@@ -109,6 +110,7 @@ export const sessionSummaryResultSchema = ipcResultSchema(sessionSummarySchema)
 export const sessionRecordResultSchema = ipcResultSchema(sessionRecordSchema)
 export const sessionHistoryViewResultSchema = ipcResultSchema(sessionHistoryViewSchema)
 export const forkSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
+export const cloneSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
 export const settingsResultSchema = ipcResultSchema(modelSettingsSchema.nullable())
 export const savedSettingsResultSchema = ipcResultSchema(modelSettingsSchema)
 export const connectionTestIpcResultSchema = ipcResultSchema(connectionTestResultSchema)
@@ -158,6 +160,9 @@ export interface PictorBridge {
   ) => Promise<IpcResult<SessionHistoryView>>
   forkSession: (
     request: z.infer<typeof forkSessionRequestSchema>,
+  ) => Promise<IpcResult<SessionSummary | null>>
+  cloneSession: (
+    request: z.infer<typeof cloneSessionRequestSchema>,
   ) => Promise<IpcResult<SessionSummary | null>>
   getSettings: () => Promise<IpcResult<ModelSettings | null>>
   saveSettings: (request: SaveSettingsRequest) => Promise<IpcResult<ModelSettings>>

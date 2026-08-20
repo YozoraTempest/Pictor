@@ -5,6 +5,7 @@ import { expect, it, vi } from 'vitest'
 import type {
   Project,
   SessionHistoryState,
+  SessionHistoryView,
   SessionRecord,
   SessionSummary,
 } from '../../shared/domain.js'
@@ -13,6 +14,15 @@ import { RuntimeCoordinator, type RuntimeHost, type RuntimePersistence } from '.
 
 const projectId = '01234567-89ab-4def-8123-456789abcdef'
 const sessionId = '11234567-89ab-4def-8123-456789abcdef'
+
+function historyView(session: SessionRecord, activeLeafId: string | null): SessionHistoryView {
+  return {
+    session,
+    tree: activeLeafId
+      ? { activeLeafId, selectedEntryId: activeLeafId, nodes: [] }
+      : { activeLeafId: null, selectedEntryId: null, nodes: [] },
+  }
+}
 
 it.each(['a', 'id', 'running'])(
   'preserves runtime structure, terminal cleanup, and recovery for short key %s',
@@ -49,6 +59,7 @@ it.each(['a', 'id', 'running'])(
     const repository: RuntimePersistence = {
       getSession: vi.fn(async () => session),
       getSessionHistory: vi.fn(() => history),
+      inspectSessionHistory: vi.fn(async () => historyView(session, null)),
       bindPiSession: vi.fn(async (_sessionId, identity) => {
         history = {
           authority: 'pi-jsonl',
@@ -58,7 +69,7 @@ it.each(['a', 'id', 'running'])(
         }
       }),
       rebuildSessionProjection: vi.fn(async () => session),
-      createForkedSession: vi.fn(async () => {
+      createDerivedSession: vi.fn(async () => {
         throw new Error('not used')
       }),
       getProject: vi.fn(
@@ -242,9 +253,10 @@ it('persists a terminal failure when Pi Session identity was never bound', async
           legacyImport: { status: 'not-required', sourceFile: null },
         }) satisfies SessionHistoryState,
     ),
+    inspectSessionHistory: vi.fn(async () => historyView(session, null)),
     bindPiSession: vi.fn(async () => undefined),
     rebuildSessionProjection,
-    createForkedSession: vi.fn(async () => {
+    createDerivedSession: vi.fn(async () => {
       throw new Error('not used')
     }),
     getProject: vi.fn(
@@ -339,9 +351,10 @@ it('keeps a pending Legacy Session Import read-only', async () => {
           legacyImport: { status: 'pending', sourceFile: 'legacy-imports/session.json' },
         }) satisfies SessionHistoryState,
     ),
+    inspectSessionHistory: vi.fn(async () => historyView(session, null)),
     bindPiSession: vi.fn(async () => undefined),
     rebuildSessionProjection: vi.fn(async () => session),
-    createForkedSession: vi.fn(async () => {
+    createDerivedSession: vi.fn(async () => {
       throw new Error('not used')
     }),
     getProject: vi.fn(() => {
@@ -396,14 +409,31 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
     createdAt: now,
     updatedAt: now,
   }
+  const clonedSummary: SessionSummary = {
+    ...forkedSummary,
+    id: '71234567-89ab-4def-8123-456789abcdef',
+    title: 'Source session (Clone)',
+  }
   let releaseCommit!: () => void
   const commitGate = new Promise<void>((resolve) => {
     releaseCommit = resolve
   })
-  const createForkedSession = vi.fn(async () => {
-    await commitGate
-    return forkedSummary
-  })
+  const createDerivedSession = vi.fn(
+    async (_sourceSessionId: string, _targetSessionId: string, kind: 'fork' | 'clone') => {
+      if (kind === 'fork') await commitGate
+      return kind === 'clone' ? clonedSummary : forkedSummary
+    },
+  )
+  const inspectSessionHistory = vi.fn(
+    async (_sourceSessionId: string, selectedEntryId: string | null) => ({
+      ...historyView(session, 'active-entry'),
+      tree: {
+        activeLeafId: 'active-entry',
+        selectedEntryId: selectedEntryId ?? 'active-entry',
+        nodes: [],
+      },
+    }),
+  )
   const repository: RuntimePersistence = {
     getSession: vi.fn(async () => session),
     getSessionHistory: vi.fn(
@@ -415,9 +445,10 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
           legacyImport: { status: 'not-required', sourceFile: null },
         }) satisfies SessionHistoryState,
     ),
+    inspectSessionHistory,
     bindPiSession: vi.fn(async () => undefined),
     rebuildSessionProjection: vi.fn(async () => session),
-    createForkedSession,
+    createDerivedSession,
     getProject: vi.fn(
       () =>
         ({
@@ -472,7 +503,7 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
   const coordinator = new RuntimeCoordinator(repository, supervisor, vi.fn())
 
   const forking = coordinator.forkSession(sessionId, 'selected-entry')
-  await vi.waitFor(() => expect(createForkedSession).toHaveBeenCalledOnce())
+  await vi.waitFor(() => expect(createDerivedSession).toHaveBeenCalledOnce())
   expect(coordinator.isActive()).toBe(true)
   releaseCommit()
   await expect(forking).resolves.toEqual(forkedSummary)
@@ -488,7 +519,7 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
     }),
   )
   const forkConfig = fork.mock.calls[0]![0]
-  expect(createForkedSession).toHaveBeenCalledWith(sessionId, forkConfig.targetSessionId, {
+  expect(createDerivedSession).toHaveBeenCalledWith(sessionId, forkConfig.targetSessionId, 'fork', {
     id: 'forked-pi-session',
     file: 'forked.jsonl',
   })
@@ -500,5 +531,24 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
     outcome: 'cancelled',
   })
   await expect(coordinator.forkSession(sessionId, 'cancelled-entry')).resolves.toBeNull()
-  expect(createForkedSession).toHaveBeenCalledTimes(1)
+  expect(createDerivedSession).toHaveBeenCalledTimes(1)
+
+  await expect(coordinator.cloneSession(sessionId)).resolves.toEqual(clonedSummary)
+  const cloneConfig = fork.mock.calls[2]![0]
+  expect(cloneConfig.entryId).toBe('active-entry')
+  expect(inspectSessionHistory).toHaveBeenLastCalledWith(sessionId, null)
+  expect(createDerivedSession).toHaveBeenLastCalledWith(
+    sessionId,
+    cloneConfig.targetSessionId,
+    'clone',
+    {
+      id: 'forked-pi-session',
+      file: 'forked.jsonl',
+    },
+  )
+
+  await expect(coordinator.forkSession(sessionId, 'active-entry')).rejects.toThrow(
+    '请使用 Clone 复制当前分支',
+  )
+  expect(fork).toHaveBeenCalledTimes(3)
 })

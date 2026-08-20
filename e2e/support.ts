@@ -16,6 +16,7 @@ export const credentialFixtures = {
 
 export const bridgeKeys = [
   'approveCommand',
+  'cloneSession',
   'createSession',
   'deleteSession',
   'getAppInfo',

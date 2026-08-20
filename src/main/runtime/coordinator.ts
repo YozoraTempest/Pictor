@@ -7,6 +7,7 @@ import {
   toolEventSchema,
   type Project,
   type SessionHistoryState,
+  type SessionHistoryView,
   type SessionRecord,
   type SessionSummary,
 } from '../../shared/domain.js'
@@ -23,11 +24,16 @@ import { createSecretRedactor, type SecretRedactor } from '../../shared/secret-r
 export interface RuntimePersistence {
   getSession(sessionId: string): Promise<SessionRecord>
   getSessionHistory(sessionId: string): SessionHistoryState
+  inspectSessionHistory(
+    sessionId: string,
+    selectedEntryId: string | null,
+  ): Promise<SessionHistoryView>
   bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void>
   rebuildSessionProjection(sessionId: string): Promise<SessionRecord>
-  createForkedSession(
+  createDerivedSession(
     sourceSessionId: string,
     targetSessionId: string,
+    kind: 'fork' | 'clone',
     identity: { id: string; file: string },
   ): Promise<SessionSummary>
   getProject(projectId: string): Project
@@ -65,7 +71,7 @@ interface ActiveRun {
 
 export class RuntimeCoordinator {
   private active: ActiveRun | null = null
-  private forkOperationId: string | null = null
+  private sessionDerivationOperationId: string | null = null
   private persistenceQueue = Promise.resolve()
 
   constructor(
@@ -76,7 +82,7 @@ export class RuntimeCoordinator {
   ) {}
 
   async start(sessionId: string, prompt: string): Promise<{ runId: string }> {
-    if (this.active || this.forkOperationId || this.supervisor.isActive()) {
+    if (this.active || this.sessionDerivationOperationId || this.supervisor.isActive()) {
       throw new PictorError('invalid-input', '已有 Agent 运行正在执行，请先等待或停止该运行')
     }
     const session = await this.repository.getSession(sessionId)
@@ -174,18 +180,45 @@ export class RuntimeCoordinator {
   }
 
   async forkSession(sourceSessionId: string, entryId: string): Promise<SessionSummary | null> {
-    if (this.active || this.forkOperationId || this.supervisor.isActive()) {
+    return this.deriveSession(sourceSessionId, { kind: 'fork', entryId })
+  }
+
+  async cloneSession(sourceSessionId: string): Promise<SessionSummary | null> {
+    return this.deriveSession(sourceSessionId, { kind: 'clone' })
+  }
+
+  private async deriveSession(
+    sourceSessionId: string,
+    derivation: { kind: 'fork'; entryId: string } | { kind: 'clone' },
+  ): Promise<SessionSummary | null> {
+    if (this.active || this.sessionDerivationOperationId || this.supervisor.isActive()) {
       throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
     }
     await this.persistenceQueue
     const source = await this.repository.getSession(sourceSessionId)
     const history = this.repository.getSessionHistory(sourceSessionId)
     if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
-      throw new PictorError('invalid-input', '当前 Session 没有可 Fork 的 Pi JSONL 历史')
+      throw new PictorError('invalid-input', '当前 Session 没有可派生的 Pi JSONL 历史')
     }
+    const historyView = await this.repository.inspectSessionHistory(
+      sourceSessionId,
+      derivation.kind === 'fork' ? derivation.entryId : null,
+    )
+    const activeLeafId = historyView.tree?.activeLeafId
+    if (!activeLeafId) {
+      throw new PictorError('invalid-input', '当前 Pi Session History 没有可派生的活跃节点')
+    }
+    if (derivation.kind === 'fork' && derivation.entryId === activeLeafId) {
+      throw new PictorError('invalid-input', '当前节点是活跃叶节点，请使用 Clone 复制当前分支')
+    }
+    const entryId = derivation.kind === 'clone' ? activeLeafId : derivation.entryId
+    const actionLabel = derivation.kind === 'clone' ? 'Clone' : 'Fork'
     const project = this.repository.getProject(source.projectId)
     if (project.availability !== 'available') {
-      throw new PictorError('project-unavailable', '项目目录当前不可用，请重新关联后再 Fork')
+      throw new PictorError(
+        'project-unavailable',
+        `项目目录当前不可用，请重新关联后再 ${actionLabel}`,
+      )
     }
     const settings = await this.repository.getSettings()
     const apiKey = await this.repository.getApiKey()
@@ -199,11 +232,11 @@ export class RuntimeCoordinator {
     if (!sourcePaths.resumeSession) {
       throw new PictorError(
         'credential-unavailable',
-        'Pi Session 凭据迁移尚未完成，当前历史不能安全 Fork',
+        `Pi Session 凭据迁移尚未完成，当前历史不能安全 ${actionLabel}`,
       )
     }
     const targetPaths = this.repository.getRuntimePaths(project.id, targetSessionId)
-    this.forkOperationId = operationId
+    this.sessionDerivationOperationId = operationId
     try {
       const result = await this.supervisor.fork({
         type: 'fork',
@@ -228,12 +261,19 @@ export class RuntimeCoordinator {
       })
       if (result.outcome === 'cancelled') return null
       if (result.outcome === 'failed') throw new Error(result.message)
-      return await this.repository.createForkedSession(sourceSessionId, targetSessionId, {
-        id: result.piSessionId,
-        file: result.piSessionFile,
-      })
+      return await this.repository.createDerivedSession(
+        sourceSessionId,
+        targetSessionId,
+        derivation.kind,
+        {
+          id: result.piSessionId,
+          file: result.piSessionFile,
+        },
+      )
     } finally {
-      if (this.forkOperationId === operationId) this.forkOperationId = null
+      if (this.sessionDerivationOperationId === operationId) {
+        this.sessionDerivationOperationId = null
+      }
     }
   }
 
@@ -262,7 +302,11 @@ export class RuntimeCoordinator {
   }
 
   isActive(): boolean {
-    return this.active !== null || this.forkOperationId !== null || this.supervisor.isActive()
+    return (
+      this.active !== null ||
+      this.sessionDerivationOperationId !== null ||
+      this.supervisor.isActive()
+    )
   }
 
   handleEvent(event: RuntimeEvent): void {

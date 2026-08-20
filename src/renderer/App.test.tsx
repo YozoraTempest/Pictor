@@ -77,6 +77,7 @@ function createBridge(
         ? ok({ session, tree: null })
         : { ok: false, error: { code: 'not-found', message: '不存在' } },
     forkSession: async () => ok(null),
+    cloneSession: async () => ok(null),
     getSettings: async () => ok(snapshot.settings),
     saveSettings: async () => ok(snapshot.settings!),
     testSettings: async () => ok({ outcome: 'success', message: '连接成功' }),

@@ -68,6 +68,10 @@ _Avoid_: Fork, Runtime branch switch, editable history
 A new independent Pi Session created from one entry in existing Pi Session History through Pi's native Fork lifecycle.
 _Avoid_: Session Tree selection, in-place branch switch, copied GUI history
 
+**Pi Session Clone**:
+A new independent Pi Session containing the active branch through the current leaf of existing Pi Session History.
+_Avoid_: Historical Fork, same-file branch, copied GUI history
+
 **Legacy Session Import**:
 A preserved pre-authority Pictor Session awaiting explicit conversion into Pi Session History.
 _Avoid_: Automatic migration, discarded old Session
