@@ -118,9 +118,16 @@ Manifest 的 `pi.skills` 与 `pi.prompts` 直接展开为 Runtime resource path�
 `queue_update` 与 Session stats 作为事件回到 Renderer；Pictor 不自行实现第二套队列。
 
 `AppRepository` 是 Main 进程的工作区状态入口，只协调 Project、Settings、导航选择和持久化
-初始化。Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全
-集中在内部 `SessionPersistence` module；它直接使用本地文件系统和现有凭据迁移函数，不增加
-通用 Repository、DAO 或存储 provider。相关测试通过真实临时目录验证该 module 的可观察行为。
+初始化。Pi JSONL 是 Agent conversation history 的唯一 authority；Pictor schema v2 只保存导航
+元数据、Pi Session identity 和可重建的 Session Projection。Runtime 首次创建 Pi Session 时通过
+`session.bound` 绑定 identity，终态事件到达后由 Main 从 JSONL 重建投影；流式事件只服务当前
+交互，不成为第二份历史。旧 schema v1 若无法发现对应 Pi JSONL，会被脱敏归档为只读 Legacy
+Session Import，不允许在缺失上下文时启动新 Run。
+
+Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全集中在内部
+`SessionPersistence` module；Pi JSONL 到桌面模型的映射集中在纯投影 module。它们直接使用本地
+文件系统和现有凭据迁移函数，不增加通用 Repository、DAO 或存储 provider。相关测试通过真实
+临时目录验证可观察行为。
 
 `command-interpreter.ts` 在 Main 进程识别当前平台可用的 Bash，并把解析后的绝对路径作为
 Runtime 启动配置传入 utility process。Runtime 不重新猜测用户环境；`BashCommandExecutor`

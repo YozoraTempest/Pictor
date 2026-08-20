@@ -93,6 +93,7 @@ function createSession(
 function createSnapshot(
   selectedSessionId: string | null = firstSessionId,
   lastRunStatus: AppSnapshot['sessions'][number]['lastRunStatus'] = null,
+  historyAuthority?: AppSnapshot['sessions'][number]['historyAuthority'],
 ): AppSnapshot {
   return {
     projects: [
@@ -111,6 +112,7 @@ function createSnapshot(
       projectId,
       title: id,
       lastRunStatus: id === selectedSessionId ? lastRunStatus : null,
+      ...(id === selectedSessionId && historyAuthority ? { historyAuthority } : {}),
       createdAt: now,
       updatedAt: now,
     })),
@@ -217,6 +219,21 @@ describe('useWorkspaceController', () => {
 
     expect(result.current.snapshot).toBeNull()
     expect(result.current.loadError).toBe('无法读取工作区')
+  })
+
+  it('keeps a Legacy Session Import visible but read-only', async () => {
+    const legacy = createSession(firstSessionId, { title: 'Legacy history' })
+    const bridge = createBridge({
+      snapshot: createSnapshot(firstSessionId, null, 'legacy-import'),
+      sessions: { [firstSessionId]: legacy },
+    })
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.session).toEqual(legacy))
+
+    expect(result.current.disabledReason).toContain('旧版会话是只读历史')
+    act(() => result.current.setDraft('must not run'))
+    await act(async () => result.current.startRun())
+    expect(bridge.startRun).not.toHaveBeenCalled()
   })
 
   it('does not let an older Session selection overwrite the latest selection', async () => {

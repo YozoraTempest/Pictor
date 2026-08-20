@@ -378,6 +378,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null
   const activeSessionSummary =
     sessions.find((candidate) => activeStatuses.has(candidate.lastRunStatus ?? '')) ?? null
+  const selectedSessionSummary =
+    sessions.find((candidate) => candidate.id === selectedSessionId) ?? null
   const activeRun = session?.runs.at(-1) ?? null
   const selectedRunIsActive = Boolean(activeRun && activeStatuses.has(activeRun.status))
   const anotherSessionRunning = Boolean(
@@ -388,11 +390,21 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const disabledReason = useMemo(() => {
     if (!selectedProject || !session) return '请先选择一个 Session'
     if (selectedProject.availability !== 'available') return '项目目录不可用'
+    if (selectedSessionSummary?.historyAuthority === 'legacy-import') {
+      return '旧版会话是只读历史，需要显式导入为 Pi Session'
+    }
     if (!snapshot?.settings?.hasApiKey) return '模型 API 尚未配置'
     if (selectedRunIsActive) return '当前 Agent 正在运行'
     if (anotherSessionRunning) return '另一个 Session 正在运行'
     return null
-  }, [anotherSessionRunning, selectedProject, selectedRunIsActive, session, snapshot?.settings])
+  }, [
+    anotherSessionRunning,
+    selectedProject,
+    selectedRunIsActive,
+    selectedSessionSummary?.historyAuthority,
+    session,
+    snapshot?.settings,
+  ])
 
   const setDraft = useCallback((value: string) => {
     const sessionId = selectedSessionIdRef.current

@@ -175,9 +175,14 @@ CI 门禁和发行版验收见 [`docs/TESTING.md`](docs/TESTING.md)。
 ## 本地数据与安全边界
 
 Pictor 将版本化状态写入 Electron `userData/data-v1`。普通设置保存在 `state.json`，每个
-Session 独立保存在 `sessions/`，Pi 私有会话位于 `pi/`。API Key 明文保存在独立的
-`auth.json`，依靠当前用户的数据目录和文件权限保护；Unix 写入请求 `0600`。它不会返回
-Renderer，也不会写入项目或 Session 数据。不要共享该文件或整个用户数据目录。
+Session 的导航元数据、Pi Session identity 和可重建投影以 schema v2 独立保存在 `sessions/`；
+`pi/` 中的 Pi JSONL 是 Agent 对话历史的唯一权威。启动后的终态投影会从对应 JSONL 重建，
+不会把 Renderer event 形成的平面消息副本当作历史来源。旧 schema v1 若没有可匹配的 Pi JSONL，
+会归档到 `sessions/legacy-imports/` 并保持只读，避免无提示丢失上下文后继续运行。
+
+API Key 明文保存在独立的 `auth.json`，依靠当前用户的数据目录和文件权限保护；Unix 写入请求
+`0600`。它不会返回 Renderer，也不会写入项目、Session 投影或 Pi JSONL。不要共享该文件或
+整个用户数据目录。
 
 源码开发默认把数据写入独立的 `pictor-dev/data-v1`，自动化测试继续使用各自的临时目录。
 
