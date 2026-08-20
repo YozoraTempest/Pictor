@@ -105,6 +105,8 @@ export class SecretRedactor {
         }
       case 'usage.updated':
         return event
+      case 'session.bound':
+        return event
       case 'message.started':
       case 'approval.resolved':
         return event

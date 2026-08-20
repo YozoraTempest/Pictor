@@ -29,6 +29,8 @@ const sessionFactory = async () => ({
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     cost: 0,
   }),
+  getSessionId: () => 'test-pi-session',
+  getSessionFile: () => '/tmp/test-pi-session.jsonl',
   dispose: () => undefined,
 })
 
@@ -158,6 +160,8 @@ describe('PiAgentRuntime cleanup', () => {
           tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
           cost: 0,
         }),
+        getSessionId: () => 'test-pi-session',
+        getSessionFile: () => '/tmp/test-pi-session.jsonl',
       }),
     )
     runtime.configure({

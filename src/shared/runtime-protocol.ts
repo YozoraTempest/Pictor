@@ -11,6 +11,11 @@ const runtimeEventBaseSchema = z.object({
 
 export const runtimeEventSchema = z.discriminatedUnion('type', [
   runtimeEventBaseSchema.extend({
+    type: z.literal('session.bound'),
+    piSessionId: z.string().min(1),
+    piSessionFile: z.string().min(1),
+  }),
+  runtimeEventBaseSchema.extend({
     type: z.literal('run.stateChanged'),
     status: runStatusSchema,
     error: z.string().nullable(),

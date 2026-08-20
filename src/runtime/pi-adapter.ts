@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { basename, isAbsolute, relative, resolve } from 'node:path'
 
 import {
   createAgentSessionFromServices,
@@ -20,6 +20,7 @@ import {
   type RuntimeEvent,
   type RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
+import { classifyRuntimeFailure, type RuntimeFailure } from '../shared/runtime-failure.js'
 import { createSecretRedactor, type SecretRedactor } from '../shared/secret-redaction.js'
 import type { AgentRuntimeResources, ModelRuntimeProvider } from './plugin-interface.js'
 import { ApprovalBroker } from './approval-broker.js'
@@ -48,6 +49,8 @@ interface PiSessionLike {
   followUp(text: string): Promise<void>
   clearQueue(): { steering: string[]; followUp: string[] }
   getSessionStats(): SessionStats
+  getSessionId(): string
+  getSessionFile(): string | undefined
   dispose(): void | Promise<void>
   bindExtensionUi?(context: ExtensionUIContext): Promise<void>
 }
@@ -76,8 +79,6 @@ interface ActiveRuntime {
   extensionUi: ExtensionUiBroker
 }
 
-type RuntimeFailure = Pick<Extract<RuntimeEvent, { type: 'runtime.error' }>, 'category' | 'message'>
-
 type RuntimeEventPayload = RuntimeEvent extends infer Event
   ? Event extends RuntimeEvent
     ? Omit<Event, 'runId' | 'sessionId' | 'at'>
@@ -103,42 +104,6 @@ function eventText(value: unknown): string {
 function outputText(value: unknown): string {
   if (!value || typeof value !== 'object') return ''
   return eventText(value)
-}
-
-function classifyError(message: string): RuntimeFailure['category'] {
-  const normalized = message.toLocaleLowerCase('en-US')
-  if (normalized.includes('401') || normalized.includes('403') || normalized.includes('api key')) {
-    return 'authentication'
-  }
-  if (normalized.includes('429') || /\b5\d\d\b/.test(normalized)) return 'server'
-  if (normalized.includes('404') || normalized.includes('model')) return 'model'
-  if (
-    normalized.includes('network') ||
-    normalized.includes('fetch') ||
-    normalized.includes('connect') ||
-    normalized.includes('timeout') ||
-    normalized.includes('terminated') ||
-    normalized.includes('socket') ||
-    normalized.includes('econnreset') ||
-    normalized.includes('stream ended') ||
-    normalized.includes('stream closed')
-  ) {
-    return 'connectivity'
-  }
-  return 'runtime'
-}
-
-const categoryMessages: Record<RuntimeFailure['category'], string> = {
-  authentication: '模型认证失败：请检查 API Key 和端点权限后重试。',
-  connectivity: '模型连接中断：请检查网络和 API Base URL 后重试。',
-  model: '模型不可用：请检查模型标识及该端点的模型权限。',
-  server: '模型服务暂时不可用或请求受限：请稍后重试。',
-  runtime: '模型响应无法处理：请检查兼容模式和服务端 SSE 格式。',
-}
-
-function runtimeFailure(detail: string): RuntimeFailure {
-  const category = classifyError(detail)
-  return { category, message: `${categoryMessages[category]} 技术详情：${detail}` }
 }
 
 function toolPath(projectRoot: string, args: unknown): string | null {
@@ -272,6 +237,14 @@ class PiSessionRuntime implements PiSessionLike {
     return this.runtime.session.getSessionStats()
   }
 
+  getSessionId(): string {
+    return this.runtime.session.sessionId
+  }
+
+  getSessionFile(): string | undefined {
+    return this.runtime.session.sessionFile
+  }
+
   dispose(): Promise<void> {
     return this.runtime.dispose()
   }
@@ -382,6 +355,13 @@ export class PiAgentRuntime {
         modelProvider: this.getModelProvider(),
       })
       current.session = session
+      const piSessionFile = session.getSessionFile()
+      if (!piSessionFile) throw new Error('Pi Session did not provide a persistent JSONL file')
+      this.emitEvent(config, {
+        type: 'session.bound',
+        piSessionId: session.getSessionId(),
+        piSessionFile: basename(piSessionFile),
+      })
       if (current.cancelled) {
         await session.abort()
         return
@@ -422,7 +402,7 @@ export class PiAgentRuntime {
       if (current.cancelled) {
         this.emitEvent(config, { type: 'run.stateChanged', status: 'stopped', error: null })
       } else {
-        const failure = runtimeFailure(detail)
+        const failure = classifyRuntimeFailure(detail)
         this.emitEvent(config, {
           type: 'runtime.error',
           ...failure,
@@ -541,7 +521,7 @@ export class PiAgentRuntime {
     if (event.type === 'message_end' && 'errorMessage' in event.message) {
       const detail = Reflect.get(event.message, 'errorMessage')
       if (typeof detail === 'string' && detail && !current.failure) {
-        const failure = runtimeFailure(detail)
+        const failure = classifyRuntimeFailure(detail)
         current.failure = failure
         this.emitEvent(config, {
           type: 'runtime.error',
