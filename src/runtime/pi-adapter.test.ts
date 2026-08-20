@@ -13,6 +13,7 @@ import type {
   RuntimeExportConfig,
   RuntimeForkConfig,
   RuntimeImportConfig,
+  RuntimeLabelConfig,
   RuntimeNavigateConfig,
   RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
@@ -33,6 +34,7 @@ const sessionFactory = async () => ({
   compact: async () => ({ summary: 'summary', firstKeptEntryId: 'entry', tokensBefore: 1 }),
   abortCompaction: () => undefined,
   abortBranchSummary: () => undefined,
+  labelEntry: () => undefined,
   exportToHtml: async (outputPath: string) => outputPath,
   exportToJsonl: (outputPath: string) => outputPath,
   getSessionStats: () => ({
@@ -171,6 +173,7 @@ describe('PiAgentRuntime cleanup', () => {
         compact: async () => ({ summary: 'summary', firstKeptEntryId: 'entry', tokensBefore: 1 }),
         abortCompaction: () => undefined,
         abortBranchSummary: () => undefined,
+        labelEntry: () => undefined,
         exportToHtml: async (outputPath: string) => outputPath,
         exportToJsonl: (outputPath: string) => outputPath,
         abort: async () => undefined,
@@ -252,6 +255,97 @@ describe('PiAgentRuntime cleanup', () => {
     await running
   })
 
+  it('streams Thinking content and exposes native auto-retry state', async () => {
+    const events: RuntimeEvent[] = []
+    let listener: ((event: AgentSessionEvent) => void) | undefined
+    const runtime = new PiAgentRuntime(
+      (event) => events.push(event),
+      async () => ({
+        ...(await sessionFactory()),
+        subscribe: (next) => {
+          listener = next
+          return () => {
+            listener = undefined
+          }
+        },
+        prompt: async () => {
+          listener?.({
+            type: 'auto_retry_start',
+            attempt: 1,
+            maxAttempts: 3,
+            delayMs: 500,
+            errorMessage: 'temporary failure',
+          })
+          listener?.({
+            type: 'message_update',
+            message: {} as never,
+            assistantMessageEvent: {
+              type: 'thinking_delta',
+              contentIndex: 0,
+              delta: 'Reasoning step',
+              partial: {} as never,
+            },
+          })
+          listener?.({
+            type: 'message_update',
+            message: {} as never,
+            assistantMessageEvent: {
+              type: 'text_delta',
+              contentIndex: 1,
+              delta: 'Final answer',
+              partial: {} as never,
+            },
+          })
+          listener?.({ type: 'auto_retry_end', success: true, attempt: 1 })
+        },
+      }),
+    )
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+
+    await runtime.start({
+      type: 'start',
+      runId: '71234567-89ab-4def-8123-456789abcdef',
+      sessionId: '81234567-89ab-4def-8123-456789abcdef',
+      messageId: '91234567-89ab-4def-8123-456789abcdef',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-thinking'),
+      sessionDirectory: join(root, 'session-thinking'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: 'high',
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+      prompt: 'think',
+    })
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'retry.stateChanged', status: 'scheduled', attempt: 1 }),
+    )
+    expect(
+      events
+        .filter((event) => event.type === 'message.delta')
+        .map((event) => event.delta)
+        .join(''),
+    ).toBe('Thinking\n\nReasoning step\n\nFinal answer')
+  })
+
   it('forks through the native Pi Session lifecycle and moves the new JSONL', async () => {
     const sourceSessionDirectory = join(root, 'source-session')
     const targetSessionDirectory = join(root, 'target-session')
@@ -284,6 +378,7 @@ describe('PiAgentRuntime cleanup', () => {
         compact: async () => ({ summary: 'summary', firstKeptEntryId: 'entry', tokensBefore: 1 }),
         abortCompaction: () => undefined,
         abortBranchSummary: () => undefined,
+        labelEntry: () => undefined,
         exportToHtml: async (outputPath: string) => outputPath,
         exportToJsonl: (outputPath: string) => outputPath,
         getSessionStats: () => ({
@@ -402,6 +497,7 @@ describe('PiAgentRuntime cleanup', () => {
           compact: async () => ({ summary: 'summary', firstKeptEntryId: 'entry', tokensBefore: 1 }),
           abortCompaction: () => undefined,
           abortBranchSummary: () => undefined,
+          labelEntry: () => undefined,
           exportToHtml: async (outputPath: string) => outputPath,
           exportToJsonl: (outputPath: string) => outputPath,
           getSessionStats: () => ({
@@ -779,5 +875,60 @@ describe('PiAgentRuntime cleanup', () => {
         estimatedTokensAfter: 30,
       }),
     ])
+  })
+
+  it('appends native Pi label entries and returns the resulting leaf', async () => {
+    const sourceSessionDirectory = join(root, 'label-source')
+    const sourceFile = join(sourceSessionDirectory, 'source.jsonl')
+    await mkdir(sourceSessionDirectory)
+    await writeFile(sourceFile, '{"type":"session","version":3,"id":"pi-session"}\n')
+    const labelEntry = vi.fn()
+    const factory = vi.fn(async () => ({
+      ...(await sessionFactory()),
+      labelEntry,
+      getSessionFile: () => sourceFile,
+      getActiveLeafId: () => 'label-entry',
+    }))
+    const runtime = new PiAgentRuntime(() => undefined, factory)
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const config = {
+      type: 'label',
+      operationId: '01234567-89ab-4def-8123-456789abcdef',
+      sourceSessionId: '11234567-89ab-4def-8123-456789abcdef',
+      entryId: 'target-entry',
+      label: 'checkpoint',
+      activeLeafId: 'active-entry',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-label'),
+      sourceSessionDirectory,
+      sourcePiSessionFile: 'source.jsonl',
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+    } satisfies RuntimeLabelConfig
+
+    await expect(runtime.labelSessionEntry(config)).resolves.toEqual({
+      outcome: 'completed',
+      activeLeafId: 'label-entry',
+    })
+    expect(labelEntry).toHaveBeenCalledWith('target-entry', 'checkpoint')
   })
 })

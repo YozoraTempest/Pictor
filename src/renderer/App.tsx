@@ -50,6 +50,8 @@ export function App({
   const [branchSummaryTarget, setBranchSummaryTarget] = useState<string | null>(null)
   const [branchSummaryInstructions, setBranchSummaryInstructions] = useState('')
   const [sessionControls, setSessionControls] = useState<SessionRuntimeControls | null>(null)
+  const [entryLabelTarget, setEntryLabelTarget] = useState<string | null>(null)
+  const [entryLabelValue, setEntryLabelValue] = useState('')
   const [modalBusy, setModalBusy] = useState(false)
   const [extensionUiRequest, setExtensionUiRequest] = useState<ExtensionUiRequest | null>(null)
   const [extensionUiValue, setExtensionUiValue] = useState('')
@@ -85,6 +87,8 @@ export function App({
           setExtensionNotice(event.message)
         } else if (event.type === 'runtime.diagnostic') {
           setExtensionNotice(event.message)
+        } else if (event.type === 'retry.stateChanged' && event.status === 'scheduled') {
+          setExtensionNotice(`模型请求重试 ${event.attempt}/${event.maxAttempts ?? '?'}`)
         } else if (event.type === 'extension.ui.status' && event.text) {
           setExtensionNotice(event.text)
         }
@@ -211,6 +215,17 @@ export function App({
     } else workspace.reportActionError(response.error.message)
   }
 
+  const saveEntryLabel = async () => {
+    if (!entryLabelTarget) return
+    setModalBusy(true)
+    const completed = await workspace.labelSessionEntry(
+      entryLabelTarget,
+      entryLabelValue.trim() || null,
+    )
+    setModalBusy(false)
+    if (completed) setEntryLabelTarget(null)
+  }
+
   const respondToExtensionUi = async (value: string | boolean | null) => {
     if (!extensionUiRequest) return
     setModalBusy(true)
@@ -310,6 +325,10 @@ export function App({
         onInspectSessionHistory={(entryId) => void workspace.inspectSessionHistory(entryId)}
         onNavigateSessionTree={(entryId) => void workspace.navigateSessionTree(entryId)}
         onOpenBranchSummary={(entryId) => setBranchSummaryTarget(entryId)}
+        onOpenEntryLabel={(entryId, label) => {
+          setEntryLabelTarget(entryId)
+          setEntryLabelValue(label)
+        }}
         onOpenCompaction={() => setCompactionOpen(true)}
         onCancelSessionOperation={() => void workspace.cancelSessionOperation()}
         onOpenSessionControls={() => void openSessionControls()}
@@ -745,6 +764,38 @@ export function App({
               type="button"
               disabled={modalBusy}
               onClick={() => void saveSessionControls()}
+            >
+              保存
+            </button>
+          </footer>
+        </Modal>
+      ) : null}
+
+      {entryLabelTarget ? (
+        <Modal title="标记 Session 节点" onClose={() => setEntryLabelTarget(null)}>
+          <label className="field field--full">
+            <span>Label</span>
+            <input
+              autoFocus
+              maxLength={120}
+              value={entryLabelValue}
+              onChange={(event) => setEntryLabelValue(event.target.value)}
+            />
+          </label>
+          <footer className="modal-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={modalBusy}
+              onClick={() => setEntryLabelTarget(null)}
+            >
+              取消
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={modalBusy}
+              onClick={() => void saveEntryLabel()}
             >
               保存
             </button>

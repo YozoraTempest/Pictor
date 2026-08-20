@@ -221,6 +221,29 @@ parentPort.on('message', (messageEvent) => {
     return
   }
 
+  if (command.type === 'label') {
+    void statePromise
+      .then((state) => requireRuntime(state).labelSessionEntry(command))
+      .then((result) =>
+        parentPort.postMessage({
+          type: 'host.labelResult',
+          operationId: command.operationId,
+          sourceSessionId: command.sourceSessionId,
+          ...result,
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.labelResult',
+          operationId: command.operationId,
+          sourceSessionId: command.sourceSessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Pi Session Label failed',
+        }),
+      )
+    return
+  }
+
   void statePromise
     .then((state) => {
       const runtime = requireRuntime(state)

@@ -88,6 +88,10 @@ function createBridge(
         : { ok: false, error: { code: 'not-found', message: '不存在' } },
     navigateSessionTree: async () => ok(null),
     compactSession: async () => ok(null),
+    labelSessionEntry: async () =>
+      session
+        ? ok({ session, tree: null })
+        : { ok: false, error: { code: 'not-found', message: '不存在' } },
     cancelSessionOperation: async () => ok(false),
     getSessionRuntimeControls: async () =>
       ok({

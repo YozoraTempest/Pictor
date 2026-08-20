@@ -34,6 +34,7 @@ import {
   type RuntimeExportConfig,
   type RuntimeForkConfig,
   type RuntimeImportConfig,
+  type RuntimeLabelConfig,
   type RuntimeNavigateConfig,
   type RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
@@ -44,6 +45,7 @@ import type {
   AgentRuntimeCompactResult,
   AgentRuntimeExportResult,
   AgentRuntimeImportResult,
+  AgentRuntimeLabelResult,
   AgentRuntimeNavigateResult,
   AgentRuntimeResources,
   ModelRuntimeProvider,
@@ -88,6 +90,7 @@ interface PiSessionLike {
   compact(customInstructions?: string): Promise<CompactionResult>
   abortCompaction(): void
   abortBranchSummary(): void
+  labelEntry(entryId: string, label: string | undefined): void
   exportToHtml(outputPath: string): Promise<string>
   exportToJsonl(outputPath: string): string
   getSessionStats(): SessionStats
@@ -119,6 +122,8 @@ interface ActiveRuntime {
   unsubscribe: (() => void) | null
   cancelled: boolean
   text: string
+  thinkingStarted: boolean
+  textStarted: boolean
   failure: RuntimeFailure | null
   redactor: SecretRedactor
   extensionUi: ExtensionUiBroker
@@ -205,7 +210,7 @@ async function createProductionSession({
   }: Parameters<Parameters<typeof createAgentSessionRuntime>[0]>[0]) => {
     const settingsManager = SettingsManager.inMemory(
       {
-        retry: { enabled: false },
+        retry: { enabled: true, maxRetries: 3, baseDelayMs: 500 },
         enableAnalytics: false,
         compaction: { enabled: true },
         steeringMode: config.runtimePreferences?.steeringMode ?? 'one-at-a-time',
@@ -350,6 +355,10 @@ class PiSessionRuntime implements PiSessionLike {
     this.runtime.session.abortBranchSummary()
   }
 
+  labelEntry(entryId: string, label: string | undefined): void {
+    this.runtime.session.sessionManager.appendLabelChange(entryId, label)
+  }
+
   exportToHtml(outputPath: string): Promise<string> {
     return this.runtime.session.exportToHtml(outputPath)
   }
@@ -430,7 +439,7 @@ export class PiAgentRuntime {
   private modelProviders: readonly ModelRuntimeProvider[] = []
   private sessionOperation: {
     operationId: string
-    kind: 'fork' | 'import' | 'export' | 'navigate' | 'compact'
+    kind: 'fork' | 'import' | 'export' | 'navigate' | 'compact' | 'label'
     broker: ExtensionUiBroker
     session: PiSessionLike | null
     cancelRequested: boolean
@@ -470,6 +479,8 @@ export class PiAgentRuntime {
       unsubscribe: null,
       cancelled: false,
       text: '',
+      thinkingStarted: false,
+      textStarted: false,
       failure: null,
       redactor: createSecretRedactor([config.apiKey]),
       extensionUi: new ExtensionUiBroker((event) => this.emitEvent(config, event)),
@@ -978,6 +989,60 @@ export class PiAgentRuntime {
     }
   }
 
+  async labelSessionEntry(config: RuntimeLabelConfig): Promise<AgentRuntimeLabelResult> {
+    if (this.current || this.sessionOperation)
+      throw new Error('Only one Runtime operation can be active')
+    const eventConfig: RuntimeStartConfig = {
+      type: 'start',
+      runId: config.operationId,
+      sessionId: config.sourceSessionId,
+      messageId: config.operationId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: config.sourceSessionDirectory,
+      resumeSession: true,
+      activeLeafId: config.activeLeafId,
+      settings: config.settings,
+      apiKey: config.apiKey,
+      prompt: 'Label Pi Session Entry',
+    }
+    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
+    this.sessionOperation = {
+      operationId: config.operationId,
+      kind: 'label',
+      broker,
+      session: null,
+      cancelRequested: false,
+    }
+    let session: PiSessionLike | null = null
+    try {
+      session = await this.sessionFactory({
+        config: eventConfig,
+        sessionFile: config.sourcePiSessionFile,
+        tools: [],
+        extensionPaths: this.extensionPaths,
+        skillPaths: this.skillPaths,
+        promptPaths: this.promptPaths,
+        modelProvider: this.getModelProvider(),
+      })
+      if (this.sessionOperation?.operationId === config.operationId) {
+        this.sessionOperation.session = session
+      }
+      session.labelEntry(config.entryId, config.label ?? undefined)
+      const activeLeafId = session.getActiveLeafId()
+      if (!activeLeafId) throw new Error('Pi Label did not provide an active leaf')
+      await sanitizePiTranscript(
+        resolve(config.sourceSessionDirectory, config.sourcePiSessionFile),
+        createSecretRedactor([config.apiKey]),
+      )
+      return { outcome: 'completed', activeLeafId }
+    } finally {
+      broker.cancelAll()
+      if (session) await Promise.resolve(session.dispose()).catch(() => undefined)
+      if (this.sessionOperation?.operationId === config.operationId) this.sessionOperation = null
+    }
+  }
+
   abortSessionOperation(operationId: string): void {
     const operation = this.sessionOperation
     if (!operation || operation.operationId !== operationId) return
@@ -1055,16 +1120,51 @@ export class PiAgentRuntime {
 
   private handlePiEvent(current: ActiveRuntime, event: AgentSessionEvent): void {
     const { config } = current
+    if (event.type === 'auto_retry_start') {
+      this.emitEvent(config, {
+        type: 'retry.stateChanged',
+        status: 'scheduled',
+        attempt: event.attempt,
+        maxAttempts: event.maxAttempts,
+        delayMs: event.delayMs,
+        error: event.errorMessage,
+      })
+      return
+    }
+    if (event.type === 'auto_retry_end') {
+      this.emitEvent(config, {
+        type: 'retry.stateChanged',
+        status: event.success ? 'completed' : 'failed',
+        attempt: event.attempt,
+        maxAttempts: null,
+        delayMs: null,
+        error: event.finalError ?? null,
+      })
+      return
+    }
     if (event.type === 'compaction_start' || event.type === 'compaction_end') {
       this.handleCompactionEvent(config, event)
       return
     }
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
-      current.text += event.assistantMessageEvent.delta
+      const prefix = current.thinkingStarted && !current.textStarted ? '\n\n' : ''
+      current.textStarted = true
+      current.text += prefix + event.assistantMessageEvent.delta
       this.emitEvent(config, {
         type: 'message.delta',
         messageId: config.messageId,
-        delta: event.assistantMessageEvent.delta,
+        delta: prefix + event.assistantMessageEvent.delta,
+      })
+      return
+    }
+    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'thinking_delta') {
+      const prefix = current.thinkingStarted ? '' : 'Thinking\n\n'
+      current.thinkingStarted = true
+      current.text += prefix + event.assistantMessageEvent.delta
+      this.emitEvent(config, {
+        type: 'message.delta',
+        messageId: config.messageId,
+        delta: prefix + event.assistantMessageEvent.delta,
       })
       return
     }

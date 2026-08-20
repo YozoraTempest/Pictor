@@ -27,6 +27,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   Square,
+  Tag,
   TerminalSquare,
   Wrench,
   X,
@@ -83,6 +84,7 @@ interface ConversationProps {
   onInspectSessionHistory: (entryId: string | null) => void
   onNavigateSessionTree: (entryId: string) => void
   onOpenBranchSummary: (entryId: string) => void
+  onOpenEntryLabel: (entryId: string, label: string) => void
   onOpenCompaction: () => void
   onCancelSessionOperation: () => void
   onOpenSessionControls: () => void
@@ -418,6 +420,7 @@ function SessionTreePanel({
   onSelect,
   onNavigate,
   onOpenBranchSummary,
+  onOpenEntryLabel,
   onFork,
   onClone,
   onClose,
@@ -430,6 +433,7 @@ function SessionTreePanel({
   onSelect: (entryId: string | null) => void
   onNavigate: (entryId: string) => void
   onOpenBranchSummary: (entryId: string) => void
+  onOpenEntryLabel: (entryId: string, label: string) => void
   onFork: (entryId: string) => void
   onClone: () => void
   onClose: () => void
@@ -460,6 +464,18 @@ function SessionTreePanel({
             }}
           >
             {navigatingEntryId ? <LoaderCircle className="spin" size={14} /> : <Route size={14} />}
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="标记节点"
+            title="标记节点"
+            disabled={!selectedNode || operationBusy}
+            onClick={() => {
+              if (selectedNode) onOpenEntryLabel(selectedNode.id, selectedNode.label)
+            }}
+          >
+            <Tag size={14} />
           </button>
           <button
             className="mini-icon-button"
@@ -589,6 +605,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     onInspectSessionHistory,
     onNavigateSessionTree,
     onOpenBranchSummary,
+    onOpenEntryLabel,
     onOpenCompaction,
     onCancelSessionOperation,
     onOpenSessionControls,
@@ -809,6 +826,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             onSelect={onInspectSessionHistory}
             onNavigate={onNavigateSessionTree}
             onOpenBranchSummary={onOpenBranchSummary}
+            onOpenEntryLabel={onOpenEntryLabel}
             onFork={onForkSession}
             onClone={onCloneSession}
             onClose={() => setTreeOpen(false)}

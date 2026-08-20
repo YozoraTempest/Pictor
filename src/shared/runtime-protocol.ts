@@ -84,6 +84,14 @@ export const runtimeEventSchema = z.discriminatedUnion('type', [
     message: z.string().min(1),
   }),
   runtimeEventBaseSchema.extend({
+    type: z.literal('retry.stateChanged'),
+    status: z.enum(['scheduled', 'completed', 'failed']),
+    attempt: z.number().int().nonnegative(),
+    maxAttempts: z.number().int().positive().nullable(),
+    delayMs: z.number().int().nonnegative().nullable(),
+    error: z.string().nullable(),
+  }),
+  runtimeEventBaseSchema.extend({
     type: z.literal('extension.ui.requested'),
     requestId: z.uuid(),
     kind: z.enum(['select', 'confirm', 'input', 'editor']),
@@ -307,6 +315,35 @@ export const runtimeCompactResultSchema = z.discriminatedUnion('outcome', [
   }),
 ])
 
+export const runtimeLabelConfigSchema = z.object({
+  type: z.literal('label'),
+  operationId: idSchema,
+  sourceSessionId: idSchema,
+  entryId: z.string().min(1),
+  label: z.string().trim().max(120).nullable(),
+  activeLeafId: z.string().min(1).nullable(),
+  projectRoot: z.string().min(1),
+  agentDirectory: z.string().min(1),
+  sourceSessionDirectory: z.string().min(1),
+  sourcePiSessionFile: z.string().min(1),
+  settings: modelSettingsInputSchema,
+  apiKey: z.string().min(1),
+})
+
+const runtimeLabelResultBaseSchema = z.object({
+  type: z.literal('host.labelResult'),
+  operationId: idSchema,
+  sourceSessionId: idSchema,
+})
+
+export const runtimeLabelResultSchema = z.discriminatedUnion('outcome', [
+  runtimeLabelResultBaseSchema.extend({
+    outcome: z.literal('completed'),
+    activeLeafId: z.string().min(1),
+  }),
+  runtimeLabelResultBaseSchema.extend({ outcome: z.literal('failed'), message: z.string().min(1) }),
+])
+
 export const runtimeCommandSchema = z.discriminatedUnion('type', [
   runtimeStartConfigSchema,
   runtimeForkConfigSchema,
@@ -314,6 +351,7 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
   runtimeExportConfigSchema,
   runtimeNavigateConfigSchema,
   runtimeCompactConfigSchema,
+  runtimeLabelConfigSchema,
   z.object({ type: z.literal('approve'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('reject'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('abort'), runId: idSchema }),
@@ -340,6 +378,7 @@ export const runtimeHostMessageSchema = z.union([
   runtimeExportResultSchema,
   runtimeNavigateResultSchema,
   runtimeCompactResultSchema,
+  runtimeLabelResultSchema,
   z.object({ type: z.literal('host.ready') }),
   z.object({ type: z.literal('host.fatal'), message: z.string().min(1) }),
 ])
@@ -357,5 +396,7 @@ export type RuntimeNavigateConfig = z.infer<typeof runtimeNavigateConfigSchema>
 export type RuntimeNavigateResult = z.infer<typeof runtimeNavigateResultSchema>
 export type RuntimeCompactConfig = z.infer<typeof runtimeCompactConfigSchema>
 export type RuntimeCompactResult = z.infer<typeof runtimeCompactResultSchema>
+export type RuntimeLabelConfig = z.infer<typeof runtimeLabelConfigSchema>
+export type RuntimeLabelResult = z.infer<typeof runtimeLabelResultSchema>
 export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>
 export type RuntimeHostMessage = z.infer<typeof runtimeHostMessageSchema>
