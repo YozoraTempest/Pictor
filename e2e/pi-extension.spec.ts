@@ -89,6 +89,46 @@ test('loads an unmodified native Pi Extension from the user Store', async ({
   const userDataDirectory = testInfo.outputPath('pi-extension-user-data')
   const projectRoot = testInfo.outputPath('pi-extension-project')
   await mkdir(projectRoot, { recursive: true })
+  const importSource = testInfo.outputPath('import-source.jsonl')
+  const importedJsonl = [
+    JSON.stringify({
+      type: 'session',
+      version: 3,
+      id: 'imported-pi-session',
+      timestamp: new Date().toISOString(),
+      cwd: '/missing/import-project',
+    }),
+    JSON.stringify({
+      type: 'message',
+      id: 'imported-user',
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      message: { role: 'user', content: 'Imported root task' },
+    }),
+    JSON.stringify({
+      type: 'message',
+      id: 'imported-original',
+      parentId: 'imported-user',
+      timestamp: new Date().toISOString(),
+      message: { role: 'assistant', content: 'Imported original answer', stopReason: 'stop' },
+    }),
+    JSON.stringify({
+      type: 'message',
+      id: 'imported-branch-user',
+      parentId: 'imported-user',
+      timestamp: new Date().toISOString(),
+      message: { role: 'user', content: 'Imported branch task' },
+    }),
+    JSON.stringify({
+      type: 'message',
+      id: 'imported-branch-answer',
+      parentId: 'imported-branch-user',
+      timestamp: new Date().toISOString(),
+      message: { role: 'assistant', content: 'Imported branch answer', stopReason: 'stop' },
+    }),
+    '',
+  ].join('\n')
+  await writeFile(importSource, importedJsonl)
   const store = new PluginStore({
     userDataDirectory,
     bundledPluginsDirectory: resolve('.pictor/bundled-plugins'),
@@ -125,6 +165,7 @@ import { join } from 'node:path'
 export default function (pi) {
   const record = (ctx, value) => appendFileSync(join(ctx.cwd, 'fork-lifecycle.log'), value + '\\n')
   pi.on('session_before_fork', (event, ctx) => record(ctx, 'before_fork:' + event.entryId + ':' + event.position))
+  pi.on('session_before_switch', (_event, ctx) => record(ctx, 'before_switch'))
   pi.on('session_shutdown', (event, ctx) => record(ctx, 'shutdown:' + event.reason))
   pi.on('session_start', (event, ctx) => record(ctx, 'start:' + event.reason))
 }
@@ -245,6 +286,43 @@ export default function (pi) {
     const clonedLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
     expect(clonedLifecycle.match(/shutdown:fork/g)).toHaveLength(2)
     expect(clonedLifecycle.match(/start:fork/g)).toHaveLength(2)
+
+    await electronApp.evaluate(({ dialog }, sourcePath) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sourcePath] })
+    }, importSource)
+    await window.getByLabel('pi-extension-project 项目操作').click()
+    await window.getByRole('button', { name: '导入 Pi Session' }).click()
+
+    await expect(window.getByRole('heading', { name: 'import-source (Import)' })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(window.locator('.timeline').getByText('Imported branch answer')).toBeVisible()
+    await window.getByRole('button', { name: 'Session Tree' }).click()
+    const importedTree = window.getByRole('complementary', { name: 'Session Tree' })
+    await expect(
+      importedTree.getByRole('button', { name: 'Imported original answer' }),
+    ).toBeVisible()
+    await expect(importedTree.getByRole('button', { name: 'Imported branch answer' })).toBeVisible()
+    const importedSnapshot = await window.evaluate(async () => {
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      return bridge.getSnapshot()
+    })
+    expect(importedSnapshot).toMatchObject({
+      ok: true,
+      value: {
+        selectedSessionId: expect.any(String),
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ title: 'import-source (Import)' }),
+        ]),
+      },
+    })
+    expect(await readFile(importSource, 'utf8')).toBe(importedJsonl)
+    await expect
+      .poll(() => readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8'))
+      .toEqual(expect.stringContaining('before_switch'))
+    const importedLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
+    expect(importedLifecycle).toContain('shutdown:resume')
+    expect(importedLifecycle).toContain('start:resume')
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

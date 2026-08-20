@@ -1,9 +1,11 @@
 import {
   AlertTriangle,
   ChevronRight,
+  FileUp,
   Folder,
   FolderPlus,
   MessageSquareText,
+  LoaderCircle,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -18,11 +20,13 @@ interface SidebarProps {
   sessions: SessionSummary[]
   selectedProjectId: string | null
   selectedSessionId: string | null
+  importingProjectId: string | null
   onAddProject: () => void
   onSelectProject: (projectId: string) => void
   onRemoveProject: (project: Project) => void
   onRelinkProject: (project: Project) => void
   onCreateSession: (projectId: string) => void
+  onImportSession: (projectId: string) => void
   onSelectSession: (projectId: string, sessionId: string) => void
   onRenameSession: (session: SessionSummary) => void
   onDeleteSession: (session: SessionSummary) => void
@@ -56,11 +60,13 @@ export function Sidebar({
   sessions,
   selectedProjectId,
   selectedSessionId,
+  importingProjectId,
   onAddProject,
   onSelectProject,
   onRemoveProject,
   onRelinkProject,
   onCreateSession,
+  onImportSession,
   onSelectSession,
   onRenameSession,
   onDeleteSession,
@@ -133,6 +139,20 @@ export function Sidebar({
                         <MoreHorizontal size={15} />
                       </summary>
                       <div className="menu-popover">
+                        {project.availability === 'available' ? (
+                          <button
+                            type="button"
+                            disabled={importingProjectId !== null}
+                            onClick={() => onImportSession(project.id)}
+                          >
+                            {importingProjectId === project.id ? (
+                              <LoaderCircle className="spin" size={14} />
+                            ) : (
+                              <FileUp size={14} />
+                            )}
+                            导入 Pi Session
+                          </button>
+                        ) : null}
                         {project.availability !== 'available' ? (
                           <button type="button" onClick={() => onRelinkProject(project)}>
                             <Folder size={14} />

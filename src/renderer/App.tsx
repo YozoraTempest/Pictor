@@ -174,11 +174,13 @@ export function App({
         sessions={workspace.sessions}
         selectedProjectId={workspace.selectedProjectId}
         selectedSessionId={workspace.selectedSessionId}
+        importingProjectId={workspace.importingProjectId}
         onAddProject={() => void pickProject()}
         onSelectProject={(id) => void workspace.selectProject(id)}
         onRemoveProject={(project) => requestDestructiveAction({ type: 'remove-project', project })}
         onRelinkProject={(project) => void pickProject(project.id)}
         onCreateSession={(id) => void workspace.createSession(id)}
+        onImportSession={(id) => void workspace.importSession(id)}
         onSelectSession={(projectId, sessionId) =>
           void workspace.selectSession(projectId, sessionId)
         }

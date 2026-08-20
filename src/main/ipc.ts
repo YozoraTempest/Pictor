@@ -8,6 +8,7 @@ import {
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
   forkSessionRequestSchema,
+  importSessionRequestSchema,
   inspectSessionHistoryRequestSchema,
   listModelsRequestSchema,
   projectIdRequestSchema,
@@ -228,6 +229,21 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = cloneSessionRequestSchema.parse(input)
       return runtimeCoordinator.cloneSession(request.sessionId)
+    })
+  })
+
+  ipcMain.handle('session:import', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = importSessionRequestSchema.parse(input)
+      const selection = await dialog.showOpenDialog({
+        title: '导入 Pi Session JSONL',
+        properties: ['openFile'],
+        filters: [{ name: 'Pi Session', extensions: ['jsonl'] }],
+      })
+      const path = selection.filePaths[0]
+      if (selection.canceled || !path) return null
+      return runtimeCoordinator.importSession(request.projectId, path)
     })
   })
 
