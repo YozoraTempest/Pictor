@@ -234,9 +234,14 @@ it('keeps manually expanded tool output open across runtime updates', async () =
 
   currentSession = {
     ...session,
-    messages: session.messages.map((message) => ({ ...message, status: 'completed' as const })),
+    messages: session.messages.map((message) => ({
+      ...message,
+      id: '99999999-9999-4999-8999-999999999999',
+      status: 'completed' as const,
+    })),
     runs: session.runs.map((run) => ({
       ...run,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       status: 'completed' as const,
       toolEvents: run.toolEvents.map((tool) => ({
         ...tool,
