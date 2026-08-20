@@ -104,6 +104,7 @@ export class SecretRedactor {
           followUp: event.followUp.map((message) => this.redactText(message)),
         }
       case 'usage.updated':
+      case 'session.activeLeafChanged':
         return event
       case 'session.bound':
         return event

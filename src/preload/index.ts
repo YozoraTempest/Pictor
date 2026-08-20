@@ -22,6 +22,8 @@ import {
   importSessionResultSchema,
   inspectSessionHistoryRequestSchema,
   listModelsRequestSchema,
+  navigateSessionTreeRequestSchema,
+  navigateSessionTreeResultSchema,
   modelCatalogIpcResultSchema,
   projectCandidateResultSchema,
   projectIdRequestSchema,
@@ -117,6 +119,13 @@ const bridge = Object.freeze({
       await ipcRenderer.invoke(
         'session:inspect-history',
         inspectSessionHistoryRequestSchema.parse(input),
+      ),
+    ),
+  navigateSessionTree: async (input) =>
+    navigateSessionTreeResultSchema.parse(
+      await ipcRenderer.invoke(
+        'session:navigate-tree',
+        navigateSessionTreeRequestSchema.parse(input),
       ),
     ),
   forkSession: async (input) =>

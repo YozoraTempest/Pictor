@@ -90,6 +90,23 @@ test('loads an unmodified native Pi Extension from the user Store', async ({
   const projectRoot = testInfo.outputPath('pi-extension-project')
   await mkdir(projectRoot, { recursive: true })
   const importSource = testInfo.outputPath('import-source.jsonl')
+  const importedAssistantMessage = (content: string) => ({
+    role: 'assistant',
+    content: [{ type: 'text', text: content }],
+    api: 'openai-completions',
+    provider: 'pictor-openai-compatible',
+    model: 'pictor-e2e-model',
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: 'stop',
+    timestamp: Date.now(),
+  })
   const importedJsonl = [
     JSON.stringify({
       type: 'session',
@@ -110,7 +127,7 @@ test('loads an unmodified native Pi Extension from the user Store', async ({
       id: 'imported-original',
       parentId: 'imported-user',
       timestamp: new Date().toISOString(),
-      message: { role: 'assistant', content: 'Imported original answer', stopReason: 'stop' },
+      message: importedAssistantMessage('Imported original answer'),
     }),
     JSON.stringify({
       type: 'message',
@@ -124,7 +141,7 @@ test('loads an unmodified native Pi Extension from the user Store', async ({
       id: 'imported-branch-answer',
       parentId: 'imported-branch-user',
       timestamp: new Date().toISOString(),
-      message: { role: 'assistant', content: 'Imported branch answer', stopReason: 'stop' },
+      message: importedAssistantMessage('Imported branch answer'),
     }),
     '',
   ].join('\n')
@@ -167,6 +184,8 @@ export default function (pi) {
   const record = (ctx, value) => appendFileSync(join(ctx.cwd, 'fork-lifecycle.log'), value + '\\n')
   pi.on('session_before_fork', (event, ctx) => record(ctx, 'before_fork:' + event.entryId + ':' + event.position))
   pi.on('session_before_switch', (_event, ctx) => record(ctx, 'before_switch'))
+  pi.on('session_before_tree', (event, ctx) => record(ctx, 'before_tree:' + event.preparation.targetId + ':' + event.preparation.oldLeafId))
+  pi.on('session_tree', (event, ctx) => record(ctx, 'tree:' + event.oldLeafId + ':' + event.newLeafId))
   pi.on('session_shutdown', (event, ctx) => record(ctx, 'shutdown:' + event.reason))
   pi.on('session_start', (event, ctx) => record(ctx, 'start:' + event.reason))
 }
@@ -342,6 +361,31 @@ export default function (pi) {
     const importedLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
     expect(importedLifecycle).toContain('shutdown:resume')
     expect(importedLifecycle).toContain('start:resume')
+    const importedSessionId = importedSnapshot.ok ? importedSnapshot.value.selectedSessionId : null
+    const importedSummary = importedSnapshot.ok
+      ? importedSnapshot.value.sessions.find((session) => session.id === importedSessionId)
+      : null
+    if (!importedSessionId || !importedSummary) {
+      throw new Error('Imported Pictor Session is not selected')
+    }
+    const importedMetadataPath = resolve(
+      userDataDirectory,
+      'data-v1',
+      'sessions',
+      `${importedSessionId}.json`,
+    )
+    const metadataBeforeNavigation = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
+      history: { piSessionFile: string; activeLeafId?: string | null }
+    }
+    const authoritativeJsonlPath = resolve(
+      userDataDirectory,
+      'data-v1',
+      'pi',
+      importedSummary.projectId,
+      importedSessionId,
+      metadataBeforeNavigation.history.piSessionFile,
+    )
+    const authoritativeJsonlBeforeExport = await readFile(authoritativeJsonlPath, 'utf8')
 
     const exportSelectedSession = (format: 'jsonl' | 'html') =>
       window.evaluate(async (selectedFormat) => {
@@ -387,6 +431,111 @@ export default function (pi) {
     expect(exportedTree).toContain('Imported original answer')
     expect(exportedTree).toContain('Imported branch answer')
     expect(await readFile(importSource, 'utf8')).toBe(importedJsonl)
+    expect(await readFile(authoritativeJsonlPath, 'utf8')).toBe(authoritativeJsonlBeforeExport)
+
+    const historyBeforeNavigation = await window.evaluate(async (sessionId) => {
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      return bridge.inspectSessionHistory({ sessionId, entryId: null })
+    }, importedSessionId)
+    if (!historyBeforeNavigation.ok || !historyBeforeNavigation.value.tree?.activeLeafId) {
+      throw new Error('Imported Pi Session does not have an active leaf')
+    }
+    const activeLeafBeforeNavigation = historyBeforeNavigation.value.tree.activeLeafId
+    await importedTree.getByRole('button', { name: 'Imported original answer' }).click()
+    await expect(window.getByRole('button', { name: '切换到此节点' })).toBeEnabled()
+    await window.getByRole('button', { name: '切换到此节点' }).click()
+
+    const timeline = window.locator('.timeline')
+    await expect(timeline.getByText('Imported original answer')).toBeVisible()
+    await expect(timeline.getByText('Imported branch answer')).toHaveCount(0)
+    await expect(window.getByRole('textbox', { name: '任务描述' })).toBeEnabled()
+    const navigatedHistory = await window.evaluate(async () => {
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      const snapshot = await bridge.getSnapshot()
+      if (!snapshot.ok || !snapshot.value.selectedSessionId) return snapshot
+      return bridge.inspectSessionHistory({
+        sessionId: snapshot.value.selectedSessionId,
+        entryId: null,
+      })
+    })
+    expect(navigatedHistory).toMatchObject({
+      ok: true,
+      value: {
+        tree: { activeLeafId: 'imported-original', selectedEntryId: 'imported-original' },
+      },
+    })
+    const metadataAfterNavigation = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
+      history: { piSessionFile: string; activeLeafId?: string | null }
+    }
+    expect(metadataAfterNavigation.history).toMatchObject({
+      piSessionFile: metadataBeforeNavigation.history.piSessionFile,
+      activeLeafId: 'imported-original',
+    })
+    await expect
+      .poll(() => readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8'))
+      .toEqual(
+        expect.stringContaining(`before_tree:imported-original:${activeLeafBeforeNavigation}`),
+      )
+    const treeLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
+    expect(treeLifecycle).toContain(`tree:${activeLeafBeforeNavigation}:imported-original`)
+
+    await window.evaluate((sessionId) => {
+      const target = globalThis as typeof globalThis & {
+        pictor: PictorBridge
+        __pictorNavigationEvents?: unknown[]
+      }
+      target.__pictorNavigationEvents = []
+      target.pictor.onRuntimeEvent((event) => {
+        if (event.sessionId === sessionId) target.__pictorNavigationEvents?.push(event)
+      })
+    }, importedSessionId)
+    expect(await startSelectedRun('Continue from the historical answer.')).toMatchObject({
+      ok: true,
+    })
+    await expect
+      .poll(
+        () =>
+          window.evaluate(() => {
+            const events = (
+              globalThis as typeof globalThis & {
+                __pictorNavigationEvents?: Array<Record<string, unknown>>
+              }
+            ).__pictorNavigationEvents
+            return (
+              events?.find(
+                (event) =>
+                  event.type === 'run.stateChanged' &&
+                  ['completed', 'failed', 'stopped', 'interrupted'].includes(String(event.status)),
+              ) ?? null
+            )
+          }),
+        { timeout: 30_000 },
+      )
+      .not.toBeNull()
+    const navigationRunEvents = await window.evaluate(
+      () =>
+        (
+          globalThis as typeof globalThis & {
+            __pictorNavigationEvents?: Array<Record<string, unknown>>
+          }
+        ).__pictorNavigationEvents ?? [],
+    )
+    expect(navigationRunEvents.filter((event) => event.type === 'runtime.error')).toEqual([])
+    await expect
+      .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
+      .toContain('Continue from the historical answer.')
+    await expect(timeline.getByText('Native extension completed.')).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(timeline.getByText('Continue from the historical answer.')).toBeVisible()
+    await expect(timeline.getByText('Imported branch answer')).toHaveCount(0)
+    const metadataAfterRun = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
+      history: { piSessionFile: string; activeLeafId?: string | null }
+    }
+    expect(metadataAfterRun.history.piSessionFile).toBe(
+      metadataBeforeNavigation.history.piSessionFile,
+    )
+    expect(metadataAfterRun.history.activeLeafId).not.toBe('imported-original')
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

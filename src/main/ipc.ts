@@ -12,6 +12,7 @@ import {
   importSessionRequestSchema,
   inspectSessionHistoryRequestSchema,
   listModelsRequestSchema,
+  navigateSessionTreeRequestSchema,
   projectIdRequestSchema,
   queueRuntimeMessageRequestSchema,
   pluginIdRequestSchema,
@@ -225,6 +226,14 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = inspectSessionHistoryRequestSchema.parse(input)
       return repository.inspectSessionHistory(request.sessionId, request.entryId)
+    })
+  })
+
+  ipcMain.handle('session:navigate-tree', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = navigateSessionTreeRequestSchema.parse(input)
+      return runtimeCoordinator.navigateSessionTree(request.sessionId, request.entryId)
     })
   })
 

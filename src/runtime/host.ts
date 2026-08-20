@@ -168,6 +168,29 @@ parentPort.on('message', (messageEvent) => {
     return
   }
 
+  if (command.type === 'navigate') {
+    void statePromise
+      .then((state) => requireRuntime(state).navigateSession(command))
+      .then((result) =>
+        parentPort.postMessage({
+          type: 'host.navigateResult',
+          operationId: command.operationId,
+          sourceSessionId: command.sourceSessionId,
+          ...result,
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.navigateResult',
+          operationId: command.operationId,
+          sourceSessionId: command.sourceSessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Pi Session Tree Navigation failed',
+        }),
+      )
+    return
+  }
+
   void statePromise
     .then((state) => {
       const runtime = requireRuntime(state)

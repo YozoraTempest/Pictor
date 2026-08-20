@@ -297,6 +297,7 @@ export class SessionPersistence {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
+    piSessionFile: string | null
     activeLeafId: string | null
   } {
     const sessionDirectory = join(this.dataDirectory, 'pi', projectId, sessionId)
@@ -304,6 +305,7 @@ export class SessionPersistence {
     return {
       agentDirectory: join(this.dataDirectory, 'pi', 'agent'),
       sessionDirectory,
+      piSessionFile: history.piSessionFile,
       activeLeafId: history.activeLeafId ?? null,
       resumeSession:
         history.authority === 'pi-jsonl' &&

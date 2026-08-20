@@ -69,6 +69,7 @@ it.each(['a', 'id', 'running'])(
         }
       }),
       rebuildSessionProjection: vi.fn(async () => session),
+      setPiSessionActiveLeaf: vi.fn(async () => undefined),
       createDerivedSession: vi.fn(async () => {
         throw new Error('not used')
       }),
@@ -104,6 +105,8 @@ it.each(['a', 'id', 'running'])(
         agentDirectory: 'C:\\fixture-agent',
         sessionDirectory: 'C:\\fixture-session',
         resumeSession: true,
+        piSessionFile: 'session.jsonl',
+        activeLeafId: 'persisted-active-leaf',
       })),
       saveSession,
     }
@@ -118,6 +121,9 @@ it.each(['a', 'id', 'running'])(
         throw new Error('not used')
       }),
       exportSession: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+      navigateSession: vi.fn(async () => {
         throw new Error('not used')
       }),
       approve: vi.fn(),
@@ -135,6 +141,8 @@ it.each(['a', 'id', 'running'])(
       expect.objectContaining({
         apiKey: secret,
         prompt: expect.stringContaining('[REDACTED]'),
+        piSessionFile: 'session.jsonl',
+        activeLeafId: 'persisted-active-leaf',
       }),
     )
 
@@ -202,6 +210,13 @@ it.each(['a', 'id', 'running'])(
       at: new Date().toISOString(),
     })
     coordinator.handleEvent({
+      type: 'session.activeLeafChanged',
+      runId: started.runId,
+      sessionId,
+      at: new Date().toISOString(),
+      activeLeafId: 'new-active-leaf',
+    })
+    coordinator.handleEvent({
       type: 'run.stateChanged',
       runId: started.runId,
       sessionId,
@@ -220,6 +235,9 @@ it.each(['a', 'id', 'running'])(
         id: 'pi-session-id',
         file: 'session.jsonl',
       }),
+    )
+    await vi.waitFor(() =>
+      expect(repository.setPiSessionActiveLeaf).toHaveBeenCalledWith(sessionId, 'new-active-leaf'),
     )
     await vi.waitFor(() =>
       expect(broadcast).toHaveBeenCalledWith(
@@ -284,6 +302,7 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     inspectSessionHistory: vi.fn(async () => historyView(session, null)),
     bindPiSession: vi.fn(async () => undefined),
     rebuildSessionProjection,
+    setPiSessionActiveLeaf: vi.fn(async () => undefined),
     createDerivedSession: vi.fn(async () => {
       throw new Error('not used')
     }),
@@ -332,6 +351,9 @@ it('persists a terminal failure when Pi Session identity was never bound', async
       throw new Error('not used')
     }),
     exportSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    navigateSession: vi.fn(async () => {
       throw new Error('not used')
     }),
     approve: vi.fn(),
@@ -391,6 +413,7 @@ it('keeps a pending Legacy Session Import read-only', async () => {
     inspectSessionHistory: vi.fn(async () => historyView(session, null)),
     bindPiSession: vi.fn(async () => undefined),
     rebuildSessionProjection: vi.fn(async () => session),
+    setPiSessionActiveLeaf: vi.fn(async () => undefined),
     createDerivedSession: vi.fn(async () => {
       throw new Error('not used')
     }),
@@ -419,6 +442,9 @@ it('keeps a pending Legacy Session Import read-only', async () => {
       throw new Error('not used')
     }),
     exportSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    navigateSession: vi.fn(async () => {
       throw new Error('not used')
     }),
     approve: vi.fn(),
@@ -476,16 +502,45 @@ it('commits native Pi Session derivation and Import operations', async () => {
     },
   )
   const createImportedSession = vi.fn(async () => importedSummary)
+  let activeLeafId = 'active-entry'
   const inspectSessionHistory = vi.fn(
     async (_sourceSessionId: string, selectedEntryId: string | null) => ({
-      ...historyView(session, 'active-entry'),
+      ...historyView(session, activeLeafId),
       tree: {
-        activeLeafId: 'active-entry',
-        selectedEntryId: selectedEntryId ?? 'active-entry',
-        nodes: [],
+        activeLeafId,
+        selectedEntryId: selectedEntryId ?? activeLeafId,
+        nodes: [
+          {
+            id: 'historical-entry',
+            parentId: null,
+            kind: 'assistant' as const,
+            label: 'Historical answer',
+            timestamp: now,
+            depth: 0,
+            childCount: 0,
+            isActivePath: activeLeafId === 'historical-entry',
+            isActiveLeaf: activeLeafId === 'historical-entry',
+            isSelected: (selectedEntryId ?? activeLeafId) === 'historical-entry',
+          },
+          {
+            id: 'active-entry',
+            parentId: null,
+            kind: 'assistant' as const,
+            label: 'Active answer',
+            timestamp: now,
+            depth: 0,
+            childCount: 0,
+            isActivePath: activeLeafId === 'active-entry',
+            isActiveLeaf: activeLeafId === 'active-entry',
+            isSelected: (selectedEntryId ?? activeLeafId) === 'active-entry',
+          },
+        ],
       },
     }),
   )
+  const setPiSessionActiveLeaf = vi.fn(async (_sessionId: string, entryId: string | null) => {
+    if (entryId) activeLeafId = entryId
+  })
   const repository: RuntimePersistence = {
     getSession: vi.fn(async () => session),
     getSessionHistory: vi.fn(
@@ -494,12 +549,14 @@ it('commits native Pi Session derivation and Import operations', async () => {
           authority: 'pi-jsonl',
           piSessionId: 'source-pi-session',
           piSessionFile: 'source.jsonl',
+          activeLeafId,
           legacyImport: { status: 'not-required', sourceFile: null },
         }) satisfies SessionHistoryState,
     ),
     inspectSessionHistory,
     bindPiSession: vi.fn(async () => undefined),
     rebuildSessionProjection: vi.fn(async () => session),
+    setPiSessionActiveLeaf,
     createDerivedSession,
     createImportedSession,
     getProject: vi.fn(
@@ -531,6 +588,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
       agentDirectory: '/agent',
       sessionDirectory: `/sessions/${targetSessionId}`,
       resumeSession: targetSessionId === sessionId,
+      activeLeafId: targetSessionId === sessionId ? activeLeafId : null,
     })),
     saveSession: vi.fn(async () => undefined),
   }
@@ -556,12 +614,20 @@ it('commits native Pi Session derivation and Import operations', async () => {
     sourceSessionId: config.sourceSessionId,
     outcome: 'completed',
   }))
+  const navigateSession = vi.fn<RuntimeHost['navigateSession']>(async (config) => ({
+    type: 'host.navigateResult',
+    operationId: config.operationId,
+    sourceSessionId: config.sourceSessionId,
+    outcome: 'completed',
+    activeLeafId: config.entryId,
+  }))
   const supervisor: RuntimeHost = {
     isActive: () => false,
     start: vi.fn(async () => undefined),
     fork,
     importSession,
     exportSession,
+    navigateSession,
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -657,7 +723,35 @@ it('commits native Pi Session derivation and Import operations', async () => {
       format: 'jsonl',
       sourceSessionDirectory: `/sessions/${sessionId}`,
       sourcePiSessionFile: 'source.jsonl',
+      activeLeafId: 'active-entry',
       destinationPath: '/exports/source.jsonl',
     }),
   )
+
+  await expect(
+    coordinator.navigateSessionTree(sessionId, 'historical-entry'),
+  ).resolves.toMatchObject({
+    tree: { activeLeafId: 'historical-entry', selectedEntryId: 'historical-entry' },
+  })
+  expect(navigateSession).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'navigate',
+      sourceSessionId: sessionId,
+      entryId: 'historical-entry',
+      activeLeafId: 'active-entry',
+      sourceSessionDirectory: `/sessions/${sessionId}`,
+      sourcePiSessionFile: 'source.jsonl',
+    }),
+  )
+  expect(setPiSessionActiveLeaf).toHaveBeenCalledWith(sessionId, 'historical-entry')
+  expect(repository.rebuildSessionProjection).toHaveBeenCalledWith(sessionId)
+
+  navigateSession.mockResolvedValueOnce({
+    type: 'host.navigateResult',
+    operationId: '31234567-89ab-4def-8123-456789abcdef',
+    sourceSessionId: sessionId,
+    outcome: 'cancelled',
+  })
+  await expect(coordinator.navigateSessionTree(sessionId, 'active-entry')).resolves.toBeNull()
+  expect(activeLeafId).toBe('historical-entry')
 })

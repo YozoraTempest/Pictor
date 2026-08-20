@@ -155,6 +155,7 @@ function createBridge(
   getSnapshot: ReturnType<typeof vi.fn>
   getSession: ReturnType<typeof vi.fn>
   inspectSessionHistory: ReturnType<typeof vi.fn>
+  navigateSessionTree: ReturnType<typeof vi.fn>
   forkSession: ReturnType<typeof vi.fn>
   cloneSession: ReturnType<typeof vi.fn>
   importSession: ReturnType<typeof vi.fn>
@@ -183,6 +184,7 @@ function createBridge(
     },
   )
   const startRun = vi.fn(async () => ok({ runId }))
+  const navigateSessionTree = vi.fn(async () => ok(null))
   const forkSession = vi.fn(async () => ok(null))
   const cloneSession = vi.fn(async () => ok(null))
   const importSession = vi.fn(async () => ok(null))
@@ -210,6 +212,7 @@ function createBridge(
     deleteSession: async () => ok(null),
     getSession,
     inspectSessionHistory,
+    navigateSessionTree,
     forkSession,
     cloneSession,
     importSession,
@@ -630,6 +633,89 @@ describe('useWorkspaceController', () => {
     expect(bridge.importSession).toHaveBeenCalledWith({ projectId })
     expect(result.current.selectedSessionId).toBe(fourthSessionId)
     expect(result.current.session?.title).toBe('history (Import)')
+  })
+
+  it('applies same-file Tree Navigation without changing the Pictor Session', async () => {
+    const active = createSession(firstSessionId, {
+      messageContent: 'Active answer',
+      runStatus: 'completed',
+    })
+    const historical = createSession(firstSessionId, {
+      messageContent: 'Historical answer',
+      runStatus: 'completed',
+    })
+    const bridge = createBridge({ sessions: { [firstSessionId]: active } })
+    const selectedTree = {
+      activeLeafId: 'active-entry',
+      selectedEntryId: 'historical-entry',
+      nodes: [
+        {
+          id: 'historical-entry',
+          parentId: null,
+          kind: 'assistant' as const,
+          label: 'Historical answer',
+          timestamp: now,
+          depth: 0,
+          childCount: 0,
+          isActivePath: false,
+          isActiveLeaf: false,
+          isSelected: true,
+        },
+        {
+          id: 'active-entry',
+          parentId: null,
+          kind: 'assistant' as const,
+          label: 'Active answer',
+          timestamp: now,
+          depth: 0,
+          childCount: 0,
+          isActivePath: true,
+          isActiveLeaf: true,
+          isSelected: false,
+        },
+      ],
+    }
+    bridge.inspectSessionHistory.mockResolvedValueOnce(
+      ok({ session: historical, tree: selectedTree }),
+    )
+    const pending = deferred<IpcResult<SessionHistoryView | null>>()
+    bridge.navigateSessionTree.mockReturnValueOnce(pending.promise)
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.session).toEqual(active))
+    await act(async () => result.current.inspectSessionHistory('historical-entry'))
+
+    let navigating!: Promise<boolean>
+    act(() => {
+      navigating = result.current.navigateSessionTree('historical-entry')
+    })
+    expect(result.current.navigatingEntryId).toBe('historical-entry')
+    expect(result.current.sessionTreeLoading).toBe(true)
+    pending.resolve(
+      ok({
+        session: historical,
+        tree: {
+          ...selectedTree,
+          activeLeafId: 'historical-entry',
+          nodes: selectedTree.nodes.map((node) => ({
+            ...node,
+            isActivePath: node.id === 'historical-entry',
+            isActiveLeaf: node.id === 'historical-entry',
+          })),
+        },
+      }),
+    )
+    await act(async () => navigating)
+
+    expect(bridge.navigateSessionTree).toHaveBeenCalledWith({
+      sessionId: firstSessionId,
+      entryId: 'historical-entry',
+    })
+    expect(result.current.selectedSessionId).toBe(firstSessionId)
+    expect(result.current.session?.messages[0]?.content).toBe('Historical answer')
+    expect(result.current.sessionTree?.activeLeafId).toBe('historical-entry')
+    expect(result.current.disabledReason).toBeNull()
+    expect(result.current.navigatingEntryId).toBeNull()
+    expect(result.current.sessionTreeLoading).toBe(false)
   })
 
   it('keeps one Session Import operation active until file selection completes', async () => {

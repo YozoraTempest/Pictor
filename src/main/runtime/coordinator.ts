@@ -22,6 +22,8 @@ import {
   type RuntimeForkResult,
   type RuntimeImportConfig,
   type RuntimeImportResult,
+  type RuntimeNavigateConfig,
+  type RuntimeNavigateResult,
   type RuntimeStartConfig,
   type SessionExportFormat,
 } from '../../shared/runtime-protocol.js'
@@ -36,6 +38,7 @@ export interface RuntimePersistence {
   ): Promise<SessionHistoryView>
   bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void>
   rebuildSessionProjection(sessionId: string): Promise<SessionRecord>
+  setPiSessionActiveLeaf(sessionId: string, activeLeafId: string | null): Promise<void>
   createDerivedSession(
     sourceSessionId: string,
     targetSessionId: string,
@@ -58,6 +61,8 @@ export interface RuntimePersistence {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
+    piSessionFile?: string | null
+    activeLeafId?: string | null
   }
   saveSession(session: SessionRecord): Promise<unknown>
 }
@@ -67,6 +72,7 @@ export interface RuntimeHost {
   fork(config: RuntimeForkConfig): Promise<RuntimeForkResult>
   importSession(config: RuntimeImportConfig): Promise<RuntimeImportResult>
   exportSession(config: RuntimeExportConfig): Promise<RuntimeExportResult>
+  navigateSession(config: RuntimeNavigateConfig): Promise<RuntimeNavigateResult>
   approve(runId: string, callId: string): void
   reject(runId: string, callId: string): void
   stop(runId: string): void
@@ -199,6 +205,85 @@ export class RuntimeCoordinator {
 
   async cloneSession(sourceSessionId: string): Promise<SessionSummary | null> {
     return this.deriveSession(sourceSessionId, { kind: 'clone' })
+  }
+
+  async navigateSessionTree(
+    sourceSessionId: string,
+    entryId: string,
+  ): Promise<SessionHistoryView | null> {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
+      throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
+    }
+    await this.persistenceQueue
+    const source = await this.repository.getSession(sourceSessionId)
+    const history = this.repository.getSessionHistory(sourceSessionId)
+    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+      throw new PictorError('invalid-input', '当前 Session 没有可导航的 Pi JSONL 历史')
+    }
+    const historyView = await this.repository.inspectSessionHistory(sourceSessionId, entryId)
+    const tree = historyView.tree
+    if (!tree?.activeLeafId) {
+      throw new PictorError('invalid-input', '当前 Pi Session History 没有活跃节点')
+    }
+    if (entryId === tree.activeLeafId) {
+      throw new PictorError('invalid-input', '当前节点已经是活跃节点')
+    }
+    const target = tree.nodes.find((node) => node.id === entryId)
+    if (!target) throw new PictorError('not-found', '目标 Pi Session 节点不存在')
+    if (target.kind === 'user' || target.kind === 'custom-message') {
+      throw new PictorError('invalid-input', 'User Message 节点导航需要编辑器回填支持')
+    }
+    const project = this.repository.getProject(source.projectId)
+    if (project.availability !== 'available') {
+      throw new PictorError('project-unavailable', '项目目录当前不可用，请重新关联后再导航')
+    }
+    const settings = await this.repository.getSettings()
+    const apiKey = await this.repository.getApiKey()
+    if (!settings || !apiKey) {
+      throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
+    }
+    const sourcePaths = this.repository.getRuntimePaths(project.id, sourceSessionId)
+    if (!sourcePaths.resumeSession) {
+      throw new PictorError(
+        'credential-unavailable',
+        'Pi Session 凭据迁移尚未完成，当前历史不能安全导航',
+      )
+    }
+
+    const operationId = randomUUID()
+    this.sessionOperationId = operationId
+    try {
+      const result = await this.supervisor.navigateSession({
+        type: 'navigate',
+        operationId,
+        sourceSessionId,
+        entryId,
+        activeLeafId: tree.activeLeafId,
+        projectRoot: project.rootPath,
+        agentDirectory: sourcePaths.agentDirectory,
+        sourceSessionDirectory: sourcePaths.sessionDirectory,
+        sourcePiSessionFile: history.piSessionFile,
+        settings: {
+          apiProtocol: settings.apiProtocol,
+          baseUrl: settings.baseUrl,
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          temperature: settings.temperature,
+          maxOutputTokens: settings.maxOutputTokens,
+        },
+        apiKey,
+      })
+      if (result.outcome === 'cancelled') return null
+      if (result.outcome === 'failed') throw new Error(result.message)
+      if (!result.activeLeafId) {
+        throw new Error('Pi Session Tree Navigation did not provide an active leaf')
+      }
+      await this.repository.setPiSessionActiveLeaf(sourceSessionId, result.activeLeafId)
+      await this.repository.rebuildSessionProjection(sourceSessionId)
+      return this.repository.inspectSessionHistory(sourceSessionId, null)
+    } finally {
+      if (this.sessionOperationId === operationId) this.sessionOperationId = null
+    }
   }
 
   private async deriveSession(
@@ -397,6 +482,7 @@ export class RuntimeCoordinator {
         agentDirectory: sourcePaths.agentDirectory,
         sourceSessionDirectory: sourcePaths.sessionDirectory,
         sourcePiSessionFile: history.piSessionFile,
+        activeLeafId: history.activeLeafId ?? null,
         destinationPath,
         settings: {
           apiProtocol: settings.apiProtocol,
@@ -473,6 +559,24 @@ export class RuntimeCoordinator {
             at: new Date().toISOString(),
             category: 'runtime',
             message: 'Pi Session identity 无法写入本地存储，请停止当前任务并检查磁盘权限',
+          }),
+        )
+      return
+    }
+    if (sanitizedEvent.type === 'session.activeLeafChanged') {
+      this.persistenceQueue = this.persistenceQueue
+        .then(() =>
+          this.repository.setPiSessionActiveLeaf(active.session.id, sanitizedEvent.activeLeafId),
+        )
+        .then(() => this.broadcast(sanitizedEvent))
+        .catch(() =>
+          this.broadcast({
+            type: 'runtime.error',
+            runId: sanitizedEvent.runId,
+            sessionId: sanitizedEvent.sessionId,
+            at: new Date().toISOString(),
+            category: 'runtime',
+            message: 'Pi Session 活跃分支持久化失败',
           }),
         )
       return

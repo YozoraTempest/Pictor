@@ -13,6 +13,8 @@ import {
   type RuntimeForkResult,
   type RuntimeImportConfig,
   type RuntimeImportResult,
+  type RuntimeNavigateConfig,
+  type RuntimeNavigateResult,
   type RuntimeStartConfig,
 } from '../../shared/runtime-protocol.js'
 import type { RuntimePluginBootstrap } from '../../shared/plugins.js'
@@ -40,6 +42,11 @@ export class RuntimeSupervisor {
   private pendingExport: {
     operationId: string
     resolve: (result: RuntimeExportResult) => void
+    reject: (error: Error) => void
+  } | null = null
+  private pendingNavigate: {
+    operationId: string
+    resolve: (result: RuntimeNavigateResult) => void
     reject: (error: Error) => void
   } | null = null
 
@@ -110,6 +117,24 @@ export class RuntimeSupervisor {
     })
   }
 
+  async navigateSession(config: RuntimeNavigateConfig): Promise<RuntimeNavigateResult> {
+    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
+    await this.ensureChild()
+    this.activeRunId = config.operationId
+    this.activeSessionId = config.sourceSessionId
+    return new Promise<RuntimeNavigateResult>((resolve, reject) => {
+      this.pendingNavigate = { operationId: config.operationId, resolve, reject }
+      try {
+        this.post(config)
+      } catch (error) {
+        this.pendingNavigate = null
+        this.activeRunId = null
+        this.activeSessionId = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
+
   approve(runId: string, callId: string): void {
     this.assertActive(runId)
     this.post({ type: 'approve', runId, callId })
@@ -165,6 +190,8 @@ export class RuntimeSupervisor {
     this.pendingImport = null
     this.pendingExport?.reject(new Error('Agent Runtime 已关闭'))
     this.pendingExport = null
+    this.pendingNavigate?.reject(new Error('Agent Runtime 已关闭'))
+    this.pendingNavigate = null
     this.activeRunId = null
     this.activeSessionId = null
   }
@@ -235,6 +262,12 @@ export class RuntimeSupervisor {
         this.activeRunId = null
         this.activeSessionId = null
       }
+      if (this.pendingNavigate) {
+        this.pendingNavigate.reject(new Error(parsed.data.message))
+        this.pendingNavigate = null
+        this.activeRunId = null
+        this.activeSessionId = null
+      }
       this.emitSyntheticFailure(parsed.data.message)
       return
     }
@@ -260,6 +293,15 @@ export class RuntimeSupervisor {
       const pending = this.pendingExport
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingExport = null
+      this.activeRunId = null
+      this.activeSessionId = null
+      pending.resolve(parsed.data)
+      return
+    }
+    if (parsed.data.type === 'host.navigateResult') {
+      const pending = this.pendingNavigate
+      if (!pending || pending.operationId !== parsed.data.operationId) return
+      this.pendingNavigate = null
       this.activeRunId = null
       this.activeSessionId = null
       pending.resolve(parsed.data)
@@ -295,6 +337,12 @@ export class RuntimeSupervisor {
     if (this.pendingExport) {
       this.pendingExport.reject(new Error('Agent Runtime 在 Export 完成前退出'))
       this.pendingExport = null
+      this.activeRunId = null
+      this.activeSessionId = null
+    }
+    if (this.pendingNavigate) {
+      this.pendingNavigate.reject(new Error('Agent Runtime 在 Tree Navigation 完成前退出'))
+      this.pendingNavigate = null
       this.activeRunId = null
       this.activeSessionId = null
     }

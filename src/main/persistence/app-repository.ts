@@ -210,6 +210,7 @@ export class AppRepository {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
+    piSessionFile: string | null
     activeLeafId: string | null
   } {
     this.ensureInitialized()
