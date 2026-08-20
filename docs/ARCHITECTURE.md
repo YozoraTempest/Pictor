@@ -99,6 +99,14 @@ Pi Package 的 `package.json#pi.extensions` 和约定 `extensions/` 由 Store �
 原生入口；禁用条目不会进入 Runtime bootstrap。跨进程 Module contract ID 使用完整 Plugin ID，
 避免不同 Plugin 的短名在 Router 中碰撞。
 
+用户明确提交 npm/git/local spec 时，Plugin Store 调用 Pi `DefaultPackageManager` 解析和安装，再把
+解析出的原生 package 复制进现有 `pi-packages/<id>` 生命周期目录；不自行实现第二套 spec parser，
+也不进行后台安装。受信任 Project 的 `.pi/extensions` 仍需 Session Controls 显式启用，Runtime 用
+结构化 glob 展开文件和子目录 index 后交给 ResourceLoader。Local Development Plugin 的 Registry
+source 使用 `development`，启动时直接读取 live Manifest/入口；它需要重启应用生效，但无需复制
+或重新打包 Pictor。`PICTOR_PLUGIN_PROFILE=developer` 选择独立 Developer Profile identity，Profile
+仍只推荐 Bundled roots，不覆盖用户删除选择。
+
 Core Renderer 只渲染不可卸载的 `CoreShell` 和 Plugin Manager。`pictor.agent-workspace` 通过
 `shell.applications` Contribution 提供 Project、Session 与 Conversation GUI；移除或阻塞该
 Plugin 时，CoreShell 显示空 Plugin Manager，而不是让 Renderer bootstrap 因缺少业务 Provider

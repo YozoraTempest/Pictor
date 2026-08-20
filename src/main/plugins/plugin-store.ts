@@ -3,6 +3,7 @@ import { cp, copyFile, glob, mkdir, readdir, rename, rm, stat } from 'node:fs/pr
 import { basename, extname, join, resolve } from 'node:path'
 
 import { z } from 'zod'
+import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent'
 
 import {
   pluginManifestSchema,
@@ -112,6 +113,7 @@ export class PluginStore {
       )
       const existing = this.registry.entries[entryIndex]
       if (existing?.kind === 'pictor-plugin' && existing.desiredState === 'removed') continue
+      if (existing?.kind === 'pictor-plugin' && existing.source.kind === 'development') continue
 
       const entry: InstalledPictorPlugin = {
         kind: 'pictor-plugin',
@@ -165,7 +167,10 @@ export class PluginStore {
         }
         continue
       }
-      const rootPath = this.packagePath(entry)
+      const rootPath =
+        entry.source.kind === 'development'
+          ? resolve(entry.source.reference)
+          : this.packagePath(entry)
       try {
         const manifest = await this.readManifest(rootPath)
         if (manifest.id !== entry.id || manifest.version !== entry.version) {
@@ -215,6 +220,27 @@ export class PluginStore {
     }
   }
 
+  async installDevelopmentFromDirectory(sourceDirectory: string): Promise<StoredPluginPackage> {
+    this.ensureInitialized()
+    const rootPath = resolve(sourceDirectory)
+    const manifest = await this.readManifest(rootPath)
+    const entry: InstalledPictorPlugin = {
+      kind: 'pictor-plugin',
+      id: manifest.id,
+      version: manifest.version,
+      source: { kind: 'development', reference: rootPath },
+      desiredState: 'enabled',
+    }
+    this.replacePluginEntry(entry)
+    await this.persistRegistry()
+    return {
+      entry,
+      manifest,
+      rootPath,
+      dataPath: join(this.pluginDataDirectory, entry.id),
+    }
+  }
+
   async setEnabled(id: string, enabled: boolean): Promise<void> {
     this.ensureInitialized()
     const entry = this.findPluginEntry(id)
@@ -254,6 +280,32 @@ export class PluginStore {
   async installPiPackage(sourcePath: string): Promise<StoredNativeExtension> {
     this.ensureInitialized()
     const source = resolve(sourcePath)
+    return this.installPiPackageDirectory(source, source)
+  }
+
+  async installPiPackageFromSpec(source: string): Promise<StoredNativeExtension> {
+    this.ensureInitialized()
+    const spec = source.trim()
+    if (!spec) throw new Error('Pi Package spec is required')
+    const agentDir = join(this.options.userDataDirectory, 'pi-package-manager')
+    await mkdir(agentDir, { recursive: true })
+    const settingsManager = SettingsManager.inMemory({}, { projectTrusted: true })
+    const packageManager = new DefaultPackageManager({
+      cwd: this.options.userDataDirectory,
+      agentDir,
+      settingsManager,
+    })
+    await packageManager.install(spec)
+    const installedPath = packageManager.getInstalledPath(spec, 'user')
+    if (!installedPath) throw new Error(`Pi Package did not provide an installed path: ${spec}`)
+    return this.installPiPackageDirectory(installedPath, spec)
+  }
+
+  private async installPiPackageDirectory(
+    sourcePath: string,
+    registrySource: string,
+  ): Promise<StoredNativeExtension> {
+    const source = resolve(sourcePath)
     const packageJson = await readJsonFile(join(source, 'package.json'), pluginPackageJsonSchema)
     if (!packageJson) throw new Error('Pi Package is missing package.json')
     const id = this.nativeExtensionId(packageJson.name)
@@ -263,7 +315,7 @@ export class PluginStore {
     const entry = {
       kind: 'pi-package' as const,
       id,
-      source,
+      source: registrySource,
       version: packageJson.version ?? null,
       desiredState: 'enabled' as const,
     }

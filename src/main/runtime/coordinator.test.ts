@@ -112,6 +112,7 @@ it.each(['a', 'id', 'running'])(
           activeTools: ['pictor_read'],
           steeringMode: 'all',
           followUpMode: 'one-at-a-time',
+          projectExtensionsEnabled: true,
         } satisfies NonNullable<SessionHistoryState['runtimePreferences']>,
       })),
       saveSession,

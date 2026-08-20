@@ -203,10 +203,13 @@ export class SessionPersistence {
     if (identity.file !== basename(identity.file))
       throw new Error('Pi Session file must be a basename')
     const sanitized = await this.sanitize(sessionRecordSchema.parse(session))
+    const existing = this.histories.get(session.id)
     const history = sessionHistoryStateSchema.parse({
       authority: 'pi-jsonl',
       piSessionId: identity.id,
       piSessionFile: identity.file,
+      ...(existing?.activeLeafId !== undefined ? { activeLeafId: existing.activeLeafId } : {}),
+      ...(existing?.runtimePreferences ? { runtimePreferences: existing.runtimePreferences } : {}),
       legacyImport: { status: 'not-required', sourceFile: null },
     })
     this.histories.set(session.id, history)

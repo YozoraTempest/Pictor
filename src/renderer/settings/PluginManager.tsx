@@ -28,6 +28,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
   const [snapshot, setSnapshot] = useState<PluginManagerSnapshot | null>(null)
   const [busy, setBusy] = useState<string | null>('load')
   const [error, setError] = useState<string | null>(null)
+  const [packageSpec, setPackageSpec] = useState('')
 
   useEffect(() => {
     let active = true
@@ -88,6 +89,17 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
           type="button"
           disabled={busy !== null}
           onClick={() =>
+            void apply('install-development', () => window.pictor.installDevelopmentPlugin())
+          }
+        >
+          <FolderPlus size={14} />
+          Development Plugin
+        </button>
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={busy !== null}
+          onClick={() =>
             void apply('install-pi-extension', () => window.pictor.installPiExtension())
           }
         >
@@ -104,6 +116,32 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
           Pi Package
         </button>
       </header>
+      <div className="plugin-package-spec">
+        <input
+          value={packageSpec}
+          placeholder="npm package or git spec"
+          aria-label="Pi Package spec"
+          disabled={busy !== null}
+          onChange={(event) => setPackageSpec(event.target.value)}
+        />
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={busy !== null || !packageSpec.trim()}
+          onClick={() =>
+            void apply('install-pi-package-spec', async () => {
+              const result = await window.pictor.installPiPackageSpec({
+                spec: packageSpec.trim(),
+              })
+              if (result.ok) setPackageSpec('')
+              return result
+            })
+          }
+        >
+          <PackagePlus size={14} />
+          安装 Spec
+        </button>
+      </div>
 
       {snapshot.safeMode ? (
         <div className="plugin-manager__notice" role="status">

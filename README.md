@@ -110,6 +110,8 @@ npm run dev
 `npm run dev` 先构建本地 Bundled Plugin，再启动 electron-vite watch/HMR，并使用独立的
 `pictor-dev` userData，不会读取或修改正式安装的数据。新建可安装能力使用
 `npm run plugin:new -- <name>`；只新增 Plugin 内部执行单元时使用 `npm run module:new -- <name>`。
+设置 `PICTOR_PLUGIN_PROFILE=developer` 使用 Developer Profile；Plugin Manager 可以登记 live source
+Development Plugin，修改其已构建入口后重启 Pictor 即可生效，不需要重新打包 Pictor。
 
 首次启动后，在“设置 > 模型”中完成以下配置，再添加本地项目并创建 Session：
 
@@ -205,6 +207,8 @@ Electron API。Pi Runtime Plugin 从用户 Store 动态加载到独立 utility p
 提供且经过路径守卫的工具；删除或禁用该 Plugin 后，项目与历史仍可查看，但不能启动新 Run。
 Pi Extension 是以当前用户权限运行的可信代码，并不受 Pictor 命令逐条审批限制；安装前必须确认
 来源。Pictor 的模型 API Key 不进入 Extension 配置、Runtime event 或 Pi JSONL。
+项目 `.pi/extensions` 默认不加载；只有受信任 Project 的 Session 在 Session Controls 中显式启用后，
+Runtime 才会展开标准 `.ts/.js` 和子目录 `index.ts/index.js` 入口。
 
 更新检查只在用户点击“检查更新”后由 Main Process 请求 Pictor 官方 GitHub Release API；
 应用不会在后台轮询。Linux 只在本机读取 `/etc/os-release` 识别原生 Arch，不上传或记录该

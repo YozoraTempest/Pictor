@@ -286,12 +286,25 @@ describe('SessionPersistence', () => {
       activeTools: ['pictor_read'],
       steeringMode: 'all',
       followUpMode: 'one-at-a-time',
+      projectExtensionsEnabled: true,
     })
     expect(persistence.getRuntimePaths(session.projectId, session.id).runtimePreferences).toEqual({
       thinkingLevel: 'high',
       activeTools: ['pictor_read'],
       steeringMode: 'all',
       followUpMode: 'one-at-a-time',
+      projectExtensionsEnabled: true,
+    })
+    await persistence.bindPiSession(session, {
+      id: 'rebound-pi-session',
+      file: piFile,
+    })
+    expect(persistence.getRuntimePaths(session.projectId, session.id)).toMatchObject({
+      activeLeafId: null,
+      runtimePreferences: {
+        thinkingLevel: 'high',
+        projectExtensionsEnabled: true,
+      },
     })
   })
 

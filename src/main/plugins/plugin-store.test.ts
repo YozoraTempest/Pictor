@@ -123,6 +123,33 @@ describe('PluginStore', () => {
     await expect(stat(installed.dataPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('loads a Development Plugin from its live source directory after restart', async () => {
+    const fixture = await createStoreFixture()
+    const developmentPlugin = join(fixture.root, 'development-plugin')
+    await writePlugin(developmentPlugin, 'pictor.development', '1.0.0')
+    const options = {
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    }
+    const store = new PluginStore(options)
+    await store.initialize()
+
+    const installed = await store.installDevelopmentFromDirectory(developmentPlugin)
+    expect(installed.entry.source).toEqual({
+      kind: 'development',
+      reference: developmentPlugin,
+    })
+    await writeFile(join(developmentPlugin, 'dist', 'main.js'), 'export default ["updated"]\n')
+
+    const restarted = new PluginStore(options)
+    await restarted.initialize()
+    const snapshot = await restarted.getSnapshot()
+    expect(snapshot.plugins[0]?.rootPath).toBe(developmentPlugin)
+    await expect(
+      readFile(join(snapshot.plugins[0]!.rootPath, 'dist', 'main.js'), 'utf8'),
+    ).resolves.toContain('updated')
+  })
+
   it('reports an invalid Bundled Manifest without preventing Core Store startup', async () => {
     const fixture = await createStoreFixture()
     const invalid = join(fixture.bundled, 'invalid')
@@ -195,5 +222,31 @@ describe('PluginStore', () => {
     await expect(
       readFile(join(installed.runtimePath, 'extensions', 'hello.js'), 'utf8'),
     ).resolves.toContain('export default')
+  })
+
+  it('installs an explicitly provided Pi Package spec through the native Package Manager', async () => {
+    const fixture = await createStoreFixture()
+    const packagePath = join(fixture.root, 'spec-package')
+    await mkdir(join(packagePath, 'extensions'), { recursive: true })
+    await writeFile(
+      join(packagePath, 'package.json'),
+      `${JSON.stringify({ name: 'spec-pi-package', version: '2.0.0' })}\n`,
+    )
+    await writeFile(join(packagePath, 'extensions', 'spec.js'), 'export default function () {}\n')
+    const store = new PluginStore({
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    })
+    await store.initialize()
+
+    const installed = await store.installPiPackageFromSpec(packagePath)
+
+    expect(installed.entry).toMatchObject({
+      kind: 'pi-package',
+      id: 'spec-pi-package',
+      source: packagePath,
+      version: '2.0.0',
+    })
+    expect(installed.runtimePaths).toEqual([join(installed.runtimePath, 'extensions', 'spec.js')])
   })
 })

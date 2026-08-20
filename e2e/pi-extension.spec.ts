@@ -89,6 +89,18 @@ test('loads an unmodified native Pi Extension from the user Store', async ({
   const userDataDirectory = testInfo.outputPath('pi-extension-user-data')
   const projectRoot = testInfo.outputPath('pi-extension-project')
   await mkdir(projectRoot, { recursive: true })
+  const projectExtensionDirectory = resolve(projectRoot, '.pi', 'extensions')
+  await mkdir(projectExtensionDirectory, { recursive: true })
+  await writeFile(
+    resolve(projectExtensionDirectory, 'project-note.ts'),
+    `export default function (pi) {
+  pi.registerCommand('project-note', {
+    description: 'Project Extension command',
+    handler: async () => pi.sendMessage({ customType: 'project-note', content: 'Project Extension loaded', display: true, details: {} }),
+  })
+}
+`,
+  )
   const imageFixture = testInfo.outputPath('fixture.png')
   await writeFile(
     imageFixture,
@@ -422,12 +434,20 @@ export default function (pi) {
       importedSessionId,
       metadataBeforeNavigation.history.piSessionFile,
     )
-    const authoritativeJsonlBeforeExport = await readFile(authoritativeJsonlPath, 'utf8')
+    expect(await startSelectedRun('/project-note')).toMatchObject({ ok: true })
+    await expect
+      .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
+      .toContain('/project-note')
+    await expect
+      .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
+      .toContain('Native extension completed.')
+    expect(await readFile(authoritativeJsonlPath, 'utf8')).not.toContain('Project Extension loaded')
 
     await window.getByRole('button', { name: 'Session Controls' }).click()
     await window.getByLabel('Thinking Level').selectOption('high')
     await window.getByLabel('Steering').selectOption('all')
     await window.getByLabel('pictor_delete').uncheck()
+    await window.getByLabel('启用项目 .pi/extensions').check()
     await window.getByRole('button', { name: '保存' }).click()
     await expect(window.getByRole('dialog', { name: 'Session Controls' })).toBeHidden()
     const metadataAfterControls = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
@@ -437,12 +457,14 @@ export default function (pi) {
       thinkingLevel: 'high',
       steeringMode: 'all',
       followUpMode: 'one-at-a-time',
+      projectExtensionsEnabled: true,
       activeTools: expect.not.arrayContaining(['pictor_delete']),
     })
     await window.getByRole('button', { name: 'Session Controls' }).click()
     await window.getByRole('button', { name: '重新加载资源' }).click()
     await expect(window.getByText('Runtime 资源已重载')).toBeVisible()
     await window.getByText('Runtime 资源已重载').click()
+    const authoritativeJsonlBeforeExport = await readFile(authoritativeJsonlPath, 'utf8')
 
     const exportSelectedSession = (format: 'jsonl' | 'html') =>
       window.evaluate(async (selectedFormat) => {
@@ -498,7 +520,10 @@ export default function (pi) {
       throw new Error('Imported Pi Session does not have an active leaf')
     }
     const activeLeafBeforeNavigation = historyBeforeNavigation.value.tree.activeLeafId
-    await importedTree.getByRole('button', { name: 'Imported original answer' }).click()
+    await window.getByRole('button', { name: 'Session Tree', exact: true }).click()
+    await window.getByRole('button', { name: 'Session Tree', exact: true }).click()
+    const navigationTree = window.getByRole('complementary', { name: 'Session Tree' })
+    await navigationTree.getByRole('button', { name: 'Imported original answer' }).click()
     await expect(window.getByRole('button', { name: '切换到此节点', exact: true })).toBeEnabled()
     await window.getByRole('button', { name: '切换到此节点', exact: true }).click()
 
@@ -673,6 +698,11 @@ export default function (pi) {
     await expect
       .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
       .toContain('Extension-originated user message')
+
+    expect(await startSelectedRun('/project-note')).toMatchObject({ ok: true })
+    await expect
+      .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
+      .toContain('Project Extension loaded')
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

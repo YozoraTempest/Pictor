@@ -68,6 +68,7 @@ export const relinkProjectRequestSchema = registerProjectRequestSchema.extend({
 })
 
 export const projectIdRequestSchema = z.object({ projectId: idSchema })
+export const packageSpecRequestSchema = z.object({ spec: z.string().trim().min(1).max(2_000) })
 export const sessionIdRequestSchema = z.object({ sessionId: idSchema })
 export const inspectSessionHistoryRequestSchema = sessionIdRequestSchema.extend({
   entryId: z.string().min(1).nullable(),
@@ -87,6 +88,7 @@ export const sessionRuntimeControlsSchema = z.object({
   availableTools: z.array(z.string().min(1)),
   steeringMode: z.enum(['all', 'one-at-a-time']),
   followUpMode: z.enum(['all', 'one-at-a-time']),
+  projectExtensionsEnabled: z.boolean(),
 })
 export const saveSessionRuntimeControlsRequestSchema = sessionIdRequestSchema.extend({
   controls: sessionRuntimeControlsSchema.omit({ modelId: true, availableTools: true }),
@@ -172,8 +174,12 @@ export interface PictorBridge {
   getPluginBootstrap: () => Promise<IpcResult<PluginBootstrap>>
   getPluginManagerSnapshot: () => Promise<IpcResult<PluginManagerSnapshot>>
   installLocalPlugin: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installDevelopmentPlugin: () => Promise<IpcResult<PluginManagerSnapshot>>
   installPiExtension: () => Promise<IpcResult<PluginManagerSnapshot>>
   installPiPackage: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installPiPackageSpec: (
+    request: z.infer<typeof packageSpecRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
   setPluginEnabled: (
     request: z.infer<typeof setPluginEnabledRequestSchema>,
   ) => Promise<IpcResult<PluginManagerSnapshot>>

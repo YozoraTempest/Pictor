@@ -12,3 +12,8 @@ export const defaultPluginProfile = pluginProfileSchema.parse({
     'pictor.updater': '^0.2.0',
   },
 })
+
+export const developerPluginProfile = pluginProfileSchema.parse({
+  id: 'pictor.developer',
+  plugins: { ...defaultPluginProfile.plugins },
+})
