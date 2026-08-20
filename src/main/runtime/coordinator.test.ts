@@ -146,6 +146,25 @@ it.each(['a', 'id', 'running'])(
       status: 'running',
       error: `runtime error ${secret}`,
     })
+    const extensionUiRequestId = '71234567-89ab-4def-8123-456789abcdef'
+    coordinator.handleEvent({
+      type: 'extension.ui.requested',
+      runId: started.runId,
+      sessionId,
+      at: new Date().toISOString(),
+      requestId: extensionUiRequestId,
+      kind: 'input',
+      title: 'Enter a value',
+      message: null,
+      options: [],
+      value: null,
+    })
+    expect(broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'extension.ui.requested',
+        requestId: extensionUiRequestId,
+      }),
+    )
     coordinator.handleEvent({
       type: 'tool.started',
       runId: started.runId,
