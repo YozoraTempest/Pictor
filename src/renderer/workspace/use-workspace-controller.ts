@@ -28,6 +28,7 @@ export type WorkspaceBridge = Pick<
   | 'getSession'
   | 'inspectSessionHistory'
   | 'forkSession'
+  | 'cloneSession'
   | 'startRun'
   | 'approveCommand'
   | 'rejectCommand'
@@ -54,6 +55,7 @@ export interface WorkspaceController {
   sessionTreeLoading: boolean
   canInspectSessionTree: boolean
   forkingEntryId: string | null
+  cloningSession: boolean
   activeSessionSummary: SessionSummary | null
   activeRun: RunRecord | null
   anotherSessionRunning: boolean
@@ -76,6 +78,7 @@ export interface WorkspaceController {
   renameSession: (sessionId: string, title: string) => Promise<boolean>
   inspectSessionHistory: (entryId: string | null) => Promise<void>
   forkSession: (entryId: string) => Promise<boolean>
+  cloneSession: () => Promise<boolean>
   startRun: () => Promise<void>
   queueMessage: (mode: 'steer' | 'follow-up') => Promise<void>
   clearQueue: () => Promise<void>
@@ -98,7 +101,9 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const [session, setSession] = useState<SessionRecord | null>(null)
   const [sessionTree, setSessionTree] = useState<SessionTreeView | null>(null)
   const [sessionTreeLoading, setSessionTreeLoading] = useState(false)
-  const [forkingEntryId, setForkingEntryId] = useState<string | null>(null)
+  const [sessionDerivation, setSessionDerivation] = useState<
+    { kind: 'fork'; entryId: string } | { kind: 'clone' } | null
+  >(null)
   const [loading, setLoading] = useState(true)
   const [sessionLoading, setSessionLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -310,8 +315,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const forkSession = useCallback(
     async (entryId: string): Promise<boolean> => {
       const sourceSessionId = selectedSessionIdRef.current
-      if (!sourceSessionId || forkingEntryId) return false
-      setForkingEntryId(entryId)
+      if (!sourceSessionId || sessionDerivation) return false
+      setSessionDerivation({ kind: 'fork', entryId })
       setActionError(null)
       try {
         const response = await bridge.forkSession({ sessionId: sourceSessionId, entryId })
@@ -326,11 +331,36 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
         setActionError(errorMessage(error))
         return false
       } finally {
-        setForkingEntryId(null)
+        setSessionDerivation(null)
       }
     },
-    [bridge, forkingEntryId, selectSession],
+    [bridge, selectSession, sessionDerivation],
   )
+
+  const cloneSession = useCallback(async (): Promise<boolean> => {
+    const sourceSessionId = selectedSessionIdRef.current
+    if (!sourceSessionId || sessionDerivation) return false
+    setSessionDerivation({ kind: 'clone' })
+    setActionError(null)
+    try {
+      const response = await bridge.cloneSession({ sessionId: sourceSessionId })
+      if (!response.ok) {
+        setActionError(response.error.message)
+        return false
+      }
+      if (!response.value) return false
+      await selectSession(response.value.projectId, response.value.id)
+      return true
+    } catch (error) {
+      setActionError(errorMessage(error))
+      return false
+    } finally {
+      setSessionDerivation(null)
+    }
+  }, [bridge, selectSession, sessionDerivation])
+
+  const forkingEntryId = sessionDerivation?.kind === 'fork' ? sessionDerivation.entryId : null
+  const cloningSession = sessionDerivation?.kind === 'clone'
 
   const pickProject = useCallback(
     async (relinkProjectId: string | null = null): Promise<WorkspaceTrustRequest | null> => {
@@ -579,6 +609,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     sessionTreeLoading,
     canInspectSessionTree,
     forkingEntryId,
+    cloningSession,
     activeSessionSummary,
     activeRun,
     anotherSessionRunning,
@@ -601,6 +632,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     renameSession,
     inspectSessionHistory,
     forkSession,
+    cloneSession,
     startRun,
     queueMessage,
     clearQueue,

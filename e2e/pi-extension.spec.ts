@@ -210,6 +210,41 @@ export default function (pi) {
     const lifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
     expect(lifecycle).toContain('shutdown:fork')
     expect(lifecycle).toContain('start:fork')
+
+    await window.getByRole('button', { name: 'Session Tree' }).click()
+    const forkTree = window.getByRole('complementary', { name: 'Session Tree' })
+    const cloneButton = forkTree.getByRole('button', {
+      name: 'Clone 当前分支为新 Session',
+    })
+    await expect(cloneButton).toBeEnabled()
+    await cloneButton.click()
+
+    await expect(
+      window.getByRole('heading', { name: 'Use the hello tool. (Fork) (Clone)' }),
+    ).toBeVisible({ timeout: 30_000 })
+    await expect(window.locator('.timeline').getByText('Native extension completed.')).toBeVisible()
+    const clonedSnapshot = await window.evaluate(async () => {
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      return bridge.getSnapshot()
+    })
+    expect(clonedSnapshot).toMatchObject({
+      ok: true,
+      value: {
+        selectedSessionId: expect.any(String),
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ title: 'Use the hello tool. (Fork) (Clone)' }),
+        ]),
+      },
+    })
+    await expect
+      .poll(async () => {
+        const values = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
+        return values.split('\n').filter((value) => value.startsWith('before_fork:')).length
+      })
+      .toBe(2)
+    const clonedLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
+    expect(clonedLifecycle.match(/shutdown:fork/g)).toHaveLength(2)
+    expect(clonedLifecycle.match(/start:fork/g)).toHaveLength(2)
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

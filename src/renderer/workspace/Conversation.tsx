@@ -65,12 +65,14 @@ interface ConversationProps {
   sessionTreeLoading: boolean
   canInspectSessionTree: boolean
   forkingEntryId: string | null
+  cloningSession: boolean
   onDraftChange: (value: string) => void
   onSend: () => void
   onQueue: (mode: 'steer' | 'follow-up') => void
   onClearQueue: () => void
   onInspectSessionHistory: (entryId: string | null) => void
   onForkSession: (entryId: string) => void
+  onCloneSession: () => void
   onStop: (runId: string) => void
   onApprove: (runId: string, callId: string) => void
   onReject: (runId: string, callId: string) => void
@@ -363,19 +365,25 @@ function SessionTreePanel({
   tree,
   loading,
   forkingEntryId,
+  cloningSession,
   onSelect,
   onFork,
+  onClone,
   onClose,
 }: {
   tree: SessionTreeView | null
   loading: boolean
   forkingEntryId: string | null
+  cloningSession: boolean
   onSelect: (entryId: string | null) => void
   onFork: (entryId: string) => void
+  onClone: () => void
   onClose: () => void
 }): React.JSX.Element {
   const selectedEntryId = tree?.selectedEntryId ?? null
   const canFork = Boolean(selectedEntryId && selectedEntryId !== tree?.activeLeafId)
+  const canClone = Boolean(tree?.activeLeafId && selectedEntryId === tree.activeLeafId)
+  const derivationBusy = forkingEntryId !== null || cloningSession
   return (
     <aside className="session-tree-panel" aria-label="Session Tree">
       <div className="session-tree-header">
@@ -390,12 +398,22 @@ function SessionTreePanel({
             type="button"
             aria-label="Fork 为新 Session"
             title="Fork 为新 Session"
-            disabled={!canFork || forkingEntryId !== null}
+            disabled={!canFork || derivationBusy}
             onClick={() => {
               if (selectedEntryId) onFork(selectedEntryId)
             }}
           >
             {forkingEntryId ? <LoaderCircle className="spin" size={14} /> : <GitFork size={14} />}
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="Clone 当前分支为新 Session"
+            title="Clone 当前分支为新 Session"
+            disabled={!canClone || derivationBusy}
+            onClick={onClone}
+          >
+            {cloningSession ? <LoaderCircle className="spin" size={14} /> : <Copy size={14} />}
           </button>
           <button
             className="mini-icon-button"
@@ -477,12 +495,14 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     sessionTreeLoading,
     canInspectSessionTree,
     forkingEntryId,
+    cloningSession,
     onDraftChange,
     onSend,
     onQueue,
     onClearQueue,
     onInspectSessionHistory,
     onForkSession,
+    onCloneSession,
     onStop,
     onApprove,
     onReject,
@@ -651,8 +671,10 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             tree={sessionTree}
             loading={sessionTreeLoading}
             forkingEntryId={forkingEntryId}
+            cloningSession={cloningSession}
             onSelect={onInspectSessionHistory}
             onFork={onForkSession}
+            onClone={onCloneSession}
             onClose={() => setTreeOpen(false)}
           />
         ) : null}
