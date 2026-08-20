@@ -220,6 +220,7 @@ function createBridge(
     inspectSessionHistory,
     navigateSessionTree,
     compactSession,
+    labelSessionEntry: async () => ok({ session: sessions[firstSessionId]!, tree: null }),
     cancelSessionOperation,
     forkSession,
     cloneSession,

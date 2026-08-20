@@ -137,6 +137,9 @@ it.each(['a', 'id', 'running'])(
       compactSession: vi.fn(async () => {
         throw new Error('not used')
       }),
+      labelSessionEntry: vi.fn(async () => {
+        throw new Error('not used')
+      }),
       abortSessionOperation: vi.fn(),
       reloadResources: vi.fn(async () => undefined),
       approve: vi.fn(),
@@ -374,6 +377,9 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     compactSession: vi.fn(async () => {
       throw new Error('not used')
     }),
+    labelSessionEntry: vi.fn(async () => {
+      throw new Error('not used')
+    }),
     abortSessionOperation: vi.fn(),
     reloadResources: vi.fn(async () => undefined),
     approve: vi.fn(),
@@ -468,6 +474,9 @@ it('keeps a pending Legacy Session Import read-only', async () => {
       throw new Error('not used')
     }),
     compactSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    labelSessionEntry: vi.fn(async () => {
       throw new Error('not used')
     }),
     abortSessionOperation: vi.fn(),
@@ -669,6 +678,13 @@ it('commits native Pi Session derivation and Import operations', async () => {
     tokensBefore: 100,
     estimatedTokensAfter: 25,
   }))
+  const labelSessionEntry = vi.fn<RuntimeHost['labelSessionEntry']>(async (config) => ({
+    type: 'host.labelResult',
+    operationId: config.operationId,
+    sourceSessionId: config.sourceSessionId,
+    outcome: 'completed',
+    activeLeafId: 'label-entry',
+  }))
   const abortSessionOperation = vi.fn()
   const reloadResources = vi.fn(async () => undefined)
   const supervisor: RuntimeHost = {
@@ -679,6 +695,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     exportSession,
     navigateSession,
     compactSession,
+    labelSessionEntry,
     abortSessionOperation,
     reloadResources,
     approve: vi.fn(),
@@ -861,4 +878,16 @@ it('commits native Pi Session derivation and Import operations', async () => {
     coordinator.navigateSessionTree(sessionId, 'root-user-entry'),
   ).resolves.toMatchObject({ editorText: 'Root user task', summaryCreated: false })
   expect(setPiSessionActiveLeaf).toHaveBeenLastCalledWith(sessionId, null)
+
+  await expect(
+    coordinator.labelSessionEntry(sessionId, 'historical-entry', 'checkpoint'),
+  ).resolves.toMatchObject({ session: { id: sessionId } })
+  expect(labelSessionEntry).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'label',
+      entryId: 'historical-entry',
+      label: 'checkpoint',
+    }),
+  )
+  expect(setPiSessionActiveLeaf).toHaveBeenLastCalledWith(sessionId, 'label-entry')
 })

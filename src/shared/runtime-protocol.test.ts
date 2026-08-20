@@ -9,6 +9,7 @@ import {
   runtimeForkResultSchema,
   runtimeHostMessageSchema,
   runtimeImportResultSchema,
+  runtimeLabelResultSchema,
   runtimeNavigateResultSchema,
 } from './runtime-protocol.js'
 
@@ -253,5 +254,40 @@ describe('Runtime Session operation protocol', () => {
       expect(runtimeCompactResultSchema.parse(result)).toEqual(result)
       expect(runtimeHostMessageSchema.parse(result)).toEqual(result)
     }
+  })
+
+  it('accepts native Pi Session label commands and host results', () => {
+    expect(
+      runtimeCommandSchema.parse({
+        type: 'label',
+        operationId,
+        sourceSessionId,
+        entryId: 'target-entry',
+        label: 'checkpoint',
+        activeLeafId: 'active-entry',
+        projectRoot: '/project',
+        agentDirectory: '/agent',
+        sourceSessionDirectory: '/sessions/source',
+        sourcePiSessionFile: 'source.jsonl',
+        settings: {
+          apiProtocol: 'responses',
+          baseUrl: 'https://example.test/v1',
+          modelId: 'test-model',
+          reasoningEffort: null,
+          temperature: null,
+          maxOutputTokens: 1024,
+        },
+        apiKey: 'test-key',
+      }),
+    ).toMatchObject({ type: 'label', entryId: 'target-entry' })
+    const result = {
+      type: 'host.labelResult',
+      operationId,
+      sourceSessionId,
+      outcome: 'completed',
+      activeLeafId: 'label-entry',
+    } as const
+    expect(runtimeLabelResultSchema.parse(result)).toEqual(result)
+    expect(runtimeHostMessageSchema.parse(result)).toEqual(result)
   })
 })

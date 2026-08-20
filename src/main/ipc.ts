@@ -13,6 +13,7 @@ import {
   forkSessionRequestSchema,
   importSessionRequestSchema,
   inspectSessionHistoryRequestSchema,
+  labelSessionEntryRequestSchema,
   listModelsRequestSchema,
   navigateSessionTreeRequestSchema,
   packageSpecRequestSchema,
@@ -313,6 +314,14 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = compactSessionRequestSchema.parse(input)
       return runtimeCoordinator.compactSession(request.sessionId, request.customInstructions)
+    })
+  })
+
+  ipcMain.handle('session:label-entry', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = labelSessionEntryRequestSchema.parse(input)
+      return runtimeCoordinator.labelSessionEntry(request.sessionId, request.entryId, request.label)
     })
   })
 

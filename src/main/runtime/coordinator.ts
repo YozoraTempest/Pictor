@@ -25,6 +25,8 @@ import {
   type RuntimeForkResult,
   type RuntimeImportConfig,
   type RuntimeImportResult,
+  type RuntimeLabelConfig,
+  type RuntimeLabelResult,
   type RuntimeNavigateConfig,
   type RuntimeNavigateResult,
   type RuntimeStartConfig,
@@ -78,6 +80,7 @@ export interface RuntimeHost {
   exportSession(config: RuntimeExportConfig): Promise<RuntimeExportResult>
   navigateSession(config: RuntimeNavigateConfig): Promise<RuntimeNavigateResult>
   compactSession(config: RuntimeCompactConfig): Promise<RuntimeCompactResult>
+  labelSessionEntry(config: RuntimeLabelConfig): Promise<RuntimeLabelResult>
   abortSessionOperation(operationId: string): void
   reloadResources(): Promise<void>
   approve(runId: string, callId: string): void
@@ -361,7 +364,7 @@ export class RuntimeCoordinator {
         operationId,
         sourceSessionId,
         customInstructions,
-        activeLeafId,
+        activeLeafId: activeLeafId ?? null,
         projectRoot: project.rootPath,
         agentDirectory: sourcePaths.agentDirectory,
         sourceSessionDirectory: sourcePaths.sessionDirectory,
@@ -386,6 +389,64 @@ export class RuntimeCoordinator {
       if (this.cancellableSessionOperation?.operationId === operationId) {
         this.cancellableSessionOperation = null
       }
+    }
+  }
+
+  async labelSessionEntry(
+    sourceSessionId: string,
+    entryId: string,
+    label: string | null,
+  ): Promise<SessionHistoryView> {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
+      throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
+    }
+    const source = await this.repository.getSession(sourceSessionId)
+    const history = this.repository.getSessionHistory(sourceSessionId)
+    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+      throw new PictorError('invalid-input', '当前 Session 没有可标记的 Pi JSONL 历史')
+    }
+    const inspected = await this.repository.inspectSessionHistory(sourceSessionId, entryId)
+    const activeLeafId = inspected.tree?.activeLeafId
+    if (!inspected.tree?.nodes.some((node) => node.id === entryId)) {
+      throw new PictorError('not-found', '目标 Pi Session 节点不存在')
+    }
+    const project = this.repository.getProject(source.projectId)
+    const settings = await this.repository.getSettings()
+    const apiKey = await this.repository.getApiKey()
+    if (!settings || !apiKey) {
+      throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
+    }
+    const paths = this.repository.getRuntimePaths(project.id, sourceSessionId)
+    const operationId = randomUUID()
+    this.sessionOperationId = operationId
+    try {
+      const result = await this.supervisor.labelSessionEntry({
+        type: 'label',
+        operationId,
+        sourceSessionId,
+        entryId,
+        label,
+        activeLeafId: activeLeafId ?? null,
+        projectRoot: project.rootPath,
+        agentDirectory: paths.agentDirectory,
+        sourceSessionDirectory: paths.sessionDirectory,
+        sourcePiSessionFile: history.piSessionFile,
+        settings: {
+          apiProtocol: settings.apiProtocol,
+          baseUrl: settings.baseUrl,
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          temperature: settings.temperature,
+          maxOutputTokens: settings.maxOutputTokens,
+        },
+        apiKey,
+      })
+      if (result.outcome === 'failed') throw new Error(result.message)
+      await this.repository.setPiSessionActiveLeaf(sourceSessionId, result.activeLeafId)
+      await this.repository.rebuildSessionProjection(sourceSessionId)
+      return this.repository.inspectSessionHistory(sourceSessionId, null)
+    } finally {
+      if (this.sessionOperationId === operationId) this.sessionOperationId = null
     }
   }
 

@@ -81,6 +81,10 @@ export const navigateSessionTreeRequestSchema = sessionIdRequestSchema.extend({
 export const compactSessionRequestSchema = sessionIdRequestSchema.extend({
   customInstructions: z.string().trim().max(20_000).nullable(),
 })
+export const labelSessionEntryRequestSchema = sessionIdRequestSchema.extend({
+  entryId: z.string().min(1),
+  label: z.string().trim().max(120).nullable(),
+})
 export const sessionRuntimeControlsSchema = z.object({
   modelId: z.string().min(1),
   thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
@@ -227,6 +231,9 @@ export interface PictorBridge {
   reloadSessionResources: (
     request: z.infer<typeof sessionIdRequestSchema>,
   ) => Promise<IpcResult<null>>
+  labelSessionEntry: (
+    request: z.infer<typeof labelSessionEntryRequestSchema>,
+  ) => Promise<IpcResult<SessionHistoryView>>
   forkSession: (
     request: z.infer<typeof forkSessionRequestSchema>,
   ) => Promise<IpcResult<SessionSummary | null>>

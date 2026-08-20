@@ -6,6 +6,7 @@ import type {
   RuntimeExportConfig,
   RuntimeForkConfig,
   RuntimeImportConfig,
+  RuntimeLabelConfig,
   RuntimeNavigateConfig,
   RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
@@ -35,6 +36,8 @@ export type AgentRuntimeCompactResult =
     }
   | { outcome: 'cancelled' }
 
+export type AgentRuntimeLabelResult = { outcome: 'completed'; activeLeafId: string }
+
 export interface ModelRuntimeProvider {
   id: string
   register(
@@ -60,6 +63,7 @@ export interface AgentRuntimeProvider {
   exportSession(config: RuntimeExportConfig): Promise<AgentRuntimeExportResult>
   navigateSession(config: RuntimeNavigateConfig): Promise<AgentRuntimeNavigateResult>
   compactSession(config: RuntimeCompactConfig): Promise<AgentRuntimeCompactResult>
+  labelSessionEntry(config: RuntimeLabelConfig): Promise<AgentRuntimeLabelResult>
   abortSessionOperation(operationId: string): void
   resolveApproval(runId: string, callId: string, allowed: boolean): void
   abort(runId: string): Promise<void>

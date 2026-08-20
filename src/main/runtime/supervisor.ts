@@ -15,6 +15,8 @@ import {
   type RuntimeForkResult,
   type RuntimeImportConfig,
   type RuntimeImportResult,
+  type RuntimeLabelConfig,
+  type RuntimeLabelResult,
   type RuntimeNavigateConfig,
   type RuntimeNavigateResult,
   type RuntimeStartConfig,
@@ -54,6 +56,11 @@ export class RuntimeSupervisor {
   private pendingCompact: {
     operationId: string
     resolve: (result: RuntimeCompactResult) => void
+    reject: (error: Error) => void
+  } | null = null
+  private pendingLabel: {
+    operationId: string
+    resolve: (result: RuntimeLabelResult) => void
     reject: (error: Error) => void
   } | null = null
 
@@ -160,6 +167,24 @@ export class RuntimeSupervisor {
     })
   }
 
+  async labelSessionEntry(config: RuntimeLabelConfig): Promise<RuntimeLabelResult> {
+    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
+    await this.ensureChild()
+    this.activeRunId = config.operationId
+    this.activeSessionId = config.sourceSessionId
+    return new Promise<RuntimeLabelResult>((resolve, reject) => {
+      this.pendingLabel = { operationId: config.operationId, resolve, reject }
+      try {
+        this.post(config)
+      } catch (error) {
+        this.pendingLabel = null
+        this.activeRunId = null
+        this.activeSessionId = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
+
   abortSessionOperation(operationId: string): void {
     this.assertActive(operationId)
     this.post({ type: 'abort-session-operation', operationId })
@@ -228,6 +253,8 @@ export class RuntimeSupervisor {
     this.pendingNavigate = null
     this.pendingCompact?.reject(new Error('Agent Runtime 已关闭'))
     this.pendingCompact = null
+    this.pendingLabel?.reject(new Error('Agent Runtime 已关闭'))
+    this.pendingLabel = null
     this.activeRunId = null
     this.activeSessionId = null
   }
@@ -310,6 +337,12 @@ export class RuntimeSupervisor {
         this.activeRunId = null
         this.activeSessionId = null
       }
+      if (this.pendingLabel) {
+        this.pendingLabel.reject(new Error(parsed.data.message))
+        this.pendingLabel = null
+        this.activeRunId = null
+        this.activeSessionId = null
+      }
       this.emitSyntheticFailure(parsed.data.message)
       return
     }
@@ -358,6 +391,15 @@ export class RuntimeSupervisor {
       pending.resolve(parsed.data)
       return
     }
+    if (parsed.data.type === 'host.labelResult') {
+      const pending = this.pendingLabel
+      if (!pending || pending.operationId !== parsed.data.operationId) return
+      this.pendingLabel = null
+      this.activeRunId = null
+      this.activeSessionId = null
+      pending.resolve(parsed.data)
+      return
+    }
     const event = runtimeEventSchema.parse(parsed.data)
     this.onEvent(event)
     if (event.type === 'run.stateChanged' && TERMINAL_STATUSES.has(event.status)) {
@@ -400,6 +442,12 @@ export class RuntimeSupervisor {
     if (this.pendingCompact) {
       this.pendingCompact.reject(new Error('Agent Runtime 在 Compaction 完成前退出'))
       this.pendingCompact = null
+      this.activeRunId = null
+      this.activeSessionId = null
+    }
+    if (this.pendingLabel) {
+      this.pendingLabel.reject(new Error('Agent Runtime 在 Label 完成前退出'))
+      this.pendingLabel = null
       this.activeRunId = null
       this.activeSessionId = null
     }

@@ -35,6 +35,7 @@ export type WorkspaceBridge = Pick<
   | 'inspectSessionHistory'
   | 'navigateSessionTree'
   | 'compactSession'
+  | 'labelSessionEntry'
   | 'cancelSessionOperation'
   | 'forkSession'
   | 'cloneSession'
@@ -104,6 +105,7 @@ export interface WorkspaceController {
   importSession: (projectId: string) => Promise<boolean>
   exportSession: (sessionId: string, format: SessionExportFormat) => Promise<boolean>
   compactSession: (customInstructions: string | null) => Promise<boolean>
+  labelSessionEntry: (entryId: string, label: string | null) => Promise<boolean>
   cancelSessionOperation: () => Promise<boolean>
   startRun: () => Promise<void>
   pickMessageImages: () => Promise<void>
@@ -522,6 +524,24 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     [bridge, refreshSnapshot, sessionOperation],
   )
 
+  const labelSessionEntry = useCallback(
+    async (entryId: string, label: string | null): Promise<boolean> => {
+      const sessionId = selectedSessionIdRef.current
+      if (!sessionId || sessionOperation) return false
+      setActionError(null)
+      const response = await bridge.labelSessionEntry({ sessionId, entryId, label })
+      if (!response.ok) {
+        setActionError(response.error.message)
+        return false
+      }
+      setSession(response.value.session)
+      setSessionTree(response.value.tree)
+      await refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error)))
+      return true
+    },
+    [bridge, refreshSnapshot, sessionOperation],
+  )
+
   const cancelSessionOperation = useCallback(async (): Promise<boolean> => {
     const sessionId = selectedSessionIdRef.current
     if (
@@ -854,6 +874,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     importSession,
     exportSession,
     compactSession,
+    labelSessionEntry,
     cancelSessionOperation,
     startRun,
     pickMessageImages,

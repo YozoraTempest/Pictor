@@ -25,6 +25,7 @@ import {
   importSessionResultSchema,
   imageAttachmentsResultSchema,
   inspectSessionHistoryRequestSchema,
+  labelSessionEntryRequestSchema,
   listModelsRequestSchema,
   navigateSessionTreeRequestSchema,
   navigateSessionTreeResultSchema,
@@ -166,6 +167,10 @@ const bridge = Object.freeze({
   reloadSessionResources: async (input) =>
     voidResultSchema.parse(
       await ipcRenderer.invoke('session:reload-resources', sessionIdRequestSchema.parse(input)),
+    ),
+  labelSessionEntry: async (input) =>
+    sessionHistoryViewResultSchema.parse(
+      await ipcRenderer.invoke('session:label-entry', labelSessionEntryRequestSchema.parse(input)),
     ),
   forkSession: async (input) =>
     forkSessionResultSchema.parse(

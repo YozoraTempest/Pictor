@@ -390,6 +390,13 @@ export default function (pi) {
       importedTree.getByRole('button', { name: 'Imported original answer' }),
     ).toBeVisible()
     await expect(importedTree.getByRole('button', { name: 'Imported branch answer' })).toBeVisible()
+    await importedTree.getByRole('button', { name: 'Imported root task' }).click()
+    await window.getByRole('button', { name: '标记节点' }).click()
+    await window.getByLabel('Label').fill('root-checkpoint')
+    await window.getByRole('button', { name: '保存' }).click()
+    await expect(
+      importedTree.getByRole('button', { name: 'root-checkpoint', exact: true }),
+    ).toBeVisible()
     const importedSnapshot = await window.evaluate(async () => {
       const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
       return bridge.getSnapshot()
