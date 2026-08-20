@@ -303,6 +303,39 @@ export class AppRepository {
       createdAt: now,
       updatedAt: now,
     })
+    return this.commitPiSession(target, identity)
+  }
+
+  async createImportedSession(
+    projectId: string,
+    targetSessionId: string,
+    title: string,
+    identity: { id: string; file: string },
+  ): Promise<SessionSummary> {
+    this.ensureInitialized()
+    this.getProject(projectId)
+    if (this.state.sessions.some((session) => session.id === targetSessionId)) {
+      throw new PictorError('invalid-input', '目标 Session 已存在')
+    }
+    const now = new Date().toISOString()
+    const target = sessionRecordSchema.parse({
+      schemaVersion: 1,
+      id: targetSessionId,
+      projectId,
+      title,
+      messages: [],
+      runs: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    return this.commitPiSession(target, identity)
+  }
+
+  private async commitPiSession(
+    target: SessionRecord,
+    identity: { id: string; file: string },
+  ): Promise<SessionSummary> {
+    const now = target.createdAt
     await this.sessionPersistence.bindPiSession(target, identity)
     const rebuilt = await this.sessionPersistence.rebuildProjection(target.id)
     rebuilt.createdAt = now

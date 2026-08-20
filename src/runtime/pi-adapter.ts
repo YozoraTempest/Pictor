@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, relative, resolve } from 'node:path'
 
 import {
@@ -19,12 +19,14 @@ import {
   runtimeEventSchema,
   type RuntimeEvent,
   type RuntimeForkConfig,
+  type RuntimeImportConfig,
   type RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
 import { classifyRuntimeFailure, type RuntimeFailure } from '../shared/runtime-failure.js'
 import { createSecretRedactor, type SecretRedactor } from '../shared/secret-redaction.js'
 import type {
   AgentRuntimeForkResult,
+  AgentRuntimeImportResult,
   AgentRuntimeResources,
   ModelRuntimeProvider,
 } from './plugin-interface.js'
@@ -54,6 +56,7 @@ interface PiSessionLike {
   followUp(text: string): Promise<void>
   clearQueue(): { steering: string[]; followUp: string[] }
   fork(entryId: string): Promise<{ cancelled: boolean }>
+  importFromJsonl(inputPath: string, cwdOverride: string): Promise<{ cancelled: boolean }>
   getSessionStats(): SessionStats
   getSessionId(): string
   getSessionFile(): string | undefined
@@ -252,6 +255,10 @@ class PiSessionRuntime implements PiSessionLike {
     return { cancelled: result.cancelled }
   }
 
+  async importFromJsonl(inputPath: string, cwdOverride: string): Promise<{ cancelled: boolean }> {
+    return this.runtime.importFromJsonl(inputPath, cwdOverride)
+  }
+
   getSessionStats(): SessionStats {
     return this.runtime.session.getSessionStats()
   }
@@ -311,7 +318,7 @@ export class PiAgentRuntime {
   private skillPaths: readonly string[] = []
   private promptPaths: readonly string[] = []
   private modelProviders: readonly ModelRuntimeProvider[] = []
-  private forkUi: { operationId: string; broker: ExtensionUiBroker } | null = null
+  private sessionOperationUi: { operationId: string; broker: ExtensionUiBroker } | null = null
 
   constructor(
     private readonly emit: (event: RuntimeEvent) => void,
@@ -327,7 +334,8 @@ export class PiAgentRuntime {
   }
 
   async start(config: RuntimeStartConfig): Promise<void> {
-    if (this.current || this.forkUi) throw new Error('Only one Runtime operation can be active')
+    if (this.current || this.sessionOperationUi)
+      throw new Error('Only one Runtime operation can be active')
     const abortController = new AbortController()
     const approvals = new ApprovalBroker((request) => {
       this.emitEvent(config, {
@@ -448,7 +456,8 @@ export class PiAgentRuntime {
   }
 
   async fork(config: RuntimeForkConfig): Promise<AgentRuntimeForkResult> {
-    if (this.current || this.forkUi) throw new Error('Only one Runtime operation can be active')
+    if (this.current || this.sessionOperationUi)
+      throw new Error('Only one Runtime operation can be active')
     if (config.sourcePiSessionFile !== basename(config.sourcePiSessionFile)) {
       throw new Error('Source Pi Session file must be a basename')
     }
@@ -467,7 +476,7 @@ export class PiAgentRuntime {
       prompt: 'Fork Pi Session',
     }
     const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
-    this.forkUi = { operationId: config.operationId, broker }
+    this.sessionOperationUi = { operationId: config.operationId, broker }
     let session: PiSessionLike | null = null
     let disposed = false
 
@@ -510,7 +519,80 @@ export class PiAgentRuntime {
     } finally {
       broker.cancelAll()
       if (!disposed && session) await Promise.resolve(session.dispose()).catch(() => undefined)
-      if (this.forkUi?.operationId === config.operationId) this.forkUi = null
+      if (this.sessionOperationUi?.operationId === config.operationId) {
+        this.sessionOperationUi = null
+      }
+    }
+  }
+
+  async importSession(config: RuntimeImportConfig): Promise<AgentRuntimeImportResult> {
+    if (this.current || this.sessionOperationUi)
+      throw new Error('Only one Runtime operation can be active')
+    if (!isAbsolute(config.sourceJsonlPath)) {
+      throw new Error('Imported Pi Session path must be absolute')
+    }
+    const redactor = createSecretRedactor([config.apiKey])
+    const eventConfig: RuntimeStartConfig = {
+      type: 'start',
+      runId: config.operationId,
+      sessionId: config.targetSessionId,
+      messageId: config.operationId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: config.targetSessionDirectory,
+      resumeSession: false,
+      settings: config.settings,
+      apiKey: config.apiKey,
+      prompt: 'Import Pi Session',
+    }
+    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
+    this.sessionOperationUi = { operationId: config.operationId, broker }
+    let session: PiSessionLike | null = null
+    let disposed = false
+    let completed = false
+
+    try {
+      session = await this.sessionFactory({
+        config: eventConfig,
+        tools: [],
+        extensionPaths: this.extensionPaths,
+        skillPaths: this.skillPaths,
+        promptPaths: this.promptPaths,
+        modelProvider: this.getModelProvider(),
+      })
+      await session.bindExtensionUi?.(broker.createContext())
+      const initialSessionFile = session.getSessionFile()
+      const result = await session.importFromJsonl(config.sourceJsonlPath, config.projectRoot)
+      if (result.cancelled) return { outcome: 'cancelled' }
+
+      const importedSessionFile = session.getSessionFile()
+      if (!importedSessionFile) throw new Error('Imported Pi Session did not provide a JSONL file')
+      if (!isPathWithin(config.targetSessionDirectory, importedSessionFile)) {
+        throw new Error('Pi Import did not create a Session copy in the target directory')
+      }
+      if (resolve(importedSessionFile) === resolve(config.sourceJsonlPath)) {
+        throw new Error('Pi Import did not create an independent Session copy')
+      }
+      const piSessionFile = basename(importedSessionFile)
+      const piSessionId = session.getSessionId()
+      await sanitizePiTranscript(importedSessionFile, redactor)
+      await session.dispose()
+      disposed = true
+      if (initialSessionFile && resolve(initialSessionFile) !== resolve(importedSessionFile)) {
+        await unlink(initialSessionFile).catch(() => undefined)
+      }
+      completed = true
+      return { outcome: 'completed', piSessionId, piSessionFile }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Pi Session Import failed'
+      throw new Error(redactor.redactText(detail), { cause: error })
+    } finally {
+      broker.cancelAll()
+      if (!disposed && session) await Promise.resolve(session.dispose()).catch(() => undefined)
+      if (!completed) await rm(config.targetSessionDirectory, { recursive: true, force: true })
+      if (this.sessionOperationUi?.operationId === config.operationId) {
+        this.sessionOperationUi = null
+      }
     }
   }
 
@@ -533,7 +615,7 @@ export class PiAgentRuntime {
 
   async dispose(): Promise<void> {
     if (this.current) await this.abort(this.current.config.runId)
-    this.forkUi?.broker.cancelAll()
+    this.sessionOperationUi?.broker.cancelAll()
   }
 
   async queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void> {
@@ -554,7 +636,7 @@ export class PiAgentRuntime {
 
   respondToExtensionUi(requestId: string, value: string | boolean | null): void {
     if (this.current) this.current.extensionUi.respond(requestId, value)
-    else this.forkUi?.broker.respond(requestId, value)
+    else this.sessionOperationUi?.broker.respond(requestId, value)
   }
 
   private getModelProvider(): ModelRuntimeProvider {

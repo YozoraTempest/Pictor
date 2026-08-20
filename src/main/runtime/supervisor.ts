@@ -9,6 +9,8 @@ import {
   type RuntimeEvent,
   type RuntimeForkConfig,
   type RuntimeForkResult,
+  type RuntimeImportConfig,
+  type RuntimeImportResult,
   type RuntimeStartConfig,
 } from '../../shared/runtime-protocol.js'
 import type { RuntimePluginBootstrap } from '../../shared/plugins.js'
@@ -26,6 +28,11 @@ export class RuntimeSupervisor {
   private pendingFork: {
     operationId: string
     resolve: (result: RuntimeForkResult) => void
+    reject: (error: Error) => void
+  } | null = null
+  private pendingImport: {
+    operationId: string
+    resolve: (result: RuntimeImportResult) => void
     reject: (error: Error) => void
   } | null = null
 
@@ -53,6 +60,24 @@ export class RuntimeSupervisor {
         this.post(config)
       } catch (error) {
         this.pendingFork = null
+        this.activeRunId = null
+        this.activeSessionId = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
+
+  async importSession(config: RuntimeImportConfig): Promise<RuntimeImportResult> {
+    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
+    await this.ensureChild()
+    this.activeRunId = config.operationId
+    this.activeSessionId = config.targetSessionId
+    return new Promise<RuntimeImportResult>((resolve, reject) => {
+      this.pendingImport = { operationId: config.operationId, resolve, reject }
+      try {
+        this.post(config)
+      } catch (error) {
+        this.pendingImport = null
         this.activeRunId = null
         this.activeSessionId = null
         reject(error instanceof Error ? error : new Error(String(error)))
@@ -111,6 +136,8 @@ export class RuntimeSupervisor {
     this.child = null
     this.pendingFork?.reject(new Error('Agent Runtime 已关闭'))
     this.pendingFork = null
+    this.pendingImport?.reject(new Error('Agent Runtime 已关闭'))
+    this.pendingImport = null
     this.activeRunId = null
     this.activeSessionId = null
   }
@@ -169,6 +196,12 @@ export class RuntimeSupervisor {
         this.activeRunId = null
         this.activeSessionId = null
       }
+      if (this.pendingImport) {
+        this.pendingImport.reject(new Error(parsed.data.message))
+        this.pendingImport = null
+        this.activeRunId = null
+        this.activeSessionId = null
+      }
       this.emitSyntheticFailure(parsed.data.message)
       return
     }
@@ -176,6 +209,15 @@ export class RuntimeSupervisor {
       const pending = this.pendingFork
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingFork = null
+      this.activeRunId = null
+      this.activeSessionId = null
+      pending.resolve(parsed.data)
+      return
+    }
+    if (parsed.data.type === 'host.importResult') {
+      const pending = this.pendingImport
+      if (!pending || pending.operationId !== parsed.data.operationId) return
+      this.pendingImport = null
       this.activeRunId = null
       this.activeSessionId = null
       pending.resolve(parsed.data)
@@ -199,6 +241,12 @@ export class RuntimeSupervisor {
     if (this.pendingFork) {
       this.pendingFork.reject(new Error('Agent Runtime 在 Fork 完成前退出'))
       this.pendingFork = null
+      this.activeRunId = null
+      this.activeSessionId = null
+    }
+    if (this.pendingImport) {
+      this.pendingImport.reject(new Error('Agent Runtime 在 Import 完成前退出'))
+      this.pendingImport = null
       this.activeRunId = null
       this.activeSessionId = null
     }

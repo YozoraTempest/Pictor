@@ -151,9 +151,41 @@ export const runtimeForkResultSchema = z.discriminatedUnion('outcome', [
   }),
 ])
 
+export const runtimeImportConfigSchema = z.object({
+  type: z.literal('import'),
+  operationId: idSchema,
+  targetSessionId: idSchema,
+  projectRoot: z.string().min(1),
+  agentDirectory: z.string().min(1),
+  sourceJsonlPath: z.string().min(1),
+  targetSessionDirectory: z.string().min(1),
+  settings: modelSettingsInputSchema,
+  apiKey: z.string().min(1),
+})
+
+const runtimeImportResultBaseSchema = z.object({
+  type: z.literal('host.importResult'),
+  operationId: idSchema,
+  targetSessionId: idSchema,
+})
+
+export const runtimeImportResultSchema = z.discriminatedUnion('outcome', [
+  runtimeImportResultBaseSchema.extend({
+    outcome: z.literal('completed'),
+    piSessionId: z.string().min(1),
+    piSessionFile: z.string().min(1),
+  }),
+  runtimeImportResultBaseSchema.extend({ outcome: z.literal('cancelled') }),
+  runtimeImportResultBaseSchema.extend({
+    outcome: z.literal('failed'),
+    message: z.string().min(1),
+  }),
+])
+
 export const runtimeCommandSchema = z.discriminatedUnion('type', [
   runtimeStartConfigSchema,
   runtimeForkConfigSchema,
+  runtimeImportConfigSchema,
   z.object({ type: z.literal('approve'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('reject'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('abort'), runId: idSchema }),
@@ -175,6 +207,7 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
 export const runtimeHostMessageSchema = z.union([
   runtimeEventSchema,
   runtimeForkResultSchema,
+  runtimeImportResultSchema,
   z.object({ type: z.literal('host.ready') }),
   z.object({ type: z.literal('host.fatal'), message: z.string().min(1) }),
 ])
@@ -183,5 +216,7 @@ export type RuntimeEvent = z.infer<typeof runtimeEventSchema>
 export type RuntimeStartConfig = z.infer<typeof runtimeStartConfigSchema>
 export type RuntimeForkConfig = z.infer<typeof runtimeForkConfigSchema>
 export type RuntimeForkResult = z.infer<typeof runtimeForkResultSchema>
+export type RuntimeImportConfig = z.infer<typeof runtimeImportConfigSchema>
+export type RuntimeImportResult = z.infer<typeof runtimeImportResultSchema>
 export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>
 export type RuntimeHostMessage = z.infer<typeof runtimeHostMessageSchema>

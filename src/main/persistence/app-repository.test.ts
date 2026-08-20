@@ -232,6 +232,53 @@ describe('AppRepository', () => {
     })
   })
 
+  it('commits an imported Pi JSONL as a new selected Pictor Session', async () => {
+    const repository = createRepository()
+    await repository.initialize()
+    const project = await repository.registerProject(projectDirectory)
+    const targetSessionId = randomUUID()
+    const targetDirectory = join(dataDirectory, 'pi', project.id, targetSessionId)
+    await mkdir(targetDirectory, { recursive: true })
+    await writeFile(
+      join(targetDirectory, 'history.jsonl'),
+      [
+        JSON.stringify({
+          type: 'session',
+          version: 3,
+          id: 'imported-pi-session',
+          timestamp: new Date().toISOString(),
+          cwd: projectDirectory,
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'imported-user',
+          parentId: null,
+          timestamp: new Date().toISOString(),
+          message: { role: 'user', content: 'Imported task' },
+        }),
+        '',
+      ].join('\n'),
+    )
+
+    const summary = await repository.createImportedSession(
+      project.id,
+      targetSessionId,
+      'history (Import)',
+      { id: 'imported-pi-session', file: 'history.jsonl' },
+    )
+
+    expect(summary).toMatchObject({
+      id: targetSessionId,
+      projectId: project.id,
+      title: 'history (Import)',
+      historyAuthority: 'pi-jsonl',
+    })
+    expect((await repository.getSnapshot()).selectedSessionId).toBe(targetSessionId)
+    await expect(repository.getSession(targetSessionId)).resolves.toMatchObject({
+      messages: [expect.objectContaining({ content: 'Imported task' })],
+    })
+  })
+
   it('removes Pictor metadata without deleting files from the project directory', async () => {
     const repository = createRepository()
     await repository.initialize()

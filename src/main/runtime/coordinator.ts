@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { basename, extname, isAbsolute } from 'node:path'
 
 import {
   messageSchema,
@@ -17,6 +18,8 @@ import {
   type RuntimeEvent,
   type RuntimeForkConfig,
   type RuntimeForkResult,
+  type RuntimeImportConfig,
+  type RuntimeImportResult,
   type RuntimeStartConfig,
 } from '../../shared/runtime-protocol.js'
 import { createSecretRedactor, type SecretRedactor } from '../../shared/secret-redaction.js'
@@ -36,6 +39,12 @@ export interface RuntimePersistence {
     kind: 'fork' | 'clone',
     identity: { id: string; file: string },
   ): Promise<SessionSummary>
+  createImportedSession(
+    projectId: string,
+    targetSessionId: string,
+    title: string,
+    identity: { id: string; file: string },
+  ): Promise<SessionSummary>
   getProject(projectId: string): Project
   getSettings(): Promise<ModelSettings | null>
   getApiKey(): Promise<string | null>
@@ -53,6 +62,7 @@ export interface RuntimePersistence {
 export interface RuntimeHost {
   start(config: RuntimeStartConfig): Promise<void>
   fork(config: RuntimeForkConfig): Promise<RuntimeForkResult>
+  importSession(config: RuntimeImportConfig): Promise<RuntimeImportResult>
   approve(runId: string, callId: string): void
   reject(runId: string, callId: string): void
   stop(runId: string): void
@@ -71,7 +81,7 @@ interface ActiveRun {
 
 export class RuntimeCoordinator {
   private active: ActiveRun | null = null
-  private sessionDerivationOperationId: string | null = null
+  private sessionOperationId: string | null = null
   private persistenceQueue = Promise.resolve()
 
   constructor(
@@ -82,7 +92,7 @@ export class RuntimeCoordinator {
   ) {}
 
   async start(sessionId: string, prompt: string): Promise<{ runId: string }> {
-    if (this.active || this.sessionDerivationOperationId || this.supervisor.isActive()) {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
       throw new PictorError('invalid-input', '已有 Agent 运行正在执行，请先等待或停止该运行')
     }
     const session = await this.repository.getSession(sessionId)
@@ -191,7 +201,7 @@ export class RuntimeCoordinator {
     sourceSessionId: string,
     derivation: { kind: 'fork'; entryId: string } | { kind: 'clone' },
   ): Promise<SessionSummary | null> {
-    if (this.active || this.sessionDerivationOperationId || this.supervisor.isActive()) {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
       throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
     }
     await this.persistenceQueue
@@ -236,7 +246,7 @@ export class RuntimeCoordinator {
       )
     }
     const targetPaths = this.repository.getRuntimePaths(project.id, targetSessionId)
-    this.sessionDerivationOperationId = operationId
+    this.sessionOperationId = operationId
     try {
       const result = await this.supervisor.fork({
         type: 'fork',
@@ -271,9 +281,65 @@ export class RuntimeCoordinator {
         },
       )
     } finally {
-      if (this.sessionDerivationOperationId === operationId) {
-        this.sessionDerivationOperationId = null
+      if (this.sessionOperationId === operationId) {
+        this.sessionOperationId = null
       }
+    }
+  }
+
+  async importSession(projectId: string, sourceJsonlPath: string): Promise<SessionSummary | null> {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
+      throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
+    }
+    if (!isAbsolute(sourceJsonlPath) || extname(sourceJsonlPath).toLowerCase() !== '.jsonl') {
+      throw new PictorError('invalid-input', '请选择有效的 Pi Session JSONL 文件')
+    }
+    await this.persistenceQueue
+    const project = this.repository.getProject(projectId)
+    if (project.availability !== 'available') {
+      throw new PictorError('project-unavailable', '项目目录当前不可用，请重新关联后再 Import')
+    }
+    const settings = await this.repository.getSettings()
+    const apiKey = await this.repository.getApiKey()
+    if (!settings || !apiKey) {
+      throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
+    }
+
+    const operationId = randomUUID()
+    const targetSessionId = randomUUID()
+    const targetPaths = this.repository.getRuntimePaths(project.id, targetSessionId)
+    const fileName = basename(sourceJsonlPath)
+    const sourceTitle = fileName.slice(0, -extname(fileName).length).trim() || 'Imported Session'
+    this.sessionOperationId = operationId
+    try {
+      const result = await this.supervisor.importSession({
+        type: 'import',
+        operationId,
+        targetSessionId,
+        projectRoot: project.rootPath,
+        agentDirectory: targetPaths.agentDirectory,
+        sourceJsonlPath,
+        targetSessionDirectory: targetPaths.sessionDirectory,
+        settings: {
+          apiProtocol: settings.apiProtocol,
+          baseUrl: settings.baseUrl,
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          temperature: settings.temperature,
+          maxOutputTokens: settings.maxOutputTokens,
+        },
+        apiKey,
+      })
+      if (result.outcome === 'cancelled') return null
+      if (result.outcome === 'failed') throw new Error(result.message)
+      return await this.repository.createImportedSession(
+        project.id,
+        targetSessionId,
+        `${sourceTitle} (Import)`.slice(0, 120),
+        { id: result.piSessionId, file: result.piSessionFile },
+      )
+    } finally {
+      if (this.sessionOperationId === operationId) this.sessionOperationId = null
     }
   }
 
@@ -302,11 +368,7 @@ export class RuntimeCoordinator {
   }
 
   isActive(): boolean {
-    return (
-      this.active !== null ||
-      this.sessionDerivationOperationId !== null ||
-      this.supervisor.isActive()
-    )
+    return this.active !== null || this.sessionOperationId !== null || this.supervisor.isActive()
   }
 
   handleEvent(event: RuntimeEvent): void {
