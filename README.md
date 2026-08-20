@@ -7,6 +7,7 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 
 - 添加、移除和重新关联本地项目，项目路径经过规范化后作为访问边界；
 - 创建、切换、重命名和删除 Session，重启后保留消息、运行与工具记录；
+- 打开 Pi Session Tree，查看完整分支结构并以只读 Projection 检查任意历史节点；
 - 通过可删除的 `pictor.pi-agent-runtime` Bundled Plugin 原生使用 Pi `AgentSessionRuntime`，接入
   支持流式文本和工具调用的模型端点；
 - 列出、搜索、读取、创建、编辑、移动和删除项目内文件；

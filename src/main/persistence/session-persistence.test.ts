@@ -108,6 +108,10 @@ describe('SessionPersistence', () => {
       },
       projection: { messages: expect.any(Array), runs: expect.any(Array) },
     })
+    await expect(persistence.inspectHistory(session.id, null)).resolves.toMatchObject({
+      session: { id: session.id },
+      tree: null,
+    })
 
     await persistence.delete(session.id)
     await expect(persistence.read(session.id)).rejects.toThrow('Session file is missing')
@@ -197,6 +201,66 @@ describe('SessionPersistence', () => {
         ]),
       },
     })
+  })
+
+  it('inspects a historical Pi branch without replacing the stored active projection', async () => {
+    const persistence = new SessionPersistence(dataDirectory, secretStore)
+    await persistence.recover([], [])
+    const session = createSession()
+    await persistence.save(session)
+    const piFile = 'branched-session.jsonl'
+    const piDirectory = join(dataDirectory, 'pi', session.projectId, session.id)
+    await mkdir(piDirectory, { recursive: true })
+    await writeFile(
+      join(piDirectory, piFile),
+      [
+        JSON.stringify({
+          type: 'session',
+          version: 3,
+          id: 'branched-pi-session',
+          timestamp: session.createdAt,
+          cwd: testRoot,
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'root-user',
+          parentId: null,
+          timestamp: session.createdAt,
+          message: { role: 'user', content: 'Root task' },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'historical-answer',
+          parentId: 'root-user',
+          timestamp: '2026-08-20T00:00:01.000Z',
+          message: { role: 'assistant', content: 'Historical answer', stopReason: 'stop' },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'active-answer',
+          parentId: 'root-user',
+          timestamp: '2026-08-20T00:00:02.000Z',
+          message: { role: 'assistant', content: 'Active answer', stopReason: 'stop' },
+        }),
+        '',
+      ].join('\n'),
+    )
+    await persistence.bindPiSession(session, { id: 'branched-pi-session', file: piFile })
+    await persistence.rebuildProjection(session.id)
+
+    const inspected = await persistence.inspectHistory(session.id, 'historical-answer')
+
+    expect(inspected.session.messages.map((message) => message.content)).toEqual([
+      'Root task',
+      'Historical answer',
+    ])
+    expect(inspected.tree).toMatchObject({
+      activeLeafId: 'active-answer',
+      selectedEntryId: 'historical-answer',
+    })
+    expect((await persistence.read(session.id)).messages.map((message) => message.content)).toEqual(
+      ['Root task', 'Active answer'],
+    )
   })
 
   it('repairs historical content, summaries, and unfinished runs during recovery', async () => {

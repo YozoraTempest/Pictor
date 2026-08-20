@@ -6,6 +6,7 @@ import {
   approvalResolutionRequestSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
+  inspectSessionHistoryRequestSchema,
   listModelsRequestSchema,
   projectIdRequestSchema,
   queueRuntimeMessageRequestSchema,
@@ -201,6 +202,14 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = sessionIdRequestSchema.parse(input)
       return repository.getSession(request.sessionId)
+    })
+  })
+
+  ipcMain.handle('session:inspect-history', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = inspectSessionHistoryRequestSchema.parse(input)
+      return repository.inspectSessionHistory(request.sessionId, request.entryId)
     })
   })
 

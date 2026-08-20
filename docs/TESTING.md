@@ -68,6 +68,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - Pi Session 投影测试使用真实 JSONL 形态覆盖 parent/branch、compaction、Tool、usage 和终态错误；
   相同 JSONL 必须产生稳定投影。持久化测试必须覆盖首次 identity 绑定、重启重建、已有 Pi identity
   的 schema v1 迁移，以及无 Pi JSONL 的 v1 只读归档，不能用旧平面消息自动制造新上下文。
+- Session Tree View 测试必须覆盖完整节点结构、active leaf、任意 selected entry Projection、显式
+  label、历史节点只读状态和返回 active leaf；inspect 不得改写 JSONL 或持久化的 active Projection。
 - 零 Plugin E2E 先通过真实 Store 将全部 Bundled Plugin 标记为 `removed`，重启后只能由 Core
   Shell 提供 Plugin Manager；安全模式使用同一 Core Shell，但不改变用户 Registry。
 - `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，

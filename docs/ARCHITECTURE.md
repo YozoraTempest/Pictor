@@ -124,6 +124,12 @@ Manifest 的 `pi.skills` 与 `pi.prompts` 直接展开为 Runtime resource path�
 交互，不成为第二份历史。旧 schema v1 若无法发现对应 Pi JSONL，会被脱敏归档为只读 Legacy
 Session Import，不允许在缺失上下文时启动新 Run。
 
+`inspectSessionHistory` 是 Session Tree View 的只读 Interface。它由 `SessionPersistence` 在一次
+JSONL 解析中生成完整树、active leaf、selected entry 和对应 Session Projection；Renderer 只消费
+结果，不重建 parent graph。选择历史节点不写 schema v2、不调用 Pi `branch()`/`navigateTree()`，
+也不改变下次 Runtime resume 的 active leaf；Composer 在 selected entry 不是 active leaf 时保持
+只读。普通 Session 加载和 Runtime event 不扫描树，只有用户打开 Tree View 时才执行 inspect。
+
 Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全集中在内部
 `SessionPersistence` module；Pi JSONL 到桌面模型的映射集中在纯投影 module。它们直接使用本地
 文件系统和现有凭据迁移函数，不增加通用 Repository、DAO 或存储 provider。相关测试通过真实

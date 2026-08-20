@@ -1,16 +1,22 @@
 import {
   AlertCircle,
   AlertTriangle,
+  Bot,
+  Brain,
   Check,
   CheckCircle2,
   ChevronDown,
   Circle,
   Clock3,
+  Combine,
   Copy,
+  Cpu,
   FilePenLine,
   FileSearch,
   FolderSearch2,
+  GitBranch,
   LoaderCircle,
+  LocateFixed,
   MessageSquareText,
   Play,
   Plus,
@@ -30,6 +36,8 @@ import type {
   Project,
   RunRecord,
   SessionRecord,
+  SessionTreeNode,
+  SessionTreeView,
   ToolEvent,
   UsageSnapshot,
 } from '../../shared/domain'
@@ -52,10 +60,14 @@ interface ConversationProps {
   approvalBusyCallId: string | null
   queuedMessages: { steering: number; followUp: number }
   runtimeUsage: RuntimeUsage | null
+  sessionTree: SessionTreeView | null
+  sessionTreeLoading: boolean
+  canInspectSessionTree: boolean
   onDraftChange: (value: string) => void
   onSend: () => void
   onQueue: (mode: 'steer' | 'follow-up') => void
   onClearQueue: () => void
+  onInspectSessionHistory: (entryId: string | null) => void
   onStop: (runId: string) => void
   onApprove: (runId: string, callId: string) => void
   onReject: (runId: string, callId: string) => void
@@ -333,6 +345,97 @@ function Timeline({
   )
 }
 
+function TreeNodeIcon({ kind }: { kind: SessionTreeNode['kind'] }): React.JSX.Element {
+  if (kind === 'user') return <MessageSquareText size={14} />
+  if (kind === 'assistant') return <Bot size={14} />
+  if (kind === 'tool-result') return <Wrench size={14} />
+  if (kind === 'compaction' || kind === 'branch-summary') return <Combine size={14} />
+  if (kind === 'model') return <Cpu size={14} />
+  if (kind === 'thinking') return <Brain size={14} />
+  if (kind === 'custom' || kind === 'custom-message') return <Wrench size={14} />
+  return <Circle size={10} />
+}
+
+function SessionTreePanel({
+  tree,
+  loading,
+  onSelect,
+  onClose,
+}: {
+  tree: SessionTreeView | null
+  loading: boolean
+  onSelect: (entryId: string | null) => void
+  onClose: () => void
+}): React.JSX.Element {
+  return (
+    <aside className="session-tree-panel" aria-label="Session Tree">
+      <div className="session-tree-header">
+        <div>
+          <GitBranch size={15} />
+          <strong>Session Tree</strong>
+          {tree ? <span>{tree.nodes.length}</span> : null}
+        </div>
+        <div className="session-tree-actions">
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="返回当前节点"
+            title="返回当前节点"
+            disabled={!tree?.activeLeafId || tree.selectedEntryId === tree.activeLeafId}
+            onClick={() => onSelect(null)}
+          >
+            <LocateFixed size={14} />
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="关闭 Session Tree"
+            title="关闭 Session Tree"
+            onClick={onClose}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+      <div className="session-tree-list">
+        {loading ? (
+          <div className="session-tree-state">
+            <LoaderCircle className="spin" size={16} />
+            加载 Session Tree
+          </div>
+        ) : tree && tree.nodes.length > 0 ? (
+          tree.nodes.map((node) => (
+            <button
+              className={`session-tree-node${node.isSelected ? ' is-selected' : ''}${
+                node.isActivePath ? ' is-active-path' : ''
+              }`}
+              style={{ '--tree-depth': Math.min(node.depth, 8) } as React.CSSProperties}
+              type="button"
+              key={node.id}
+              aria-current={node.isSelected ? 'true' : undefined}
+              title={node.label}
+              onClick={() => onSelect(node.id)}
+            >
+              <span className="session-tree-node__icon">
+                <TreeNodeIcon kind={node.kind} />
+              </span>
+              <span className="session-tree-node__label">{node.label}</span>
+              {node.childCount > 1 ? (
+                <span className="session-tree-node__branches">{node.childCount}</span>
+              ) : null}
+              {node.isActiveLeaf ? (
+                <LocateFixed className="session-tree-node__leaf" size={12} />
+              ) : null}
+            </button>
+          ))
+        ) : (
+          <div className="session-tree-state">暂无树记录</div>
+        )}
+      </div>
+    </aside>
+  )
+}
+
 export function Conversation(props: ConversationProps): React.JSX.Element {
   const {
     project,
@@ -349,10 +452,14 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     approvalBusyCallId,
     queuedMessages,
     runtimeUsage,
+    sessionTree,
+    sessionTreeLoading,
+    canInspectSessionTree,
     onDraftChange,
     onSend,
     onQueue,
     onClearQueue,
+    onInspectSessionHistory,
     onStop,
     onApprove,
     onReject,
@@ -362,9 +469,17 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     onRelinkProject,
   } = props
   const [queueMode, setQueueMode] = useState<'steer' | 'follow-up'>('steer')
+  const [treeOpen, setTreeOpen] = useState(false)
   const runActive = Boolean(
     activeRun && ['queued', 'running', 'awaiting-approval', 'stopping'].includes(activeRun.status),
   )
+  const viewingHistoricalEntry = Boolean(
+    sessionTree?.selectedEntryId && sessionTree.selectedEntryId !== sessionTree.activeLeafId,
+  )
+  const send = (): void => {
+    if (!runActive) setTreeOpen(false)
+    onSend()
+  }
 
   if (!project) {
     return (
@@ -444,6 +559,22 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           <h1>{session.title}</h1>
         </div>
         <div className="header-actions">
+          {canInspectSessionTree ? (
+            <button
+              className="icon-button session-tree-toggle"
+              type="button"
+              aria-label="Session Tree"
+              title="Session Tree"
+              aria-pressed={treeOpen}
+              onClick={() => {
+                const nextOpen = !treeOpen
+                setTreeOpen(nextOpen)
+                if (nextOpen && !sessionTree) onInspectSessionHistory(null)
+              }}
+            >
+              <GitBranch size={16} />
+            </button>
+          ) : null}
           {runtimeUsage ? (
             <span className="usage-summary">
               {runtimeUsage.tokens.total.toLocaleString()} tokens
@@ -491,21 +622,31 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="timeline" aria-live="polite">
-        {loading ? (
-          <div className="loading-state">
-            <LoaderCircle className="spin" size={18} />
-            加载 Session
-          </div>
-        ) : (
-          <Timeline
-            session={session}
-            approvalBusyCallId={approvalBusyCallId}
-            platform={platform}
-            onApprove={onApprove}
-            onReject={onReject}
+      <div className="conversation-main">
+        {treeOpen ? (
+          <SessionTreePanel
+            tree={sessionTree}
+            loading={sessionTreeLoading}
+            onSelect={onInspectSessionHistory}
+            onClose={() => setTreeOpen(false)}
           />
-        )}
+        ) : null}
+        <div className="timeline" aria-live="polite">
+          {loading ? (
+            <div className="loading-state">
+              <LoaderCircle className="spin" size={18} />
+              加载 Session
+            </div>
+          ) : (
+            <Timeline
+              session={session}
+              approvalBusyCallId={approvalBusyCallId}
+              platform={platform}
+              onApprove={onApprove}
+              onReject={onReject}
+            />
+          )}
+        </div>
       </div>
 
       <div className="composer-wrap">
@@ -552,12 +693,12 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             rows={3}
             placeholder="描述要在当前项目中完成的任务…"
             aria-label="任务描述"
-            disabled={loading}
+            disabled={loading || viewingHistoricalEntry}
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
                 event.preventDefault()
-                onSend()
+                send()
               }
             }}
           />
@@ -567,7 +708,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             aria-label="发送任务"
             title={runActive ? '加入队列' : '发送任务'}
             disabled={(!runActive && Boolean(disabledReason)) || !draft.trim() || loading}
-            onClick={() => (runActive ? onQueue(queueMode) : onSend())}
+            onClick={() => (runActive ? onQueue(queueMode) : send())}
           >
             <Send size={17} />
           </button>

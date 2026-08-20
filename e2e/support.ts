@@ -27,6 +27,7 @@ export const bridgeKeys = [
   'installLocalPlugin',
   'installPiExtension',
   'installPiPackage',
+  'inspectSessionHistory',
   'listModels',
   'queueRuntimeMessage',
   'pickProjectDirectory',

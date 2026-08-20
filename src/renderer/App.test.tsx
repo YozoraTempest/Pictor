@@ -4,7 +4,7 @@ import { vi } from 'vitest'
 
 import { AboutSettings } from '../modules/updater/AboutSettings'
 import type { UpdaterClient } from '../modules/updater/shared'
-import type { SessionRecord } from '../shared/domain'
+import type { SessionHistoryView, SessionRecord } from '../shared/domain'
 import type { AppSnapshot, IpcResult, PictorBridge, RuntimeEvent } from '../shared/desktop-bridge'
 import { App } from './App'
 
@@ -72,6 +72,10 @@ function createBridge(
     deleteSession: async () => ok(null),
     getSession: async () =>
       session ? ok(session) : { ok: false, error: { code: 'not-found', message: '不存在' } },
+    inspectSessionHistory: async () =>
+      session
+        ? ok({ session, tree: null })
+        : { ok: false, error: { code: 'not-found', message: '不存在' } },
     getSettings: async () => ok(snapshot.settings),
     saveSettings: async () => ok(snapshot.settings!),
     testSettings: async () => ok({ outcome: 'success', message: '连接成功' }),
@@ -138,6 +142,127 @@ it('renders the empty delegate workspace from a persisted snapshot', async () =>
   expect(await screen.findByRole('heading', { name: '选择一个项目开始' })).toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: '新建项目' })).toHaveLength(3)
   expect(screen.getByText('v0.1.0')).toBeInTheDocument()
+})
+
+it('opens the Session Tree, inspects a historical branch, and returns to the active leaf', async () => {
+  const snapshot: AppSnapshot = {
+    projects: [
+      {
+        id: projectId,
+        name: 'Pictor',
+        rootPath: 'C:\\Pictor',
+        trustedAt: now,
+        availability: 'available',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    sessions: [
+      {
+        id: sessionId,
+        projectId,
+        title: 'Branched session',
+        lastRunStatus: 'completed',
+        historyAuthority: 'pi-jsonl',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    selectedProjectId: projectId,
+    selectedSessionId: sessionId,
+    settings: {
+      apiProtocol: 'responses',
+      baseUrl: 'https://example.test/v1',
+      modelId: 'test-model',
+      reasoningEffort: null,
+      temperature: null,
+      maxOutputTokens: null,
+      hasApiKey: true,
+    },
+    issues: [],
+  }
+  const createProjectedSession = (content: string): SessionRecord => ({
+    schemaVersion: 1,
+    id: sessionId,
+    projectId,
+    title: 'Branched session',
+    messages: [
+      {
+        id: messageId,
+        role: 'assistant',
+        content,
+        status: 'completed',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    runs: [
+      {
+        id: runId,
+        status: 'completed',
+        toolEvents: [],
+        error: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    createdAt: now,
+    updatedAt: now,
+  })
+  const activeSession = createProjectedSession('Active response details')
+  const historicalSession = createProjectedSession('Archived response details')
+  const bridge = createBridge(snapshot, activeSession)
+  bridge.inspectSessionHistory = vi.fn(async ({ entryId }) => {
+    const selectedEntryId = entryId ?? 'active-entry'
+    return ok({
+      session: selectedEntryId === 'historical-entry' ? historicalSession : activeSession,
+      tree: {
+        activeLeafId: 'active-entry',
+        selectedEntryId,
+        nodes: [
+          {
+            id: 'historical-entry',
+            parentId: null,
+            kind: 'assistant',
+            label: 'Historical branch',
+            timestamp: now,
+            depth: 0,
+            childCount: 0,
+            isActivePath: false,
+            isActiveLeaf: false,
+            isSelected: selectedEntryId === 'historical-entry',
+          },
+          {
+            id: 'active-entry',
+            parentId: null,
+            kind: 'assistant',
+            label: 'Current branch',
+            timestamp: now,
+            depth: 0,
+            childCount: 0,
+            isActivePath: true,
+            isActiveLeaf: true,
+            isSelected: selectedEntryId === 'active-entry',
+          },
+        ],
+      },
+    } satisfies SessionHistoryView)
+  })
+  renderApp(bridge)
+
+  await screen.findByText('Active response details')
+  fireEvent.click(screen.getByRole('button', { name: 'Session Tree' }))
+  expect(await screen.findByRole('complementary', { name: 'Session Tree' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Historical branch' }))
+
+  expect(await screen.findByText('Archived response details')).toBeInTheDocument()
+  expect(screen.getByText(/正在查看历史分支/)).toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: '任务描述' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '发送任务' })).toBeDisabled()
+
+  fireEvent.click(screen.getByRole('button', { name: '返回当前节点' }))
+  expect(await screen.findByText('Active response details')).toBeInTheDocument()
+  expect(screen.queryByText(/正在查看历史分支/)).not.toBeInTheDocument()
 })
 
 it('shows app information and downloads an available update from settings', async () => {

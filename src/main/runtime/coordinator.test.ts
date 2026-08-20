@@ -24,6 +24,7 @@ it.each(['a', 'id', 'running'])(
       updatedAt: now,
     }
     let saveCount = 0
+    const savedStatuses: Array<SessionRecord['runs'][number]['status'] | null> = []
     let history: SessionHistoryState = {
       authority: 'pi-jsonl',
       piSessionId: null,
@@ -34,8 +35,9 @@ it.each(['a', 'id', 'running'])(
     const persistenceGate = new Promise<void>((resolve) => {
       releasePersistence = resolve
     })
-    const saveSession = vi.fn(async () => {
+    const saveSession = vi.fn(async (savedSession: SessionRecord) => {
       saveCount += 1
+      savedStatuses.push(savedSession.runs.at(-1)?.status ?? null)
       if (saveCount > 1) await persistenceGate
       return { id: sessionId }
     })
@@ -193,6 +195,7 @@ it.each(['a', 'id', 'running'])(
       content: expect.stringContaining('[REDACTED]'),
     })
     expect(saveSession).toHaveBeenCalledTimes(4)
+    expect(savedStatuses).toEqual(['queued', 'running', 'running', 'running'])
     expect(repository.rebuildSessionProjection).toHaveBeenCalledWith(sessionId)
     expect(JSON.stringify(broadcast.mock.calls.map(([event]) => event))).toContain('[REDACTED]')
 

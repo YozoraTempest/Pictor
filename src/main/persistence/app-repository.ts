@@ -11,6 +11,7 @@ import {
   sessionRecordSchema,
   sessionSummarySchema,
   type Project,
+  type SessionHistoryView,
   type SessionHistoryState,
   type SessionRecord,
   type SessionSummary,
@@ -267,6 +268,17 @@ export class AppRepository {
       throw new PictorError('not-found', '会话不存在或已被删除')
     }
     return this.sessionPersistence.read(sessionId)
+  }
+
+  async inspectSessionHistory(
+    sessionId: string,
+    selectedEntryId: string | null,
+  ): Promise<SessionHistoryView> {
+    this.ensureInitialized()
+    if (!this.state.sessions.some((session) => session.id === sessionId)) {
+      throw new PictorError('not-found', '会话不存在或已被删除')
+    }
+    return this.sessionPersistence.inspectHistory(sessionId, selectedEntryId)
   }
 
   async saveSession(session: SessionRecord): Promise<SessionSummary> {

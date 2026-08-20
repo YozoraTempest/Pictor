@@ -5,6 +5,7 @@ import type {
   RunRecord,
   SessionRecord,
   SessionSummary,
+  SessionTreeView,
   UsageSnapshot,
 } from '../../shared/domain'
 import type { AppSnapshot, PictorBridge, ProjectCandidate } from '../../shared/desktop-bridge'
@@ -25,6 +26,7 @@ export type WorkspaceBridge = Pick<
   | 'renameSession'
   | 'deleteSession'
   | 'getSession'
+  | 'inspectSessionHistory'
   | 'startRun'
   | 'approveCommand'
   | 'rejectCommand'
@@ -47,6 +49,9 @@ export interface WorkspaceController {
   selectedSessionId: string | null
   selectedProject: Project | null
   session: SessionRecord | null
+  sessionTree: SessionTreeView | null
+  sessionTreeLoading: boolean
+  canInspectSessionTree: boolean
   activeSessionSummary: SessionSummary | null
   activeRun: RunRecord | null
   anotherSessionRunning: boolean
@@ -67,6 +72,7 @@ export interface WorkspaceController {
   removeProject: (projectId: string) => Promise<boolean>
   deleteSession: (sessionId: string) => Promise<boolean>
   renameSession: (sessionId: string, title: string) => Promise<boolean>
+  inspectSessionHistory: (entryId: string | null) => Promise<void>
   startRun: () => Promise<void>
   queueMessage: (mode: 'steer' | 'follow-up') => Promise<void>
   clearQueue: () => Promise<void>
@@ -87,6 +93,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [session, setSession] = useState<SessionRecord | null>(null)
+  const [sessionTree, setSessionTree] = useState<SessionTreeView | null>(null)
+  const [sessionTreeLoading, setSessionTreeLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sessionLoading, setSessionLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -128,6 +136,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       const requestId = ++sessionRequestId.current
       if (!sessionId) {
         setSession(null)
+        setSessionTree(null)
+        setSessionTreeLoading(false)
         setRuntimeUsage(null)
         setSessionLoading(false)
         return
@@ -137,14 +147,37 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       if (requestId !== sessionRequestId.current) return
       if (response.ok) {
         setSession(response.value)
+        setSessionTree(null)
         setRuntimeUsage(response.value.usage ?? null)
         setActionError(null)
       } else {
         setSession(null)
+        setSessionTree(null)
         setRuntimeUsage(null)
         setActionError(response.error.message)
       }
       setSessionLoading(false)
+    },
+    [bridge],
+  )
+
+  const inspectSessionHistory = useCallback(
+    async (entryId: string | null): Promise<void> => {
+      const sessionId = selectedSessionIdRef.current
+      if (!sessionId) return
+      const requestId = ++sessionRequestId.current
+      setSessionTreeLoading(true)
+      const response = await bridge.inspectSessionHistory({ sessionId, entryId })
+      if (requestId !== sessionRequestId.current) return
+      if (response.ok) {
+        setSession(response.value.session)
+        setSessionTree(response.value.tree)
+        setRuntimeUsage(response.value.session.usage ?? null)
+        setActionError(null)
+      } else {
+        setActionError(response.error.message)
+      }
+      setSessionTreeLoading(false)
     },
     [bridge],
   )
@@ -386,6 +419,9 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     sessions.find((candidate) => candidate.id === selectedSessionId) ?? null
   const activeRun = session?.runs.at(-1) ?? null
   const selectedRunIsActive = Boolean(activeRun && activeStatuses.has(activeRun.status))
+  const viewingHistoricalEntry = Boolean(
+    sessionTree?.selectedEntryId && sessionTree.selectedEntryId !== sessionTree.activeLeafId,
+  )
   const anotherSessionRunning = Boolean(
     activeSessionSummary && activeSessionSummary.id !== selectedSessionId,
   )
@@ -397,6 +433,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     if (selectedSessionSummary?.historyAuthority === 'legacy-import') {
       return '旧版会话是只读历史，需要显式导入为 Pi Session'
     }
+    if (viewingHistoricalEntry) return '正在查看历史分支；返回当前节点后可以继续发送'
     if (!snapshot?.settings?.hasApiKey) return '模型 API 尚未配置'
     if (selectedRunIsActive) return '当前 Agent 正在运行'
     if (anotherSessionRunning) return '另一个 Session 正在运行'
@@ -408,7 +445,14 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     selectedSessionSummary?.historyAuthority,
     session,
     snapshot?.settings,
+    viewingHistoricalEntry,
   ])
+  const canInspectSessionTree = Boolean(
+    session &&
+    session.messages.length > 0 &&
+    selectedSessionSummary?.historyAuthority === 'pi-jsonl' &&
+    !selectedRunIsActive,
+  )
 
   const setDraft = useCallback((value: string) => {
     const sessionId = selectedSessionIdRef.current
@@ -502,6 +546,9 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     selectedSessionId,
     selectedProject,
     session,
+    sessionTree,
+    sessionTreeLoading,
+    canInspectSessionTree,
     activeSessionSummary,
     activeRun,
     anotherSessionRunning,
@@ -522,6 +569,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     removeProject,
     deleteSession,
     renameSession,
+    inspectSessionHistory,
     startRun,
     queueMessage,
     clearQueue,

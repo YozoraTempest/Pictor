@@ -141,6 +141,81 @@ describe('Pi Session Projection', () => {
     ])
   })
 
+  it('projects any selected entry while preserving the active Session Tree leaf', () => {
+    const content = jsonl([
+      { type: 'session', version: 3, id: 'pi-session', timestamp, cwd: '/project' },
+      {
+        type: 'message',
+        id: 'root-user',
+        parentId: null,
+        timestamp,
+        message: { role: 'user', content: 'Root task' },
+      },
+      {
+        type: 'message',
+        id: 'old-branch',
+        parentId: 'root-user',
+        timestamp: '2026-08-20T00:00:01.000Z',
+        message: { role: 'assistant', content: 'Historical answer', stopReason: 'stop' },
+      },
+      {
+        type: 'message',
+        id: 'active-branch',
+        parentId: 'root-user',
+        timestamp: '2026-08-20T00:00:02.000Z',
+        message: { role: 'assistant', content: 'Active answer', stopReason: 'stop' },
+      },
+      {
+        type: 'label',
+        id: 'active-label',
+        parentId: 'active-branch',
+        timestamp: '2026-08-20T00:00:03.000Z',
+        targetId: 'old-branch',
+        label: 'checkpoint',
+      },
+    ])
+
+    const projection = projectPiSessionJsonl(content, 'old-branch')
+
+    expect(projection.messages.map((message) => message.content)).toEqual([
+      'Root task',
+      'Historical answer',
+    ])
+    expect(projection.tree).toMatchObject({
+      activeLeafId: 'active-label',
+      selectedEntryId: 'old-branch',
+    })
+    expect(projection.tree.nodes).toEqual([
+      expect.objectContaining({
+        id: 'root-user',
+        parentId: null,
+        depth: 0,
+        childCount: 2,
+        isActivePath: true,
+      }),
+      expect.objectContaining({
+        id: 'old-branch',
+        parentId: 'root-user',
+        depth: 1,
+        label: 'checkpoint',
+        isSelected: true,
+        isActivePath: false,
+      }),
+      expect.objectContaining({
+        id: 'active-branch',
+        parentId: 'root-user',
+        depth: 1,
+        isActivePath: true,
+      }),
+      expect.objectContaining({
+        id: 'active-label',
+        parentId: 'active-branch',
+        depth: 2,
+        isActiveLeaf: true,
+      }),
+    ])
+  })
+
   it('uses the same readable Runtime failure classification as live events', () => {
     const projection = projectPiSessionJsonl(
       jsonl([

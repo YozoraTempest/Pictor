@@ -6,10 +6,12 @@ import { z } from 'zod'
 import {
   sessionRecordSchema,
   sessionHistoryStateSchema,
+  sessionHistoryViewSchema,
   sessionSummarySchema,
   type DataIssue,
   type SessionRecord,
   type SessionHistoryState,
+  type SessionHistoryView,
   type SessionSummary,
 } from '../../shared/domain.js'
 import { createSecretRedactor } from '../../shared/secret-redaction.js'
@@ -213,20 +215,8 @@ export class SessionPersistence {
   async rebuildProjection(sessionId: string): Promise<SessionRecord> {
     const session = await this.read(sessionId)
     const history = this.getHistory(sessionId)
-    if (
-      history.authority !== 'pi-jsonl' ||
-      !history.piSessionFile ||
-      history.piSessionFile !== basename(history.piSessionFile)
-    ) {
-      throw new Error('Pi Session identity is not bound')
-    }
-    const transcriptPath = join(
-      this.dataDirectory,
-      'pi',
-      session.projectId,
-      session.id,
-      history.piSessionFile,
-    )
+    const transcriptPath = this.transcriptPath(session, history)
+    if (!transcriptPath) throw new Error('Pi Session identity is not bound')
     const projection = projectPiSessionJsonl(await readFile(transcriptPath, 'utf8'))
     session.messages = projection.messages
     session.runs = projection.runs
@@ -240,6 +230,40 @@ export class SessionPersistence {
         .at(-1) ?? session.updatedAt
     await this.writeV2(await this.sanitize(session), history)
     return session
+  }
+
+  async inspectHistory(
+    sessionId: string,
+    selectedEntryId: string | null,
+  ): Promise<SessionHistoryView> {
+    const session = await this.read(sessionId)
+    const history = this.getHistory(sessionId)
+    const transcriptPath = this.transcriptPath(session, history)
+    if (!transcriptPath) return sessionHistoryViewSchema.parse({ session, tree: null })
+
+    const projection = projectPiSessionJsonl(
+      await readFile(transcriptPath, 'utf8'),
+      selectedEntryId,
+    )
+    const redactor = createSecretRedactor(await this.getKnownSecretValues())
+    const inspectedSession = sessionRecordSchema.parse(
+      redactor.redactSession({
+        ...session,
+        messages: projection.messages,
+        runs: projection.runs,
+        usage: projection.usage,
+      }),
+    )
+    return sessionHistoryViewSchema.parse({
+      session: inspectedSession,
+      tree: {
+        ...projection.tree,
+        nodes: projection.tree.nodes.map((node) => ({
+          ...node,
+          label: redactor.redactText(node.label),
+        })),
+      },
+    })
   }
 
   async delete(sessionId: string): Promise<void> {
@@ -384,6 +408,17 @@ export class SessionPersistence {
       piSessionFile: null,
       legacyImport: { status: 'not-required', sourceFile: null },
     }
+  }
+
+  private transcriptPath(session: SessionRecord, history: SessionHistoryState): string | null {
+    if (
+      history.authority !== 'pi-jsonl' ||
+      !history.piSessionFile ||
+      history.piSessionFile !== basename(history.piSessionFile)
+    ) {
+      return null
+    }
+    return join(this.dataDirectory, 'pi', session.projectId, session.id, history.piSessionFile)
   }
 
   private sessionPath(sessionId: string): string {

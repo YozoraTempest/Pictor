@@ -147,7 +147,7 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     await closeElectronApp(electronApp)
     appClosed = true
   } finally {
-    if (!appClosed) electronApp.process().kill()
+    if (!appClosed) electronApp.process().kill('SIGKILL')
     await new Promise<void>((resolveClose, reject) =>
       server.close((error) => (error ? reject(error) : resolveClose())),
     )
