@@ -150,6 +150,7 @@ export default function (pi) {
     parameters: Type.Object({}),
     async execute(_id, _params, _signal, _update, ctx) {
       const value = await ctx.ui.input('Enter a value', 'type something...')
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
       return { content: [{ type: 'text', text: String(value ?? 'cancelled') }], details: {} }
     },
   })
@@ -228,7 +229,8 @@ export default function (pi) {
     await expect(window.getByRole('heading', { name: 'Enter a value' })).toBeVisible()
     await window.getByLabel('输入').fill('GUI response')
     await window.getByRole('button', { name: '确认' }).click()
-    const guiTool = window.locator('.tool-activity').last()
+    const guiTool = window.locator('.tool-activity').filter({ hasText: 'ask_gui' })
+    await expect(guiTool.getByText('GUI response')).toBeAttached({ timeout: 30_000 })
     await guiTool.getByText('查看输出').click()
     await expect(guiTool.getByText('GUI response')).toBeVisible()
     await expect(window.getByText('Native extension completed.').last()).toBeVisible({
