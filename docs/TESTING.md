@@ -37,7 +37,7 @@ Windows E2E 默认隐藏窗口；本地 Linux E2E 使用 `showInactive()` 显示
 | 单元测试       | `npm run test:unit`                                 | 纯函数、组件、服务边界                        | 开发循环、每个 PR               |
 | 集成测试       | `npm run test:integration`                          | Pi adapter 与运行时协议集成                   | 修改运行时边界时、每个 PR       |
 | Vitest 全量    | `npm test`                                          | 单元与集成测试一次完成                        | 本地提交前、每个 PR             |
-| E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Windows/Linux PR，复用 `out/`   |
+| E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Linux PR，复用 `out/`           |
 | E2E Full       | `npm run test:e2e:run`                              | 全部桌面用户场景                              | `develop`、正式发布、本地发布前 |
 | Windows 包验证 | `npm run package:verify:windows`                    | NSIS、ASAR、x64 PE                            | 正式发布、本地发布前            |
 | Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | `develop`、正式发布、本地发布前 |
@@ -120,7 +120,7 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 
 | 基线                    | 自动化证据                                      | 补充桌面证据                                   |
 | ----------------------- | ----------------------------------------------- | ---------------------------------------------- |
-| Windows 11 x64          | Windows hosted runner，Smoke/Full、NSIS 验证    | 安装、启动、卸载                               |
+| Windows 11 x64          | Windows hosted runner，构建与 NSIS 结构验证     | 安装、启动、卸载及桌面行为回归                 |
 | 原生 Arch Linux x64     | `archlinux:base` Pacman 生命周期、结构验证      | 发布快照日期的 niri Wayland 会话启动与核心委托 |
 | 便携 AppImage（非基线） | Linux hosted runner，结构验证和 Xvfb 启动 Smoke | 不构成其他发行版兼容承诺                       |
 
@@ -147,17 +147,18 @@ Arch 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electro
 
 PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和 `Linux acceptance`
 四项必需检查，不用静态检查串行阻塞桌面 Smoke。Quality 与全量 Vitest 在 Linux 运行，以覆盖
-大小写敏感文件系统及全部 POSIX 用例；Windows 由真实 Electron Smoke 覆盖。Linux acceptance
-只构建应用并执行 E2E Smoke，不重复 Vitest，也不构建发行包。推送 `develop` 时两端执行 E2E
-Full，Linux 额外构建并校验 AppImage/Pacman、启动 AppImage，并在原生 Arch 容器中复用与
-Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。原生 niri 桌面证据仍在发布前由
-Arch 工作站补充。
+大小写敏感文件系统及全部 POSIX 用例；Windows acceptance 暂时只准备 Electron 并构建桌面应用，
+不执行 Vitest 或 Electron E2E。Linux acceptance 构建应用并执行 E2E Smoke，不重复 Vitest，也不
+构建发行包。推送 `develop` 时仅 Linux 执行 E2E Full，并额外构建、校验 AppImage/Pacman、启动
+AppImage，在原生 Arch 容器中复用与 Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。
+原生 niri 桌面证据仍在发布前由 Arch 工作站补充。
 
-合并到 `main` 后，Release 工作流在 Windows 与 Linux hosted runner 上并行执行完整验证，生成
-Windows NSIS、Arch pacman 和便携 AppImage。Arch 容器通过 `pacman` 验证原生包生命周期，
-hosted runner 对 AppImage 执行结构与启动 Smoke。所有构建成功后，单一 publish job 才创建
-标签与 GitHub Release，避免只发布部分平台资产。
+合并到 `main` 后，Release 工作流在 Windows 与 Linux hosted runner 上并行构建。Windows 暂时只
+生成并执行 NSIS/PE 结构校验，不执行测试；Linux 执行完整验证，生成 Arch pacman 和便携 AppImage。
+Arch 容器通过 `pacman` 验证原生包生命周期，hosted runner 对 AppImage 执行结构与启动 Smoke。
+所有构建成功后，单一 publish job 才创建标签与 GitHub Release，避免只发布部分平台资产。
 
 分支保护应要求 `Quality`、`Unit and integration`、`Windows acceptance` 和
 `Linux acceptance` 四个检查。结构校验和容器生命周期不代替签名、Windows 净机证据或 Arch
-niri 桌面证据；Arch 桌面证据按发布快照记录。
+niri 桌面证据；Windows 自动化测试暂时停用，不能用构建成功代替行为验收；Arch 桌面证据按
+发布快照记录。
