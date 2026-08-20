@@ -348,7 +348,8 @@ export class RuntimeCoordinator {
     if (
       sanitizedEvent.type === 'message.delta' ||
       sanitizedEvent.type === 'message.completed' ||
-      sanitizedEvent.type === 'tool.updated'
+      sanitizedEvent.type === 'tool.updated' ||
+      sanitizedEvent.type === 'extension.ui.requested'
     ) {
       this.broadcast(sanitizedEvent)
     } else {
