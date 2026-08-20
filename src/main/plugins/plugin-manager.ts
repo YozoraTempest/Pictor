@@ -88,6 +88,11 @@ export class PluginManager {
     return this.getSnapshot()
   }
 
+  async installDevelopment(path: string): Promise<PluginManagerSnapshot> {
+    await this.store.installDevelopmentFromDirectory(path)
+    return this.getSnapshot()
+  }
+
   async installPiExtension(path: string): Promise<PluginManagerSnapshot> {
     await this.store.installPiExtension(path)
     return this.getSnapshot()
@@ -95,6 +100,11 @@ export class PluginManager {
 
   async installPiPackage(path: string): Promise<PluginManagerSnapshot> {
     await this.store.installPiPackage(path)
+    return this.getSnapshot()
+  }
+
+  async installPiPackageSpec(spec: string): Promise<PluginManagerSnapshot> {
+    await this.store.installPiPackageFromSpec(spec)
     return this.getSnapshot()
   }
 

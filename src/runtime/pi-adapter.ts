@@ -1,5 +1,6 @@
 import {
   copyFile,
+  glob,
   mkdir,
   mkdtemp,
   readFile,
@@ -9,7 +10,7 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises'
-import { basename, isAbsolute, relative, resolve } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 
 import {
   createAgentSessionFromServices,
@@ -187,6 +188,15 @@ async function createProductionSession({
       : SessionManager.create(config.projectRoot, config.sessionDirectory)
   if (config.activeLeafId) sessionManager.branch(config.activeLeafId)
   else if (config.activeLeafId === null && 'activeLeafId' in config) sessionManager.resetLeaf()
+  const effectiveExtensionPaths = [...extensionPaths]
+  if (config.runtimePreferences?.projectExtensionsEnabled) {
+    const projectExtensionDirectory = join(config.projectRoot, '.pi', 'extensions')
+    for (const pattern of ['*.ts', '*.js', '*/index.ts', '*/index.js']) {
+      for await (const path of glob(join(projectExtensionDirectory, pattern))) {
+        effectiveExtensionPaths.push(path)
+      }
+    }
+  }
   const createRuntime = async ({
     cwd,
     agentDir,
@@ -211,15 +221,19 @@ async function createProductionSession({
       settingsManager,
       modelRuntime,
       resourceLoaderOptions: {
-        noExtensions: extensionPaths.length === 0,
-        ...(extensionPaths.length > 0 ? { additionalExtensionPaths: [...extensionPaths] } : {}),
+        noExtensions: effectiveExtensionPaths.length === 0,
+        ...(effectiveExtensionPaths.length > 0
+          ? { additionalExtensionPaths: effectiveExtensionPaths }
+          : {}),
         extensionsOverride: (base) => ({
           ...base,
           extensions: base.extensions.filter((extension) =>
-            extensionPaths.some((allowedPath) => isPathWithin(allowedPath, extension.resolvedPath)),
+            effectiveExtensionPaths.some((allowedPath) =>
+              isPathWithin(allowedPath, extension.resolvedPath),
+            ),
           ),
           errors: base.errors.filter((error) =>
-            extensionPaths.some((allowedPath) => isPathWithin(allowedPath, error.path)),
+            effectiveExtensionPaths.some((allowedPath) => isPathWithin(allowedPath, error.path)),
           ),
         }),
         ...(skillPaths.length > 0 ? { additionalSkillPaths: [...skillPaths] } : {}),

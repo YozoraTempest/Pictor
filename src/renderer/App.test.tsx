@@ -58,9 +58,13 @@ function createBridge(
       ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
     installLocalPlugin: async () =>
       ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    installDevelopmentPlugin: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
     installPiExtension: async () =>
       ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
     installPiPackage: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    installPiPackageSpec: async () =>
       ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
     setPluginEnabled: async () =>
       ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
@@ -93,6 +97,7 @@ function createBridge(
         availableTools: ['pictor_read', 'pictor_write'],
         steeringMode: 'one-at-a-time',
         followUpMode: 'one-at-a-time',
+        projectExtensionsEnabled: false,
       }),
     saveSessionRuntimeControls: async (request) =>
       ok({
@@ -378,6 +383,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
       availableTools: ['pictor_read', 'pictor_write'],
       steeringMode: 'one-at-a-time',
       followUpMode: 'one-at-a-time',
+      projectExtensionsEnabled: false,
     } satisfies SessionRuntimeControls),
   )
   bridge.saveSessionRuntimeControls = vi.fn(async (request) =>
@@ -467,6 +473,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
         activeTools: ['pictor_read', 'pictor_write'],
         steeringMode: 'all',
         followUpMode: 'one-at-a-time',
+        projectExtensionsEnabled: false,
       },
     }),
   )

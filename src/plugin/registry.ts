@@ -12,7 +12,7 @@ const extensionIdSchema = z
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
 
 const installedSourceSchema = z.object({
-  kind: z.enum(['bundled', 'local', 'npm', 'git']),
+  kind: z.enum(['bundled', 'local', 'development', 'npm', 'git']),
   reference: z.string().min(1),
 })
 

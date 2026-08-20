@@ -189,6 +189,7 @@ export function App({
         activeTools: sessionControls.activeTools,
         steeringMode: sessionControls.steeringMode,
         followUpMode: sessionControls.followUpMode,
+        projectExtensionsEnabled: sessionControls.projectExtensionsEnabled,
       },
     })
     setModalBusy(false)
@@ -700,6 +701,20 @@ export function App({
               ))}
             </div>
           </fieldset>
+          <label className="plugin-toggle">
+            <input
+              type="checkbox"
+              checked={sessionControls.projectExtensionsEnabled}
+              onChange={(event) =>
+                setSessionControls((current) =>
+                  current
+                    ? { ...current, projectExtensionsEnabled: event.target.checked }
+                    : current,
+                )
+              }
+            />
+            <span>启用项目 .pi/extensions</span>
+          </label>
           <footer className="modal-actions">
             <button
               className="secondary-button"

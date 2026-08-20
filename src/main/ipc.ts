@@ -15,6 +15,7 @@ import {
   inspectSessionHistoryRequestSchema,
   listModelsRequestSchema,
   navigateSessionTreeRequestSchema,
+  packageSpecRequestSchema,
   projectIdRequestSchema,
   queueRuntimeMessageRequestSchema,
   pluginIdRequestSchema,
@@ -125,6 +126,19 @@ export function registerIpc(dependencies: IpcDependencies): void {
     })
   })
 
+  ipcMain.handle('plugin:install-development', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '选择 Local Development Plugin 目录',
+        properties: ['openDirectory'],
+      })
+      const path = selection.filePaths[0]
+      if (selection.canceled || !path) return pluginManager.getSnapshot()
+      return pluginManager.installDevelopment(path)
+    })
+  })
+
   ipcMain.handle('plugin:install-pi-extension', (event) => {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
@@ -149,6 +163,14 @@ export function registerIpc(dependencies: IpcDependencies): void {
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return pluginManager.getSnapshot()
       return pluginManager.installPiPackage(path)
+    })
+  })
+
+  ipcMain.handle('plugin:install-pi-package-spec', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = packageSpecRequestSchema.parse(input)
+      return pluginManager.installPiPackageSpec(request.spec)
     })
   })
 
@@ -317,6 +339,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
         availableTools: defaultRuntimeTools,
         steeringMode: preferences?.steeringMode ?? 'one-at-a-time',
         followUpMode: preferences?.followUpMode ?? 'one-at-a-time',
+        projectExtensionsEnabled: preferences?.projectExtensionsEnabled ?? false,
       })
     })
   })

@@ -163,6 +163,7 @@ export const sessionHistoryStateSchema = z.object({
       activeTools: z.array(z.string().min(1)).nullable(),
       steeringMode: z.enum(['all', 'one-at-a-time']),
       followUpMode: z.enum(['all', 'one-at-a-time']),
+      projectExtensionsEnabled: z.boolean().default(false),
     })
     .optional(),
   legacyImport: z.object({

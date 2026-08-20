@@ -29,6 +29,7 @@ import {
   navigateSessionTreeRequestSchema,
   navigateSessionTreeResultSchema,
   modelCatalogIpcResultSchema,
+  packageSpecRequestSchema,
   projectCandidateResultSchema,
   projectIdRequestSchema,
   projectResultSchema,
@@ -74,6 +75,15 @@ const bridge = Object.freeze({
     pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-pi-extension')),
   installPiPackage: async () =>
     pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-pi-package')),
+  installDevelopmentPlugin: async () =>
+    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-development')),
+  installPiPackageSpec: async (input) =>
+    pluginManagerResultSchema.parse(
+      await ipcRenderer.invoke(
+        'plugin:install-pi-package-spec',
+        packageSpecRequestSchema.parse(input),
+      ),
+    ),
   setPluginEnabled: async (input) =>
     pluginManagerResultSchema.parse(
       await ipcRenderer.invoke('plugin:set-enabled', setPluginEnabledRequestSchema.parse(input)),
