@@ -75,9 +75,13 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - Session Tree View 测试必须覆盖完整节点结构、active leaf、任意 selected entry Projection、显式
   label、历史节点只读状态和返回 active leaf；inspect 不得改写 JSONL 或持久化的 active Projection。
 - Pi Session Tree Navigation 测试必须覆盖 completed/cancelled/failed host result、持久化 active leaf
-  cursor、精确恢复已绑定 JSONL、同一 Session Projection 重建、并发互斥和 User/Custom Message
-  节点禁用。Linux E2E 必须观察 `session_before_tree`/`session_tree`，并证明下一次 Run 从导航后的
-  分支追加消息；第一版固定 `summarize: false`。
+  cursor、精确恢复已绑定 JSONL、同一 Session Projection 重建和并发互斥。User/Custom Message
+  节点必须回填 editor text；Branch Summary 必须覆盖自定义指令、取消和 summary entry。Linux E2E
+  必须观察 `session_before_tree`/`session_tree`，并证明下一次 Run 从导航后的分支追加消息。
+- Pi Session Compaction 测试必须覆盖 manual/threshold/overflow 状态、completed/cancelled/failed host
+  result、自定义指令、`abortCompaction()`、Extension 提供结果、active leaf 和 Projection 重建。
+  Linux E2E 必须观察 `session_before_compact`/`session_compact`、取消不追加 entry、Summary/Tree 可见，
+  并证明 Compaction 后可以继续 Run。
 - Pi Session Fork 测试必须覆盖 completed/cancelled/failed host result、精确源 JSONL、独立目标
   identity、源文件保留、目标文件移动和新 Pictor Session 提交；E2E 必须由原生 Extension 观察到
   `session_before_fork`、`session_shutdown(reason: "fork")` 与 `session_start(reason: "fork")`。

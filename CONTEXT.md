@@ -72,6 +72,14 @@ _Avoid_: Selected Tree entry, latest JSONL line
 A same-file change of the Pi Session Active Leaf within existing Pi Session History.
 _Avoid_: Session Tree selection, Pi Session Fork, Pi Session Clone
 
+**Pi Session Compaction**:
+A summary entry that replaces older active-branch context while preserving the complete Pi Session History.
+_Avoid_: History deletion, Branch Summary, transcript truncation
+
+**Pi Branch Summary Navigation**:
+A Pi Session Tree Navigation that summarizes the abandoned branch before changing the Pi Session Active Leaf.
+_Avoid_: Pi Session Compaction, Fork summary, flattened history
+
 **Pi Session Fork**:
 A new independent Pi Session created from one entry in existing Pi Session History through Pi's native Fork lifecycle.
 _Avoid_: Session Tree selection, in-place branch switch, copied GUI history
