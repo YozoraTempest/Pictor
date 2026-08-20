@@ -145,6 +145,29 @@ parentPort.on('message', (messageEvent) => {
     return
   }
 
+  if (command.type === 'export') {
+    void statePromise
+      .then((state) => requireRuntime(state).exportSession(command))
+      .then((result) =>
+        parentPort.postMessage({
+          type: 'host.exportResult',
+          operationId: command.operationId,
+          sourceSessionId: command.sourceSessionId,
+          ...result,
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.exportResult',
+          operationId: command.operationId,
+          sourceSessionId: command.sourceSessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Pi Session Export failed',
+        }),
+      )
+    return
+  }
+
   void statePromise
     .then((state) => {
       const runtime = requireRuntime(state)

@@ -18,6 +18,7 @@ import {
 import {
   runtimeEventSchema,
   type RuntimeEvent,
+  type RuntimeExportConfig,
   type RuntimeForkConfig,
   type RuntimeImportConfig,
   type RuntimeStartConfig,
@@ -26,6 +27,7 @@ import { classifyRuntimeFailure, type RuntimeFailure } from '../shared/runtime-f
 import { createSecretRedactor, type SecretRedactor } from '../shared/secret-redaction.js'
 import type {
   AgentRuntimeForkResult,
+  AgentRuntimeExportResult,
   AgentRuntimeImportResult,
   AgentRuntimeResources,
   ModelRuntimeProvider,
@@ -57,6 +59,8 @@ interface PiSessionLike {
   clearQueue(): { steering: string[]; followUp: string[] }
   fork(entryId: string): Promise<{ cancelled: boolean }>
   importFromJsonl(inputPath: string, cwdOverride: string): Promise<{ cancelled: boolean }>
+  exportToHtml(outputPath: string): Promise<string>
+  exportToJsonl(outputPath: string): string
   getSessionStats(): SessionStats
   getSessionId(): string
   getSessionFile(): string | undefined
@@ -257,6 +261,14 @@ class PiSessionRuntime implements PiSessionLike {
 
   async importFromJsonl(inputPath: string, cwdOverride: string): Promise<{ cancelled: boolean }> {
     return this.runtime.importFromJsonl(inputPath, cwdOverride)
+  }
+
+  exportToHtml(outputPath: string): Promise<string> {
+    return this.runtime.session.exportToHtml(outputPath)
+  }
+
+  exportToJsonl(outputPath: string): string {
+    return this.runtime.session.exportToJsonl(outputPath)
   }
 
   getSessionStats(): SessionStats {
@@ -590,6 +602,67 @@ export class PiAgentRuntime {
       broker.cancelAll()
       if (!disposed && session) await Promise.resolve(session.dispose()).catch(() => undefined)
       if (!completed) await rm(config.targetSessionDirectory, { recursive: true, force: true })
+      if (this.sessionOperationUi?.operationId === config.operationId) {
+        this.sessionOperationUi = null
+      }
+    }
+  }
+
+  async exportSession(config: RuntimeExportConfig): Promise<AgentRuntimeExportResult> {
+    if (this.current || this.sessionOperationUi)
+      throw new Error('Only one Runtime operation can be active')
+    if (config.sourcePiSessionFile !== basename(config.sourcePiSessionFile)) {
+      throw new Error('Source Pi Session file must be a basename')
+    }
+    if (!isAbsolute(config.destinationPath)) {
+      throw new Error('Pi Session export destination must be absolute')
+    }
+    const sourcePath = resolve(config.sourceSessionDirectory, config.sourcePiSessionFile)
+    if (resolve(config.destinationPath) === sourcePath) {
+      throw new Error('Pi Session export cannot overwrite its source history')
+    }
+    const expectedExtension = config.format === 'jsonl' ? '.jsonl' : '.html'
+    if (config.destinationPath.toLowerCase().endsWith(expectedExtension) === false) {
+      throw new Error(`Pi Session ${config.format.toUpperCase()} export requires ${expectedExtension}`)
+    }
+
+    const redactor = createSecretRedactor([config.apiKey])
+    const eventConfig: RuntimeStartConfig = {
+      type: 'start',
+      runId: config.operationId,
+      sessionId: config.sourceSessionId,
+      messageId: config.operationId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: config.sourceSessionDirectory,
+      resumeSession: true,
+      settings: config.settings,
+      apiKey: config.apiKey,
+      prompt: 'Export Pi Session',
+    }
+    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
+    this.sessionOperationUi = { operationId: config.operationId, broker }
+    let session: PiSessionLike | null = null
+
+    try {
+      session = await this.sessionFactory({
+        config: eventConfig,
+        sessionFile: config.sourcePiSessionFile,
+        tools: [],
+        extensionPaths: [],
+        skillPaths: [],
+        promptPaths: [],
+        modelProvider: this.getModelProvider(),
+      })
+      if (config.format === 'jsonl') session.exportToJsonl(config.destinationPath)
+      else await session.exportToHtml(config.destinationPath)
+      return { outcome: 'completed' }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Pi Session Export failed'
+      throw new Error(redactor.redactText(detail), { cause: error })
+    } finally {
+      broker.cancelAll()
+      if (session) await Promise.resolve(session.dispose()).catch(() => undefined)
       if (this.sessionOperationUi?.operationId === config.operationId) {
         this.sessionOperationUi = null
       }

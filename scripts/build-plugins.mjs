@@ -106,6 +106,11 @@ for (const directory of directories.toSorted((left, right) =>
         ),
         join(distRoot, 'photon_rs_bg.wasm'),
       )
+      await cp(
+        resolve('node_modules/@earendil-works/pi-coding-agent/dist/core/export-html'),
+        join(distRoot, 'core', 'export-html'),
+        { recursive: true },
+      )
     }
   }
 
