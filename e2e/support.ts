@@ -24,6 +24,7 @@ export const bridgeKeys = [
   'getSession',
   'getSettings',
   'getSnapshot',
+  'forkSession',
   'installLocalPlugin',
   'installPiExtension',
   'installPiPackage',

@@ -167,6 +167,68 @@ describe('AppRepository', () => {
     await expect(repository.saveSession(session)).rejects.toThrow('项目绑定不匹配')
   })
 
+  it('commits a forked Pi JSONL as a new selected Pictor Session', async () => {
+    const repository = createRepository()
+    await repository.initialize()
+    const project = await repository.registerProject(projectDirectory)
+    const source = await repository.createSession(project.id)
+    await repository.renameSession(source.id, 'Source session')
+    const targetSessionId = randomUUID()
+    const piSessionId = 'forked-pi-session'
+    const piSessionFile = 'forked.jsonl'
+    const targetDirectory = join(dataDirectory, 'pi', project.id, targetSessionId)
+    await mkdir(targetDirectory, { recursive: true })
+    await writeFile(
+      join(targetDirectory, piSessionFile),
+      [
+        JSON.stringify({
+          type: 'session',
+          version: 3,
+          id: piSessionId,
+          timestamp: new Date().toISOString(),
+          cwd: projectDirectory,
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'forked-user',
+          parentId: null,
+          timestamp: new Date().toISOString(),
+          message: { role: 'user', content: 'Forked task' },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'forked-assistant',
+          parentId: 'forked-user',
+          timestamp: new Date().toISOString(),
+          message: { role: 'assistant', content: 'Forked answer', stopReason: 'stop' },
+        }),
+        '',
+      ].join('\n'),
+    )
+
+    const summary = await repository.createForkedSession(source.id, targetSessionId, {
+      id: piSessionId,
+      file: piSessionFile,
+    })
+    const snapshot = await repository.getSnapshot()
+
+    expect(summary).toMatchObject({
+      id: targetSessionId,
+      projectId: project.id,
+      title: 'Source session (Fork)',
+      historyAuthority: 'pi-jsonl',
+      lastRunStatus: 'completed',
+    })
+    expect(snapshot.selectedSessionId).toBe(targetSessionId)
+    expect(snapshot.sessions).toHaveLength(2)
+    await expect(repository.getSession(targetSessionId)).resolves.toMatchObject({
+      messages: [
+        expect.objectContaining({ content: 'Forked task' }),
+        expect.objectContaining({ content: 'Forked answer' }),
+      ],
+    })
+  })
+
   it('removes Pictor metadata without deleting files from the project directory', async () => {
     const repository = createRepository()
     await repository.initialize()

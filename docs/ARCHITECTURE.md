@@ -130,6 +130,15 @@ JSONL 解析中生成完整树、active leaf、selected entry 和对应 Session 
 也不改变下次 Runtime resume 的 active leaf；Composer 在 selected entry 不是 active leaf 时保持
 只读。普通 Session 加载和 Runtime event 不扫描树，只有用户打开 Tree View 时才执行 inspect。
 
+Pi Session Fork 是独立的 Runtime operation，不伪装成 Run。Main 先生成 operation/target Session
+identity，但不写 Pictor metadata；utility host 精确打开已绑定的源 JSONL，绑定 Extension RPC UI，
+调用 Pi `AgentSessionRuntime.fork(position: "at")`，完整执行 `session_before_fork`、源
+`session_shutdown(reason: "fork")` 和目标 `session_start(reason: "fork")`。新 Runtime dispose 后，
+只有新 JSONL 被脱敏并移动到目标 Session 目录；源 JSONL 不重写。Runtime 返回 completed 后，
+`AppRepository` 才绑定新 Pi identity、重建 Projection、提交新 Session 并更新导航；cancelled 不
+创建 Pictor Session。Fork operation 复用现有 active-operation 与 Extension UI response 通道，不能
+和 Run 并发。
+
 Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全集中在内部
 `SessionPersistence` module；Pi JSONL 到桌面模型的映射集中在纯投影 module。它们直接使用本地
 文件系统和现有凭据迁移函数，不增加通用 Repository、DAO 或存储 provider。相关测试通过真实

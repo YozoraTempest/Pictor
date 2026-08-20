@@ -153,6 +153,7 @@ function createBridge(
   getSnapshot: ReturnType<typeof vi.fn>
   getSession: ReturnType<typeof vi.fn>
   inspectSessionHistory: ReturnType<typeof vi.fn>
+  forkSession: ReturnType<typeof vi.fn>
   startRun: ReturnType<typeof vi.fn>
   stopRun: ReturnType<typeof vi.fn>
   approveCommand: ReturnType<typeof vi.fn>
@@ -177,6 +178,7 @@ function createBridge(
     },
   )
   const startRun = vi.fn(async () => ok({ runId }))
+  const forkSession = vi.fn(async () => ok(null))
   const stopRun = vi.fn(async () => ok(null))
   const approveCommand = vi.fn(async () => ok(null))
   const rejectCommand = vi.fn(async () => ok(null))
@@ -200,6 +202,7 @@ function createBridge(
     deleteSession: async () => ok(null),
     getSession,
     inspectSessionHistory,
+    forkSession,
     startRun,
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
@@ -515,7 +518,14 @@ describe('useWorkspaceController', () => {
         },
       ],
     }
-    const bridge = createBridge({ sessions: { [firstSessionId]: active } })
+    const forked = createSession(secondSessionId, {
+      title: 'Source session (Fork)',
+      messageContent: 'Historical answer',
+      runStatus: 'completed',
+    })
+    const bridge = createBridge({
+      sessions: { [firstSessionId]: active, [secondSessionId]: forked },
+    })
     bridge.inspectSessionHistory.mockImplementation(
       async ({ entryId }: { sessionId: string; entryId: string | null }) =>
         ok({
@@ -538,6 +548,26 @@ describe('useWorkspaceController', () => {
     expect(result.current.sessionTree?.selectedEntryId).toBe('historical-entry')
     expect(result.current.disabledReason).toContain('历史分支')
 
+    bridge.forkSession.mockResolvedValueOnce(
+      ok({
+        id: secondSessionId,
+        projectId,
+        title: 'Source session (Fork)',
+        lastRunStatus: 'completed',
+        historyAuthority: 'pi-jsonl',
+        createdAt: now,
+        updatedAt: now,
+      }),
+    )
+    await act(async () => result.current.forkSession('historical-entry'))
+    expect(bridge.forkSession).toHaveBeenCalledWith({
+      sessionId: firstSessionId,
+      entryId: 'historical-entry',
+    })
+    expect(result.current.selectedSessionId).toBe(secondSessionId)
+    expect(result.current.session?.title).toBe('Source session (Fork)')
+
+    await act(async () => result.current.selectSession(projectId, firstSessionId))
     await act(async () => result.current.inspectSessionHistory(null))
     expect(result.current.session?.messages[0]?.content).toBe('Active answer')
     expect(result.current.sessionTree?.selectedEntryId).toBe('active-entry')

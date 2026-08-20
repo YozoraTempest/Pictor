@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test } from '@playwright/test'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 
@@ -117,6 +117,20 @@ export default function (pi) {
 `,
   )
   await store.installPiExtension(guiExtension)
+  const lifecycleExtension = testInfo.outputPath('fork-lifecycle-extension.ts')
+  await writeFile(
+    lifecycleExtension,
+    `import { appendFileSync } from 'node:fs'
+import { join } from 'node:path'
+export default function (pi) {
+  const record = (ctx, value) => appendFileSync(join(ctx.cwd, 'fork-lifecycle.log'), value + '\\n')
+  pi.on('session_before_fork', (event, ctx) => record(ctx, 'before_fork:' + event.entryId + ':' + event.position))
+  pi.on('session_shutdown', (event, ctx) => record(ctx, 'shutdown:' + event.reason))
+  pi.on('session_start', (event, ctx) => record(ctx, 'start:' + event.reason))
+}
+`,
+  )
+  await store.installPiExtension(lifecycleExtension)
 
   const electronApp = await electron.launch({
     args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
@@ -159,6 +173,43 @@ export default function (pi) {
     const guiTool = window.locator('.tool-activity').last()
     await guiTool.getByText('查看输出').click()
     await expect(guiTool.getByText('GUI response')).toBeVisible()
+    await expect(window.getByText('Native extension completed.').last()).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
+
+    await window.getByRole('button', { name: 'Session Tree' }).click()
+    const tree = window.getByRole('complementary', { name: 'Session Tree' })
+    const historicalReply = tree
+      .getByRole('button', { name: 'Native extension completed.' })
+      .first()
+    await historicalReply.click()
+    await expect(window.getByText(/正在查看历史分支/)).toBeVisible()
+    await tree.getByRole('button', { name: 'Fork 为新 Session' }).click()
+
+    await expect(window.getByRole('heading', { name: 'Use the hello tool. (Fork)' })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(window.locator('.timeline').getByText('Native extension completed.')).toBeVisible()
+    const forkedSnapshot = await window.evaluate(async () => {
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      return bridge.getSnapshot()
+    })
+    expect(forkedSnapshot).toMatchObject({
+      ok: true,
+      value: {
+        selectedSessionId: expect.any(String),
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ title: 'Use the hello tool. (Fork)' }),
+        ]),
+      },
+    })
+    await expect
+      .poll(() => readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8'))
+      .toEqual(expect.stringContaining('before_fork:'))
+    const lifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
+    expect(lifecycle).toContain('shutdown:fork')
+    expect(lifecycle).toContain('start:fork')
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

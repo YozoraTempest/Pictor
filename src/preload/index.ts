@@ -12,6 +12,8 @@ import {
   connectionTestIpcResultSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
+  forkSessionRequestSchema,
+  forkSessionResultSchema,
   inspectSessionHistoryRequestSchema,
   listModelsRequestSchema,
   modelCatalogIpcResultSchema,
@@ -110,6 +112,10 @@ const bridge = Object.freeze({
         'session:inspect-history',
         inspectSessionHistoryRequestSchema.parse(input),
       ),
+    ),
+  forkSession: async (input) =>
+    forkSessionResultSchema.parse(
+      await ipcRenderer.invoke('session:fork', forkSessionRequestSchema.parse(input)),
     ),
   getSettings: async () => settingsResultSchema.parse(await ipcRenderer.invoke('settings:get')),
   saveSettings: async (input) =>
