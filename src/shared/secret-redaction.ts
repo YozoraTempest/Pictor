@@ -106,6 +106,8 @@ export class SecretRedactor {
       case 'usage.updated':
       case 'session.activeLeafChanged':
         return event
+      case 'compaction.stateChanged':
+        return { ...event, error: event.error === null ? null : this.redactText(event.error) }
       case 'session.bound':
         return event
       case 'message.started':

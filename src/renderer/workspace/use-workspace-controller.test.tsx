@@ -156,6 +156,8 @@ function createBridge(
   getSession: ReturnType<typeof vi.fn>
   inspectSessionHistory: ReturnType<typeof vi.fn>
   navigateSessionTree: ReturnType<typeof vi.fn>
+  compactSession: ReturnType<typeof vi.fn>
+  cancelSessionOperation: ReturnType<typeof vi.fn>
   forkSession: ReturnType<typeof vi.fn>
   cloneSession: ReturnType<typeof vi.fn>
   importSession: ReturnType<typeof vi.fn>
@@ -185,6 +187,8 @@ function createBridge(
   )
   const startRun = vi.fn(async () => ok({ runId }))
   const navigateSessionTree = vi.fn(async () => ok(null))
+  const compactSession = vi.fn(async () => ok(null))
+  const cancelSessionOperation = vi.fn(async () => ok(false))
   const forkSession = vi.fn(async () => ok(null))
   const cloneSession = vi.fn(async () => ok(null))
   const importSession = vi.fn(async () => ok(null))
@@ -213,6 +217,8 @@ function createBridge(
     getSession,
     inspectSessionHistory,
     navigateSessionTree,
+    compactSession,
+    cancelSessionOperation,
     forkSession,
     cloneSession,
     importSession,
@@ -716,6 +722,49 @@ describe('useWorkspaceController', () => {
     expect(result.current.disabledReason).toBeNull()
     expect(result.current.navigatingEntryId).toBeNull()
     expect(result.current.sessionTreeLoading).toBe(false)
+  })
+
+  it('coordinates cancellable Compaction and applies its rebuilt Projection', async () => {
+    const active = createSession(firstSessionId, {
+      messageContent: 'Active answer',
+      runStatus: 'completed',
+    })
+    const compacted = createSession(firstSessionId, {
+      messageContent: 'Compaction summary\n\nCondensed decisions',
+      runStatus: 'completed',
+    })
+    const bridge = createBridge({ sessions: { [firstSessionId]: active } })
+    const pending = deferred<IpcResult<SessionHistoryView | null>>()
+    bridge.compactSession.mockReturnValueOnce(pending.promise)
+    bridge.cancelSessionOperation.mockResolvedValueOnce(ok(true))
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.session).toEqual(active))
+
+    let compacting!: Promise<boolean>
+    act(() => {
+      compacting = result.current.compactSession('Keep decisions')
+    })
+    expect(result.current.compactingSession).toBe(true)
+    await expect(result.current.cancelSessionOperation()).resolves.toBe(true)
+    expect(bridge.cancelSessionOperation).toHaveBeenCalledWith({ sessionId: firstSessionId })
+
+    pending.resolve(
+      ok({
+        session: compacted,
+        tree: {
+          activeLeafId: 'compaction-entry',
+          selectedEntryId: 'compaction-entry',
+          nodes: [],
+        },
+      }),
+    )
+    await act(async () => compacting)
+    expect(bridge.compactSession).toHaveBeenCalledWith({
+      sessionId: firstSessionId,
+      customInstructions: 'Keep decisions',
+    })
+    expect(result.current.session?.messages[0]?.content).toContain('Condensed decisions')
+    expect(result.current.compactingSession).toBe(false)
   })
 
   it('keeps one Session Import operation active until file selection completes', async () => {

@@ -12,6 +12,9 @@ import {
   connectionTestIpcResultSchema,
   cloneSessionRequestSchema,
   cloneSessionResultSchema,
+  compactSessionRequestSchema,
+  compactSessionResultSchema,
+  cancelSessionOperationResultSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
   exportSessionRequestSchema,
@@ -127,6 +130,14 @@ const bridge = Object.freeze({
         'session:navigate-tree',
         navigateSessionTreeRequestSchema.parse(input),
       ),
+    ),
+  compactSession: async (input) =>
+    compactSessionResultSchema.parse(
+      await ipcRenderer.invoke('session:compact', compactSessionRequestSchema.parse(input)),
+    ),
+  cancelSessionOperation: async (input) =>
+    cancelSessionOperationResultSchema.parse(
+      await ipcRenderer.invoke('session:cancel-operation', sessionIdRequestSchema.parse(input)),
     ),
   forkSession: async (input) =>
     forkSessionResultSchema.parse(

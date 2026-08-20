@@ -16,6 +16,8 @@ import { PictorError } from '../../shared/errors.js'
 import type { ModelSettings } from '../../shared/model.js'
 import {
   type RuntimeEvent,
+  type RuntimeCompactConfig,
+  type RuntimeCompactResult,
   type RuntimeExportConfig,
   type RuntimeExportResult,
   type RuntimeForkConfig,
@@ -73,6 +75,8 @@ export interface RuntimeHost {
   importSession(config: RuntimeImportConfig): Promise<RuntimeImportResult>
   exportSession(config: RuntimeExportConfig): Promise<RuntimeExportResult>
   navigateSession(config: RuntimeNavigateConfig): Promise<RuntimeNavigateResult>
+  compactSession(config: RuntimeCompactConfig): Promise<RuntimeCompactResult>
+  abortSessionOperation(operationId: string): void
   approve(runId: string, callId: string): void
   reject(runId: string, callId: string): void
   stop(runId: string): void
@@ -92,6 +96,7 @@ interface ActiveRun {
 export class RuntimeCoordinator {
   private active: ActiveRun | null = null
   private sessionOperationId: string | null = null
+  private cancellableSessionOperation: { operationId: string; sessionId: string } | null = null
   private persistenceQueue = Promise.resolve()
 
   constructor(
@@ -284,6 +289,85 @@ export class RuntimeCoordinator {
     } finally {
       if (this.sessionOperationId === operationId) this.sessionOperationId = null
     }
+  }
+
+  async compactSession(
+    sourceSessionId: string,
+    customInstructions: string | null,
+  ): Promise<SessionHistoryView | null> {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
+      throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
+    }
+    await this.persistenceQueue
+    const source = await this.repository.getSession(sourceSessionId)
+    const history = this.repository.getSessionHistory(sourceSessionId)
+    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+      throw new PictorError('invalid-input', '当前 Session 没有可压缩的 Pi JSONL 历史')
+    }
+    const historyView = await this.repository.inspectSessionHistory(sourceSessionId, null)
+    const activeLeafId = historyView.tree?.activeLeafId
+    if (!activeLeafId) {
+      throw new PictorError('invalid-input', '当前 Pi Session History 没有活跃节点')
+    }
+    const project = this.repository.getProject(source.projectId)
+    if (project.availability !== 'available') {
+      throw new PictorError('project-unavailable', '项目目录当前不可用，请重新关联后再压缩')
+    }
+    const settings = await this.repository.getSettings()
+    const apiKey = await this.repository.getApiKey()
+    if (!settings || !apiKey) {
+      throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
+    }
+    const sourcePaths = this.repository.getRuntimePaths(project.id, sourceSessionId)
+    if (!sourcePaths.resumeSession) {
+      throw new PictorError(
+        'credential-unavailable',
+        'Pi Session 凭据迁移尚未完成，当前历史不能安全压缩',
+      )
+    }
+
+    const operationId = randomUUID()
+    this.sessionOperationId = operationId
+    this.cancellableSessionOperation = { operationId, sessionId: sourceSessionId }
+    try {
+      const result = await this.supervisor.compactSession({
+        type: 'compact',
+        operationId,
+        sourceSessionId,
+        customInstructions,
+        activeLeafId,
+        projectRoot: project.rootPath,
+        agentDirectory: sourcePaths.agentDirectory,
+        sourceSessionDirectory: sourcePaths.sessionDirectory,
+        sourcePiSessionFile: history.piSessionFile,
+        settings: {
+          apiProtocol: settings.apiProtocol,
+          baseUrl: settings.baseUrl,
+          modelId: settings.modelId,
+          reasoningEffort: settings.reasoningEffort,
+          temperature: settings.temperature,
+          maxOutputTokens: settings.maxOutputTokens,
+        },
+        apiKey,
+      })
+      if (result.outcome === 'cancelled') return null
+      if (result.outcome === 'failed') throw new Error(result.message)
+      await this.repository.setPiSessionActiveLeaf(sourceSessionId, result.activeLeafId)
+      await this.repository.rebuildSessionProjection(sourceSessionId)
+      return this.repository.inspectSessionHistory(sourceSessionId, null)
+    } finally {
+      if (this.sessionOperationId === operationId) this.sessionOperationId = null
+      if (this.cancellableSessionOperation?.operationId === operationId) {
+        this.cancellableSessionOperation = null
+      }
+    }
+  }
+
+  cancelSessionOperation(sessionId: string): boolean {
+    const operation = this.cancellableSessionOperation
+    if (!operation || operation.sessionId !== sessionId) return false
+    this.supervisor.abortSessionOperation(operation.operationId)
+    return true
   }
 
   private async deriveSession(

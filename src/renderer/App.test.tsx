@@ -77,6 +77,8 @@ function createBridge(
         ? ok({ session, tree: null })
         : { ok: false, error: { code: 'not-found', message: '不存在' } },
     navigateSessionTree: async () => ok(null),
+    compactSession: async () => ok(null),
+    cancelSessionOperation: async () => ok(false),
     forkSession: async () => ok(null),
     cloneSession: async () => ok(null),
     importSession: async () => ok(null),
@@ -344,6 +346,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   bridge.importSession = vi.fn(async () => ok(null))
   bridge.exportSession = vi.fn(async () => ok(false))
   bridge.navigateSessionTree = vi.fn(async () => ok(null))
+  bridge.compactSession = vi.fn(async () => ok(null))
   bridge.inspectSessionHistory = vi.fn(async ({ entryId }) => {
     const selectedEntryId = entryId ?? 'active-entry'
     return ok({
@@ -405,6 +408,19 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   await waitFor(() =>
     expect(bridge.exportSession).toHaveBeenCalledWith({ sessionId, format: 'html' }),
   )
+  fireEvent.click(screen.getByRole('button', { name: '压缩上下文' }))
+  expect(screen.getByRole('dialog', { name: '压缩上下文' })).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('自定义摘要指令（可选）'), {
+    target: { value: 'Keep decisions' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '开始压缩' }))
+  await waitFor(() =>
+    expect(bridge.compactSession).toHaveBeenCalledWith({
+      sessionId,
+      customInstructions: 'Keep decisions',
+    }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: '取消' }))
   fireEvent.click(screen.getByRole('button', { name: 'Session Tree' }))
   expect(await screen.findByRole('complementary', { name: 'Session Tree' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Fork 为新 Session' })).toBeDisabled()

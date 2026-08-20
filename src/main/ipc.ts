@@ -5,6 +5,7 @@ import { dialog, ipcMain, type WebFrameMain } from 'electron'
 import {
   approvalResolutionRequestSchema,
   cloneSessionRequestSchema,
+  compactSessionRequestSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
   exportSessionRequestSchema,
@@ -234,6 +235,22 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = navigateSessionTreeRequestSchema.parse(input)
       return runtimeCoordinator.navigateSessionTree(request.sessionId, request.entryId)
+    })
+  })
+
+  ipcMain.handle('session:compact', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = compactSessionRequestSchema.parse(input)
+      return runtimeCoordinator.compactSession(request.sessionId, request.customInstructions)
+    })
+  })
+
+  ipcMain.handle('session:cancel-operation', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = sessionIdRequestSchema.parse(input)
+      return runtimeCoordinator.cancelSessionOperation(request.sessionId)
     })
   })
 

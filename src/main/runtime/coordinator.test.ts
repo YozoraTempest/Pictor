@@ -126,6 +126,10 @@ it.each(['a', 'id', 'running'])(
       navigateSession: vi.fn(async () => {
         throw new Error('not used')
       }),
+      compactSession: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+      abortSessionOperation: vi.fn(),
       approve: vi.fn(),
       reject: vi.fn(),
       stop: vi.fn(),
@@ -356,6 +360,10 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     navigateSession: vi.fn(async () => {
       throw new Error('not used')
     }),
+    compactSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    abortSessionOperation: vi.fn(),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -447,6 +455,10 @@ it('keeps a pending Legacy Session Import read-only', async () => {
     navigateSession: vi.fn(async () => {
       throw new Error('not used')
     }),
+    compactSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    abortSessionOperation: vi.fn(),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -621,6 +633,16 @@ it('commits native Pi Session derivation and Import operations', async () => {
     outcome: 'completed',
     activeLeafId: config.entryId,
   }))
+  const compactSession = vi.fn<RuntimeHost['compactSession']>(async (config) => ({
+    type: 'host.compactResult',
+    operationId: config.operationId,
+    sourceSessionId: config.sourceSessionId,
+    outcome: 'completed',
+    activeLeafId: 'compaction-entry',
+    tokensBefore: 100,
+    estimatedTokensAfter: 25,
+  }))
+  const abortSessionOperation = vi.fn()
   const supervisor: RuntimeHost = {
     isActive: () => false,
     start: vi.fn(async () => undefined),
@@ -628,6 +650,8 @@ it('commits native Pi Session derivation and Import operations', async () => {
     importSession,
     exportSession,
     navigateSession,
+    compactSession,
+    abortSessionOperation,
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -754,4 +778,40 @@ it('commits native Pi Session derivation and Import operations', async () => {
   })
   await expect(coordinator.navigateSessionTree(sessionId, 'active-entry')).resolves.toBeNull()
   expect(activeLeafId).toBe('historical-entry')
+
+  await expect(
+    coordinator.compactSession(sessionId, 'Keep decisions and unresolved work.'),
+  ).resolves.toMatchObject({
+    tree: { activeLeafId: 'compaction-entry', selectedEntryId: 'compaction-entry' },
+  })
+  expect(compactSession).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'compact',
+      sourceSessionId: sessionId,
+      customInstructions: 'Keep decisions and unresolved work.',
+      activeLeafId: 'historical-entry',
+      sourcePiSessionFile: 'source.jsonl',
+    }),
+  )
+  expect(setPiSessionActiveLeaf).toHaveBeenLastCalledWith(sessionId, 'compaction-entry')
+
+  let resolveCancelled!: (value: Awaited<ReturnType<RuntimeHost['compactSession']>>) => void
+  compactSession.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveCancelled = resolve
+      }),
+  )
+  const cancelling = coordinator.compactSession(sessionId, null)
+  await vi.waitFor(() => expect(compactSession).toHaveBeenCalledTimes(2))
+  const pendingConfig = compactSession.mock.calls[1]![0]
+  expect(coordinator.cancelSessionOperation(sessionId)).toBe(true)
+  expect(abortSessionOperation).toHaveBeenCalledWith(pendingConfig.operationId)
+  resolveCancelled({
+    type: 'host.compactResult',
+    operationId: pendingConfig.operationId,
+    sourceSessionId: sessionId,
+    outcome: 'cancelled',
+  })
+  await expect(cancelling).resolves.toBeNull()
 })

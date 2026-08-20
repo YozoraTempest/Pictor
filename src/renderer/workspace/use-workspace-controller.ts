@@ -33,6 +33,8 @@ export type WorkspaceBridge = Pick<
   | 'getSession'
   | 'inspectSessionHistory'
   | 'navigateSessionTree'
+  | 'compactSession'
+  | 'cancelSessionOperation'
   | 'forkSession'
   | 'cloneSession'
   | 'importSession'
@@ -67,6 +69,8 @@ export interface WorkspaceController {
   cloningSession: boolean
   importingProjectId: string | null
   exportingSession: { sessionId: string; format: SessionExportFormat } | null
+  compactingSession: boolean
+  runtimeCompactionReason: 'manual' | 'threshold' | 'overflow' | null
   activeSessionSummary: SessionSummary | null
   activeRun: RunRecord | null
   anotherSessionRunning: boolean
@@ -93,6 +97,8 @@ export interface WorkspaceController {
   cloneSession: () => Promise<boolean>
   importSession: (projectId: string) => Promise<boolean>
   exportSession: (sessionId: string, format: SessionExportFormat) => Promise<boolean>
+  compactSession: (customInstructions: string | null) => Promise<boolean>
+  cancelSessionOperation: () => Promise<boolean>
   startRun: () => Promise<void>
   queueMessage: (mode: 'steer' | 'follow-up') => Promise<void>
   clearQueue: () => Promise<void>
@@ -121,6 +127,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     | { kind: 'clone' }
     | { kind: 'import'; projectId: string }
     | { kind: 'export'; sessionId: string; format: SessionExportFormat }
+    | { kind: 'compact'; sessionId: string }
     | null
   >(null)
   const [loading, setLoading] = useState(true)
@@ -131,6 +138,9 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const [approvalBusyCallId, setApprovalBusyCallId] = useState<string | null>(null)
   const [queuedMessages, setQueuedMessages] = useState({ steering: 0, followUp: 0 })
   const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsage | null>(null)
+  const [runtimeCompactionReason, setRuntimeCompactionReason] = useState<
+    'manual' | 'threshold' | 'overflow' | null
+  >(null)
   const sessionRequestId = useRef(0)
   const snapshotRequestId = useRef(0)
   const navigationRequestId = useRef(0)
@@ -307,6 +317,9 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
         })
       } else if (event.sessionId === currentSessionId && event.type === 'usage.updated') {
         setRuntimeUsage(event)
+      } else if (event.sessionId === currentSessionId && event.type === 'compaction.stateChanged') {
+        setRuntimeCompactionReason(event.status === 'running' ? event.reason : null)
+        if (event.status === 'failed' && event.error) setActionError(event.error)
       } else if (event.sessionId === currentSessionId) {
         void loadSession(event.sessionId, false).catch((error: unknown) =>
           setActionError(errorMessage(error)),
@@ -458,6 +471,48 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     [bridge, sessionOperation],
   )
 
+  const compactSession = useCallback(
+    async (customInstructions: string | null): Promise<boolean> => {
+      const sourceSessionId = selectedSessionIdRef.current
+      if (!sourceSessionId || sessionOperation) return false
+      setSessionOperation({ kind: 'compact', sessionId: sourceSessionId })
+      setActionError(null)
+      try {
+        const response = await bridge.compactSession({
+          sessionId: sourceSessionId,
+          customInstructions,
+        })
+        if (!response.ok) {
+          setActionError(response.error.message)
+          return false
+        }
+        if (!response.value) return false
+        setSession(response.value.session)
+        setSessionTree(response.value.tree)
+        setRuntimeUsage(response.value.session.usage ?? null)
+        await refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error)))
+        return true
+      } catch (error) {
+        setActionError(errorMessage(error))
+        return false
+      } finally {
+        setSessionOperation(null)
+      }
+    },
+    [bridge, refreshSnapshot, sessionOperation],
+  )
+
+  const cancelSessionOperation = useCallback(async (): Promise<boolean> => {
+    const sessionId = selectedSessionIdRef.current
+    if (!sessionId || sessionOperation?.kind !== 'compact') return false
+    const response = await bridge.cancelSessionOperation({ sessionId })
+    if (!response.ok) {
+      setActionError(response.error.message)
+      return false
+    }
+    return response.value
+  }, [bridge, sessionOperation])
+
   const forkingEntryId = sessionOperation?.kind === 'fork' ? sessionOperation.entryId : null
   const navigatingEntryId = sessionOperation?.kind === 'navigate' ? sessionOperation.entryId : null
   const cloningSession = sessionOperation?.kind === 'clone'
@@ -466,6 +521,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     sessionOperation?.kind === 'export'
       ? { sessionId: sessionOperation.sessionId, format: sessionOperation.format }
       : null
+  const compactingSession = sessionOperation?.kind === 'compact'
 
   const pickProject = useCallback(
     async (relinkProjectId: string | null = null): Promise<WorkspaceTrustRequest | null> => {
@@ -718,6 +774,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     cloningSession,
     importingProjectId,
     exportingSession,
+    compactingSession,
+    runtimeCompactionReason,
     activeSessionSummary,
     activeRun,
     anotherSessionRunning,
@@ -744,6 +802,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     cloneSession,
     importSession,
     exportSession,
+    compactSession,
+    cancelSessionOperation,
     startRun,
     queueMessage,
     clearQueue,

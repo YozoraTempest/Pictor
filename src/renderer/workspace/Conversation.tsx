@@ -68,12 +68,16 @@ interface ConversationProps {
   forkingEntryId: string | null
   cloningSession: boolean
   navigatingEntryId: string | null
+  compactingSession: boolean
+  runtimeCompactionReason: 'manual' | 'threshold' | 'overflow' | null
   onDraftChange: (value: string) => void
   onSend: () => void
   onQueue: (mode: 'steer' | 'follow-up') => void
   onClearQueue: () => void
   onInspectSessionHistory: (entryId: string | null) => void
   onNavigateSessionTree: (entryId: string) => void
+  onOpenCompaction: () => void
+  onCancelSessionOperation: () => void
   onForkSession: (entryId: string) => void
   onCloneSession: () => void
   onStop: (runId: string) => void
@@ -545,12 +549,16 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     forkingEntryId,
     cloningSession,
     navigatingEntryId,
+    compactingSession,
+    runtimeCompactionReason,
     onDraftChange,
     onSend,
     onQueue,
     onClearQueue,
     onInspectSessionHistory,
     onNavigateSessionTree,
+    onOpenCompaction,
+    onCancelSessionOperation,
     onForkSession,
     onCloneSession,
     onStop,
@@ -652,6 +660,32 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           <h1>{session.title}</h1>
         </div>
         <div className="header-actions">
+          {compactingSession ? (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="取消上下文压缩"
+              title="取消上下文压缩"
+              onClick={onCancelSessionOperation}
+            >
+              <Square size={15} />
+            </button>
+          ) : (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="压缩上下文"
+              title="压缩上下文"
+              disabled={!canInspectSessionTree || runtimeCompactionReason !== null}
+              onClick={onOpenCompaction}
+            >
+              {runtimeCompactionReason ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <Combine size={16} />
+              )}
+            </button>
+          )}
           {canInspectSessionTree ? (
             <button
               className="icon-button session-tree-toggle"

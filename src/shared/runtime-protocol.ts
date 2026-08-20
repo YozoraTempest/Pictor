@@ -104,6 +104,14 @@ export const runtimeEventSchema = z.discriminatedUnion('type', [
     type: z.literal('usage.updated'),
     ...usageSnapshotSchema.shape,
   }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('compaction.stateChanged'),
+    status: z.enum(['running', 'completed', 'cancelled', 'failed']),
+    reason: z.enum(['manual', 'threshold', 'overflow']),
+    tokensBefore: z.number().int().nonnegative().nullable(),
+    estimatedTokensAfter: z.number().int().nonnegative().nullable(),
+    error: z.string().nullable(),
+  }),
 ])
 
 export const runtimeStartConfigSchema = z.object({
@@ -251,12 +259,47 @@ export const runtimeNavigateResultSchema = z.discriminatedUnion('outcome', [
   }),
 ])
 
+export const runtimeCompactConfigSchema = z.object({
+  type: z.literal('compact'),
+  operationId: idSchema,
+  sourceSessionId: idSchema,
+  customInstructions: z.string().trim().max(20_000).nullable(),
+  activeLeafId: z.string().min(1),
+  projectRoot: z.string().min(1),
+  agentDirectory: z.string().min(1),
+  sourceSessionDirectory: z.string().min(1),
+  sourcePiSessionFile: z.string().min(1),
+  settings: modelSettingsInputSchema,
+  apiKey: z.string().min(1),
+})
+
+const runtimeCompactResultBaseSchema = z.object({
+  type: z.literal('host.compactResult'),
+  operationId: idSchema,
+  sourceSessionId: idSchema,
+})
+
+export const runtimeCompactResultSchema = z.discriminatedUnion('outcome', [
+  runtimeCompactResultBaseSchema.extend({
+    outcome: z.literal('completed'),
+    activeLeafId: z.string().min(1),
+    tokensBefore: z.number().int().nonnegative(),
+    estimatedTokensAfter: z.number().int().nonnegative().nullable(),
+  }),
+  runtimeCompactResultBaseSchema.extend({ outcome: z.literal('cancelled') }),
+  runtimeCompactResultBaseSchema.extend({
+    outcome: z.literal('failed'),
+    message: z.string().min(1),
+  }),
+])
+
 export const runtimeCommandSchema = z.discriminatedUnion('type', [
   runtimeStartConfigSchema,
   runtimeForkConfigSchema,
   runtimeImportConfigSchema,
   runtimeExportConfigSchema,
   runtimeNavigateConfigSchema,
+  runtimeCompactConfigSchema,
   z.object({ type: z.literal('approve'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('reject'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('abort'), runId: idSchema }),
@@ -273,6 +316,7 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
     value: z.union([z.string(), z.boolean(), z.null()]),
   }),
   z.object({ type: z.literal('dispose') }),
+  z.object({ type: z.literal('abort-session-operation'), operationId: idSchema }),
 ])
 
 export const runtimeHostMessageSchema = z.union([
@@ -281,6 +325,7 @@ export const runtimeHostMessageSchema = z.union([
   runtimeImportResultSchema,
   runtimeExportResultSchema,
   runtimeNavigateResultSchema,
+  runtimeCompactResultSchema,
   z.object({ type: z.literal('host.ready') }),
   z.object({ type: z.literal('host.fatal'), message: z.string().min(1) }),
 ])
@@ -296,5 +341,7 @@ export type RuntimeExportConfig = z.infer<typeof runtimeExportConfigSchema>
 export type RuntimeExportResult = z.infer<typeof runtimeExportResultSchema>
 export type RuntimeNavigateConfig = z.infer<typeof runtimeNavigateConfigSchema>
 export type RuntimeNavigateResult = z.infer<typeof runtimeNavigateResultSchema>
+export type RuntimeCompactConfig = z.infer<typeof runtimeCompactConfigSchema>
+export type RuntimeCompactResult = z.infer<typeof runtimeCompactResultSchema>
 export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>
 export type RuntimeHostMessage = z.infer<typeof runtimeHostMessageSchema>

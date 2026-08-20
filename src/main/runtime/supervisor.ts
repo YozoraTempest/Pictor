@@ -6,6 +6,8 @@ import {
   runtimeEventSchema,
   runtimeHostMessageSchema,
   type RuntimeCommand,
+  type RuntimeCompactConfig,
+  type RuntimeCompactResult,
   type RuntimeEvent,
   type RuntimeExportConfig,
   type RuntimeExportResult,
@@ -47,6 +49,11 @@ export class RuntimeSupervisor {
   private pendingNavigate: {
     operationId: string
     resolve: (result: RuntimeNavigateResult) => void
+    reject: (error: Error) => void
+  } | null = null
+  private pendingCompact: {
+    operationId: string
+    resolve: (result: RuntimeCompactResult) => void
     reject: (error: Error) => void
   } | null = null
 
@@ -135,6 +142,29 @@ export class RuntimeSupervisor {
     })
   }
 
+  async compactSession(config: RuntimeCompactConfig): Promise<RuntimeCompactResult> {
+    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
+    await this.ensureChild()
+    this.activeRunId = config.operationId
+    this.activeSessionId = config.sourceSessionId
+    return new Promise<RuntimeCompactResult>((resolve, reject) => {
+      this.pendingCompact = { operationId: config.operationId, resolve, reject }
+      try {
+        this.post(config)
+      } catch (error) {
+        this.pendingCompact = null
+        this.activeRunId = null
+        this.activeSessionId = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
+
+  abortSessionOperation(operationId: string): void {
+    this.assertActive(operationId)
+    this.post({ type: 'abort-session-operation', operationId })
+  }
+
   approve(runId: string, callId: string): void {
     this.assertActive(runId)
     this.post({ type: 'approve', runId, callId })
@@ -192,6 +222,8 @@ export class RuntimeSupervisor {
     this.pendingExport = null
     this.pendingNavigate?.reject(new Error('Agent Runtime 已关闭'))
     this.pendingNavigate = null
+    this.pendingCompact?.reject(new Error('Agent Runtime 已关闭'))
+    this.pendingCompact = null
     this.activeRunId = null
     this.activeSessionId = null
   }
@@ -268,6 +300,12 @@ export class RuntimeSupervisor {
         this.activeRunId = null
         this.activeSessionId = null
       }
+      if (this.pendingCompact) {
+        this.pendingCompact.reject(new Error(parsed.data.message))
+        this.pendingCompact = null
+        this.activeRunId = null
+        this.activeSessionId = null
+      }
       this.emitSyntheticFailure(parsed.data.message)
       return
     }
@@ -302,6 +340,15 @@ export class RuntimeSupervisor {
       const pending = this.pendingNavigate
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingNavigate = null
+      this.activeRunId = null
+      this.activeSessionId = null
+      pending.resolve(parsed.data)
+      return
+    }
+    if (parsed.data.type === 'host.compactResult') {
+      const pending = this.pendingCompact
+      if (!pending || pending.operationId !== parsed.data.operationId) return
+      this.pendingCompact = null
       this.activeRunId = null
       this.activeSessionId = null
       pending.resolve(parsed.data)
@@ -343,6 +390,12 @@ export class RuntimeSupervisor {
     if (this.pendingNavigate) {
       this.pendingNavigate.reject(new Error('Agent Runtime 在 Tree Navigation 完成前退出'))
       this.pendingNavigate = null
+      this.activeRunId = null
+      this.activeSessionId = null
+    }
+    if (this.pendingCompact) {
+      this.pendingCompact.reject(new Error('Agent Runtime 在 Compaction 完成前退出'))
+      this.pendingCompact = null
       this.activeRunId = null
       this.activeSessionId = null
     }

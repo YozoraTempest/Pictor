@@ -123,16 +123,25 @@ test('loads an unmodified native Pi Extension from the user Store', async ({
       message: { role: 'user', content: 'Imported root task' },
     }),
     JSON.stringify({
+      type: 'custom_message',
+      id: 'imported-large-context',
+      parentId: 'imported-user',
+      timestamp: new Date().toISOString(),
+      customType: 'e2e-large-context',
+      content: 'context '.repeat(12_000),
+      display: false,
+    }),
+    JSON.stringify({
       type: 'message',
       id: 'imported-original',
-      parentId: 'imported-user',
+      parentId: 'imported-large-context',
       timestamp: new Date().toISOString(),
       message: importedAssistantMessage('Imported original answer'),
     }),
     JSON.stringify({
       type: 'message',
       id: 'imported-branch-user',
-      parentId: 'imported-user',
+      parentId: 'imported-large-context',
       timestamp: new Date().toISOString(),
       message: { role: 'user', content: 'Imported branch task' },
     }),
@@ -186,6 +195,12 @@ export default function (pi) {
   pi.on('session_before_switch', (_event, ctx) => record(ctx, 'before_switch'))
   pi.on('session_before_tree', (event, ctx) => record(ctx, 'before_tree:' + event.preparation.targetId + ':' + event.preparation.oldLeafId))
   pi.on('session_tree', (event, ctx) => record(ctx, 'tree:' + event.oldLeafId + ':' + event.newLeafId))
+  pi.on('session_before_compact', (event, ctx) => {
+    record(ctx, 'before_compact:' + event.reason + ':' + (event.customInstructions || ''))
+    if (event.customInstructions === 'Cancel E2E compaction') return { cancel: true }
+    return { compaction: { summary: 'E2E compacted context', firstKeptEntryId: event.preparation.firstKeptEntryId, tokensBefore: event.preparation.tokensBefore } }
+  })
+  pi.on('session_compact', (event, ctx) => record(ctx, 'compact:' + event.reason + ':' + event.compactionEntry.summary))
   pi.on('session_shutdown', (event, ctx) => record(ctx, 'shutdown:' + event.reason))
   pi.on('session_start', (event, ctx) => record(ctx, 'start:' + event.reason))
 }
@@ -536,6 +551,32 @@ export default function (pi) {
       metadataBeforeNavigation.history.piSessionFile,
     )
     expect(metadataAfterRun.history.activeLeafId).not.toBe('imported-original')
+
+    const cancelledCompaction = await window.evaluate(async (sessionId) => {
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      return bridge.compactSession({
+        sessionId,
+        customInstructions: 'Cancel E2E compaction',
+      })
+    }, importedSessionId)
+    expect(cancelledCompaction).toEqual({ ok: true, value: null })
+
+    await window.getByRole('button', { name: '压缩上下文' }).click()
+    await window.getByLabel('自定义摘要指令（可选）').fill('Preserve E2E decisions')
+    await window.getByRole('button', { name: '开始压缩' }).click()
+    await expect(timeline.getByText('E2E compacted context')).toBeVisible({ timeout: 30_000 })
+    const compactedTree = window.getByRole('complementary', { name: 'Session Tree' })
+    await expect(compactedTree).toBeVisible()
+    await expect(compactedTree.getByRole('button', { name: 'Compaction summary' })).toBeVisible()
+    const compactionLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
+    expect(compactionLifecycle).toContain('before_compact:manual:Cancel E2E compaction')
+    expect(compactionLifecycle).toContain('before_compact:manual:Preserve E2E decisions')
+    expect(compactionLifecycle).toContain('compact:manual:E2E compacted context')
+
+    expect(await startSelectedRun('Continue after compaction.')).toMatchObject({ ok: true })
+    await expect
+      .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
+      .toContain('Continue after compaction.')
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

@@ -74,6 +74,9 @@ export const inspectSessionHistoryRequestSchema = sessionIdRequestSchema.extend(
 export const navigateSessionTreeRequestSchema = sessionIdRequestSchema.extend({
   entryId: z.string().min(1),
 })
+export const compactSessionRequestSchema = sessionIdRequestSchema.extend({
+  customInstructions: z.string().trim().max(20_000).nullable(),
+})
 export const forkSessionRequestSchema = sessionIdRequestSchema.extend({
   entryId: z.string().min(1),
 })
@@ -121,6 +124,8 @@ export const sessionSummaryResultSchema = ipcResultSchema(sessionSummarySchema)
 export const sessionRecordResultSchema = ipcResultSchema(sessionRecordSchema)
 export const sessionHistoryViewResultSchema = ipcResultSchema(sessionHistoryViewSchema)
 export const navigateSessionTreeResultSchema = ipcResultSchema(sessionHistoryViewSchema.nullable())
+export const compactSessionResultSchema = ipcResultSchema(sessionHistoryViewSchema.nullable())
+export const cancelSessionOperationResultSchema = ipcResultSchema(z.boolean())
 export const forkSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
 export const cloneSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
 export const importSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
@@ -176,6 +181,12 @@ export interface PictorBridge {
   navigateSessionTree: (
     request: z.infer<typeof navigateSessionTreeRequestSchema>,
   ) => Promise<IpcResult<SessionHistoryView | null>>
+  compactSession: (
+    request: z.infer<typeof compactSessionRequestSchema>,
+  ) => Promise<IpcResult<SessionHistoryView | null>>
+  cancelSessionOperation: (
+    request: z.infer<typeof sessionIdRequestSchema>,
+  ) => Promise<IpcResult<boolean>>
   forkSession: (
     request: z.infer<typeof forkSessionRequestSchema>,
   ) => Promise<IpcResult<SessionSummary | null>>

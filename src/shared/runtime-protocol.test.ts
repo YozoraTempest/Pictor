@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   runtimeCommandSchema,
+  runtimeCompactResultSchema,
   runtimeExportResultSchema,
   runtimeForkResultSchema,
   runtimeHostMessageSchema,
@@ -193,6 +194,59 @@ describe('Runtime Session operation protocol', () => {
     ] as const
     for (const result of results) {
       expect(runtimeNavigateResultSchema.parse(result)).toEqual(result)
+      expect(runtimeHostMessageSchema.parse(result)).toEqual(result)
+    }
+  })
+
+  it('accepts cancellable Pi Session Compaction commands and host results', () => {
+    expect(
+      runtimeCommandSchema.parse({
+        type: 'compact',
+        operationId,
+        sourceSessionId,
+        customInstructions: 'Keep decisions and unresolved work.',
+        activeLeafId: 'active-answer',
+        projectRoot: '/project',
+        agentDirectory: '/agent',
+        sourceSessionDirectory: '/sessions/source',
+        sourcePiSessionFile: 'source.jsonl',
+        settings: {
+          apiProtocol: 'responses',
+          baseUrl: 'https://example.test/v1',
+          modelId: 'test-model',
+          reasoningEffort: null,
+          temperature: null,
+          maxOutputTokens: 1024,
+        },
+        apiKey: 'test-key',
+      }),
+    ).toMatchObject({ type: 'compact', operationId, sourceSessionId })
+    expect(runtimeCommandSchema.parse({ type: 'abort-session-operation', operationId })).toEqual({
+      type: 'abort-session-operation',
+      operationId,
+    })
+
+    const results = [
+      {
+        type: 'host.compactResult',
+        operationId,
+        sourceSessionId,
+        outcome: 'completed',
+        activeLeafId: 'compaction-entry',
+        tokensBefore: 100,
+        estimatedTokensAfter: 25,
+      },
+      { type: 'host.compactResult', operationId, sourceSessionId, outcome: 'cancelled' },
+      {
+        type: 'host.compactResult',
+        operationId,
+        sourceSessionId,
+        outcome: 'failed',
+        message: 'Compaction failed',
+      },
+    ] as const
+    for (const result of results) {
+      expect(runtimeCompactResultSchema.parse(result)).toEqual(result)
       expect(runtimeHostMessageSchema.parse(result)).toEqual(result)
     }
   })
