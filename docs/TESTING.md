@@ -23,6 +23,10 @@ npm run deps:verify
 应用开发与测试使用独立进程：`npm run dev` 只运行 electron-vite watch/HMR，`npm run test:watch`
 单独运行 Vitest。开发模式使用 `pictor-dev` userData，自动化测试继续使用独占临时目录。
 
+本地 Electron E2E 默认使用 `showInactive()` 显示测试窗口，不主动抢占当前应用焦点；设置
+`PICTOR_E2E_NO_FOCUS=0` 可在需要交互调试时恢复普通聚焦行为。Linux CI 继续用 Xvfb 承载
+测试窗口，避免影响真实桌面并保持 Playwright actionability。
+
 ## 测试分层
 
 | 层级           | 命令                                                | 覆盖范围                                      | 运行时机                        |

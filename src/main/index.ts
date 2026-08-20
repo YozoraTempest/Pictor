@@ -35,7 +35,7 @@ import { defaultPluginProfile } from './plugins/default-profile.js'
 import { RuntimeCoordinator } from './runtime/coordinator.js'
 import { RuntimeSupervisor } from './runtime/supervisor.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
-import { shouldShowMainWindow } from './window-visibility.js'
+import { shouldShowMainWindow, shouldShowMainWindowWithoutFocus } from './window-visibility.js'
 
 const APP_SCHEME = 'app'
 const APP_HOST = 'bundle'
@@ -125,6 +125,7 @@ function validateSender(frame: WebFrameMain | null): void {
 function createMainWindow(runtimeCoordinator: RuntimeCoordinator): BrowserWindow {
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
   const shouldShowWindow = shouldShowMainWindow()
+  const shouldAvoidFocus = shouldShowMainWindowWithoutFocus()
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -145,7 +146,12 @@ function createMainWindow(runtimeCoordinator: RuntimeCoordinator): BrowserWindow
       event.preventDefault()
     }
   })
-  if (shouldShowWindow) window.once('ready-to-show', () => window.show())
+  if (shouldShowWindow) {
+    window.once('ready-to-show', () => {
+      if (shouldAvoidFocus) window.showInactive()
+      else window.show()
+    })
+  }
   let closeConfirmed = false
   window.on('close', (event) => {
     if (closeConfirmed || !runtimeCoordinator.isActive()) return
