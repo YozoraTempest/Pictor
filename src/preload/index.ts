@@ -43,6 +43,8 @@ import {
   runtimeEventSchema,
   savedSettingsResultSchema,
   saveSettingsRequestSchema,
+  saveSessionRuntimeControlsRequestSchema,
+  sessionRuntimeControlsResultSchema,
   selectContextRequestSchema,
   sessionIdRequestSchema,
   sessionHistoryViewResultSchema,
@@ -138,6 +140,17 @@ const bridge = Object.freeze({
   cancelSessionOperation: async (input) =>
     cancelSessionOperationResultSchema.parse(
       await ipcRenderer.invoke('session:cancel-operation', sessionIdRequestSchema.parse(input)),
+    ),
+  getSessionRuntimeControls: async (input) =>
+    sessionRuntimeControlsResultSchema.parse(
+      await ipcRenderer.invoke('session:get-runtime-controls', sessionIdRequestSchema.parse(input)),
+    ),
+  saveSessionRuntimeControls: async (input) =>
+    sessionRuntimeControlsResultSchema.parse(
+      await ipcRenderer.invoke(
+        'session:save-runtime-controls',
+        saveSessionRuntimeControlsRequestSchema.parse(input),
+      ),
     ),
   forkSession: async (input) =>
     forkSessionResultSchema.parse(

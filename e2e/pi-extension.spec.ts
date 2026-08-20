@@ -405,6 +405,22 @@ export default function (pi) {
     )
     const authoritativeJsonlBeforeExport = await readFile(authoritativeJsonlPath, 'utf8')
 
+    await window.getByRole('button', { name: 'Session Controls' }).click()
+    await window.getByLabel('Thinking Level').selectOption('high')
+    await window.getByLabel('Steering').selectOption('all')
+    await window.getByLabel('pictor_delete').uncheck()
+    await window.getByRole('button', { name: '保存' }).click()
+    await expect(window.getByRole('dialog', { name: 'Session Controls' })).toBeHidden()
+    const metadataAfterControls = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
+      history: { runtimePreferences?: Record<string, unknown> }
+    }
+    expect(metadataAfterControls.history.runtimePreferences).toMatchObject({
+      thinkingLevel: 'high',
+      steeringMode: 'all',
+      followUpMode: 'one-at-a-time',
+      activeTools: expect.not.arrayContaining(['pictor_delete']),
+    })
+
     const exportSelectedSession = (format: 'jsonl' | 'html') =>
       window.evaluate(async (selectedFormat) => {
         const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
@@ -554,6 +570,8 @@ export default function (pi) {
       metadataBeforeNavigation.history.piSessionFile,
     )
     expect(metadataAfterRun.history.activeLeafId).not.toBe('imported-original')
+    await expect.poll(() => readFile(authoritativeJsonlPath, 'utf8')).toContain('session_info')
+    expect(await readFile(authoritativeJsonlPath, 'utf8')).toContain('import-source (Import)')
 
     await window.getByRole('button', { name: 'Session Tree', exact: true }).click()
     await window.getByRole('button', { name: 'Session Tree', exact: true }).click()

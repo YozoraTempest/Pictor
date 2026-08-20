@@ -5,7 +5,13 @@ import { vi } from 'vitest'
 import { AboutSettings } from '../modules/updater/AboutSettings'
 import type { UpdaterClient } from '../modules/updater/shared'
 import type { SessionHistoryView, SessionRecord } from '../shared/domain'
-import type { AppSnapshot, IpcResult, PictorBridge, RuntimeEvent } from '../shared/desktop-bridge'
+import type {
+  AppSnapshot,
+  IpcResult,
+  PictorBridge,
+  RuntimeEvent,
+  SessionRuntimeControls,
+} from '../shared/desktop-bridge'
 import { App } from './App'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
@@ -79,6 +85,21 @@ function createBridge(
     navigateSessionTree: async () => ok(null),
     compactSession: async () => ok(null),
     cancelSessionOperation: async () => ok(false),
+    getSessionRuntimeControls: async () =>
+      ok({
+        modelId: 'test-model',
+        thinkingLevel: 'off',
+        activeTools: ['pictor_read'],
+        availableTools: ['pictor_read', 'pictor_write'],
+        steeringMode: 'one-at-a-time',
+        followUpMode: 'one-at-a-time',
+      }),
+    saveSessionRuntimeControls: async (request) =>
+      ok({
+        modelId: 'test-model',
+        availableTools: ['pictor_read', 'pictor_write'],
+        ...request.controls,
+      }),
     forkSession: async () => ok(null),
     cloneSession: async () => ok(null),
     importSession: async () => ok(null),
@@ -347,6 +368,23 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   bridge.exportSession = vi.fn(async () => ok(false))
   bridge.navigateSessionTree = vi.fn(async () => ok(null))
   bridge.compactSession = vi.fn(async () => ok(null))
+  bridge.getSessionRuntimeControls = vi.fn(async () =>
+    ok({
+      modelId: 'test-model',
+      thinkingLevel: 'off',
+      activeTools: ['pictor_read'],
+      availableTools: ['pictor_read', 'pictor_write'],
+      steeringMode: 'one-at-a-time',
+      followUpMode: 'one-at-a-time',
+    } satisfies SessionRuntimeControls),
+  )
+  bridge.saveSessionRuntimeControls = vi.fn(async (request) =>
+    ok({
+      modelId: 'test-model',
+      availableTools: ['pictor_read', 'pictor_write'],
+      ...request.controls,
+    } satisfies SessionRuntimeControls),
+  )
   bridge.inspectSessionHistory = vi.fn(async ({ entryId }) => {
     const selectedEntryId = entryId ?? 'active-entry'
     return ok({
@@ -407,6 +445,23 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   fireEvent.click(screen.getByRole('button', { name: '导出 HTML' }))
   await waitFor(() =>
     expect(bridge.exportSession).toHaveBeenCalledWith({ sessionId, format: 'html' }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Session Controls' }))
+  expect(await screen.findByRole('dialog', { name: 'Session Controls' })).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('Thinking Level'), { target: { value: 'high' } })
+  fireEvent.change(screen.getByLabelText('Steering'), { target: { value: 'all' } })
+  fireEvent.click(screen.getByLabelText('pictor_write'))
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(bridge.saveSessionRuntimeControls).toHaveBeenCalledWith({
+      sessionId,
+      controls: {
+        thinkingLevel: 'high',
+        activeTools: ['pictor_read', 'pictor_write'],
+        steeringMode: 'all',
+        followUpMode: 'one-at-a-time',
+      },
+    }),
   )
   fireEvent.click(screen.getByRole('button', { name: '压缩上下文' }))
   expect(screen.getByRole('dialog', { name: '压缩上下文' })).toBeInTheDocument()

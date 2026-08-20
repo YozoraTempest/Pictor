@@ -65,6 +65,7 @@ export interface RuntimePersistence {
     resumeSession: boolean
     piSessionFile?: string | null
     activeLeafId?: string | null
+    runtimePreferences?: SessionHistoryState['runtimePreferences']
   }
   saveSession(session: SessionRecord): Promise<unknown>
 }
@@ -180,6 +181,7 @@ export class RuntimeCoordinator {
         type: 'start',
         runId,
         sessionId,
+        sessionName: session.title,
         messageId: assistantMessageId,
         projectRoot: project.rootPath,
         ...runtimePaths,

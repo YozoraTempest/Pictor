@@ -79,6 +79,17 @@ export const navigateSessionTreeRequestSchema = sessionIdRequestSchema.extend({
 export const compactSessionRequestSchema = sessionIdRequestSchema.extend({
   customInstructions: z.string().trim().max(20_000).nullable(),
 })
+export const sessionRuntimeControlsSchema = z.object({
+  modelId: z.string().min(1),
+  thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
+  activeTools: z.array(z.string().min(1)),
+  availableTools: z.array(z.string().min(1)),
+  steeringMode: z.enum(['all', 'one-at-a-time']),
+  followUpMode: z.enum(['all', 'one-at-a-time']),
+})
+export const saveSessionRuntimeControlsRequestSchema = sessionIdRequestSchema.extend({
+  controls: sessionRuntimeControlsSchema.omit({ modelId: true, availableTools: true }),
+})
 export const forkSessionRequestSchema = sessionIdRequestSchema.extend({
   entryId: z.string().min(1),
 })
@@ -135,6 +146,7 @@ export const navigateSessionTreeResultSchema = ipcResultSchema(
 )
 export const compactSessionResultSchema = ipcResultSchema(sessionHistoryViewSchema.nullable())
 export const cancelSessionOperationResultSchema = ipcResultSchema(z.boolean())
+export const sessionRuntimeControlsResultSchema = ipcResultSchema(sessionRuntimeControlsSchema)
 export const forkSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
 export const cloneSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
 export const importSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
@@ -149,6 +161,7 @@ export const startRunResultSchema = ipcResultSchema(z.object({ runId: idSchema }
 export type AppSnapshot = z.infer<typeof appSnapshotSchema>
 export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
 export type SessionExportFormat = z.infer<typeof sessionExportFormatSchema>
+export type SessionRuntimeControls = z.infer<typeof sessionRuntimeControlsSchema>
 
 export interface PictorBridge {
   getSnapshot: () => Promise<IpcResult<AppSnapshot>>
@@ -196,6 +209,12 @@ export interface PictorBridge {
   cancelSessionOperation: (
     request: z.infer<typeof sessionIdRequestSchema>,
   ) => Promise<IpcResult<boolean>>
+  getSessionRuntimeControls: (
+    request: z.infer<typeof sessionIdRequestSchema>,
+  ) => Promise<IpcResult<SessionRuntimeControls>>
+  saveSessionRuntimeControls: (
+    request: z.infer<typeof saveSessionRuntimeControlsRequestSchema>,
+  ) => Promise<IpcResult<SessionRuntimeControls>>
   forkSession: (
     request: z.infer<typeof forkSessionRequestSchema>,
   ) => Promise<IpcResult<SessionSummary | null>>

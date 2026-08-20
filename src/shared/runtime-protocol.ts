@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   idSchema,
   runStatusSchema,
+  sessionHistoryStateSchema,
   timestampSchema,
   toolEventSchema,
   usageSnapshotSchema,
@@ -118,6 +119,7 @@ export const runtimeStartConfigSchema = z.object({
   type: z.literal('start'),
   runId: idSchema,
   sessionId: idSchema,
+  sessionName: z.string().trim().min(1).max(120).optional(),
   messageId: idSchema,
   projectRoot: z.string().min(1),
   agentDirectory: z.string().min(1),
@@ -125,6 +127,7 @@ export const runtimeStartConfigSchema = z.object({
   resumeSession: z.boolean(),
   piSessionFile: z.string().min(1).nullable().optional(),
   activeLeafId: z.string().min(1).nullable().optional(),
+  runtimePreferences: sessionHistoryStateSchema.shape.runtimePreferences,
   commandInterpreterPath: z.string().min(1).nullable().optional(),
   settings: modelSettingsInputSchema,
   apiKey: z.string().min(1),

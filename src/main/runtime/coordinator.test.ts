@@ -107,6 +107,12 @@ it.each(['a', 'id', 'running'])(
         resumeSession: true,
         piSessionFile: 'session.jsonl',
         activeLeafId: 'persisted-active-leaf',
+        runtimePreferences: {
+          thinkingLevel: 'high',
+          activeTools: ['pictor_read'],
+          steeringMode: 'all',
+          followUpMode: 'one-at-a-time',
+        } satisfies NonNullable<SessionHistoryState['runtimePreferences']>,
       })),
       saveSession,
     }
@@ -145,8 +151,10 @@ it.each(['a', 'id', 'running'])(
       expect.objectContaining({
         apiKey: secret,
         prompt: expect.stringContaining('[REDACTED]'),
+        sessionName: expect.stringContaining('prompt'),
         piSessionFile: 'session.jsonl',
         activeLeafId: 'persisted-active-leaf',
+        runtimePreferences: expect.objectContaining({ thinkingLevel: 'high' }),
       }),
     )
 

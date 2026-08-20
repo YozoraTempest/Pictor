@@ -22,6 +22,8 @@ import {
   renameSessionRequestSchema,
   removePluginRequestSchema,
   saveSettingsRequestSchema,
+  saveSessionRuntimeControlsRequestSchema,
+  sessionRuntimeControlsSchema,
   selectContextRequestSchema,
   sessionIdRequestSchema,
   startRunRequestSchema,
@@ -47,6 +49,17 @@ interface IpcDependencies {
   getPluginBootstrap: () => Promise<PluginBootstrap>
   pluginManager: PluginManager
 }
+
+const defaultRuntimeTools = [
+  'pictor_list',
+  'pictor_search',
+  'pictor_read',
+  'pictor_write',
+  'pictor_edit',
+  'pictor_move',
+  'pictor_delete',
+  'pictor_command',
+] as const
 
 function exportFileName(title: string, extension: string): string {
   const printableTitle = [...title]
@@ -254,6 +267,40 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = sessionIdRequestSchema.parse(input)
       return runtimeCoordinator.cancelSessionOperation(request.sessionId)
+    })
+  })
+
+  ipcMain.handle('session:get-runtime-controls', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = sessionIdRequestSchema.parse(input)
+      const history = repository.getSessionHistory(request.sessionId)
+      const settings = await repository.getSettings()
+      if (!settings) throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
+      const preferences = history.runtimePreferences
+      return sessionRuntimeControlsSchema.parse({
+        modelId: settings.modelId,
+        thinkingLevel: preferences?.thinkingLevel ?? settings.reasoningEffort ?? 'off',
+        activeTools: preferences?.activeTools ?? defaultRuntimeTools,
+        availableTools: defaultRuntimeTools,
+        steeringMode: preferences?.steeringMode ?? 'one-at-a-time',
+        followUpMode: preferences?.followUpMode ?? 'one-at-a-time',
+      })
+    })
+  })
+
+  ipcMain.handle('session:save-runtime-controls', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = saveSessionRuntimeControlsRequestSchema.parse(input)
+      await repository.setSessionRuntimePreferences(request.sessionId, request.controls)
+      const settings = await repository.getSettings()
+      if (!settings) throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
+      return sessionRuntimeControlsSchema.parse({
+        modelId: settings.modelId,
+        ...request.controls,
+        availableTools: defaultRuntimeTools,
+      })
     })
   })
 
