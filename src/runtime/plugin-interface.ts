@@ -2,6 +2,7 @@ import { ContributionPoint } from '../kernel/module.js'
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import type { ModelSettingsInput } from '../shared/model.js'
 import type {
+  RuntimeCompactConfig,
   RuntimeExportConfig,
   RuntimeForkConfig,
   RuntimeImportConfig,
@@ -17,7 +18,22 @@ export type AgentRuntimeImportResult = AgentRuntimeForkResult
 export type AgentRuntimeExportResult = { outcome: 'completed' }
 
 export type AgentRuntimeNavigateResult =
-  { outcome: 'completed'; activeLeafId: string | null } | { outcome: 'cancelled' }
+  | {
+      outcome: 'completed'
+      activeLeafId: string | null
+      editorText: string | null
+      summaryCreated: boolean
+    }
+  | { outcome: 'cancelled' }
+
+export type AgentRuntimeCompactResult =
+  | {
+      outcome: 'completed'
+      activeLeafId: string
+      tokensBefore: number
+      estimatedTokensAfter: number | null
+    }
+  | { outcome: 'cancelled' }
 
 export interface ModelRuntimeProvider {
   id: string
@@ -43,6 +59,8 @@ export interface AgentRuntimeProvider {
   importSession(config: RuntimeImportConfig): Promise<AgentRuntimeImportResult>
   exportSession(config: RuntimeExportConfig): Promise<AgentRuntimeExportResult>
   navigateSession(config: RuntimeNavigateConfig): Promise<AgentRuntimeNavigateResult>
+  compactSession(config: RuntimeCompactConfig): Promise<AgentRuntimeCompactResult>
+  abortSessionOperation(operationId: string): void
   resolveApproval(runId: string, callId: string, allowed: boolean): void
   abort(runId: string): Promise<void>
   queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void>

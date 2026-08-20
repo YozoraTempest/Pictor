@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 
 import type {
+  RuntimeCompactConfig,
   RuntimeEvent,
   RuntimeExportConfig,
   RuntimeForkConfig,
@@ -28,6 +30,9 @@ const sessionFactory = async () => ({
   fork: async () => ({ cancelled: false }),
   importFromJsonl: async () => ({ cancelled: false }),
   navigateTree: async () => ({ cancelled: false }),
+  compact: async () => ({ summary: 'summary', firstKeptEntryId: 'entry', tokensBefore: 1 }),
+  abortCompaction: () => undefined,
+  abortBranchSummary: () => undefined,
   exportToHtml: async (outputPath: string) => outputPath,
   exportToJsonl: (outputPath: string) => outputPath,
   getSessionStats: () => ({
@@ -162,6 +167,9 @@ describe('PiAgentRuntime cleanup', () => {
         fork: async () => ({ cancelled: false }),
         importFromJsonl: async () => ({ cancelled: false }),
         navigateTree: async () => ({ cancelled: false }),
+        compact: async () => ({ summary: 'summary', firstKeptEntryId: 'entry', tokensBefore: 1 }),
+        abortCompaction: () => undefined,
+        abortBranchSummary: () => undefined,
         exportToHtml: async (outputPath: string) => outputPath,
         exportToJsonl: (outputPath: string) => outputPath,
         abort: async () => undefined,
@@ -259,6 +267,9 @@ describe('PiAgentRuntime cleanup', () => {
         fork: nativeFork,
         importFromJsonl: async () => ({ cancelled: false }),
         navigateTree: async () => ({ cancelled: false }),
+        compact: async () => ({ summary: 'summary', firstKeptEntryId: 'entry', tokensBefore: 1 }),
+        abortCompaction: () => undefined,
+        abortBranchSummary: () => undefined,
         exportToHtml: async (outputPath: string) => outputPath,
         exportToJsonl: (outputPath: string) => outputPath,
         getSessionStats: () => ({
@@ -374,6 +385,9 @@ describe('PiAgentRuntime cleanup', () => {
           fork: async () => ({ cancelled: false }),
           importFromJsonl: nativeImport,
           navigateTree: async () => ({ cancelled: false }),
+          compact: async () => ({ summary: 'summary', firstKeptEntryId: 'entry', tokensBefore: 1 }),
+          abortCompaction: () => undefined,
+          abortBranchSummary: () => undefined,
           exportToHtml: async (outputPath: string) => outputPath,
           exportToJsonl: (outputPath: string) => outputPath,
           getSessionStats: () => ({
@@ -550,12 +564,17 @@ describe('PiAgentRuntime cleanup', () => {
         '',
       ].join('\n'),
     )
-    let activeLeafId = 'active-answer'
-    const navigateTree = vi.fn(async (entryId: string, options: { summarize: false }) => {
-      expect(options).toEqual({ summarize: false })
-      activeLeafId = entryId
-      return { cancelled: false }
-    })
+    let activeLeafId: string | null = 'active-answer'
+    const navigateTree = vi.fn(
+      async (
+        entryId: string,
+        options: { summarize: boolean; customInstructions?: string },
+      ): Promise<{ cancelled: boolean; editorText?: string; summaryEntry?: unknown }> => {
+        expect(options).toEqual({ summarize: false })
+        activeLeafId = entryId
+        return { cancelled: false }
+      },
+    )
     const bindExtensionUi = vi.fn(async () => undefined)
     const dispose = vi.fn(async () => undefined)
     const factory = vi.fn(async () => ({
@@ -585,6 +604,8 @@ describe('PiAgentRuntime cleanup', () => {
       operationId: '01234567-89ab-4def-8123-456789abcdef',
       sourceSessionId: '11234567-89ab-4def-8123-456789abcdef',
       entryId: 'historical-answer',
+      summarize: false,
+      customInstructions: null,
       activeLeafId: 'active-answer',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent-navigate'),
@@ -604,6 +625,8 @@ describe('PiAgentRuntime cleanup', () => {
     await expect(runtime.navigateSession(config)).resolves.toEqual({
       outcome: 'completed',
       activeLeafId: 'historical-answer',
+      editorText: null,
+      summaryCreated: false,
     })
     expect(navigateTree).toHaveBeenCalledWith('historical-answer', { summarize: false })
     expect(factory).toHaveBeenCalledWith(
@@ -625,5 +648,122 @@ describe('PiAgentRuntime cleanup', () => {
         operationId: '21234567-89ab-4def-8123-456789abcdef',
       }),
     ).resolves.toEqual({ outcome: 'cancelled' })
+
+    activeLeafId = null
+    navigateTree.mockResolvedValueOnce({
+      cancelled: false,
+      editorText: 'Re-edit this message',
+      summaryEntry: {},
+    })
+    await expect(
+      runtime.navigateSession({
+        ...config,
+        operationId: '31234567-89ab-4def-8123-456789abcdef',
+        summarize: true,
+        customInstructions: 'Preserve decisions',
+      }),
+    ).resolves.toEqual({
+      outcome: 'completed',
+      activeLeafId: null,
+      editorText: 'Re-edit this message',
+      summaryCreated: true,
+    })
+    expect(navigateTree).toHaveBeenLastCalledWith('historical-answer', {
+      summarize: true,
+      customInstructions: 'Preserve decisions',
+    })
+  })
+
+  it('compacts the active branch and emits the native Compaction lifecycle', async () => {
+    const sourceSessionDirectory = join(root, 'compact-source')
+    const sourceFile = join(sourceSessionDirectory, 'source.jsonl')
+    await mkdir(sourceSessionDirectory)
+    await writeFile(sourceFile, '{"type":"session","version":3,"id":"pi-session"}\n')
+    const events: RuntimeEvent[] = []
+    let listener: ((event: AgentSessionEvent) => void) | undefined
+    const compact = vi.fn(async (customInstructions?: string) => {
+      listener?.({ type: 'compaction_start', reason: 'manual' })
+      const result = {
+        summary: 'Compacted decisions',
+        firstKeptEntryId: 'kept-entry',
+        tokensBefore: 120,
+        estimatedTokensAfter: 30,
+      }
+      listener?.({
+        type: 'compaction_end',
+        reason: 'manual',
+        result,
+        aborted: false,
+        willRetry: false,
+      })
+      expect(customInstructions).toBe('Keep decisions')
+      return result
+    })
+    const factory = vi.fn(async () => ({
+      ...(await sessionFactory()),
+      subscribe: (next: typeof listener) => {
+        listener = next
+        return () => {
+          listener = undefined
+        }
+      },
+      compact,
+      getSessionFile: () => sourceFile,
+      getActiveLeafId: () => 'compaction-entry',
+    }))
+    const runtime = new PiAgentRuntime((event) => events.push(event), factory)
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const config = {
+      type: 'compact',
+      operationId: '01234567-89ab-4def-8123-456789abcdef',
+      sourceSessionId: '11234567-89ab-4def-8123-456789abcdef',
+      customInstructions: 'Keep decisions',
+      activeLeafId: 'active-entry',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-compact'),
+      sourceSessionDirectory,
+      sourcePiSessionFile: 'source.jsonl',
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+    } satisfies RuntimeCompactConfig
+
+    await expect(runtime.compactSession(config)).resolves.toEqual({
+      outcome: 'completed',
+      activeLeafId: 'compaction-entry',
+      tokensBefore: 120,
+      estimatedTokensAfter: 30,
+    })
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'compaction.stateChanged',
+        status: 'running',
+        reason: 'manual',
+      }),
+      expect.objectContaining({
+        type: 'compaction.stateChanged',
+        status: 'completed',
+        tokensBefore: 120,
+        estimatedTokensAfter: 30,
+      }),
+    ])
   })
 })

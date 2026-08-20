@@ -99,6 +99,13 @@ parentPort.on('message', (messageEvent) => {
     return
   }
 
+  if (command.type === 'abort-session-operation') {
+    void statePromise
+      .then((state) => requireRuntime(state).abortSessionOperation(command.operationId))
+      .catch(reportFatal)
+    return
+  }
+
   if (command.type === 'fork') {
     void statePromise
       .then((state) => requireRuntime(state).fork(command))
@@ -186,6 +193,29 @@ parentPort.on('message', (messageEvent) => {
           sourceSessionId: command.sourceSessionId,
           outcome: 'failed',
           message: error instanceof Error ? error.message : 'Pi Session Tree Navigation failed',
+        }),
+      )
+    return
+  }
+
+  if (command.type === 'compact') {
+    void statePromise
+      .then((state) => requireRuntime(state).compactSession(command))
+      .then((result) =>
+        parentPort.postMessage({
+          type: 'host.compactResult',
+          operationId: command.operationId,
+          sourceSessionId: command.sourceSessionId,
+          ...result,
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.compactResult',
+          operationId: command.operationId,
+          sourceSessionId: command.sourceSessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Pi Session Compaction failed',
         }),
       )
     return

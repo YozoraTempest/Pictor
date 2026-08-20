@@ -45,6 +45,10 @@ export function App({
   const [confirmation, setConfirmation] = useState<Confirmation>(null)
   const [renameTarget, setRenameTarget] = useState<SessionSummary | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [compactionOpen, setCompactionOpen] = useState(false)
+  const [compactionInstructions, setCompactionInstructions] = useState('')
+  const [branchSummaryTarget, setBranchSummaryTarget] = useState<string | null>(null)
+  const [branchSummaryInstructions, setBranchSummaryInstructions] = useState('')
   const [modalBusy, setModalBusy] = useState(false)
   const [extensionUiRequest, setExtensionUiRequest] = useState<ExtensionUiRequest | null>(null)
   const [extensionUiValue, setExtensionUiValue] = useState('')
@@ -129,6 +133,38 @@ export function App({
     const completed = await workspace.renameSession(renameTarget.id, renameValue.trim())
     setModalBusy(false)
     if (completed) setRenameTarget(null)
+  }
+
+  const startCompaction = async () => {
+    const instructions = compactionInstructions.trim()
+    const completed = await workspace.compactSession(instructions || null)
+    if (completed) {
+      setCompactionOpen(false)
+      setCompactionInstructions('')
+    }
+  }
+
+  const cancelCompaction = async () => {
+    const cancelled = await workspace.cancelSessionOperation()
+    if (cancelled) setCompactionOpen(false)
+  }
+
+  const startBranchSummary = async () => {
+    if (!branchSummaryTarget) return
+    const instructions = branchSummaryInstructions.trim()
+    const completed = await workspace.navigateSessionTree(branchSummaryTarget, {
+      summarize: true,
+      customInstructions: instructions || null,
+    })
+    if (completed) {
+      setBranchSummaryTarget(null)
+      setBranchSummaryInstructions('')
+    }
+  }
+
+  const cancelBranchSummary = async () => {
+    const cancelled = await workspace.cancelSessionOperation()
+    if (cancelled) setBranchSummaryTarget(null)
   }
 
   const respondToExtensionUi = async (value: string | boolean | null) => {
@@ -218,12 +254,17 @@ export function App({
         navigatingEntryId={workspace.navigatingEntryId}
         forkingEntryId={workspace.forkingEntryId}
         cloningSession={workspace.cloningSession}
+        compactingSession={workspace.compactingSession}
+        runtimeCompactionReason={workspace.runtimeCompactionReason}
         onDraftChange={workspace.setDraft}
         onSend={() => void workspace.startRun()}
         onQueue={(mode) => void workspace.queueMessage(mode)}
         onClearQueue={() => void workspace.clearQueue()}
         onInspectSessionHistory={(entryId) => void workspace.inspectSessionHistory(entryId)}
         onNavigateSessionTree={(entryId) => void workspace.navigateSessionTree(entryId)}
+        onOpenBranchSummary={(entryId) => setBranchSummaryTarget(entryId)}
+        onOpenCompaction={() => setCompactionOpen(true)}
+        onCancelSessionOperation={() => void workspace.cancelSessionOperation()}
         onForkSession={(entryId) => void workspace.forkSession(entryId)}
         onCloneSession={() => void workspace.cloneSession()}
         onStop={(runId) => void workspace.stopRun(runId)}
@@ -431,6 +472,88 @@ export function App({
               disabled={modalBusy || !renameValue.trim()}
             >
               保存
+            </button>
+          </footer>
+        </Modal>
+      ) : null}
+
+      {compactionOpen ? (
+        <Modal
+          title="压缩上下文"
+          onClose={() => {
+            if (!workspace.compactingSession) setCompactionOpen(false)
+          }}
+        >
+          <label className="field field--full">
+            <span>自定义摘要指令（可选）</span>
+            <textarea
+              rows={6}
+              maxLength={20_000}
+              value={compactionInstructions}
+              disabled={workspace.compactingSession}
+              onChange={(event) => setCompactionInstructions(event.target.value)}
+            />
+          </label>
+          <footer className="modal-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() =>
+                workspace.compactingSession ? void cancelCompaction() : setCompactionOpen(false)
+              }
+            >
+              {workspace.compactingSession ? '取消压缩' : '取消'}
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={workspace.compactingSession}
+              onClick={() => void startCompaction()}
+            >
+              {workspace.compactingSession ? <LoaderCircle className="spin" size={15} /> : null}
+              开始压缩
+            </button>
+          </footer>
+        </Modal>
+      ) : null}
+
+      {branchSummaryTarget ? (
+        <Modal
+          title="总结后切换分支"
+          onClose={() => {
+            if (!workspace.navigatingEntryId) setBranchSummaryTarget(null)
+          }}
+        >
+          <label className="field field--full">
+            <span>自定义摘要指令（可选）</span>
+            <textarea
+              rows={6}
+              maxLength={20_000}
+              value={branchSummaryInstructions}
+              disabled={workspace.navigatingEntryId !== null}
+              onChange={(event) => setBranchSummaryInstructions(event.target.value)}
+            />
+          </label>
+          <footer className="modal-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() =>
+                workspace.navigatingEntryId
+                  ? void cancelBranchSummary()
+                  : setBranchSummaryTarget(null)
+              }
+            >
+              {workspace.navigatingEntryId ? '取消总结' : '取消'}
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={workspace.navigatingEntryId !== null}
+              onClick={() => void startBranchSummary()}
+            >
+              {workspace.navigatingEntryId ? <LoaderCircle className="spin" size={15} /> : null}
+              总结并切换
             </button>
           </footer>
         </Modal>

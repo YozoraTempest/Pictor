@@ -126,6 +126,10 @@ it.each(['a', 'id', 'running'])(
       navigateSession: vi.fn(async () => {
         throw new Error('not used')
       }),
+      compactSession: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+      abortSessionOperation: vi.fn(),
       approve: vi.fn(),
       reject: vi.fn(),
       stop: vi.fn(),
@@ -356,6 +360,10 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     navigateSession: vi.fn(async () => {
       throw new Error('not used')
     }),
+    compactSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    abortSessionOperation: vi.fn(),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -447,6 +455,10 @@ it('keeps a pending Legacy Session Import read-only', async () => {
     navigateSession: vi.fn(async () => {
       throw new Error('not used')
     }),
+    compactSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    abortSessionOperation: vi.fn(),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -502,7 +514,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     },
   )
   const createImportedSession = vi.fn(async () => importedSummary)
-  let activeLeafId = 'active-entry'
+  let activeLeafId: string | null = 'active-entry'
   const inspectSessionHistory = vi.fn(
     async (_sourceSessionId: string, selectedEntryId: string | null) => ({
       ...historyView(session, activeLeafId),
@@ -534,12 +546,24 @@ it('commits native Pi Session derivation and Import operations', async () => {
             isActiveLeaf: activeLeafId === 'active-entry',
             isSelected: (selectedEntryId ?? activeLeafId) === 'active-entry',
           },
+          {
+            id: 'root-user-entry',
+            parentId: null,
+            kind: 'user' as const,
+            label: 'Root user task',
+            timestamp: now,
+            depth: 0,
+            childCount: 0,
+            isActivePath: false,
+            isActiveLeaf: false,
+            isSelected: selectedEntryId === 'root-user-entry',
+          },
         ],
       },
     }),
   )
   const setPiSessionActiveLeaf = vi.fn(async (_sessionId: string, entryId: string | null) => {
-    if (entryId) activeLeafId = entryId
+    activeLeafId = entryId
   })
   const repository: RuntimePersistence = {
     getSession: vi.fn(async () => session),
@@ -620,7 +644,19 @@ it('commits native Pi Session derivation and Import operations', async () => {
     sourceSessionId: config.sourceSessionId,
     outcome: 'completed',
     activeLeafId: config.entryId,
+    editorText: null,
+    summaryCreated: false,
   }))
+  const compactSession = vi.fn<RuntimeHost['compactSession']>(async (config) => ({
+    type: 'host.compactResult',
+    operationId: config.operationId,
+    sourceSessionId: config.sourceSessionId,
+    outcome: 'completed',
+    activeLeafId: 'compaction-entry',
+    tokensBefore: 100,
+    estimatedTokensAfter: 25,
+  }))
+  const abortSessionOperation = vi.fn()
   const supervisor: RuntimeHost = {
     isActive: () => false,
     start: vi.fn(async () => undefined),
@@ -628,6 +664,8 @@ it('commits native Pi Session derivation and Import operations', async () => {
     importSession,
     exportSession,
     navigateSession,
+    compactSession,
+    abortSessionOperation,
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -731,13 +769,17 @@ it('commits native Pi Session derivation and Import operations', async () => {
   await expect(
     coordinator.navigateSessionTree(sessionId, 'historical-entry'),
   ).resolves.toMatchObject({
-    tree: { activeLeafId: 'historical-entry', selectedEntryId: 'historical-entry' },
+    history: {
+      tree: { activeLeafId: 'historical-entry', selectedEntryId: 'historical-entry' },
+    },
   })
   expect(navigateSession).toHaveBeenCalledWith(
     expect.objectContaining({
       type: 'navigate',
       sourceSessionId: sessionId,
       entryId: 'historical-entry',
+      summarize: false,
+      customInstructions: null,
       activeLeafId: 'active-entry',
       sourceSessionDirectory: `/sessions/${sessionId}`,
       sourcePiSessionFile: 'source.jsonl',
@@ -754,4 +796,54 @@ it('commits native Pi Session derivation and Import operations', async () => {
   })
   await expect(coordinator.navigateSessionTree(sessionId, 'active-entry')).resolves.toBeNull()
   expect(activeLeafId).toBe('historical-entry')
+
+  await expect(
+    coordinator.compactSession(sessionId, 'Keep decisions and unresolved work.'),
+  ).resolves.toMatchObject({
+    tree: { activeLeafId: 'compaction-entry', selectedEntryId: 'compaction-entry' },
+  })
+  expect(compactSession).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'compact',
+      sourceSessionId: sessionId,
+      customInstructions: 'Keep decisions and unresolved work.',
+      activeLeafId: 'historical-entry',
+      sourcePiSessionFile: 'source.jsonl',
+    }),
+  )
+  expect(setPiSessionActiveLeaf).toHaveBeenLastCalledWith(sessionId, 'compaction-entry')
+
+  let resolveCancelled!: (value: Awaited<ReturnType<RuntimeHost['compactSession']>>) => void
+  compactSession.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveCancelled = resolve
+      }),
+  )
+  const cancelling = coordinator.compactSession(sessionId, null)
+  await vi.waitFor(() => expect(compactSession).toHaveBeenCalledTimes(2))
+  const pendingConfig = compactSession.mock.calls[1]![0]
+  expect(coordinator.cancelSessionOperation(sessionId)).toBe(true)
+  expect(abortSessionOperation).toHaveBeenCalledWith(pendingConfig.operationId)
+  resolveCancelled({
+    type: 'host.compactResult',
+    operationId: pendingConfig.operationId,
+    sourceSessionId: sessionId,
+    outcome: 'cancelled',
+  })
+  await expect(cancelling).resolves.toBeNull()
+
+  navigateSession.mockResolvedValueOnce({
+    type: 'host.navigateResult',
+    operationId: '41234567-89ab-4def-8123-456789abcdef',
+    sourceSessionId: sessionId,
+    outcome: 'completed',
+    activeLeafId: null,
+    editorText: 'Root user task',
+    summaryCreated: false,
+  })
+  await expect(
+    coordinator.navigateSessionTree(sessionId, 'root-user-entry'),
+  ).resolves.toMatchObject({ editorText: 'Root user task', summaryCreated: false })
+  expect(setPiSessionActiveLeaf).toHaveBeenLastCalledWith(sessionId, null)
 })

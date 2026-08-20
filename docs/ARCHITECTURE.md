@@ -132,13 +132,20 @@ JSONL 解析中生成完整树、active leaf、selected entry 和对应 Session 
 也不改变下次 Runtime resume 的 active leaf；Composer 在 selected entry 不是 active leaf 时保持
 只读。普通 Session 加载和 Runtime event 不扫描树，只有用户打开 Tree View 时才执行 inspect。
 
-Pi Session Tree Navigation 是独立的同文件 Runtime operation。Renderer 只提交 Session identity 和
-目标 entry；Main 先用只读 Tree 验证目标存在、不是 active leaf，且不属于会返回 `editorText` 的
-User/Custom Message。utility host 精确打开已绑定的 Pi JSONL、恢复当前 active leaf cursor，并调用
-Pi `navigateTree(entryId, { summarize: false })`，保留 `session_before_tree` 取消和 `session_tree`
-lifecycle。成功后 Main 持久化 Pi 返回的实际 leaf、重建同一 Session Projection 并退出历史只读
-状态；不创建或复制 Session。下一次 Run 同样精确打开绑定文件并恢复 cursor，而不是按 cwd 或目录
-猜测最近文件。
+Pi Session Tree Navigation 是独立的同文件 Runtime operation。Renderer 只提交 Session identity、
+目标 entry 和可选 Branch Summary 指令；utility host 精确打开已绑定的 Pi JSONL、恢复当前 active
+leaf cursor，并调用 Pi `navigateTree()`，保留 `session_before_tree` 取消和 `session_tree` lifecycle。
+普通节点成为实际 leaf；User/Custom Message 返回的 `editorText` 进入 Composer，而 leaf 移到其父
+节点；启用 summarize 时，Pi 在目标位置追加 Branch Summary。成功后 Main 持久化 Pi 返回的实际
+leaf、重建同一 Session Projection 并退出历史只读状态；不创建或复制 Session。下一次 Run 同样
+精确打开绑定文件并恢复 cursor，而不是按 cwd 或目录猜测最近文件。
+
+Pi Session Compaction 是可取消的同文件 Runtime operation。Main 复用 Session operation 互斥并只为
+可取消操作保存 operation/session identity；utility host 调用 Pi `compact(customInstructions)` 和
+`abortCompaction()`，并把 manual/threshold/overflow 的 `compaction_start`/`compaction_end` 映射为
+稳定状态事件。`session_before_compact` 可以取消或提供原生 CompactionResult，`session_compact`
+观察已提交 entry。成功后 Main 保存新 active leaf 并从权威 JSONL 重建 Projection/Tree；取消或失败
+不制造摘要。Branch Summary 通过同一取消 seam 调用 `abortBranchSummary()`。
 
 Pi Session Fork 是独立的 Runtime operation，不伪装成 Run。Main 先生成 operation/target Session
 identity，但不写 Pictor metadata；utility host 精确打开已绑定的源 JSONL，绑定 Extension RPC UI，

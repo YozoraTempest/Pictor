@@ -77,6 +77,8 @@ function createBridge(
         ? ok({ session, tree: null })
         : { ok: false, error: { code: 'not-found', message: '不存在' } },
     navigateSessionTree: async () => ok(null),
+    compactSession: async () => ok(null),
+    cancelSessionOperation: async () => ok(false),
     forkSession: async () => ok(null),
     cloneSession: async () => ok(null),
     importSession: async () => ok(null),
@@ -344,6 +346,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   bridge.importSession = vi.fn(async () => ok(null))
   bridge.exportSession = vi.fn(async () => ok(false))
   bridge.navigateSessionTree = vi.fn(async () => ok(null))
+  bridge.compactSession = vi.fn(async () => ok(null))
   bridge.inspectSessionHistory = vi.fn(async ({ entryId }) => {
     const selectedEntryId = entryId ?? 'active-entry'
     return ok({
@@ -405,6 +408,19 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   await waitFor(() =>
     expect(bridge.exportSession).toHaveBeenCalledWith({ sessionId, format: 'html' }),
   )
+  fireEvent.click(screen.getByRole('button', { name: '压缩上下文' }))
+  expect(screen.getByRole('dialog', { name: '压缩上下文' })).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('自定义摘要指令（可选）'), {
+    target: { value: 'Keep decisions' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '开始压缩' }))
+  await waitFor(() =>
+    expect(bridge.compactSession).toHaveBeenCalledWith({
+      sessionId,
+      customInstructions: 'Keep decisions',
+    }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: '取消' }))
   fireEvent.click(screen.getByRole('button', { name: 'Session Tree' }))
   expect(await screen.findByRole('complementary', { name: 'Session Tree' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Fork 为新 Session' })).toBeDisabled()
@@ -422,11 +438,28 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   expect(screen.getByRole('button', { name: 'Clone 当前分支为新 Session' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'Fork 为新 Session' })).toBeEnabled()
   expect(screen.getByRole('button', { name: '切换到此节点' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: '总结后切换到此节点' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: '总结后切换到此节点' }))
+  fireEvent.change(screen.getByLabelText('自定义摘要指令（可选）'), {
+    target: { value: 'Preserve abandoned work' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '总结并切换' }))
+  await waitFor(() =>
+    expect(bridge.navigateSessionTree).toHaveBeenCalledWith({
+      sessionId,
+      entryId: 'historical-entry',
+      summarize: true,
+      customInstructions: 'Preserve abandoned work',
+    }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: '取消' }))
   fireEvent.click(screen.getByRole('button', { name: '切换到此节点' }))
   await waitFor(() =>
     expect(bridge.navigateSessionTree).toHaveBeenCalledWith({
       sessionId,
       entryId: 'historical-entry',
+      summarize: false,
+      customInstructions: null,
     }),
   )
   fireEvent.click(screen.getByRole('button', { name: 'Fork 为新 Session' }))
@@ -436,7 +469,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   })
 
   fireEvent.click(screen.getByRole('button', { name: 'User checkpoint' }))
-  expect(screen.getByRole('button', { name: '切换到此节点' })).toBeDisabled()
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换到此节点' })).toBeEnabled())
 
   fireEvent.click(screen.getByRole('button', { name: '返回当前节点' }))
   expect(await screen.findByText('Active response details')).toBeInTheDocument()

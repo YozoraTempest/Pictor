@@ -68,12 +68,17 @@ interface ConversationProps {
   forkingEntryId: string | null
   cloningSession: boolean
   navigatingEntryId: string | null
+  compactingSession: boolean
+  runtimeCompactionReason: 'manual' | 'threshold' | 'overflow' | null
   onDraftChange: (value: string) => void
   onSend: () => void
   onQueue: (mode: 'steer' | 'follow-up') => void
   onClearQueue: () => void
   onInspectSessionHistory: (entryId: string | null) => void
   onNavigateSessionTree: (entryId: string) => void
+  onOpenBranchSummary: (entryId: string) => void
+  onOpenCompaction: () => void
+  onCancelSessionOperation: () => void
   onForkSession: (entryId: string) => void
   onCloneSession: () => void
   onStop: (runId: string) => void
@@ -394,6 +399,7 @@ function SessionTreePanel({
   navigatingEntryId,
   onSelect,
   onNavigate,
+  onOpenBranchSummary,
   onFork,
   onClone,
   onClose,
@@ -405,6 +411,7 @@ function SessionTreePanel({
   navigatingEntryId: string | null
   onSelect: (entryId: string | null) => void
   onNavigate: (entryId: string) => void
+  onOpenBranchSummary: (entryId: string) => void
   onFork: (entryId: string) => void
   onClone: () => void
   onClose: () => void
@@ -413,12 +420,7 @@ function SessionTreePanel({
   const selectedNode = tree?.nodes.find((node) => node.id === selectedEntryId)
   const canFork = Boolean(selectedEntryId && selectedEntryId !== tree?.activeLeafId)
   const canClone = Boolean(tree?.activeLeafId && selectedEntryId === tree.activeLeafId)
-  const canNavigate = Boolean(
-    selectedNode &&
-    selectedEntryId !== tree?.activeLeafId &&
-    selectedNode.kind !== 'user' &&
-    selectedNode.kind !== 'custom-message',
-  )
+  const canNavigate = Boolean(selectedNode && selectedEntryId !== tree?.activeLeafId)
   const operationBusy = forkingEntryId !== null || cloningSession || navigatingEntryId !== null
   return (
     <aside className="session-tree-panel" aria-label="Session Tree">
@@ -440,6 +442,18 @@ function SessionTreePanel({
             }}
           >
             {navigatingEntryId ? <LoaderCircle className="spin" size={14} /> : <Route size={14} />}
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="总结后切换到此节点"
+            title="总结后切换到此节点"
+            disabled={!canNavigate || operationBusy}
+            onClick={() => {
+              if (selectedEntryId) onOpenBranchSummary(selectedEntryId)
+            }}
+          >
+            <Combine size={14} />
           </button>
           <button
             className="mini-icon-button"
@@ -545,12 +559,17 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     forkingEntryId,
     cloningSession,
     navigatingEntryId,
+    compactingSession,
+    runtimeCompactionReason,
     onDraftChange,
     onSend,
     onQueue,
     onClearQueue,
     onInspectSessionHistory,
     onNavigateSessionTree,
+    onOpenBranchSummary,
+    onOpenCompaction,
+    onCancelSessionOperation,
     onForkSession,
     onCloneSession,
     onStop,
@@ -652,6 +671,32 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           <h1>{session.title}</h1>
         </div>
         <div className="header-actions">
+          {compactingSession ? (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="取消上下文压缩"
+              title="取消上下文压缩"
+              onClick={onCancelSessionOperation}
+            >
+              <Square size={15} />
+            </button>
+          ) : (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="压缩上下文"
+              title="压缩上下文"
+              disabled={!canInspectSessionTree || runtimeCompactionReason !== null}
+              onClick={onOpenCompaction}
+            >
+              {runtimeCompactionReason ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <Combine size={16} />
+              )}
+            </button>
+          )}
           {canInspectSessionTree ? (
             <button
               className="icon-button session-tree-toggle"
@@ -725,6 +770,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             navigatingEntryId={navigatingEntryId}
             onSelect={onInspectSessionHistory}
             onNavigate={onNavigateSessionTree}
+            onOpenBranchSummary={onOpenBranchSummary}
             onFork={onForkSession}
             onClone={onCloneSession}
             onClose={() => setTreeOpen(false)}
