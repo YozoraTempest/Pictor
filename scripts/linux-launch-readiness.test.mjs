@@ -5,15 +5,16 @@ import { collectLaunchEvidence } from './linux-launch-readiness.mjs'
 describe('collectLaunchEvidence', () => {
   it('waits for the renderer terminal state after DOMContentLoaded', async () => {
     globalThis.document.body.innerHTML = '<main class="app-loading">正在打开 Pictor</main>'
+    const invoke = vi.fn().mockResolvedValue({
+      name: 'pictor',
+      version: '0.2.1',
+      platform: 'linux',
+      arch: 'x64',
+      distribution: 'unsupported-linux',
+      commandInterpreter: { kind: 'bash', available: true, message: null },
+    })
     globalThis.pictorModules = {
-      invoke: vi.fn().mockResolvedValue({
-        name: 'pictor',
-        version: '0.2.1',
-        platform: 'linux',
-        arch: 'x64',
-        distribution: 'unsupported-linux',
-        commandInterpreter: { kind: 'bash', available: true, message: null },
-      }),
+      invoke,
     }
     const window = {
       waitForLoadState: vi.fn().mockResolvedValue(undefined),
@@ -31,6 +32,7 @@ describe('collectLaunchEvidence', () => {
     expect(evidence.terminalState).toBe('ready')
     expect(evidence.shell).not.toBeNull()
     expect(evidence.appInfo.version).toBe('0.2.1')
+    expect(invoke).toHaveBeenCalledWith('pictor.updater', 'getAppInfo', null)
   })
 
   it('reports fatal renderer text without retrying the failed app-info IPC', async () => {
