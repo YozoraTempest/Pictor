@@ -158,6 +158,7 @@ function createBridge(
   forkSession: ReturnType<typeof vi.fn>
   cloneSession: ReturnType<typeof vi.fn>
   importSession: ReturnType<typeof vi.fn>
+  exportSession: ReturnType<typeof vi.fn>
   startRun: ReturnType<typeof vi.fn>
   stopRun: ReturnType<typeof vi.fn>
   approveCommand: ReturnType<typeof vi.fn>
@@ -185,6 +186,7 @@ function createBridge(
   const forkSession = vi.fn(async () => ok(null))
   const cloneSession = vi.fn(async () => ok(null))
   const importSession = vi.fn(async () => ok(null))
+  const exportSession = vi.fn(async () => ok(false))
   const stopRun = vi.fn(async () => ok(null))
   const approveCommand = vi.fn(async () => ok(null))
   const rejectCommand = vi.fn(async () => ok(null))
@@ -211,6 +213,7 @@ function createBridge(
     forkSession,
     cloneSession,
     importSession,
+    exportSession,
     startRun,
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
@@ -646,6 +649,28 @@ describe('useWorkspaceController', () => {
     pending.resolve(ok(null))
     await act(async () => importing)
     expect(result.current.importingProjectId).toBeNull()
+  })
+
+  it('exports a Session without changing the current selection', async () => {
+    const bridge = createBridge()
+    bridge.exportSession.mockResolvedValueOnce(ok(true)).mockResolvedValueOnce(ok(false))
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.session).not.toBeNull())
+
+    await expect(
+      act(async () => result.current.exportSession(firstSessionId, 'jsonl')),
+    ).resolves.toBe(true)
+    expect(bridge.exportSession).toHaveBeenCalledWith({
+      sessionId: firstSessionId,
+      format: 'jsonl',
+    })
+    expect(result.current.selectedSessionId).toBe(firstSessionId)
+    expect(result.current.exportingSession).toBeNull()
+
+    await expect(
+      act(async () => result.current.exportSession(firstSessionId, 'html')),
+    ).resolves.toBe(false)
+    expect(result.current.actionError).toBeNull()
   })
 
   it('coordinates Run intents and reports bridge failures', async () => {

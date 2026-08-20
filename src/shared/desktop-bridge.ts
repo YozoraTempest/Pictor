@@ -27,7 +27,11 @@ import {
   type SaveSettingsRequest,
   type TestSettingsRequest,
 } from './model.js'
-import { runtimeEventSchema, type RuntimeEvent } from './runtime-protocol.js'
+import {
+  runtimeEventSchema,
+  sessionExportFormatSchema,
+  type RuntimeEvent,
+} from './runtime-protocol.js'
 import { appInfoSchema, type AppInfo } from './app-info.js'
 import { pluginBootstrapSchema, type PluginBootstrap } from './plugins.js'
 import type {
@@ -72,6 +76,9 @@ export const forkSessionRequestSchema = sessionIdRequestSchema.extend({
 })
 export const cloneSessionRequestSchema = sessionIdRequestSchema
 export const importSessionRequestSchema = projectIdRequestSchema
+export const exportSessionRequestSchema = sessionIdRequestSchema.extend({
+  format: sessionExportFormatSchema,
+})
 export const createSessionRequestSchema = z.object({ projectId: idSchema })
 export const selectContextRequestSchema = z.object({
   projectId: idSchema.nullable(),
@@ -113,6 +120,7 @@ export const sessionHistoryViewResultSchema = ipcResultSchema(sessionHistoryView
 export const forkSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
 export const cloneSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
 export const importSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
+export const exportSessionResultSchema = ipcResultSchema(z.boolean())
 export const settingsResultSchema = ipcResultSchema(modelSettingsSchema.nullable())
 export const savedSettingsResultSchema = ipcResultSchema(modelSettingsSchema)
 export const connectionTestIpcResultSchema = ipcResultSchema(connectionTestResultSchema)
@@ -122,6 +130,7 @@ export const startRunResultSchema = ipcResultSchema(z.object({ runId: idSchema }
 
 export type AppSnapshot = z.infer<typeof appSnapshotSchema>
 export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
+export type SessionExportFormat = z.infer<typeof sessionExportFormatSchema>
 
 export interface PictorBridge {
   getSnapshot: () => Promise<IpcResult<AppSnapshot>>
@@ -169,6 +178,9 @@ export interface PictorBridge {
   importSession: (
     request: z.infer<typeof importSessionRequestSchema>,
   ) => Promise<IpcResult<SessionSummary | null>>
+  exportSession: (
+    request: z.infer<typeof exportSessionRequestSchema>,
+  ) => Promise<IpcResult<boolean>>
   getSettings: () => Promise<IpcResult<ModelSettings | null>>
   saveSettings: (request: SaveSettingsRequest) => Promise<IpcResult<ModelSettings>>
   testSettings: (request: TestSettingsRequest) => Promise<IpcResult<ConnectionTestResult>>

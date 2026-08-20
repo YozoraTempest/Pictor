@@ -16,6 +16,7 @@ export const bridgeKeys = [
   'cloneSession',
   'createSession',
   'deleteSession',
+  'exportSession',
   'getAppInfo',
   'getPluginBootstrap',
   'getPluginManagerSnapshot',

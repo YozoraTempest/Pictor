@@ -1,6 +1,8 @@
 import {
   AlertTriangle,
   ChevronRight,
+  FileJson,
+  FileText,
   FileUp,
   Folder,
   FolderPlus,
@@ -13,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-react'
 
+import type { SessionExportFormat } from '../../shared/desktop-bridge'
 import type { Project, SessionSummary } from '../../shared/domain'
 
 interface SidebarProps {
@@ -21,12 +24,14 @@ interface SidebarProps {
   selectedProjectId: string | null
   selectedSessionId: string | null
   importingProjectId: string | null
+  exportingSession: { sessionId: string; format: SessionExportFormat } | null
   onAddProject: () => void
   onSelectProject: (projectId: string) => void
   onRemoveProject: (project: Project) => void
   onRelinkProject: (project: Project) => void
   onCreateSession: (projectId: string) => void
   onImportSession: (projectId: string) => void
+  onExportSession: (sessionId: string, format: SessionExportFormat) => void
   onSelectSession: (projectId: string, sessionId: string) => void
   onRenameSession: (session: SessionSummary) => void
   onDeleteSession: (session: SessionSummary) => void
@@ -61,12 +66,14 @@ export function Sidebar({
   selectedProjectId,
   selectedSessionId,
   importingProjectId,
+  exportingSession,
   onAddProject,
   onSelectProject,
   onRemoveProject,
   onRelinkProject,
   onCreateSession,
   onImportSession,
+  onExportSession,
   onSelectSession,
   onRenameSession,
   onDeleteSession,
@@ -207,6 +214,32 @@ export function Sidebar({
                               <MoreHorizontal size={14} />
                             </summary>
                             <div className="menu-popover">
+                              <button
+                                type="button"
+                                disabled={exportingSession !== null}
+                                onClick={() => onExportSession(session.id, 'jsonl')}
+                              >
+                                {exportingSession?.sessionId === session.id &&
+                                exportingSession.format === 'jsonl' ? (
+                                  <LoaderCircle className="spin" size={14} />
+                                ) : (
+                                  <FileJson size={14} />
+                                )}
+                                导出 JSONL
+                              </button>
+                              <button
+                                type="button"
+                                disabled={exportingSession !== null}
+                                onClick={() => onExportSession(session.id, 'html')}
+                              >
+                                {exportingSession?.sessionId === session.id &&
+                                exportingSession.format === 'html' ? (
+                                  <LoaderCircle className="spin" size={14} />
+                                ) : (
+                                  <FileText size={14} />
+                                )}
+                                导出 HTML
+                              </button>
                               <button type="button" onClick={() => onRenameSession(session)}>
                                 <Pencil size={14} />
                                 重命名

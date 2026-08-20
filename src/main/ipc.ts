@@ -1,4 +1,4 @@
-import { basename } from 'node:path'
+import { basename, extname } from 'node:path'
 
 import { dialog, ipcMain, type WebFrameMain } from 'electron'
 
@@ -7,6 +7,7 @@ import {
   cloneSessionRequestSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
+  exportSessionRequestSchema,
   forkSessionRequestSchema,
   importSessionRequestSchema,
   inspectSessionHistoryRequestSchema,
@@ -43,6 +44,17 @@ interface IpcDependencies {
   appInfo: AppInfo
   getPluginBootstrap: () => Promise<PluginBootstrap>
   pluginManager: PluginManager
+}
+
+function exportFileName(title: string, extension: string): string {
+  const printableTitle = [...title]
+    .map((character) => (character.charCodeAt(0) < 32 ? '_' : character))
+    .join('')
+  const safeTitle = printableTitle
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/[ .]+$/g, '')
+    .trim()
+  return `${safeTitle || 'session'}.${extension}`
 }
 
 export function registerIpc(dependencies: IpcDependencies): void {
@@ -244,6 +256,30 @@ export function registerIpc(dependencies: IpcDependencies): void {
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return null
       return runtimeCoordinator.importSession(request.projectId, path)
+    })
+  })
+
+  ipcMain.handle('session:export', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = exportSessionRequestSchema.parse(input)
+      const session = await repository.getSession(request.sessionId)
+      const extension = request.format
+      const selection = await dialog.showSaveDialog({
+        title: request.format === 'jsonl' ? '导出 Pi Session JSONL' : '导出 Pi Session HTML',
+        defaultPath: exportFileName(session.title, extension),
+        filters: [
+          request.format === 'jsonl'
+            ? { name: 'Pi Session', extensions: ['jsonl'] }
+            : { name: 'HTML', extensions: ['html'] },
+        ],
+      })
+      if (selection.canceled || !selection.filePath) return false
+      const destinationPath = extname(selection.filePath)
+        ? selection.filePath
+        : `${selection.filePath}.${extension}`
+      await runtimeCoordinator.exportSession(request.sessionId, request.format, destinationPath)
+      return true
     })
   })
 
