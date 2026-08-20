@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
   RuntimeEvent,
+  RuntimeExportConfig,
   RuntimeForkConfig,
   RuntimeImportConfig,
   RuntimeStartConfig,
@@ -25,6 +26,8 @@ const sessionFactory = async () => ({
   clearQueue: () => ({ steering: [], followUp: [] }),
   fork: async () => ({ cancelled: false }),
   importFromJsonl: async () => ({ cancelled: false }),
+  exportToHtml: async (outputPath: string) => outputPath,
+  exportToJsonl: (outputPath: string) => outputPath,
   getSessionStats: () => ({
     sessionFile: undefined,
     sessionId: 'test-session',
@@ -155,6 +158,8 @@ describe('PiAgentRuntime cleanup', () => {
         clearQueue,
         fork: async () => ({ cancelled: false }),
         importFromJsonl: async () => ({ cancelled: false }),
+        exportToHtml: async (outputPath: string) => outputPath,
+        exportToJsonl: (outputPath: string) => outputPath,
         abort: async () => undefined,
         waitForIdle,
         dispose: () => undefined,
@@ -248,6 +253,8 @@ describe('PiAgentRuntime cleanup', () => {
         clearQueue: () => ({ steering: [], followUp: [] }),
         fork: nativeFork,
         importFromJsonl: async () => ({ cancelled: false }),
+        exportToHtml: async (outputPath: string) => outputPath,
+        exportToJsonl: (outputPath: string) => outputPath,
         getSessionStats: () => ({
           sessionFile: currentFile,
           sessionId: currentId,
@@ -359,6 +366,8 @@ describe('PiAgentRuntime cleanup', () => {
           clearQueue: () => ({ steering: [], followUp: [] }),
           fork: async () => ({ cancelled: false }),
           importFromJsonl: nativeImport,
+          exportToHtml: async (outputPath: string) => outputPath,
+          exportToJsonl: (outputPath: string) => outputPath,
           getSessionStats: () => ({
             sessionFile: currentFile,
             sessionId: currentId,
@@ -421,5 +430,84 @@ describe('PiAgentRuntime cleanup', () => {
     expect(imported).toContain(REDACTED_SECRET)
     expect(imported).not.toContain('test-key')
     await expect(readFile(initialFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('exports through native Pi Session methods without loading Extension code', async () => {
+    const sourceSessionDirectory = join(root, 'export-source')
+    const exportToJsonl = vi.fn((outputPath: string) => outputPath)
+    const exportToHtml = vi.fn(async (outputPath: string) => outputPath)
+    const dispose = vi.fn(async () => undefined)
+    const factory = vi.fn(async () => ({
+      ...(await sessionFactory()),
+      exportToJsonl,
+      exportToHtml,
+      getSessionFile: () => join(sourceSessionDirectory, 'source.jsonl'),
+      dispose,
+    }))
+    const runtime = new PiAgentRuntime(() => undefined, factory)
+    runtime.configure({
+      extensionPaths: ['/trusted/extensions'],
+      skillPaths: ['/trusted/skills'],
+      promptPaths: ['/trusted/prompts'],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const baseConfig = {
+      type: 'export',
+      operationId: '01234567-89ab-4def-8123-456789abcdef',
+      sourceSessionId: '11234567-89ab-4def-8123-456789abcdef',
+      format: 'jsonl',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-export'),
+      sourceSessionDirectory,
+      sourcePiSessionFile: 'source.jsonl',
+      destinationPath: join(root, 'exported.jsonl'),
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+    } satisfies RuntimeExportConfig
+
+    await expect(runtime.exportSession(baseConfig)).resolves.toEqual({ outcome: 'completed' })
+    expect(exportToJsonl).toHaveBeenCalledWith(join(root, 'exported.jsonl'))
+    expect(factory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionFile: 'source.jsonl',
+        extensionPaths: [],
+        skillPaths: [],
+        promptPaths: [],
+      }),
+    )
+
+    await expect(
+      runtime.exportSession({
+        ...baseConfig,
+        operationId: '21234567-89ab-4def-8123-456789abcdef',
+        format: 'html',
+        destinationPath: join(root, 'exported.html'),
+      }),
+    ).resolves.toEqual({ outcome: 'completed' })
+    expect(exportToHtml).toHaveBeenCalledWith(join(root, 'exported.html'))
+    expect(dispose).toHaveBeenCalledTimes(2)
+
+    await expect(
+      runtime.exportSession({
+        ...baseConfig,
+        operationId: '31234567-89ab-4def-8123-456789abcdef',
+        destinationPath: join(sourceSessionDirectory, 'source.jsonl'),
+      }),
+    ).rejects.toThrow('cannot overwrite its source history')
+    expect(factory).toHaveBeenCalledTimes(2)
   })
 })

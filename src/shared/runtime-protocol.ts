@@ -182,10 +182,41 @@ export const runtimeImportResultSchema = z.discriminatedUnion('outcome', [
   }),
 ])
 
+export const sessionExportFormatSchema = z.enum(['jsonl', 'html'])
+
+export const runtimeExportConfigSchema = z.object({
+  type: z.literal('export'),
+  operationId: idSchema,
+  sourceSessionId: idSchema,
+  format: sessionExportFormatSchema,
+  projectRoot: z.string().min(1),
+  agentDirectory: z.string().min(1),
+  sourceSessionDirectory: z.string().min(1),
+  sourcePiSessionFile: z.string().min(1),
+  destinationPath: z.string().min(1),
+  settings: modelSettingsInputSchema,
+  apiKey: z.string().min(1),
+})
+
+const runtimeExportResultBaseSchema = z.object({
+  type: z.literal('host.exportResult'),
+  operationId: idSchema,
+  sourceSessionId: idSchema,
+})
+
+export const runtimeExportResultSchema = z.discriminatedUnion('outcome', [
+  runtimeExportResultBaseSchema.extend({ outcome: z.literal('completed') }),
+  runtimeExportResultBaseSchema.extend({
+    outcome: z.literal('failed'),
+    message: z.string().min(1),
+  }),
+])
+
 export const runtimeCommandSchema = z.discriminatedUnion('type', [
   runtimeStartConfigSchema,
   runtimeForkConfigSchema,
   runtimeImportConfigSchema,
+  runtimeExportConfigSchema,
   z.object({ type: z.literal('approve'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('reject'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('abort'), runId: idSchema }),
@@ -208,6 +239,7 @@ export const runtimeHostMessageSchema = z.union([
   runtimeEventSchema,
   runtimeForkResultSchema,
   runtimeImportResultSchema,
+  runtimeExportResultSchema,
   z.object({ type: z.literal('host.ready') }),
   z.object({ type: z.literal('host.fatal'), message: z.string().min(1) }),
 ])
@@ -218,5 +250,8 @@ export type RuntimeForkConfig = z.infer<typeof runtimeForkConfigSchema>
 export type RuntimeForkResult = z.infer<typeof runtimeForkResultSchema>
 export type RuntimeImportConfig = z.infer<typeof runtimeImportConfigSchema>
 export type RuntimeImportResult = z.infer<typeof runtimeImportResultSchema>
+export type SessionExportFormat = z.infer<typeof sessionExportFormatSchema>
+export type RuntimeExportConfig = z.infer<typeof runtimeExportConfigSchema>
+export type RuntimeExportResult = z.infer<typeof runtimeExportResultSchema>
 export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>
 export type RuntimeHostMessage = z.infer<typeof runtimeHostMessageSchema>

@@ -152,6 +152,12 @@ lifecycle。Pictor 只脱敏和绑定目标副本，绝不重写或移动源文�
 Project 根目录覆盖。Runtime completed 后 Repository 才提交新 Session，取消或失败不会留下
 Pictor metadata。
 
+Pi Session Export 是独立的 Session 级 Runtime operation。Renderer 只提交源 Session identity 和
+`jsonl`/`html` 格式，保存路径始终由 Electron Main 的原生选择器取得。utility host 精确打开已绑定
+的权威 JSONL，并调用 Pi 原生 `exportToJsonl` 或 `exportToHtml`；JSONL 线性化当前活跃分支，HTML
+保留完整 Tree。导出不创建 Session、不更新 Projection，也不改写权威历史；目标路径不得指向源
+JSONL。Runtime Plugin 同时携带 Pi HTML 模板和内置主题资产，避免依赖开发机的 `node_modules`。
+
 Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全集中在内部
 `SessionPersistence` module；Pi JSONL 到桌面模型的映射集中在纯投影 module。它们直接使用本地
 文件系统和现有凭据迁移函数，不增加通用 Repository、DAO 或存储 provider。相关测试通过真实

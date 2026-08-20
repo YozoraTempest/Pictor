@@ -76,6 +76,10 @@ _Avoid_: Historical Fork, same-file branch, copied GUI history
 A new Pictor Session created from a user-selected Pi JSONL copy and associated with one existing Pictor Project.
 _Avoid_: Legacy Session Import, file takeover, in-place migration
 
+**Pi Session Export**:
+A standalone current-branch JSONL snapshot or complete-tree HTML document derived from existing Pi Session History.
+_Avoid_: Pictor transcript dump, Session copy, source takeover
+
 **Legacy Session Import**:
 A preserved pre-authority Pictor Session awaiting explicit conversion into Pi Session History.
 _Avoid_: Automatic migration, discarded old Session

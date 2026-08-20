@@ -1,13 +1,19 @@
 import { ContributionPoint } from '../kernel/module.js'
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import type { ModelSettingsInput } from '../shared/model.js'
-import type { RuntimeStartConfig } from '../shared/runtime-protocol.js'
-import type { RuntimeForkConfig, RuntimeImportConfig } from '../shared/runtime-protocol.js'
+import type {
+  RuntimeExportConfig,
+  RuntimeForkConfig,
+  RuntimeImportConfig,
+  RuntimeStartConfig,
+} from '../shared/runtime-protocol.js'
 
 export type AgentRuntimeForkResult =
   { outcome: 'completed'; piSessionId: string; piSessionFile: string } | { outcome: 'cancelled' }
 
 export type AgentRuntimeImportResult = AgentRuntimeForkResult
+
+export type AgentRuntimeExportResult = { outcome: 'completed' }
 
 export interface ModelRuntimeProvider {
   id: string
@@ -31,6 +37,7 @@ export interface AgentRuntimeProvider {
   start(config: RuntimeStartConfig): Promise<void>
   fork(config: RuntimeForkConfig): Promise<AgentRuntimeForkResult>
   importSession(config: RuntimeImportConfig): Promise<AgentRuntimeImportResult>
+  exportSession(config: RuntimeExportConfig): Promise<AgentRuntimeExportResult>
   resolveApproval(runId: string, callId: string, allowed: boolean): void
   abort(runId: string): Promise<void>
   queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void>

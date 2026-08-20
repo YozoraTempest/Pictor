@@ -342,6 +342,51 @@ export default function (pi) {
     const importedLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
     expect(importedLifecycle).toContain('shutdown:resume')
     expect(importedLifecycle).toContain('start:resume')
+
+    const exportSelectedSession = (format: 'jsonl' | 'html') =>
+      window.evaluate(async (selectedFormat) => {
+        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+        const snapshot = await bridge.getSnapshot()
+        if (!snapshot.ok || !snapshot.value.selectedSessionId) return snapshot
+        return bridge.exportSession({
+          sessionId: snapshot.value.selectedSessionId,
+          format: selectedFormat,
+        })
+      }, format)
+    await electronApp.evaluate(({ dialog }) => {
+      dialog.showSaveDialog = async () => ({ canceled: true, filePath: '' })
+    })
+    expect(await exportSelectedSession('jsonl')).toEqual({ ok: true, value: false })
+
+    const exportedJsonlPath = testInfo.outputPath('exported-current-branch.jsonl')
+    await electronApp.evaluate(({ dialog }, outputPath) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: outputPath })
+    }, exportedJsonlPath)
+    expect(await exportSelectedSession('jsonl')).toEqual({ ok: true, value: true })
+    await expect
+      .poll(() => readFile(exportedJsonlPath, 'utf8').catch(() => ''))
+      .toContain('Imported branch answer')
+    const exportedJsonl = await readFile(exportedJsonlPath, 'utf8')
+    expect(exportedJsonl).toContain('Imported branch task')
+    expect(exportedJsonl).not.toContain('Imported original answer')
+
+    const exportedHtmlPath = testInfo.outputPath('exported-complete-tree.html')
+    await electronApp.evaluate(({ dialog }, outputPath) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: outputPath })
+    }, exportedHtmlPath)
+    expect(await exportSelectedSession('html')).toEqual({ ok: true, value: true })
+    await expect
+      .poll(() => readFile(exportedHtmlPath, 'utf8').catch(() => ''))
+      .toContain('<!DOCTYPE html>')
+    const exportedHtml = await readFile(exportedHtmlPath, 'utf8')
+    const encodedSessionData = exportedHtml.match(
+      /<script id="session-data" type="application\/json">([^<]+)<\/script>/,
+    )?.[1]
+    expect(encodedSessionData).toBeTruthy()
+    const exportedTree = Buffer.from(encodedSessionData!, 'base64').toString('utf8')
+    expect(exportedTree).toContain('Imported original answer')
+    expect(exportedTree).toContain('Imported branch answer')
+    expect(await readFile(importSource, 'utf8')).toBe(importedJsonl)
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

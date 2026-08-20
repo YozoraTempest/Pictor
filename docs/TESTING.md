@@ -84,6 +84,9 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   脱敏、失效 cwd override、完整 Tree Projection 和新 Pictor Session 提交；文件路径只能由 Main
   的原生选择器取得。E2E 必须观察 `session_before_switch`、`session_shutdown(reason: "resume")`
   与 `session_start(reason: "resume")`。
+- Pi Session Export 测试必须覆盖 JSONL/HTML completed/failed host result、Main 原生保存选择器取消、源历史
+  保留和禁止覆盖权威 JSONL；Linux E2E 必须证明 JSONL 只含活跃分支、HTML 保留完整 Tree，并从
+  安装到用户 Store 的 Runtime Plugin 读取 Pi 导出模板与内置主题资产。
 - 零 Plugin E2E 先通过真实 Store 将全部 Bundled Plugin 标记为 `removed`，重启后只能由 Core
   Shell 提供 Plugin Manager；安全模式使用同一 Core Shell，但不改变用户 Registry。
 - `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，

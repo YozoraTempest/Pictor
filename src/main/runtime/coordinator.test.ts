@@ -117,6 +117,9 @@ it.each(['a', 'id', 'running'])(
       importSession: vi.fn(async () => {
         throw new Error('not used')
       }),
+      exportSession: vi.fn(async () => {
+        throw new Error('not used')
+      }),
       approve: vi.fn(),
       reject: vi.fn(),
       stop: vi.fn(),
@@ -328,6 +331,9 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     importSession: vi.fn(async () => {
       throw new Error('not used')
     }),
+    exportSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -410,6 +416,9 @@ it('keeps a pending Legacy Session Import read-only', async () => {
       throw new Error('not used')
     }),
     importSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    exportSession: vi.fn(async () => {
       throw new Error('not used')
     }),
     approve: vi.fn(),
@@ -541,11 +550,18 @@ it('commits native Pi Session derivation and Import operations', async () => {
     piSessionId: 'imported-pi-session',
     piSessionFile: 'source-history.jsonl',
   }))
+  const exportSession = vi.fn<RuntimeHost['exportSession']>(async (config) => ({
+    type: 'host.exportResult',
+    operationId: config.operationId,
+    sourceSessionId: config.sourceSessionId,
+    outcome: 'completed',
+  }))
   const supervisor: RuntimeHost = {
     isActive: () => false,
     start: vi.fn(async () => undefined),
     fork,
     importSession,
+    exportSession,
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -630,4 +646,18 @@ it('commits native Pi Session derivation and Import operations', async () => {
   })
   await expect(coordinator.importSession(projectId, '/imports/cancelled.jsonl')).resolves.toBeNull()
   expect(createImportedSession).toHaveBeenCalledOnce()
+
+  await expect(
+    coordinator.exportSession(sessionId, 'jsonl', '/exports/source.jsonl'),
+  ).resolves.toBeUndefined()
+  expect(exportSession).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'export',
+      sourceSessionId: sessionId,
+      format: 'jsonl',
+      sourceSessionDirectory: `/sessions/${sessionId}`,
+      sourcePiSessionFile: 'source.jsonl',
+      destinationPath: '/exports/source.jsonl',
+    }),
+  )
 })

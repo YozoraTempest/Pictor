@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   runtimeCommandSchema,
+  runtimeExportResultSchema,
   runtimeForkResultSchema,
   runtimeHostMessageSchema,
   runtimeImportResultSchema,
@@ -104,6 +105,46 @@ describe('Runtime Session operation protocol', () => {
     ] as const
     for (const result of results) {
       expect(runtimeImportResultSchema.parse(result)).toEqual(result)
+      expect(runtimeHostMessageSchema.parse(result)).toEqual(result)
+    }
+  })
+
+  it('accepts native Pi Session Export commands and host results', () => {
+    expect(
+      runtimeCommandSchema.parse({
+        type: 'export',
+        operationId,
+        sourceSessionId,
+        format: 'html',
+        projectRoot: '/project',
+        agentDirectory: '/agent',
+        sourceSessionDirectory: '/sessions/source',
+        sourcePiSessionFile: 'source.jsonl',
+        destinationPath: '/exports/source.html',
+        settings: {
+          apiProtocol: 'responses',
+          baseUrl: 'https://example.test/v1',
+          modelId: 'test-model',
+          reasoningEffort: null,
+          temperature: null,
+          maxOutputTokens: 1024,
+        },
+        apiKey: 'test-key',
+      }),
+    ).toMatchObject({ type: 'export', operationId, sourceSessionId, format: 'html' })
+
+    const results = [
+      { type: 'host.exportResult', operationId, sourceSessionId, outcome: 'completed' },
+      {
+        type: 'host.exportResult',
+        operationId,
+        sourceSessionId,
+        outcome: 'failed',
+        message: 'Export failed',
+      },
+    ] as const
+    for (const result of results) {
+      expect(runtimeExportResultSchema.parse(result)).toEqual(result)
       expect(runtimeHostMessageSchema.parse(result)).toEqual(result)
     }
   })
