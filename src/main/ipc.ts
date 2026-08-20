@@ -333,7 +333,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
       if (!settings) throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
       const preferences = history.runtimePreferences
       return sessionRuntimeControlsSchema.parse({
-        modelId: settings.modelId,
+        modelId: preferences?.modelId ?? settings.modelId,
         thinkingLevel: preferences?.thinkingLevel ?? settings.reasoningEffort ?? 'off',
         activeTools: preferences?.activeTools ?? defaultRuntimeTools,
         availableTools: defaultRuntimeTools,
@@ -349,10 +349,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = saveSessionRuntimeControlsRequestSchema.parse(input)
       await repository.setSessionRuntimePreferences(request.sessionId, request.controls)
-      const settings = await repository.getSettings()
-      if (!settings) throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
       return sessionRuntimeControlsSchema.parse({
-        modelId: settings.modelId,
         ...request.controls,
         availableTools: defaultRuntimeTools,
       })

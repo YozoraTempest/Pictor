@@ -108,6 +108,7 @@ it.each(['a', 'id', 'running'])(
         piSessionFile: 'session.jsonl',
         activeLeafId: 'persisted-active-leaf',
         runtimePreferences: {
+          modelId: 'session-model',
           thinkingLevel: 'high',
           activeTools: ['pictor_read'],
           steeringMode: 'all',

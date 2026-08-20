@@ -187,6 +187,11 @@ describe('PluginStore', () => {
     await expect(readFile(join(installed.runtimePath, 'index.ts'), 'utf8')).resolves.toBe(source)
     expect((await store.getSnapshot()).nativeExtensions).toHaveLength(1)
 
+    await writeFile(extensionPath, source.replace('agent_start', 'turn_start'))
+    const live = (await store.getSnapshot()).nativeExtensions[0]
+    expect(live?.runtimePaths).toEqual([extensionPath])
+    await expect(readFile(live!.runtimePaths[0]!, 'utf8')).resolves.toContain('turn_start')
+
     await store.setNativeExtensionEnabled('pi-extension', 'hello', false)
     expect((await store.getSnapshot()).nativeExtensions).toEqual([])
     await store.removeNativeExtension('pi-extension', 'hello')

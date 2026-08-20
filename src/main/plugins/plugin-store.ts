@@ -149,11 +149,16 @@ export class PluginStore {
       if (entry.desiredState === 'removed') continue
       if (entry.kind !== 'pictor-plugin') {
         if (entry.desiredState !== 'enabled') continue
-        const runtimePath =
+        const installedPath =
           entry.kind === 'pi-extension'
             ? join(this.piExtensionsDirectory, entry.id)
             : join(this.piPackagesDirectory, entry.id)
-        if ((await stat(runtimePath).catch(() => null))?.isDirectory()) {
+        const liveSource =
+          entry.kind === 'pi-extension' ? await stat(entry.source).catch(() => null) : null
+        const runtimePath =
+          liveSource?.isFile() || liveSource?.isDirectory() ? entry.source : installedPath
+        const runtimeStat = await stat(runtimePath).catch(() => null)
+        if (runtimeStat?.isFile() || runtimeStat?.isDirectory()) {
           nativeExtensions.push({
             entry: { ...entry },
             runtimePath,

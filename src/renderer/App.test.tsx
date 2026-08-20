@@ -101,7 +101,6 @@ function createBridge(
       }),
     saveSessionRuntimeControls: async (request) =>
       ok({
-        modelId: 'test-model',
         availableTools: ['pictor_read', 'pictor_write'],
         ...request.controls,
       }),
@@ -388,7 +387,6 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   )
   bridge.saveSessionRuntimeControls = vi.fn(async (request) =>
     ok({
-      modelId: 'test-model',
       availableTools: ['pictor_read', 'pictor_write'],
       ...request.controls,
     } satisfies SessionRuntimeControls),
@@ -469,6 +467,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
     expect(bridge.saveSessionRuntimeControls).toHaveBeenCalledWith({
       sessionId,
       controls: {
+        modelId: 'test-model',
         thinkingLevel: 'high',
         activeTools: ['pictor_read', 'pictor_write'],
         steeringMode: 'all',

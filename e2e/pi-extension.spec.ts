@@ -444,6 +444,7 @@ export default function (pi) {
     expect(await readFile(authoritativeJsonlPath, 'utf8')).not.toContain('Project Extension loaded')
 
     await window.getByRole('button', { name: 'Session Controls' }).click()
+    await window.getByLabel('Model').fill('pictor-session-model')
     await window.getByLabel('Thinking Level').selectOption('high')
     await window.getByLabel('Steering').selectOption('all')
     await window.getByLabel('pictor_delete').uncheck()
@@ -454,6 +455,7 @@ export default function (pi) {
       history: { runtimePreferences?: Record<string, unknown> }
     }
     expect(metadataAfterControls.history.runtimePreferences).toMatchObject({
+      modelId: 'pictor-session-model',
       thinkingLevel: 'high',
       steeringMode: 'all',
       followUpMode: 'one-at-a-time',
@@ -610,7 +612,9 @@ export default function (pi) {
       timeout: 30_000,
     })
     await expect(timeline.getByText('Continue from the historical answer.')).toBeVisible()
-    await expect(window.locator('.workspace-header').getByText(/pictor-e2e-model/)).toBeVisible()
+    await expect(
+      window.locator('.workspace-header').getByText(/pictor-session-model/),
+    ).toBeVisible()
     await expect(timeline.getByText('Imported branch answer')).toHaveCount(0)
     const metadataAfterRun = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
       history: { piSessionFile: string; activeLeafId?: string | null }
