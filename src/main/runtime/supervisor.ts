@@ -9,6 +9,7 @@ import {
   type RuntimeEvent,
   type RuntimeStartConfig,
 } from '../../shared/runtime-protocol.js'
+import type { RuntimePluginBootstrap } from '../../shared/plugins.js'
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'stopped', 'interrupted'])
 const RUNTIME_READY_TIMEOUT_MS = 30_000
@@ -21,7 +22,10 @@ export class RuntimeSupervisor {
   private resolveReady: (() => void) | null = null
   private rejectReady: ((error: Error) => void) | null = null
 
-  constructor(private readonly onEvent: (event: RuntimeEvent) => void) {}
+  constructor(
+    private readonly onEvent: (event: RuntimeEvent) => void,
+    private readonly pluginBootstrap: RuntimePluginBootstrap,
+  ) {}
 
   async start(config: RuntimeStartConfig): Promise<void> {
     if (this.activeRunId) throw new Error('已有 Agent 运行正在执行')
@@ -44,6 +48,21 @@ export class RuntimeSupervisor {
   stop(runId: string): void {
     this.assertActive(runId)
     this.post({ type: 'abort', runId })
+  }
+
+  respondToExtensionUi(runId: string, requestId: string, value: string | boolean | null): void {
+    this.assertActive(runId)
+    this.post({ type: 'extension.ui.respond', runId, requestId, value })
+  }
+
+  queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): void {
+    this.assertActive(runId)
+    this.post({ type: mode, runId, message })
+  }
+
+  clearQueue(runId: string): void {
+    this.assertActive(runId)
+    this.post({ type: 'clear-queue', runId })
   }
 
   isActive(): boolean {
@@ -73,6 +92,10 @@ export class RuntimeSupervisor {
     if (!this.child) {
       const child = utilityProcess.fork(join(__dirname, 'runtime/host.js'), [], {
         serviceName: 'Pictor Agent Runtime',
+        env: {
+          ...process.env,
+          PICTOR_RUNTIME_PLUGIN_BOOTSTRAP: JSON.stringify(this.pluginBootstrap),
+        },
       })
       this.child = child
       this.readyPromise = new Promise<void>((resolve, reject) => {

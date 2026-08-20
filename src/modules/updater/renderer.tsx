@@ -13,7 +13,7 @@ export const updaterRendererModule = defineModule({
   activate(context) {
     const client = createUpdaterClient(window.pictorModules)
     context.contribute(settingsSectionContributions, {
-      id: 'about',
+      id: 'pictor.updater.about',
       label: '关于',
       icon: Info,
       render: () => <AboutSettings client={client} />,

@@ -28,7 +28,7 @@ it('contributes the Updater contract through the Module Kernel', async () => {
   ])
   const router = new ModuleRouter(kernel.getContributions(moduleHandlerContributions))
 
-  await expect(router.invoke('updater', 'getAppInfo', null)).resolves.toMatchObject({
+  await expect(router.invoke('pictor.updater', 'getAppInfo', null)).resolves.toMatchObject({
     version: '0.2.1',
     distribution: 'arch',
   })

@@ -7,7 +7,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 
 - 添加、移除和重新关联本地项目，项目路径经过规范化后作为访问边界；
 - 创建、切换、重命名和删除 Session，重启后保留消息、运行与工具记录；
-- 通过 `@earendil-works/pi-coding-agent` 接入支持流式文本和工具调用的模型端点；
+- 通过可删除的 `pictor.pi-agent-runtime` Bundled Plugin 原生使用 Pi `AgentSessionRuntime`，接入
+  支持流式文本和工具调用的模型端点；
 - 列出、搜索、读取、创建、编辑、移动和删除项目内文件；
 - 在显示完整命令、工作目录和用途后，允许一次或拒绝 Bash 命令；
 - 展示 Markdown 回复、工具状态、命令输出、错误、停止和中断状态；
@@ -15,9 +16,21 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
   推理强度、温度和最大输出 Token 数；支持从兼容的 `/models` 端点获取并选择模型；
 - 在设置的“关于”页查看版本，并按需检查 GitHub Release；有新版本时只打开与当前平台、
   架构匹配的 Windows、Arch 或便携 Linux 官方发布包，否则安全回退到对应发布页；
-- 通过可信静态 Module Kernel 装配仓库内功能，并支持独立的 Module 开发与测试循环。
+- 通过 Plugin Host 从用户 Store 动态装配 Main/Renderer Module，支持 SemVer 依赖、故障隔离、
+  安全模式和独立 Plugin 测试循环；Updater 已作为可删除、可恢复的 Bundled Plugin 运行。
+- `pictor.pi-extension-host` 可直接安装、禁用和删除原生 `.ts/.js` Pi Extension、Extension 目录
+  与本地 Pi Package；Package Manifest 和约定 `extensions/` 都会展开，自定义 Tool 和 RPC UI
+  dialog 无需 Pictor wrapper 即可进入会话 GUI。
+- Project、Session 与 Conversation GUI 由可删除的 `pictor.agent-workspace` 提供；删除全部
+  Bundled Plugin 后，Core Shell 仍可启动并打开 Plugin Manager。
+- `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Main contract 与 Renderer 设置页显示
+  当前项目的 Git working tree；它验证了真实 Plugin 间依赖与组合。
+- `pictor.model-openai-compatible` 作为独立 Runtime Provider 注册 Chat Completions/Responses
+  模型；Pi Runtime 只消费 `model.providers` Contribution，不硬编码模型供应商。
+- `pictor.agent-resources` 以原生 Pi 目录提供 Skills 与 Prompt Templates；活跃 Run 支持 Steering
+  与 Follow-up 队列，并在会话标题区显示 Pi token/context usage。
 
-首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、插件、远程项目、WSL、
+首期全局同时只运行一个 Agent。编辑器、Git 工作流、多 Agent、第三方 Plugin 分发、远程项目、WSL、
 容器、macOS、Linux ARM64、静默更新、系统密钥环、包签名和软件源不在当前范围内。
 
 ## 支持基线
@@ -82,8 +95,9 @@ npm run deps:verify
 npm run dev
 ```
 
-`npm run dev` 只启动 electron-vite watch/HMR，并使用独立的 `pictor-dev` userData，不会读取或
-修改正式安装的数据。新建仓库内 Feature 使用 `npm run module:new -- <name>`。
+`npm run dev` 先构建本地 Bundled Plugin，再启动 electron-vite watch/HMR，并使用独立的
+`pictor-dev` userData，不会读取或修改正式安装的数据。新建可安装能力使用
+`npm run plugin:new -- <name>`；只新增 Plugin 内部执行单元时使用 `npm run module:new -- <name>`。
 
 首次启动后，在“设置 > 模型”中完成以下配置，再添加本地项目并创建 Session：
 
@@ -107,6 +121,7 @@ npm run dev
 
 ```bash
 npm run test:module -- updater
+npm run test:plugin -- host
 npm run test:watch
 npm run verify:fast
 npm run verify:pr
@@ -167,8 +182,10 @@ Renderer，也不会写入项目或 Session 数据。不要共享该文件或整
 源码开发默认把数据写入独立的 `pictor-dev/data-v1`，自动化测试继续使用各自的临时目录。
 
 Renderer 启用 Chromium sandbox、context isolation 和限制性 CSP，不开放 Node 或原始
-Electron API。Pi 运行在独立 utility process 中，内置工具和项目扩展均被禁用，只能调用
-Pictor 提供且经过路径守卫的工具。
+Electron API。Pi Runtime Plugin 从用户 Store 动态加载到独立 utility process，只能调用 Pictor
+提供且经过路径守卫的工具；删除或禁用该 Plugin 后，项目与历史仍可查看，但不能启动新 Run。
+Pi Extension 是以当前用户权限运行的可信代码，并不受 Pictor 命令逐条审批限制；安装前必须确认
+来源。Pictor 的模型 API Key 不进入 Extension 配置、Runtime event 或 Pi JSONL。
 
 更新检查只在用户点击“检查更新”后由 Main Process 请求 Pictor 官方 GitHub Release API；
 应用不会在后台轮询。Linux 只在本机读取 `/etc/os-release` 识别原生 Arch，不上传或记录该

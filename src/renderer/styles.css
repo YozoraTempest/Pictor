@@ -101,6 +101,39 @@ textarea:disabled {
   background: var(--bg);
 }
 
+.core-shell {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-rows: 62px minmax(0, 1fr);
+  background: var(--bg);
+}
+
+.core-shell__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 14px;
+}
+
+.core-shell__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--text-muted);
+}
+
+.core-shell__empty h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+}
+
 .app-loading,
 .fatal-state {
   display: flex;
@@ -528,6 +561,12 @@ textarea:disabled {
   flex: 0 0 auto;
   align-items: center;
   gap: 9px;
+}
+
+.usage-summary {
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .empty-state {
@@ -1060,6 +1099,18 @@ textarea:disabled {
   background: linear-gradient(to bottom, rgb(16 18 20 / 0%), var(--bg) 18px);
 }
 
+.queue-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.queue-controls .protocol-switch {
+  width: min(320px, 100%);
+}
+
 .composer,
 .composer-reason {
   width: min(780px, 100%);
@@ -1213,6 +1264,215 @@ textarea:disabled {
 .settings-tabs button.is-active {
   border-bottom-color: var(--accent);
   color: #91d8c1;
+}
+
+.plugin-manager {
+  min-height: 360px;
+  padding: 18px;
+}
+
+.plugin-manager-loading,
+.plugin-list__empty {
+  display: flex;
+  min-height: 260px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.plugin-manager__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.plugin-manager__toolbar h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.plugin-manager__toolbar span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.plugin-manager__notice {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid #61583c;
+  border-radius: 5px;
+  background: #252217;
+  color: #d8c578;
+  font-size: 11px;
+}
+
+.plugin-list {
+  border-top: 1px solid var(--border);
+}
+
+.plugin-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.1fr) minmax(130px, 1fr) auto;
+  min-height: 76px;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.plugin-row__identity,
+.plugin-row__state {
+  min-width: 0;
+}
+
+.plugin-row__identity > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.plugin-row__identity strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-row__identity span,
+.plugin-row__identity code,
+.plugin-row__state small {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.plugin-row__identity code,
+.plugin-row__state small {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-state {
+  color: #91d8c1;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.plugin-state--disabled,
+.plugin-state--blocked {
+  color: #cbb66d;
+}
+
+.plugin-state--failed {
+  color: #e48683;
+}
+
+.plugin-state--pending-restart {
+  color: #85b7dd;
+}
+
+.plugin-row__actions {
+  display: flex;
+  min-width: 120px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.plugin-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-soft);
+  font-size: 10px;
+}
+
+.plugin-toggle input {
+  accent-color: #579b87;
+}
+
+.danger-icon-button {
+  color: #d97b78;
+}
+
+.extension-notice {
+  position: fixed;
+  z-index: 45;
+  top: 18px;
+  right: 18px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 10px 12px;
+  border: 1px solid #46675c;
+  border-radius: 6px;
+  background: #17251f;
+  color: #a8d8c8;
+  box-shadow: 0 12px 35px rgb(0 0 0 / 35%);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.extension-ui-dialog {
+  padding: 18px;
+}
+
+.extension-ui-dialog p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.extension-ui-dialog textarea {
+  min-height: 180px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  outline: none;
+  background: #111416;
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.git-changes-settings {
+  padding: 18px;
+}
+
+.git-changes-settings header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.git-changes-settings h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.git-changes-settings pre {
+  min-height: 180px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #111416;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .field {

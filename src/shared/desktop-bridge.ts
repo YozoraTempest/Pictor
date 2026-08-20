@@ -26,6 +26,15 @@ import {
   type TestSettingsRequest,
 } from './model.js'
 import { runtimeEventSchema, type RuntimeEvent } from './runtime-protocol.js'
+import { appInfoSchema, type AppInfo } from './app-info.js'
+import { pluginBootstrapSchema, type PluginBootstrap } from './plugins.js'
+import type {
+  pluginIdRequestSchema,
+  removePluginRequestSchema,
+  setPluginEnabledRequestSchema,
+  PluginManagerSnapshot,
+} from './plugins.js'
+import { pluginManagerSnapshotSchema } from './plugins.js'
 
 export const appSnapshotSchema = z.object({
   projects: z.array(projectSchema),
@@ -71,8 +80,21 @@ export const approvalResolutionRequestSchema = z.object({
   runId: idSchema,
   callId: z.string().min(1),
 })
+export const extensionUiResponseRequestSchema = z.object({
+  runId: idSchema,
+  requestId: z.uuid(),
+  value: z.union([z.string(), z.boolean(), z.null()]),
+})
+export const queueRuntimeMessageRequestSchema = z.object({
+  runId: idSchema,
+  mode: z.enum(['steer', 'follow-up']),
+  message: z.string().trim().min(1).max(200_000),
+})
 
 export const appSnapshotResultSchema = ipcResultSchema(appSnapshotSchema)
+export const appInfoResultSchema = ipcResultSchema(appInfoSchema)
+export const pluginBootstrapResultSchema = ipcResultSchema(pluginBootstrapSchema)
+export const pluginManagerResultSchema = ipcResultSchema(pluginManagerSnapshotSchema)
 export const projectCandidateResultSchema = ipcResultSchema(projectCandidateSchema.nullable())
 export const projectResultSchema = ipcResultSchema(projectSchema)
 export const sessionSummaryResultSchema = ipcResultSchema(sessionSummarySchema)
@@ -89,6 +111,21 @@ export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
 
 export interface PictorBridge {
   getSnapshot: () => Promise<IpcResult<AppSnapshot>>
+  getAppInfo: () => Promise<IpcResult<AppInfo>>
+  getPluginBootstrap: () => Promise<IpcResult<PluginBootstrap>>
+  getPluginManagerSnapshot: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installLocalPlugin: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installPiExtension: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installPiPackage: () => Promise<IpcResult<PluginManagerSnapshot>>
+  setPluginEnabled: (
+    request: z.infer<typeof setPluginEnabledRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
+  removePlugin: (
+    request: z.infer<typeof removePluginRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
+  restoreBundledPlugin: (
+    request: z.infer<typeof pluginIdRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
   pickProjectDirectory: () => Promise<IpcResult<ProjectCandidate | null>>
   registerProject: (
     request: z.infer<typeof registerProjectRequestSchema>,
@@ -120,6 +157,13 @@ export interface PictorBridge {
     request: z.infer<typeof approvalResolutionRequestSchema>,
   ) => Promise<IpcResult<null>>
   stopRun: (request: z.infer<typeof runIdRequestSchema>) => Promise<IpcResult<null>>
+  respondToExtensionUi: (
+    request: z.infer<typeof extensionUiResponseRequestSchema>,
+  ) => Promise<IpcResult<null>>
+  queueRuntimeMessage: (
+    request: z.infer<typeof queueRuntimeMessageRequestSchema>,
+  ) => Promise<IpcResult<null>>
+  clearRuntimeQueue: (request: z.infer<typeof runIdRequestSchema>) => Promise<IpcResult<null>>
   onRuntimeEvent: (listener: (event: RuntimeEvent) => void) => () => void
 }
 
@@ -129,5 +173,10 @@ export {
   saveSettingsRequestSchema,
   testSettingsRequestSchema,
 }
+export {
+  pluginIdRequestSchema,
+  removePluginRequestSchema,
+  setPluginEnabledRequestSchema,
+} from './plugins.js'
 export type { RuntimeEvent } from './runtime-protocol.js'
 export type { IpcResult } from './errors.js'

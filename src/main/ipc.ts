@@ -5,15 +5,20 @@ import { dialog, ipcMain, type WebFrameMain } from 'electron'
 import {
   approvalResolutionRequestSchema,
   createSessionRequestSchema,
+  extensionUiResponseRequestSchema,
   listModelsRequestSchema,
   projectIdRequestSchema,
+  queueRuntimeMessageRequestSchema,
+  pluginIdRequestSchema,
   registerProjectRequestSchema,
   relinkProjectRequestSchema,
   renameSessionRequestSchema,
+  removePluginRequestSchema,
   saveSettingsRequestSchema,
   selectContextRequestSchema,
   sessionIdRequestSchema,
   startRunRequestSchema,
+  setPluginEnabledRequestSchema,
   testSettingsRequestSchema,
   runIdRequestSchema,
 } from '../shared/desktop-bridge.js'
@@ -22,20 +27,113 @@ import { ipcResult } from '../shared/ipc-result.js'
 import type { ModelConnectionTester } from './model-connection.js'
 import type { AppRepository } from './persistence/app-repository.js'
 import type { RuntimeCoordinator } from './runtime/coordinator.js'
+import type { PluginManager } from './plugins/plugin-manager.js'
+import type { AppInfo } from '../shared/app-info.js'
+import type { PluginBootstrap } from '../shared/plugins.js'
 
 interface IpcDependencies {
   repository: AppRepository
   connectionTester: ModelConnectionTester
   validateSender: (frame: WebFrameMain | null) => void
   runtimeCoordinator: RuntimeCoordinator
+  appInfo: AppInfo
+  getPluginBootstrap: () => Promise<PluginBootstrap>
+  pluginManager: PluginManager
 }
 
 export function registerIpc(dependencies: IpcDependencies): void {
-  const { repository, connectionTester, validateSender, runtimeCoordinator } = dependencies
+  const {
+    repository,
+    connectionTester,
+    validateSender,
+    runtimeCoordinator,
+    appInfo,
+    getPluginBootstrap,
+    pluginManager,
+  } = dependencies
 
   ipcMain.handle('app:get-snapshot', (event) => {
     validateSender(event.senderFrame)
     return ipcResult(() => repository.getSnapshot())
+  })
+
+  ipcMain.handle('app:get-info', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => appInfo)
+  })
+
+  ipcMain.handle('plugin:get-bootstrap', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(getPluginBootstrap)
+  })
+
+  ipcMain.handle('plugin:get-manager-snapshot', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(() => pluginManager.getSnapshot())
+  })
+
+  ipcMain.handle('plugin:install-local', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '选择 Pictor Plugin 目录',
+        properties: ['openDirectory'],
+      })
+      const path = selection.filePaths[0]
+      if (selection.canceled || !path) return pluginManager.getSnapshot()
+      return pluginManager.installLocal(path)
+    })
+  })
+
+  ipcMain.handle('plugin:install-pi-extension', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '选择 Pi Extension 文件或目录',
+        properties: ['openFile', 'openDirectory'],
+        filters: [{ name: 'Pi Extension', extensions: ['ts', 'js'] }],
+      })
+      const path = selection.filePaths[0]
+      if (selection.canceled || !path) return pluginManager.getSnapshot()
+      return pluginManager.installPiExtension(path)
+    })
+  })
+
+  ipcMain.handle('plugin:install-pi-package', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '选择 Pi Package 目录',
+        properties: ['openDirectory'],
+      })
+      const path = selection.filePaths[0]
+      if (selection.canceled || !path) return pluginManager.getSnapshot()
+      return pluginManager.installPiPackage(path)
+    })
+  })
+
+  ipcMain.handle('plugin:set-enabled', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = setPluginEnabledRequestSchema.parse(input)
+      return pluginManager.setEnabled(request.kind, request.id, request.enabled)
+    })
+  })
+
+  ipcMain.handle('plugin:remove', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = removePluginRequestSchema.parse(input)
+      return pluginManager.remove(request.kind, request.id, request.deleteData)
+    })
+  })
+
+  ipcMain.handle('plugin:restore-bundled', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = pluginIdRequestSchema.parse(input)
+      return pluginManager.restoreBundled(request.id)
+    })
   })
 
   ipcMain.handle('project:pick-directory', (event) => {
@@ -188,6 +286,33 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return ipcResult(async () => {
       const request = runIdRequestSchema.parse(input)
       runtimeCoordinator.stop(request.runId)
+      return null
+    })
+  })
+
+  ipcMain.handle('runtime:extension-ui-response', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = extensionUiResponseRequestSchema.parse(input)
+      runtimeCoordinator.respondToExtensionUi(request.runId, request.requestId, request.value)
+      return null
+    })
+  })
+
+  ipcMain.handle('runtime:queue-message', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = queueRuntimeMessageRequestSchema.parse(input)
+      runtimeCoordinator.queueMessage(request.runId, request.mode, request.message)
+      return null
+    })
+  })
+
+  ipcMain.handle('runtime:clear-queue', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = runIdRequestSchema.parse(input)
+      runtimeCoordinator.clearQueue(request.runId)
       return null
     })
   })

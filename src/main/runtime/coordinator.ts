@@ -33,6 +33,9 @@ export interface RuntimeHost {
   approve(runId: string, callId: string): void
   reject(runId: string, callId: string): void
   stop(runId: string): void
+  respondToExtensionUi(runId: string, requestId: string, value: string | boolean | null): void
+  queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): void
+  clearQueue(runId: string): void
   isActive(): boolean
 }
 
@@ -155,6 +158,18 @@ export class RuntimeCoordinator {
 
   stop(runId: string): void {
     this.supervisor.stop(runId)
+  }
+
+  respondToExtensionUi(runId: string, requestId: string, value: string | boolean | null): void {
+    this.supervisor.respondToExtensionUi(runId, requestId, value)
+  }
+
+  queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): void {
+    this.supervisor.queueMessage(runId, mode, message)
+  }
+
+  clearQueue(runId: string): void {
+    this.supervisor.clearQueue(runId)
   }
 
   isActive(): boolean {

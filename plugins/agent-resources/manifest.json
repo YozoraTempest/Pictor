@@ -1,0 +1,15 @@
+{
+  "id": "pictor.agent-resources",
+  "name": "Agent Resources",
+  "version": "0.2.1",
+  "description": "Pictor Skills and Prompt Templates",
+  "engines": {
+    "pictor": "^0.2.0"
+  },
+  "dependencies": {},
+  "modules": {},
+  "pi": {
+    "skills": ["./pi/skills"],
+    "prompts": ["./pi/prompts"]
+  }
+}

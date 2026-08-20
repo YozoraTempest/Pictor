@@ -181,6 +181,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     const window = await electronApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
     await expect(window).toHaveTitle('Pictor')
+    await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
     const rendererGlobals = await window.evaluate(() => ({
       bodyTextLength: document.body.innerText.length,
       bridgeKeys: Object.keys((globalThis as typeof globalThis & { pictor: object }).pictor),
@@ -243,6 +244,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
     await expect(window.getByText('Task completed.')).toBeVisible()
     await expect(window.getByText('Changed files:')).toBeVisible()
+    await expect(window.getByText(/tokens/)).toBeVisible()
     expect(await readSelectedRunStatus(window)).toBe('completed')
 
     await window.setViewportSize({ width: 900, height: 620 })

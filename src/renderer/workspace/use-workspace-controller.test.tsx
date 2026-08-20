@@ -177,6 +177,8 @@ function createBridge(
     deleteSession: async () => ok(null),
     getSession,
     startRun,
+    queueRuntimeMessage: async () => ok(null),
+    clearRuntimeQueue: async () => ok(null),
     approveCommand,
     rejectCommand,
     stopRun,

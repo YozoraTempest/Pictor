@@ -74,6 +74,9 @@ it.each(['a', 'id', 'running'])(
       approve: vi.fn(),
       reject: vi.fn(),
       stop: vi.fn(),
+      respondToExtensionUi: vi.fn(),
+      queueMessage: vi.fn(),
+      clearQueue: vi.fn(),
     }
     const broadcast = vi.fn()
     const coordinator = new RuntimeCoordinator(repository, supervisor, broadcast)

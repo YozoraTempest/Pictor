@@ -65,6 +65,28 @@ describe('ModuleKernel', () => {
     )
   })
 
+  it('matches Tokens and Contribution Points by stable ID across bundled SDK copies', async () => {
+    const provided = new Token<number>('portable.value')
+    const required = new Token<number>('portable.value')
+    const contributed = new ContributionPoint<string>('portable.labels')
+    const queried = new ContributionPoint<string>('portable.labels')
+    const provider = defineModule({ id: 'provider', provides: provided, activate: () => 42 })
+    const consumer = defineModule({
+      id: 'consumer',
+      requires: [required] as const,
+      activate(context, value) {
+        context.contribute(contributed, `value ${value}`)
+      },
+    })
+    const kernel = new ModuleKernel()
+
+    await kernel.start([consumer, provider])
+
+    expect(kernel.get(required)).toBe(42)
+    expect(kernel.getContributions(queried)).toEqual(['value 42'])
+    await kernel.stop()
+  })
+
   it('rejects missing and circular dependencies', async () => {
     const firstToken = new Token<number>('first')
     const secondToken = new Token<number>('second')

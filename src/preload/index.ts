@@ -7,17 +7,24 @@ import {
 } from '../kernel/contract.js'
 import {
   approvalResolutionRequestSchema,
+  appInfoResultSchema,
   appSnapshotResultSchema,
   connectionTestIpcResultSchema,
   createSessionRequestSchema,
+  extensionUiResponseRequestSchema,
   listModelsRequestSchema,
   modelCatalogIpcResultSchema,
   projectCandidateResultSchema,
   projectIdRequestSchema,
   projectResultSchema,
+  queueRuntimeMessageRequestSchema,
+  pluginBootstrapResultSchema,
+  pluginIdRequestSchema,
+  pluginManagerResultSchema,
   registerProjectRequestSchema,
   relinkProjectRequestSchema,
   renameSessionRequestSchema,
+  removePluginRequestSchema,
   runIdRequestSchema,
   runtimeEventSchema,
   savedSettingsResultSchema,
@@ -27,6 +34,7 @@ import {
   sessionRecordResultSchema,
   sessionSummaryResultSchema,
   settingsResultSchema,
+  setPluginEnabledRequestSchema,
   startRunRequestSchema,
   startRunResultSchema,
   testSettingsRequestSchema,
@@ -37,6 +45,29 @@ import {
 const bridge = Object.freeze({
   getSnapshot: async () =>
     appSnapshotResultSchema.parse(await ipcRenderer.invoke('app:get-snapshot')),
+  getAppInfo: async () => appInfoResultSchema.parse(await ipcRenderer.invoke('app:get-info')),
+  getPluginBootstrap: async () =>
+    pluginBootstrapResultSchema.parse(await ipcRenderer.invoke('plugin:get-bootstrap')),
+  getPluginManagerSnapshot: async () =>
+    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:get-manager-snapshot')),
+  installLocalPlugin: async () =>
+    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-local')),
+  installPiExtension: async () =>
+    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-pi-extension')),
+  installPiPackage: async () =>
+    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-pi-package')),
+  setPluginEnabled: async (input) =>
+    pluginManagerResultSchema.parse(
+      await ipcRenderer.invoke('plugin:set-enabled', setPluginEnabledRequestSchema.parse(input)),
+    ),
+  removePlugin: async (input) =>
+    pluginManagerResultSchema.parse(
+      await ipcRenderer.invoke('plugin:remove', removePluginRequestSchema.parse(input)),
+    ),
+  restoreBundledPlugin: async (input) =>
+    pluginManagerResultSchema.parse(
+      await ipcRenderer.invoke('plugin:restore-bundled', pluginIdRequestSchema.parse(input)),
+    ),
   pickProjectDirectory: async () =>
     projectCandidateResultSchema.parse(await ipcRenderer.invoke('project:pick-directory')),
   registerProject: async (input) =>
@@ -99,6 +130,24 @@ const bridge = Object.freeze({
   stopRun: async (input) =>
     voidResultSchema.parse(
       await ipcRenderer.invoke('runtime:stop', runIdRequestSchema.parse(input)),
+    ),
+  respondToExtensionUi: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke(
+        'runtime:extension-ui-response',
+        extensionUiResponseRequestSchema.parse(input),
+      ),
+    ),
+  queueRuntimeMessage: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke(
+        'runtime:queue-message',
+        queueRuntimeMessageRequestSchema.parse(input),
+      ),
+    ),
+  clearRuntimeQueue: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke('runtime:clear-queue', runIdRequestSchema.parse(input)),
     ),
   onRuntimeEvent: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, value: unknown) => {

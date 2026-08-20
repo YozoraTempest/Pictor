@@ -61,6 +61,48 @@ export const runtimeEventSchema = z.discriminatedUnion('type', [
     category: z.enum(['authentication', 'connectivity', 'model', 'server', 'runtime']),
     message: z.string().min(1),
   }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('extension.ui.requested'),
+    requestId: z.uuid(),
+    kind: z.enum(['select', 'confirm', 'input', 'editor']),
+    title: z.string(),
+    message: z.string().nullable(),
+    options: z.array(z.string()),
+    value: z.string().nullable(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('extension.ui.notification'),
+    level: z.enum(['info', 'warning', 'error']),
+    message: z.string(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('extension.ui.status'),
+    key: z.string(),
+    text: z.string().nullable(),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('queue.updated'),
+    steering: z.array(z.string()),
+    followUp: z.array(z.string()),
+  }),
+  runtimeEventBaseSchema.extend({
+    type: z.literal('usage.updated'),
+    tokens: z.object({
+      input: z.number().nonnegative(),
+      output: z.number().nonnegative(),
+      cacheRead: z.number().nonnegative(),
+      cacheWrite: z.number().nonnegative(),
+      total: z.number().nonnegative(),
+    }),
+    cost: z.number().nonnegative(),
+    context: z
+      .object({
+        tokens: z.number().nonnegative().nullable(),
+        contextWindow: z.number().positive(),
+        percent: z.number().nonnegative().nullable(),
+      })
+      .nullable(),
+  }),
 ])
 
 export const runtimeStartConfigSchema = z.object({
@@ -83,6 +125,18 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('approve'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('reject'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('abort'), runId: idSchema }),
+  z.object({
+    type: z.enum(['steer', 'follow-up']),
+    runId: idSchema,
+    message: z.string().trim().min(1).max(200_000),
+  }),
+  z.object({ type: z.literal('clear-queue'), runId: idSchema }),
+  z.object({
+    type: z.literal('extension.ui.respond'),
+    runId: idSchema,
+    requestId: z.uuid(),
+    value: z.union([z.string(), z.boolean(), z.null()]),
+  }),
   z.object({ type: z.literal('dispose') }),
 ])
 

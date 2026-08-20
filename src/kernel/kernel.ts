@@ -12,8 +12,8 @@ interface ActiveModule {
 }
 
 export class ModuleKernel {
-  private readonly values = new Map<Token<unknown>, unknown>()
-  private readonly contributions = new Map<ContributionPoint<unknown>, unknown[]>()
+  private readonly values = new Map<string, unknown>()
+  private readonly contributions = new Map<string, unknown[]>()
   private activeModules: ActiveModule[] = []
   private started = false
 
@@ -28,9 +28,9 @@ export class ModuleKernel {
         const active: ActiveModule = { id: module.id, disposables: [] }
         this.activeModules.push(active)
         const context = this.createContext(active)
-        const dependencies = (module.requires ?? []).map((token) => this.values.get(token))
+        const dependencies = (module.requires ?? []).map((token) => this.values.get(token.id))
         const value = await module.activate(context, ...dependencies)
-        if (module.provides) this.values.set(module.provides, value)
+        if (module.provides) this.values.set(module.provides.id, value)
       }
     } catch (error) {
       await this.stop()
@@ -39,12 +39,16 @@ export class ModuleKernel {
   }
 
   get<T>(token: Token<T>): T {
-    if (!this.values.has(token)) throw new Error(`Module capability is unavailable: ${token.id}`)
-    return this.values.get(token) as T
+    if (!this.values.has(token.id)) throw new Error(`Module capability is unavailable: ${token.id}`)
+    return this.values.get(token.id) as T
+  }
+
+  has<T>(token: Token<T>): boolean {
+    return this.values.has(token.id)
   }
 
   getContributions<T>(point: ContributionPoint<T>): readonly T[] {
-    return (this.contributions.get(point) ?? []) as readonly T[]
+    return (this.contributions.get(point.id) ?? []) as readonly T[]
   }
 
   async stop(): Promise<void> {
@@ -60,9 +64,9 @@ export class ModuleKernel {
   private createContext(active: ActiveModule): ModuleContext {
     return {
       contribute: <T>(point: ContributionPoint<T>, value: T): Disposable => {
-        const values = this.contributions.get(point) ?? []
+        const values = this.contributions.get(point.id) ?? []
         values.push(value)
-        this.contributions.set(point, values)
+        this.contributions.set(point.id, values)
         const disposable = {
           dispose: () => {
             const index = values.indexOf(value)
@@ -78,19 +82,19 @@ export class ModuleKernel {
 
   private orderModules(modules: readonly PictorModule[]): PictorModule[] {
     const modulesById = new Map<string, PictorModule>()
-    const providers = new Map<Token<unknown>, PictorModule>()
+    const providers = new Map<string, PictorModule>()
 
     for (const module of modules) {
       if (modulesById.has(module.id)) throw new Error(`Duplicate Module ID: ${module.id}`)
       modulesById.set(module.id, module)
       if (module.provides) {
-        const previous = providers.get(module.provides)
+        const previous = providers.get(module.provides.id)
         if (previous) {
           throw new Error(
             `Duplicate provider for ${module.provides.id}: ${previous.id}, ${module.id}`,
           )
         }
-        providers.set(module.provides, module)
+        providers.set(module.provides.id, module)
       }
     }
 
@@ -103,7 +107,7 @@ export class ModuleKernel {
       if (visiting.has(module.id)) throw new Error(`Circular Module dependency: ${module.id}`)
       visiting.add(module.id)
       for (const token of module.requires ?? []) {
-        const provider = providers.get(token)
+        const provider = providers.get(token.id)
         if (!provider) throw new Error(`Missing provider for ${token.id}, required by ${module.id}`)
         visit(provider)
       }

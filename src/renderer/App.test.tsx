@@ -38,6 +38,30 @@ function createBridge(
   const approveCommand = vi.fn(async () => ok(null))
   return {
     getSnapshot: async () => ok(snapshot),
+    getAppInfo: async () =>
+      ok({
+        name: 'Pictor',
+        version: '0.1.0',
+        platform: 'win32',
+        arch: 'x64',
+        distribution: 'windows',
+        commandInterpreter: { kind: 'bash', available: true, message: null },
+      }),
+    getPluginBootstrap: async () => ok({ safeMode: false, plugins: [] }),
+    getPluginManagerSnapshot: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    installLocalPlugin: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    installPiExtension: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    installPiPackage: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    setPluginEnabled: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    removePlugin: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
+    restoreBundledPlugin: async () =>
+      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
     pickProjectDirectory: async () => ok(null),
     registerProject: async () => ok(snapshot.projects[0]!),
     relinkProject: async () => ok(snapshot.projects[0]!),
@@ -57,6 +81,9 @@ function createBridge(
     approveCommand,
     rejectCommand: async () => ok(null),
     stopRun: async () => ok(null),
+    respondToExtensionUi: async () => ok(null),
+    queueRuntimeMessage: async () => ok(null),
+    clearRuntimeQueue: async () => ok(null),
     onRuntimeEvent: (_listener: (event: RuntimeEvent) => void) => () => undefined,
   }
 }
@@ -93,7 +120,6 @@ function renderApp(bridge: PictorBridge, updater: UpdaterClient = createUpdater(
   installBridge(bridge)
   return render(
     <App
-      updater={updater}
       settingsSections={[
         {
           id: 'about',
@@ -140,8 +166,24 @@ it('shows app information and downloads an available update from settings', asyn
 })
 
 it('shows the Linux platform in app information', async () => {
+  const bridge: PictorBridge = {
+    ...createBridge(emptySnapshot()),
+    getAppInfo: async () =>
+      ok({
+        name: 'Pictor',
+        version: '0.1.0',
+        platform: 'linux',
+        arch: 'x64',
+        distribution: 'arch',
+        commandInterpreter: {
+          kind: 'bash',
+          available: false,
+          message: '未找到 Bash；命令工具不可用。',
+        },
+      }),
+  }
   renderApp(
-    createBridge(emptySnapshot()),
+    bridge,
     createUpdater({
       getAppInfo: async () => ({
         name: 'Pictor',

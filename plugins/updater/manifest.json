@@ -1,0 +1,14 @@
+{
+  "id": "pictor.updater",
+  "name": "Updater",
+  "version": "0.2.1",
+  "description": "Pictor release information and on-demand update checks",
+  "engines": {
+    "pictor": "^0.2.0"
+  },
+  "dependencies": {},
+  "modules": {
+    "main": "./dist/main.js",
+    "renderer": "./dist/renderer.js"
+  }
+}
