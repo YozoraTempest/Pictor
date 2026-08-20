@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test } from '@playwright/test'
-import { mkdir, readFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 
@@ -330,6 +330,82 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
         ]),
       },
     })
+
+    const transcriptPath = join(
+      userDataDirectory,
+      'data-v1',
+      'pi',
+      evidence.value.projectId,
+      evidence.value.id,
+      persistedSession.history.piSessionFile,
+    )
+    const transcriptEntries = (await readFile(transcriptPath, 'utf8'))
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+    const rootUser = transcriptEntries.find(
+      (entry) => entry.type === 'message' && entry.message?.role === 'user',
+    )
+    if (!rootUser?.id) throw new Error('Pi Session root user entry is unavailable')
+    const alternateEntry = {
+      type: 'message',
+      id: 'e2e-alternate-branch',
+      parentId: rootUser.id,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Historical branch from JSONL' }],
+        api: 'openai-completions',
+        provider: 'pictor-openai-compatible',
+        model: 'pictor-e2e-model',
+        usage: {
+          input: 1,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 2,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'stop',
+        timestamp: Date.now(),
+      },
+    }
+    await appendFile(transcriptPath, `${JSON.stringify(alternateEntry)}\n`, 'utf8')
+    await window.reload()
+    await window.waitForLoadState('domcontentloaded')
+
+    await window.getByRole('button', { name: 'Session Tree' }).click()
+    const tree = window.getByRole('complementary', { name: 'Session Tree' })
+    await expect(tree).toBeVisible()
+    await expect(tree.getByRole('button', { name: 'Historical branch from JSONL' })).toBeVisible()
+    await tree.getByRole('button', { name: /Task completed/ }).click()
+    await expect(window.locator('.timeline').getByText('Task completed.')).toBeVisible()
+    await expect(window.getByText(/正在查看历史分支/)).toBeVisible()
+    await expect(window.getByRole('textbox', { name: '任务描述' })).toBeDisabled()
+    await expect(window.getByRole('button', { name: '发送任务' })).toBeDisabled()
+    const treeLayout = await window.evaluate(() => ({
+      bodyWidth: document.body.scrollWidth,
+      viewportWidth: globalThis.innerWidth,
+      tree: document.querySelector('.session-tree-panel')?.getBoundingClientRect().toJSON(),
+      timeline: document.querySelector('.timeline')?.getBoundingClientRect().toJSON(),
+    }))
+    expect(treeLayout.bodyWidth).toBeLessThanOrEqual(treeLayout.viewportWidth)
+    expect(treeLayout.tree?.width).toBeGreaterThanOrEqual(220)
+    expect(treeLayout.tree?.width).toBeLessThanOrEqual(280)
+    expect(treeLayout.timeline?.width).toBeGreaterThan(300)
+    await window.screenshot({ path: testInfo.outputPath('session-tree.png') })
+
+    await tree.getByRole('button', { name: '返回当前节点' }).click()
+    await expect(
+      window.locator('.timeline').getByText('Historical branch from JSONL'),
+    ).toBeVisible()
+    await expect(window.getByText(/正在查看历史分支/)).toBeHidden()
+    expect(
+      await readFile(
+        join(userDataDirectory, 'data-v1', 'sessions', `${evidence.value.id}.json`),
+        'utf8',
+      ),
+    ).not.toContain('Historical branch from JSONL')
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

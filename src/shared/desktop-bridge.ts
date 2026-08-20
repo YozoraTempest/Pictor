@@ -4,9 +4,11 @@ import {
   dataIssueSchema,
   idSchema,
   projectSchema,
+  sessionHistoryViewSchema,
   sessionRecordSchema,
   sessionSummarySchema,
   type Project,
+  type SessionHistoryView,
   type SessionRecord,
   type SessionSummary,
 } from './domain.js'
@@ -62,6 +64,9 @@ export const relinkProjectRequestSchema = registerProjectRequestSchema.extend({
 
 export const projectIdRequestSchema = z.object({ projectId: idSchema })
 export const sessionIdRequestSchema = z.object({ sessionId: idSchema })
+export const inspectSessionHistoryRequestSchema = sessionIdRequestSchema.extend({
+  entryId: z.string().min(1).nullable(),
+})
 export const createSessionRequestSchema = z.object({ projectId: idSchema })
 export const selectContextRequestSchema = z.object({
   projectId: idSchema.nullable(),
@@ -99,6 +104,7 @@ export const projectCandidateResultSchema = ipcResultSchema(projectCandidateSche
 export const projectResultSchema = ipcResultSchema(projectSchema)
 export const sessionSummaryResultSchema = ipcResultSchema(sessionSummarySchema)
 export const sessionRecordResultSchema = ipcResultSchema(sessionRecordSchema)
+export const sessionHistoryViewResultSchema = ipcResultSchema(sessionHistoryViewSchema)
 export const settingsResultSchema = ipcResultSchema(modelSettingsSchema.nullable())
 export const savedSettingsResultSchema = ipcResultSchema(modelSettingsSchema)
 export const connectionTestIpcResultSchema = ipcResultSchema(connectionTestResultSchema)
@@ -143,6 +149,9 @@ export interface PictorBridge {
   ) => Promise<IpcResult<SessionSummary>>
   deleteSession: (request: z.infer<typeof sessionIdRequestSchema>) => Promise<IpcResult<null>>
   getSession: (request: z.infer<typeof sessionIdRequestSchema>) => Promise<IpcResult<SessionRecord>>
+  inspectSessionHistory: (
+    request: z.infer<typeof inspectSessionHistoryRequestSchema>,
+  ) => Promise<IpcResult<SessionHistoryView>>
   getSettings: () => Promise<IpcResult<ModelSettings | null>>
   saveSettings: (request: SaveSettingsRequest) => Promise<IpcResult<ModelSettings>>
   testSettings: (request: TestSettingsRequest) => Promise<IpcResult<ConnectionTestResult>>

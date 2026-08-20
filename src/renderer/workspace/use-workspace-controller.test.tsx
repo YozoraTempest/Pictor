@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { SessionRecord } from '../../shared/domain'
+import type { SessionHistoryView, SessionRecord } from '../../shared/domain'
 import type { AppSnapshot, IpcResult, RuntimeEvent } from '../../shared/desktop-bridge'
 import { useWorkspaceController, type WorkspaceBridge } from './use-workspace-controller'
 
@@ -152,6 +152,7 @@ function createBridge(
 ): WorkspaceBridge & {
   getSnapshot: ReturnType<typeof vi.fn>
   getSession: ReturnType<typeof vi.fn>
+  inspectSessionHistory: ReturnType<typeof vi.fn>
   startRun: ReturnType<typeof vi.fn>
   stopRun: ReturnType<typeof vi.fn>
   approveCommand: ReturnType<typeof vi.fn>
@@ -167,6 +168,14 @@ function createBridge(
     const session = sessions[sessionId]
     return session ? ok(session) : failure<SessionRecord>('不存在')
   })
+  const inspectSessionHistory = vi.fn(
+    async ({ sessionId }: { sessionId: string; entryId: string | null }) => {
+      const session = sessions[sessionId]
+      return session
+        ? ok({ session, tree: null } satisfies SessionHistoryView)
+        : failure<SessionHistoryView>('不存在')
+    },
+  )
   const startRun = vi.fn(async () => ok({ runId }))
   const stopRun = vi.fn(async () => ok(null))
   const approveCommand = vi.fn(async () => ok(null))
@@ -190,6 +199,7 @@ function createBridge(
     renameSession: async () => ok(snapshot.sessions[0]!),
     deleteSession: async () => ok(null),
     getSession,
+    inspectSessionHistory,
     startRun,
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
@@ -464,6 +474,74 @@ describe('useWorkspaceController', () => {
 
     await waitFor(() => expect(result.current.activeRun?.status).toBe('completed'))
     expect(result.current.runtimeUsage).toEqual(usage)
+  })
+
+  it('inspects a historical tree entry read-only and returns to the active leaf', async () => {
+    const active = createSession(firstSessionId, {
+      messageContent: 'Active answer',
+      runStatus: 'completed',
+    })
+    const historical = createSession(firstSessionId, {
+      messageContent: 'Historical answer',
+      runStatus: 'completed',
+    })
+    const tree = {
+      activeLeafId: 'active-entry',
+      selectedEntryId: 'historical-entry',
+      nodes: [
+        {
+          id: 'historical-entry',
+          parentId: null,
+          kind: 'assistant' as const,
+          label: 'Historical answer',
+          timestamp: now,
+          depth: 0,
+          childCount: 0,
+          isActivePath: false,
+          isActiveLeaf: false,
+          isSelected: true,
+        },
+        {
+          id: 'active-entry',
+          parentId: null,
+          kind: 'assistant' as const,
+          label: 'Active answer',
+          timestamp: now,
+          depth: 0,
+          childCount: 0,
+          isActivePath: true,
+          isActiveLeaf: true,
+          isSelected: false,
+        },
+      ],
+    }
+    const bridge = createBridge({ sessions: { [firstSessionId]: active } })
+    bridge.inspectSessionHistory.mockImplementation(
+      async ({ entryId }: { sessionId: string; entryId: string | null }) =>
+        ok({
+          session: entryId === 'historical-entry' ? historical : active,
+          tree: {
+            ...tree,
+            selectedEntryId: entryId ?? 'active-entry',
+            nodes: tree.nodes.map((node) => ({
+              ...node,
+              isSelected: node.id === (entryId ?? 'active-entry'),
+            })),
+          },
+        }),
+    )
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.session).toEqual(active))
+
+    await act(async () => result.current.inspectSessionHistory('historical-entry'))
+    expect(result.current.session?.messages[0]?.content).toBe('Historical answer')
+    expect(result.current.sessionTree?.selectedEntryId).toBe('historical-entry')
+    expect(result.current.disabledReason).toContain('历史分支')
+
+    await act(async () => result.current.inspectSessionHistory(null))
+    expect(result.current.session?.messages[0]?.content).toBe('Active answer')
+    expect(result.current.sessionTree?.selectedEntryId).toBe('active-entry')
+    expect(result.current.disabledReason).toBeNull()
   })
 
   it('coordinates Run intents and reports bridge failures', async () => {

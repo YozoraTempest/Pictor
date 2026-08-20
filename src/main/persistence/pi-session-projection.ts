@@ -5,10 +5,13 @@ import { z } from 'zod'
 import {
   messageSchema,
   runRecordSchema,
+  sessionTreeViewSchema,
   toolEventSchema,
   usageSnapshotSchema,
   type RunRecord,
   type SessionRecord,
+  type SessionTreeNode,
+  type SessionTreeView,
   type ToolEvent,
 } from '../../shared/domain.js'
 import { classifyRuntimeFailure } from '../../shared/runtime-failure.js'
@@ -20,6 +23,13 @@ interface PiEntry {
   timestamp?: string
   message?: unknown
   summary?: unknown
+  targetId?: unknown
+  label?: unknown
+  modelId?: unknown
+  thinkingLevel?: unknown
+  customType?: unknown
+  name?: unknown
+  content?: unknown
 }
 
 interface PiMessage {
@@ -43,8 +53,12 @@ const piUsageSchema = z.object({
 })
 
 export type SessionProjection = Pick<SessionRecord, 'messages' | 'runs' | 'usage'>
+export type PiSessionProjection = SessionProjection & { tree: SessionTreeView }
 
-export function projectPiSessionJsonl(content: string): SessionProjection {
+export function projectPiSessionJsonl(
+  content: string,
+  selectedEntryId?: string | null,
+): PiSessionProjection {
   const entries = content
     .split('\n')
     .filter((line) => line.trim().length > 0)
@@ -52,7 +66,12 @@ export function projectPiSessionJsonl(content: string): SessionProjection {
     .filter((entry) => entry.type !== 'session' && typeof entry.id === 'string')
   const entriesById = new Map(entries.map((entry) => [entry.id!, entry]))
   const branch: PiEntry[] = []
-  let current = entries.at(-1)
+  const activeLeafId = entries.at(-1)?.id ?? null
+  const selectedId = selectedEntryId ?? activeLeafId
+  if (selectedId && !entriesById.has(selectedId)) {
+    throw new Error(`Pi Session entry not found: ${selectedId}`)
+  }
+  let current = selectedId ? entriesById.get(selectedId) : undefined
   const visited = new Set<string>()
   while (current?.id && !visited.has(current.id)) {
     visited.add(current.id)
@@ -75,13 +94,17 @@ export function projectPiSessionJsonl(content: string): SessionProjection {
   }
 
   for (const entry of branch) {
-    if (entry.type === 'compaction' && typeof entry.summary === 'string') {
+    if (
+      (entry.type === 'compaction' || entry.type === 'branch_summary') &&
+      typeof entry.summary === 'string'
+    ) {
       const timestamp = entry.timestamp ?? new Date(0).toISOString()
+      const summaryKind = entry.type === 'compaction' ? 'Compaction' : 'Branch'
       messages.push(
         messageSchema.parse({
-          id: stableUuid(`compaction-message:${entry.id}`),
+          id: stableUuid(`${entry.type}-message:${entry.id}`),
           role: 'assistant',
-          content: `Compaction summary\n\n${entry.summary}`,
+          content: `${summaryKind} summary\n\n${entry.summary}`,
           status: 'completed',
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -89,7 +112,7 @@ export function projectPiSessionJsonl(content: string): SessionProjection {
       )
       runs.push(
         runRecordSchema.parse({
-          id: stableUuid(`compaction-run:${entry.id}`),
+          id: stableUuid(`${entry.type}-run:${entry.id}`),
           status: 'completed',
           toolEvents: [],
           error: null,
@@ -183,7 +206,160 @@ export function projectPiSessionJsonl(content: string): SessionProjection {
             context: null,
           })
         : null,
+    tree: projectTree(entries, entriesById, activeLeafId, selectedId),
   }
+}
+
+function projectTree(
+  entries: PiEntry[],
+  entriesById: Map<string, PiEntry>,
+  activeLeafId: string | null,
+  selectedEntryId: string | null,
+): SessionTreeView {
+  const childrenByParent = new Map<string, PiEntry[]>()
+  const roots: PiEntry[] = []
+  const labels = new Map<string, string>()
+
+  for (const entry of entries) {
+    if (entry.type === 'label' && typeof entry.targetId === 'string') {
+      if (typeof entry.label === 'string' && entry.label.trim()) {
+        labels.set(entry.targetId, entry.label.trim())
+      } else {
+        labels.delete(entry.targetId)
+      }
+    }
+    if (!entry.parentId || entry.parentId === entry.id || !entriesById.has(entry.parentId)) {
+      roots.push(entry)
+      continue
+    }
+    const children = childrenByParent.get(entry.parentId) ?? []
+    children.push(entry)
+    childrenByParent.set(entry.parentId, children)
+  }
+
+  const activePath = collectPathIds(entriesById, activeLeafId)
+  const nodes: SessionTreeNode[] = []
+  const visited = new Set<string>()
+  const stack = sortEntries(roots)
+    .toReversed()
+    .map((entry) => ({ entry, depth: 0 }))
+
+  while (stack.length > 0) {
+    const item = stack.pop()!
+    const id = item.entry.id!
+    if (visited.has(id)) continue
+    visited.add(id)
+    const children = sortEntries(childrenByParent.get(id) ?? [])
+    nodes.push({
+      id,
+      parentId: item.entry.parentId ?? null,
+      kind: treeNodeKind(item.entry),
+      label: labels.get(id) ?? treeNodeLabel(item.entry),
+      timestamp: item.entry.timestamp ?? new Date(0).toISOString(),
+      depth: item.depth,
+      childCount: children.length,
+      isActivePath: activePath.has(id),
+      isActiveLeaf: id === activeLeafId,
+      isSelected: id === selectedEntryId,
+    })
+    for (const child of children.toReversed()) {
+      stack.push({ entry: child, depth: item.depth + 1 })
+    }
+  }
+
+  for (const entry of entries) {
+    if (visited.has(entry.id!)) continue
+    nodes.push({
+      id: entry.id!,
+      parentId: entry.parentId ?? null,
+      kind: treeNodeKind(entry),
+      label: labels.get(entry.id!) ?? treeNodeLabel(entry),
+      timestamp: entry.timestamp ?? new Date(0).toISOString(),
+      depth: 0,
+      childCount: (childrenByParent.get(entry.id!) ?? []).length,
+      isActivePath: activePath.has(entry.id!),
+      isActiveLeaf: entry.id === activeLeafId,
+      isSelected: entry.id === selectedEntryId,
+    })
+  }
+
+  return sessionTreeViewSchema.parse({ nodes, activeLeafId, selectedEntryId })
+}
+
+function collectPathIds(entriesById: Map<string, PiEntry>, leafId: string | null): Set<string> {
+  const path = new Set<string>()
+  let current = leafId ? entriesById.get(leafId) : undefined
+  while (current?.id && !path.has(current.id)) {
+    path.add(current.id)
+    current = current.parentId ? entriesById.get(current.parentId) : undefined
+  }
+  return path
+}
+
+function sortEntries(entries: PiEntry[]): PiEntry[] {
+  return entries.toSorted(
+    (left, right) =>
+      Date.parse(left.timestamp ?? '') - Date.parse(right.timestamp ?? '') ||
+      String(left.id).localeCompare(String(right.id)),
+  )
+}
+
+function treeNodeKind(entry: PiEntry): SessionTreeNode['kind'] {
+  if (entry.type === 'message') {
+    const message = asObject(entry.message) as PiMessage | null
+    if (message?.role === 'user') return 'user'
+    if (message?.role === 'assistant') return 'assistant'
+    if (message?.role === 'toolResult') return 'tool-result'
+  }
+  const kinds: Record<string, SessionTreeNode['kind']> = {
+    compaction: 'compaction',
+    branch_summary: 'branch-summary',
+    model_change: 'model',
+    thinking_level_change: 'thinking',
+    custom: 'custom',
+    custom_message: 'custom-message',
+    label: 'label',
+    session_info: 'session-info',
+  }
+  return kinds[entry.type] ?? 'unknown'
+}
+
+function treeNodeLabel(entry: PiEntry): string {
+  if (entry.type === 'message') {
+    const message = asObject(entry.message) as PiMessage | null
+    const text = contentText(message?.content)
+    if (text) return truncateLabel(text)
+    if (message?.role === 'assistant' && Array.isArray(message.content)) {
+      const tools = message.content.flatMap((value) => {
+        const block = asObject(value)
+        return block?.type === 'toolCall' && typeof block.name === 'string' ? [block.name] : []
+      })
+      if (tools.length > 0) return `Tool · ${tools.join(', ')}`
+    }
+    if (message?.role === 'toolResult') return `Tool result · ${message.toolName ?? 'unknown'}`
+    return message?.role === 'assistant' ? 'Assistant response' : 'Message'
+  }
+  if (entry.type === 'compaction') return 'Compaction summary'
+  if (entry.type === 'branch_summary') return 'Branch summary'
+  if (entry.type === 'model_change') return `Model · ${String(entry.modelId ?? 'unknown')}`
+  if (entry.type === 'thinking_level_change') {
+    return `Thinking · ${String(entry.thinkingLevel ?? 'unknown')}`
+  }
+  if (entry.type === 'custom') return `Extension · ${String(entry.customType ?? 'custom')}`
+  if (entry.type === 'custom_message') {
+    const text = contentText(entry.content)
+    return text
+      ? truncateLabel(text)
+      : `Extension message · ${String(entry.customType ?? 'custom')}`
+  }
+  if (entry.type === 'label') return `Label · ${String(entry.label ?? 'cleared')}`
+  if (entry.type === 'session_info') return `Session · ${String(entry.name ?? 'unnamed')}`
+  return entry.type
+}
+
+function truncateLabel(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  return normalized.length > 80 ? `${normalized.slice(0, 77)}...` : normalized
 }
 
 function toolCalls(content: unknown, entryId: string, timestamp: string): ToolEvent[] {

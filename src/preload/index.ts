@@ -12,6 +12,7 @@ import {
   connectionTestIpcResultSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
+  inspectSessionHistoryRequestSchema,
   listModelsRequestSchema,
   modelCatalogIpcResultSchema,
   projectCandidateResultSchema,
@@ -31,6 +32,7 @@ import {
   saveSettingsRequestSchema,
   selectContextRequestSchema,
   sessionIdRequestSchema,
+  sessionHistoryViewResultSchema,
   sessionRecordResultSchema,
   sessionSummaryResultSchema,
   settingsResultSchema,
@@ -101,6 +103,13 @@ const bridge = Object.freeze({
   getSession: async (input) =>
     sessionRecordResultSchema.parse(
       await ipcRenderer.invoke('session:get', sessionIdRequestSchema.parse(input)),
+    ),
+  inspectSessionHistory: async (input) =>
+    sessionHistoryViewResultSchema.parse(
+      await ipcRenderer.invoke(
+        'session:inspect-history',
+        inspectSessionHistoryRequestSchema.parse(input),
+      ),
     ),
   getSettings: async () => settingsResultSchema.parse(await ipcRenderer.invoke('settings:get')),
   saveSettings: async (input) =>

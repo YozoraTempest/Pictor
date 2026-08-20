@@ -82,6 +82,38 @@ export const usageSnapshotSchema = z.object({
     .nullable(),
 })
 
+export const sessionTreeNodeSchema = z.object({
+  id: z.string().min(1),
+  parentId: z.string().min(1).nullable(),
+  kind: z.enum([
+    'user',
+    'assistant',
+    'tool-result',
+    'compaction',
+    'branch-summary',
+    'model',
+    'thinking',
+    'custom',
+    'custom-message',
+    'label',
+    'session-info',
+    'unknown',
+  ]),
+  label: z.string().min(1),
+  timestamp: timestampSchema,
+  depth: z.number().int().nonnegative(),
+  childCount: z.number().int().nonnegative(),
+  isActivePath: z.boolean(),
+  isActiveLeaf: z.boolean(),
+  isSelected: z.boolean(),
+})
+
+export const sessionTreeViewSchema = z.object({
+  nodes: z.array(sessionTreeNodeSchema),
+  activeLeafId: z.string().min(1).nullable(),
+  selectedEntryId: z.string().min(1).nullable(),
+})
+
 export const sessionRecordSchema = z.object({
   schemaVersion: z.literal(1),
   id: idSchema,
@@ -92,6 +124,11 @@ export const sessionRecordSchema = z.object({
   usage: usageSnapshotSchema.nullable().optional(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
+})
+
+export const sessionHistoryViewSchema = z.object({
+  session: sessionRecordSchema,
+  tree: sessionTreeViewSchema.nullable(),
 })
 
 export const sessionSummarySchema = sessionRecordSchema
@@ -124,9 +161,12 @@ export const dataIssueSchema = z.object({
 
 export type Project = z.infer<typeof projectSchema>
 export type SessionRecord = z.infer<typeof sessionRecordSchema>
+export type SessionHistoryView = z.infer<typeof sessionHistoryViewSchema>
 export type SessionSummary = z.infer<typeof sessionSummarySchema>
 export type SessionHistoryState = z.infer<typeof sessionHistoryStateSchema>
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>
+export type SessionTreeNode = z.infer<typeof sessionTreeNodeSchema>
+export type SessionTreeView = z.infer<typeof sessionTreeViewSchema>
 export type RunRecord = z.infer<typeof runRecordSchema>
 export type ToolEvent = z.infer<typeof toolEventSchema>
 export type DataIssue = z.infer<typeof dataIssueSchema>
