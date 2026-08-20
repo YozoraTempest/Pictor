@@ -18,11 +18,16 @@ import {
 import {
   runtimeEventSchema,
   type RuntimeEvent,
+  type RuntimeForkConfig,
   type RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
 import { classifyRuntimeFailure, type RuntimeFailure } from '../shared/runtime-failure.js'
 import { createSecretRedactor, type SecretRedactor } from '../shared/secret-redaction.js'
-import type { AgentRuntimeResources, ModelRuntimeProvider } from './plugin-interface.js'
+import type {
+  AgentRuntimeForkResult,
+  AgentRuntimeResources,
+  ModelRuntimeProvider,
+} from './plugin-interface.js'
 import { ApprovalBroker } from './approval-broker.js'
 import { BashCommandExecutor, type CommandExecutor } from './command-executor.js'
 import { ExtensionUiBroker } from './extension-ui.js'
@@ -48,6 +53,7 @@ interface PiSessionLike {
   steer(text: string): Promise<void>
   followUp(text: string): Promise<void>
   clearQueue(): { steering: string[]; followUp: string[] }
+  fork(entryId: string): Promise<{ cancelled: boolean }>
   getSessionStats(): SessionStats
   getSessionId(): string
   getSessionFile(): string | undefined
@@ -57,6 +63,7 @@ interface PiSessionLike {
 
 interface SessionFactoryInput {
   config: RuntimeStartConfig
+  sessionFile?: string
   tools: ToolDefinition[]
   extensionPaths: readonly string[]
   skillPaths: readonly string[]
@@ -123,6 +130,7 @@ function toolPath(projectRoot: string, args: unknown): string | null {
 
 async function createProductionSession({
   config,
+  sessionFile,
   tools,
   extensionPaths,
   skillPaths,
@@ -131,9 +139,15 @@ async function createProductionSession({
 }: SessionFactoryInput): Promise<PiSessionLike> {
   await mkdir(config.agentDirectory, { recursive: true })
   await mkdir(config.sessionDirectory, { recursive: true })
-  const sessionManager = config.resumeSession
-    ? SessionManager.continueRecent(config.projectRoot, config.sessionDirectory)
-    : SessionManager.create(config.projectRoot, config.sessionDirectory)
+  const sessionManager = sessionFile
+    ? SessionManager.open(
+        resolve(config.sessionDirectory, sessionFile),
+        config.sessionDirectory,
+        config.projectRoot,
+      )
+    : config.resumeSession
+      ? SessionManager.continueRecent(config.projectRoot, config.sessionDirectory)
+      : SessionManager.create(config.projectRoot, config.sessionDirectory)
   const createRuntime = async ({
     cwd,
     agentDir,
@@ -233,6 +247,11 @@ class PiSessionRuntime implements PiSessionLike {
     return this.runtime.session.clearQueue()
   }
 
+  async fork(entryId: string): Promise<{ cancelled: boolean }> {
+    const result = await this.runtime.fork(entryId, { position: 'at' })
+    return { cancelled: result.cancelled }
+  }
+
   getSessionStats(): SessionStats {
     return this.runtime.session.getSessionStats()
   }
@@ -250,7 +269,9 @@ class PiSessionRuntime implements PiSessionLike {
   }
 
   bindExtensionUi(context: ExtensionUIContext): Promise<void> {
-    return this.runtime.session.bindExtensions({ uiContext: context, mode: 'rpc' })
+    const bind = () => this.runtime.session.bindExtensions({ uiContext: context, mode: 'rpc' })
+    this.runtime.setRebindSession(bind)
+    return bind()
   }
 }
 
@@ -267,17 +288,20 @@ async function sanitizePiTranscripts(
   }
   for (const file of files) {
     if (!file.endsWith('.jsonl')) continue
-    const path = resolve(sessionDirectory, file)
-    const content = await readFile(path, 'utf8')
-    const entries = content
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => redactor.redactPiEntry(JSON.parse(line)))
-    const temporaryPath = `${path}.redacting`
-    await writeFile(temporaryPath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`)
-    await rename(temporaryPath, path)
+    await sanitizePiTranscript(resolve(sessionDirectory, file), redactor)
   }
+}
+
+async function sanitizePiTranscript(path: string, redactor: SecretRedactor): Promise<void> {
+  const content = await readFile(path, 'utf8')
+  const entries = content
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => redactor.redactPiEntry(JSON.parse(line)))
+  const temporaryPath = `${path}.redacting`
+  await writeFile(temporaryPath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`)
+  await rename(temporaryPath, path)
 }
 
 export class PiAgentRuntime {
@@ -287,6 +311,7 @@ export class PiAgentRuntime {
   private skillPaths: readonly string[] = []
   private promptPaths: readonly string[] = []
   private modelProviders: readonly ModelRuntimeProvider[] = []
+  private forkUi: { operationId: string; broker: ExtensionUiBroker } | null = null
 
   constructor(
     private readonly emit: (event: RuntimeEvent) => void,
@@ -302,7 +327,7 @@ export class PiAgentRuntime {
   }
 
   async start(config: RuntimeStartConfig): Promise<void> {
-    if (this.current) throw new Error('Only one runtime run can be active')
+    if (this.current || this.forkUi) throw new Error('Only one Runtime operation can be active')
     const abortController = new AbortController()
     const approvals = new ApprovalBroker((request) => {
       this.emitEvent(config, {
@@ -422,6 +447,73 @@ export class PiAgentRuntime {
     }
   }
 
+  async fork(config: RuntimeForkConfig): Promise<AgentRuntimeForkResult> {
+    if (this.current || this.forkUi) throw new Error('Only one Runtime operation can be active')
+    if (config.sourcePiSessionFile !== basename(config.sourcePiSessionFile)) {
+      throw new Error('Source Pi Session file must be a basename')
+    }
+    const redactor = createSecretRedactor([config.apiKey])
+    const eventConfig: RuntimeStartConfig = {
+      type: 'start',
+      runId: config.operationId,
+      sessionId: config.sourceSessionId,
+      messageId: config.operationId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: config.sourceSessionDirectory,
+      resumeSession: true,
+      settings: config.settings,
+      apiKey: config.apiKey,
+      prompt: 'Fork Pi Session',
+    }
+    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
+    this.forkUi = { operationId: config.operationId, broker }
+    let session: PiSessionLike | null = null
+    let disposed = false
+
+    try {
+      session = await this.sessionFactory({
+        config: eventConfig,
+        sessionFile: config.sourcePiSessionFile,
+        tools: [],
+        extensionPaths: this.extensionPaths,
+        skillPaths: this.skillPaths,
+        promptPaths: this.promptPaths,
+        modelProvider: this.getModelProvider(),
+      })
+      await session.bindExtensionUi?.(broker.createContext())
+      const result = await session.fork(config.entryId)
+      if (result.cancelled) return { outcome: 'cancelled' }
+
+      const piSessionFile = session.getSessionFile()
+      if (!piSessionFile) throw new Error('Forked Pi Session did not provide a JSONL file')
+      const piSessionFileName = basename(piSessionFile)
+      if (piSessionFileName === config.sourcePiSessionFile) {
+        throw new Error('Pi Fork did not create an independent Session file')
+      }
+      const piSessionId = session.getSessionId()
+      await sanitizePiTranscript(
+        resolve(config.sourceSessionDirectory, piSessionFileName),
+        redactor,
+      )
+      await session.dispose()
+      disposed = true
+      await mkdir(config.targetSessionDirectory, { recursive: true })
+      await rename(
+        resolve(config.sourceSessionDirectory, piSessionFileName),
+        resolve(config.targetSessionDirectory, piSessionFileName),
+      )
+      return { outcome: 'completed', piSessionId, piSessionFile: piSessionFileName }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Pi Session Fork failed'
+      throw new Error(redactor.redactText(detail), { cause: error })
+    } finally {
+      broker.cancelAll()
+      if (!disposed && session) await Promise.resolve(session.dispose()).catch(() => undefined)
+      if (this.forkUi?.operationId === config.operationId) this.forkUi = null
+    }
+  }
+
   resolveApproval(runId: string, callId: string, allowed: boolean): boolean {
     if (this.current?.config.runId !== runId) return false
     return this.current.approvals.resolve(callId, allowed)
@@ -441,6 +533,7 @@ export class PiAgentRuntime {
 
   async dispose(): Promise<void> {
     if (this.current) await this.abort(this.current.config.runId)
+    this.forkUi?.broker.cancelAll()
   }
 
   async queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void> {
@@ -460,7 +553,8 @@ export class PiAgentRuntime {
   }
 
   respondToExtensionUi(requestId: string, value: string | boolean | null): void {
-    this.current?.extensionUi.respond(requestId, value)
+    if (this.current) this.current.extensionUi.respond(requestId, value)
+    else this.forkUi?.broker.respond(requestId, value)
   }
 
   private getModelProvider(): ModelRuntimeProvider {

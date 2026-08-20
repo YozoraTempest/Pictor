@@ -117,8 +117,43 @@ export const runtimeStartConfigSchema = z.object({
   prompt: z.string().min(1),
 })
 
+export const runtimeForkConfigSchema = z.object({
+  type: z.literal('fork'),
+  operationId: idSchema,
+  sourceSessionId: idSchema,
+  targetSessionId: idSchema,
+  entryId: z.string().min(1),
+  projectRoot: z.string().min(1),
+  agentDirectory: z.string().min(1),
+  sourceSessionDirectory: z.string().min(1),
+  sourcePiSessionFile: z.string().min(1),
+  targetSessionDirectory: z.string().min(1),
+  settings: modelSettingsInputSchema,
+  apiKey: z.string().min(1),
+})
+
+const runtimeForkResultBaseSchema = z.object({
+  type: z.literal('host.forkResult'),
+  operationId: idSchema,
+  targetSessionId: idSchema,
+})
+
+export const runtimeForkResultSchema = z.discriminatedUnion('outcome', [
+  runtimeForkResultBaseSchema.extend({
+    outcome: z.literal('completed'),
+    piSessionId: z.string().min(1),
+    piSessionFile: z.string().min(1),
+  }),
+  runtimeForkResultBaseSchema.extend({ outcome: z.literal('cancelled') }),
+  runtimeForkResultBaseSchema.extend({
+    outcome: z.literal('failed'),
+    message: z.string().min(1),
+  }),
+])
+
 export const runtimeCommandSchema = z.discriminatedUnion('type', [
   runtimeStartConfigSchema,
+  runtimeForkConfigSchema,
   z.object({ type: z.literal('approve'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('reject'), runId: idSchema, callId: z.string().min(1) }),
   z.object({ type: z.literal('abort'), runId: idSchema }),
@@ -139,11 +174,14 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
 
 export const runtimeHostMessageSchema = z.union([
   runtimeEventSchema,
+  runtimeForkResultSchema,
   z.object({ type: z.literal('host.ready') }),
   z.object({ type: z.literal('host.fatal'), message: z.string().min(1) }),
 ])
 
 export type RuntimeEvent = z.infer<typeof runtimeEventSchema>
 export type RuntimeStartConfig = z.infer<typeof runtimeStartConfigSchema>
+export type RuntimeForkConfig = z.infer<typeof runtimeForkConfigSchema>
+export type RuntimeForkResult = z.infer<typeof runtimeForkResultSchema>
 export type RuntimeCommand = z.infer<typeof runtimeCommandSchema>
 export type RuntimeHostMessage = z.infer<typeof runtimeHostMessageSchema>

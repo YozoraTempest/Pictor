@@ -64,6 +64,10 @@ _Avoid_: Session source of truth, duplicate history
 A read-only desktop view of every branch in Pi Session History. Selecting an entry changes only the displayed Session Projection, never the active Runtime branch.
 _Avoid_: Fork, Runtime branch switch, editable history
 
+**Pi Session Fork**:
+A new independent Pi Session created from one entry in existing Pi Session History through Pi's native Fork lifecycle.
+_Avoid_: Session Tree selection, in-place branch switch, copied GUI history
+
 **Legacy Session Import**:
 A preserved pre-authority Pictor Session awaiting explicit conversion into Pi Session History.
 _Avoid_: Automatic migration, discarded old Session
