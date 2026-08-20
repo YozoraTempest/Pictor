@@ -761,11 +761,12 @@ textarea:disabled {
 
 .session-tree-header {
   display: flex;
-  min-height: 43px;
+  min-height: 70px;
   flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: stretch;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
   padding: 7px 9px 7px 12px;
   border-bottom: 1px solid var(--border);
 }
@@ -776,6 +777,12 @@ textarea:disabled {
   min-width: 0;
   align-items: center;
   gap: 7px;
+}
+
+.session-tree-actions {
+  width: 100%;
+  justify-content: space-between;
+  gap: 2px;
 }
 
 .session-tree-header strong {
