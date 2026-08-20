@@ -684,7 +684,7 @@ describe('useWorkspaceController', () => {
     bridge.inspectSessionHistory.mockResolvedValueOnce(
       ok({ session: historical, tree: selectedTree }),
     )
-    const pending = deferred<IpcResult<SessionHistoryView | null>>()
+    const pending = deferred<Awaited<ReturnType<WorkspaceBridge['navigateSessionTree']>>>()
     bridge.navigateSessionTree.mockReturnValueOnce(pending.promise)
     const { result } = renderHook(() => useWorkspaceController(bridge))
     await waitFor(() => expect(result.current.session).toEqual(active))
@@ -698,16 +698,20 @@ describe('useWorkspaceController', () => {
     expect(result.current.sessionTreeLoading).toBe(true)
     pending.resolve(
       ok({
-        session: historical,
-        tree: {
-          ...selectedTree,
-          activeLeafId: 'historical-entry',
-          nodes: selectedTree.nodes.map((node) => ({
-            ...node,
-            isActivePath: node.id === 'historical-entry',
-            isActiveLeaf: node.id === 'historical-entry',
-          })),
+        history: {
+          session: historical,
+          tree: {
+            ...selectedTree,
+            activeLeafId: 'historical-entry',
+            nodes: selectedTree.nodes.map((node) => ({
+              ...node,
+              isActivePath: node.id === 'historical-entry',
+              isActiveLeaf: node.id === 'historical-entry',
+            })),
+          },
         },
+        editorText: null,
+        summaryCreated: false,
       }),
     )
     await act(async () => navigating)
@@ -715,6 +719,8 @@ describe('useWorkspaceController', () => {
     expect(bridge.navigateSessionTree).toHaveBeenCalledWith({
       sessionId: firstSessionId,
       entryId: 'historical-entry',
+      summarize: false,
+      customInstructions: null,
     })
     expect(result.current.selectedSessionId).toBe(firstSessionId)
     expect(result.current.session?.messages[0]?.content).toBe('Historical answer')
@@ -722,6 +728,19 @@ describe('useWorkspaceController', () => {
     expect(result.current.disabledReason).toBeNull()
     expect(result.current.navigatingEntryId).toBeNull()
     expect(result.current.sessionTreeLoading).toBe(false)
+
+    bridge.navigateSessionTree.mockResolvedValueOnce(
+      ok({
+        history: {
+          session: historical,
+          tree: { ...selectedTree, activeLeafId: null, selectedEntryId: null },
+        },
+        editorText: 'Re-edit this task',
+        summaryCreated: false,
+      }),
+    )
+    await act(async () => result.current.navigateSessionTree('user-entry'))
+    expect(result.current.draft).toBe('Re-edit this task')
   })
 
   it('coordinates cancellable Compaction and applies its rebuilt Projection', async () => {

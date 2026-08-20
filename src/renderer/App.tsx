@@ -47,6 +47,8 @@ export function App({
   const [renameValue, setRenameValue] = useState('')
   const [compactionOpen, setCompactionOpen] = useState(false)
   const [compactionInstructions, setCompactionInstructions] = useState('')
+  const [branchSummaryTarget, setBranchSummaryTarget] = useState<string | null>(null)
+  const [branchSummaryInstructions, setBranchSummaryInstructions] = useState('')
   const [modalBusy, setModalBusy] = useState(false)
   const [extensionUiRequest, setExtensionUiRequest] = useState<ExtensionUiRequest | null>(null)
   const [extensionUiValue, setExtensionUiValue] = useState('')
@@ -147,6 +149,24 @@ export function App({
     if (cancelled) setCompactionOpen(false)
   }
 
+  const startBranchSummary = async () => {
+    if (!branchSummaryTarget) return
+    const instructions = branchSummaryInstructions.trim()
+    const completed = await workspace.navigateSessionTree(branchSummaryTarget, {
+      summarize: true,
+      customInstructions: instructions || null,
+    })
+    if (completed) {
+      setBranchSummaryTarget(null)
+      setBranchSummaryInstructions('')
+    }
+  }
+
+  const cancelBranchSummary = async () => {
+    const cancelled = await workspace.cancelSessionOperation()
+    if (cancelled) setBranchSummaryTarget(null)
+  }
+
   const respondToExtensionUi = async (value: string | boolean | null) => {
     if (!extensionUiRequest) return
     setModalBusy(true)
@@ -242,6 +262,7 @@ export function App({
         onClearQueue={() => void workspace.clearQueue()}
         onInspectSessionHistory={(entryId) => void workspace.inspectSessionHistory(entryId)}
         onNavigateSessionTree={(entryId) => void workspace.navigateSessionTree(entryId)}
+        onOpenBranchSummary={(entryId) => setBranchSummaryTarget(entryId)}
         onOpenCompaction={() => setCompactionOpen(true)}
         onCancelSessionOperation={() => void workspace.cancelSessionOperation()}
         onForkSession={(entryId) => void workspace.forkSession(entryId)}
@@ -491,6 +512,48 @@ export function App({
             >
               {workspace.compactingSession ? <LoaderCircle className="spin" size={15} /> : null}
               开始压缩
+            </button>
+          </footer>
+        </Modal>
+      ) : null}
+
+      {branchSummaryTarget ? (
+        <Modal
+          title="总结后切换分支"
+          onClose={() => {
+            if (!workspace.navigatingEntryId) setBranchSummaryTarget(null)
+          }}
+        >
+          <label className="field field--full">
+            <span>自定义摘要指令（可选）</span>
+            <textarea
+              rows={6}
+              maxLength={20_000}
+              value={branchSummaryInstructions}
+              disabled={workspace.navigatingEntryId !== null}
+              onChange={(event) => setBranchSummaryInstructions(event.target.value)}
+            />
+          </label>
+          <footer className="modal-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() =>
+                workspace.navigatingEntryId
+                  ? void cancelBranchSummary()
+                  : setBranchSummaryTarget(null)
+              }
+            >
+              {workspace.navigatingEntryId ? '取消总结' : '取消'}
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={workspace.navigatingEntryId !== null}
+              onClick={() => void startBranchSummary()}
+            >
+              {workspace.navigatingEntryId ? <LoaderCircle className="spin" size={15} /> : null}
+              总结并切换
             </button>
           </footer>
         </Modal>

@@ -92,7 +92,10 @@ export interface WorkspaceController {
   deleteSession: (sessionId: string) => Promise<boolean>
   renameSession: (sessionId: string, title: string) => Promise<boolean>
   inspectSessionHistory: (entryId: string | null) => Promise<void>
-  navigateSessionTree: (entryId: string) => Promise<boolean>
+  navigateSessionTree: (
+    entryId: string,
+    options?: { summarize: boolean; customInstructions: string | null },
+  ) => Promise<boolean>
   forkSession: (entryId: string) => Promise<boolean>
   cloneSession: () => Promise<boolean>
   importSession: (projectId: string) => Promise<boolean>
@@ -221,7 +224,13 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   )
 
   const navigateSessionTree = useCallback(
-    async (entryId: string): Promise<boolean> => {
+    async (
+      entryId: string,
+      options: { summarize: boolean; customInstructions: string | null } = {
+        summarize: false,
+        customInstructions: null,
+      },
+    ): Promise<boolean> => {
       const sourceSessionId = selectedSessionIdRef.current
       if (!sourceSessionId || sessionOperation) return false
       sessionRequestId.current += 1
@@ -232,15 +241,20 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
         const response = await bridge.navigateSessionTree({
           sessionId: sourceSessionId,
           entryId,
+          summarize: options.summarize,
+          customInstructions: options.customInstructions,
         })
         if (!response.ok) {
           setActionError(response.error.message)
           return false
         }
         if (!response.value) return false
-        setSession(response.value.session)
-        setSessionTree(response.value.tree)
-        setRuntimeUsage(response.value.session.usage ?? null)
+        setSession(response.value.history.session)
+        setSessionTree(response.value.history.tree)
+        setRuntimeUsage(response.value.history.session.usage ?? null)
+        if (response.value.editorText !== null) {
+          setDrafts((current) => ({ ...current, [sourceSessionId]: response.value!.editorText! }))
+        }
         await refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error)))
         return true
       } catch (error) {
@@ -504,7 +518,11 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
 
   const cancelSessionOperation = useCallback(async (): Promise<boolean> => {
     const sessionId = selectedSessionIdRef.current
-    if (!sessionId || sessionOperation?.kind !== 'compact') return false
+    if (
+      !sessionId ||
+      (sessionOperation?.kind !== 'compact' && sessionOperation?.kind !== 'navigate')
+    )
+      return false
     const response = await bridge.cancelSessionOperation({ sessionId })
     if (!response.ok) {
       setActionError(response.error.message)

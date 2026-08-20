@@ -232,6 +232,8 @@ export const runtimeNavigateConfigSchema = z.object({
   operationId: idSchema,
   sourceSessionId: idSchema,
   entryId: z.string().min(1),
+  summarize: z.boolean(),
+  customInstructions: z.string().trim().max(20_000).nullable(),
   activeLeafId: z.string().min(1),
   projectRoot: z.string().min(1),
   agentDirectory: z.string().min(1),
@@ -251,6 +253,8 @@ export const runtimeNavigateResultSchema = z.discriminatedUnion('outcome', [
   runtimeNavigateResultBaseSchema.extend({
     outcome: z.literal('completed'),
     activeLeafId: z.string().min(1).nullable(),
+    editorText: z.string().nullable(),
+    summaryCreated: z.boolean(),
   }),
   runtimeNavigateResultBaseSchema.extend({ outcome: z.literal('cancelled') }),
   runtimeNavigateResultBaseSchema.extend({

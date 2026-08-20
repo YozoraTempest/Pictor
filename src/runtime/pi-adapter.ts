@@ -76,10 +76,11 @@ interface PiSessionLike {
   importFromJsonl(inputPath: string, cwdOverride: string): Promise<{ cancelled: boolean }>
   navigateTree(
     entryId: string,
-    options: { summarize: false },
-  ): Promise<{ cancelled: boolean; editorText?: string }>
+    options: { summarize: boolean; customInstructions?: string },
+  ): Promise<{ cancelled: boolean; editorText?: string; summaryEntry?: unknown }>
   compact(customInstructions?: string): Promise<CompactionResult>
   abortCompaction(): void
+  abortBranchSummary(): void
   exportToHtml(outputPath: string): Promise<string>
   exportToJsonl(outputPath: string): string
   getSessionStats(): SessionStats
@@ -178,6 +179,7 @@ async function createProductionSession({
       ? SessionManager.continueRecent(config.projectRoot, config.sessionDirectory)
       : SessionManager.create(config.projectRoot, config.sessionDirectory)
   if (config.activeLeafId) sessionManager.branch(config.activeLeafId)
+  else if (config.activeLeafId === null && 'activeLeafId' in config) sessionManager.resetLeaf()
   const createRuntime = async ({
     cwd,
     agentDir,
@@ -288,8 +290,8 @@ class PiSessionRuntime implements PiSessionLike {
 
   navigateTree(
     entryId: string,
-    options: { summarize: false },
-  ): Promise<{ cancelled: boolean; editorText?: string }> {
+    options: { summarize: boolean; customInstructions?: string },
+  ): Promise<{ cancelled: boolean; editorText?: string; summaryEntry?: unknown }> {
     return this.runtime.session.navigateTree(entryId, options)
   }
 
@@ -299,6 +301,10 @@ class PiSessionRuntime implements PiSessionLike {
 
   abortCompaction(): void {
     this.runtime.session.abortCompaction()
+  }
+
+  abortBranchSummary(): void {
+    this.runtime.session.abortBranchSummary()
   }
 
   exportToHtml(outputPath: string): Promise<string> {
@@ -808,16 +814,21 @@ export class PiAgentRuntime {
         this.sessionOperation.session = session
       }
       await session.bindExtensionUi?.(broker.createContext())
-      const result = await session.navigateTree(config.entryId, { summarize: false })
+      const result = await session.navigateTree(config.entryId, {
+        summarize: config.summarize,
+        ...(config.customInstructions ? { customInstructions: config.customInstructions } : {}),
+      })
       if (result.cancelled) return { outcome: 'cancelled' }
-      if (result.editorText !== undefined) {
-        throw new Error('User Message tree navigation requires editor text support')
-      }
       await sanitizePiTranscript(
         resolve(config.sourceSessionDirectory, config.sourcePiSessionFile),
         redactor,
       )
-      return { outcome: 'completed', activeLeafId: session.getActiveLeafId() }
+      return {
+        outcome: 'completed',
+        activeLeafId: session.getActiveLeafId(),
+        editorText: result.editorText ?? null,
+        summaryCreated: result.summaryEntry !== undefined,
+      }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Pi Session Tree Navigation failed'
       throw new Error(redactor.redactText(detail), { cause: error })
@@ -913,6 +924,7 @@ export class PiAgentRuntime {
     operation.cancelRequested = true
     operation.broker.cancelAll()
     if (operation.kind === 'compact') operation.session?.abortCompaction()
+    if (operation.kind === 'navigate') operation.session?.abortBranchSummary()
   }
 
   resolveApproval(runId: string, callId: string, allowed: boolean): boolean {
@@ -936,6 +948,9 @@ export class PiAgentRuntime {
     if (this.current) await this.abort(this.current.config.runId)
     if (this.sessionOperation?.kind === 'compact') {
       this.sessionOperation.session?.abortCompaction()
+    }
+    if (this.sessionOperation?.kind === 'navigate') {
+      this.sessionOperation.session?.abortBranchSummary()
     }
     this.sessionOperation?.broker.cancelAll()
   }

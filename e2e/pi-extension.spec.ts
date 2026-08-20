@@ -193,7 +193,10 @@ export default function (pi) {
   const record = (ctx, value) => appendFileSync(join(ctx.cwd, 'fork-lifecycle.log'), value + '\\n')
   pi.on('session_before_fork', (event, ctx) => record(ctx, 'before_fork:' + event.entryId + ':' + event.position))
   pi.on('session_before_switch', (_event, ctx) => record(ctx, 'before_switch'))
-  pi.on('session_before_tree', (event, ctx) => record(ctx, 'before_tree:' + event.preparation.targetId + ':' + event.preparation.oldLeafId))
+  pi.on('session_before_tree', (event, ctx) => {
+    record(ctx, 'before_tree:' + event.preparation.targetId + ':' + event.preparation.oldLeafId + ':' + (event.preparation.customInstructions || ''))
+    if (event.preparation.userWantsSummary) return { summary: { summary: 'E2E branch summary' } }
+  })
   pi.on('session_tree', (event, ctx) => record(ctx, 'tree:' + event.oldLeafId + ':' + event.newLeafId))
   pi.on('session_before_compact', (event, ctx) => {
     record(ctx, 'before_compact:' + event.reason + ':' + (event.customInstructions || ''))
@@ -457,8 +460,8 @@ export default function (pi) {
     }
     const activeLeafBeforeNavigation = historyBeforeNavigation.value.tree.activeLeafId
     await importedTree.getByRole('button', { name: 'Imported original answer' }).click()
-    await expect(window.getByRole('button', { name: '切换到此节点' })).toBeEnabled()
-    await window.getByRole('button', { name: '切换到此节点' }).click()
+    await expect(window.getByRole('button', { name: '切换到此节点', exact: true })).toBeEnabled()
+    await window.getByRole('button', { name: '切换到此节点', exact: true }).click()
 
     const timeline = window.locator('.timeline')
     await expect(timeline.getByText('Imported original answer')).toBeVisible()
@@ -551,6 +554,24 @@ export default function (pi) {
       metadataBeforeNavigation.history.piSessionFile,
     )
     expect(metadataAfterRun.history.activeLeafId).not.toBe('imported-original')
+
+    await window.getByRole('button', { name: 'Session Tree', exact: true }).click()
+    await window.getByRole('button', { name: 'Session Tree', exact: true }).click()
+    const branchTree = window.getByRole('complementary', { name: 'Session Tree' })
+    await branchTree.getByRole('button', { name: 'Imported branch answer' }).click()
+    await window.getByRole('button', { name: '总结后切换到此节点' }).click()
+    await window.getByLabel('自定义摘要指令（可选）').fill('Preserve abandoned work')
+    await window.getByRole('button', { name: '总结并切换' }).click()
+    await expect(timeline.getByText('Branch summary').last()).toBeVisible({ timeout: 30_000 })
+    await expect(timeline.getByText('E2E branch summary')).toBeVisible()
+    const branchLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
+    expect(branchLifecycle).toContain('Preserve abandoned work')
+
+    await branchTree.getByRole('button', { name: 'Imported branch task' }).click()
+    await window.getByRole('button', { name: '切换到此节点', exact: true }).click()
+    await expect(window.getByRole('textbox', { name: '任务描述' })).toHaveValue(
+      'Imported branch task',
+    )
 
     const cancelledCompaction = await window.evaluate(async (sessionId) => {
       const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor

@@ -211,7 +211,7 @@ export class AppRepository {
     sessionDirectory: string
     resumeSession: boolean
     piSessionFile: string | null
-    activeLeafId: string | null
+    activeLeafId?: string | null
   } {
     this.ensureInitialized()
     return this.sessionPersistence.getRuntimePaths(projectId, sessionId)

@@ -234,7 +234,10 @@ export function registerIpc(dependencies: IpcDependencies): void {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = navigateSessionTreeRequestSchema.parse(input)
-      return runtimeCoordinator.navigateSessionTree(request.sessionId, request.entryId)
+      return runtimeCoordinator.navigateSessionTree(request.sessionId, request.entryId, {
+        summarize: request.summarize,
+        customInstructions: request.customInstructions,
+      })
     })
   })
 

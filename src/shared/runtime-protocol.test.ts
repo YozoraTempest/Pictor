@@ -158,6 +158,8 @@ describe('Runtime Session operation protocol', () => {
         operationId,
         sourceSessionId,
         entryId: 'historical-answer',
+        summarize: false,
+        customInstructions: null,
         activeLeafId: 'active-answer',
         projectRoot: '/project',
         agentDirectory: '/agent',
@@ -182,6 +184,8 @@ describe('Runtime Session operation protocol', () => {
         sourceSessionId,
         outcome: 'completed',
         activeLeafId: 'historical-answer',
+        editorText: null,
+        summaryCreated: false,
       },
       { type: 'host.navigateResult', operationId, sourceSessionId, outcome: 'cancelled' },
       {

@@ -438,11 +438,28 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   expect(screen.getByRole('button', { name: 'Clone 当前分支为新 Session' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'Fork 为新 Session' })).toBeEnabled()
   expect(screen.getByRole('button', { name: '切换到此节点' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: '总结后切换到此节点' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: '总结后切换到此节点' }))
+  fireEvent.change(screen.getByLabelText('自定义摘要指令（可选）'), {
+    target: { value: 'Preserve abandoned work' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '总结并切换' }))
+  await waitFor(() =>
+    expect(bridge.navigateSessionTree).toHaveBeenCalledWith({
+      sessionId,
+      entryId: 'historical-entry',
+      summarize: true,
+      customInstructions: 'Preserve abandoned work',
+    }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: '取消' }))
   fireEvent.click(screen.getByRole('button', { name: '切换到此节点' }))
   await waitFor(() =>
     expect(bridge.navigateSessionTree).toHaveBeenCalledWith({
       sessionId,
       entryId: 'historical-entry',
+      summarize: false,
+      customInstructions: null,
     }),
   )
   fireEvent.click(screen.getByRole('button', { name: 'Fork 为新 Session' }))
@@ -452,7 +469,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   })
 
   fireEvent.click(screen.getByRole('button', { name: 'User checkpoint' }))
-  expect(screen.getByRole('button', { name: '切换到此节点' })).toBeDisabled()
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换到此节点' })).toBeEnabled())
 
   fireEvent.click(screen.getByRole('button', { name: '返回当前节点' }))
   expect(await screen.findByText('Active response details')).toBeInTheDocument()

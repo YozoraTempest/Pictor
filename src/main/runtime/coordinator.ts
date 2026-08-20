@@ -93,6 +93,12 @@ interface ActiveRun {
   redactor: SecretRedactor
 }
 
+export interface SessionNavigationResult {
+  history: SessionHistoryView
+  editorText: string | null
+  summaryCreated: boolean
+}
+
 export class RuntimeCoordinator {
   private active: ActiveRun | null = null
   private sessionOperationId: string | null = null
@@ -215,7 +221,11 @@ export class RuntimeCoordinator {
   async navigateSessionTree(
     sourceSessionId: string,
     entryId: string,
-  ): Promise<SessionHistoryView | null> {
+    options: { summarize: boolean; customInstructions: string | null } = {
+      summarize: false,
+      customInstructions: null,
+    },
+  ): Promise<SessionNavigationResult | null> {
     if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
       throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
     }
@@ -235,9 +245,6 @@ export class RuntimeCoordinator {
     }
     const target = tree.nodes.find((node) => node.id === entryId)
     if (!target) throw new PictorError('not-found', '目标 Pi Session 节点不存在')
-    if (target.kind === 'user' || target.kind === 'custom-message') {
-      throw new PictorError('invalid-input', 'User Message 节点导航需要编辑器回填支持')
-    }
     const project = this.repository.getProject(source.projectId)
     if (project.availability !== 'available') {
       throw new PictorError('project-unavailable', '项目目录当前不可用，请重新关联后再导航')
@@ -257,12 +264,17 @@ export class RuntimeCoordinator {
 
     const operationId = randomUUID()
     this.sessionOperationId = operationId
+    if (options.summarize) {
+      this.cancellableSessionOperation = { operationId, sessionId: sourceSessionId }
+    }
     try {
       const result = await this.supervisor.navigateSession({
         type: 'navigate',
         operationId,
         sourceSessionId,
         entryId,
+        summarize: options.summarize,
+        customInstructions: options.customInstructions,
         activeLeafId: tree.activeLeafId,
         projectRoot: project.rootPath,
         agentDirectory: sourcePaths.agentDirectory,
@@ -280,14 +292,18 @@ export class RuntimeCoordinator {
       })
       if (result.outcome === 'cancelled') return null
       if (result.outcome === 'failed') throw new Error(result.message)
-      if (!result.activeLeafId) {
-        throw new Error('Pi Session Tree Navigation did not provide an active leaf')
-      }
       await this.repository.setPiSessionActiveLeaf(sourceSessionId, result.activeLeafId)
       await this.repository.rebuildSessionProjection(sourceSessionId)
-      return this.repository.inspectSessionHistory(sourceSessionId, null)
+      return {
+        history: await this.repository.inspectSessionHistory(sourceSessionId, null),
+        editorText: result.editorText,
+        summaryCreated: result.summaryCreated,
+      }
     } finally {
       if (this.sessionOperationId === operationId) this.sessionOperationId = null
+      if (this.cancellableSessionOperation?.operationId === operationId) {
+        this.cancellableSessionOperation = null
+      }
     }
   }
 
@@ -566,7 +582,7 @@ export class RuntimeCoordinator {
         agentDirectory: sourcePaths.agentDirectory,
         sourceSessionDirectory: sourcePaths.sessionDirectory,
         sourcePiSessionFile: history.piSessionFile,
-        activeLeafId: history.activeLeafId ?? null,
+        ...(history.activeLeafId !== undefined ? { activeLeafId: history.activeLeafId } : {}),
         destinationPath,
         settings: {
           apiProtocol: settings.apiProtocol,

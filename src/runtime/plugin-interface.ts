@@ -18,7 +18,13 @@ export type AgentRuntimeImportResult = AgentRuntimeForkResult
 export type AgentRuntimeExportResult = { outcome: 'completed' }
 
 export type AgentRuntimeNavigateResult =
-  { outcome: 'completed'; activeLeafId: string | null } | { outcome: 'cancelled' }
+  | {
+      outcome: 'completed'
+      activeLeafId: string | null
+      editorText: string | null
+      summaryCreated: boolean
+    }
+  | { outcome: 'cancelled' }
 
 export type AgentRuntimeCompactResult =
   | {

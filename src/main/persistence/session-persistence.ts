@@ -206,7 +206,6 @@ export class SessionPersistence {
       authority: 'pi-jsonl',
       piSessionId: identity.id,
       piSessionFile: identity.file,
-      activeLeafId: null,
       legacyImport: { status: 'not-required', sourceFile: null },
     })
     this.histories.set(session.id, history)
@@ -221,7 +220,7 @@ export class SessionPersistence {
     const projection = projectPiSessionJsonl(
       await readFile(transcriptPath, 'utf8'),
       null,
-      history.activeLeafId ?? undefined,
+      history.activeLeafId,
     )
     session.messages = projection.messages
     session.runs = projection.runs
@@ -249,7 +248,7 @@ export class SessionPersistence {
     const projection = projectPiSessionJsonl(
       await readFile(transcriptPath, 'utf8'),
       selectedEntryId,
-      history.activeLeafId ?? undefined,
+      history.activeLeafId,
     )
     const redactor = createSecretRedactor(await this.getKnownSecretValues())
     const inspectedSession = sessionRecordSchema.parse(
@@ -298,7 +297,7 @@ export class SessionPersistence {
     sessionDirectory: string
     resumeSession: boolean
     piSessionFile: string | null
-    activeLeafId: string | null
+    activeLeafId?: string | null
   } {
     const sessionDirectory = join(this.dataDirectory, 'pi', projectId, sessionId)
     const history = this.getHistory(sessionId)
@@ -306,7 +305,7 @@ export class SessionPersistence {
       agentDirectory: join(this.dataDirectory, 'pi', 'agent'),
       sessionDirectory,
       piSessionFile: history.piSessionFile,
-      activeLeafId: history.activeLeafId ?? null,
+      ...(history.activeLeafId !== undefined ? { activeLeafId: history.activeLeafId } : {}),
       resumeSession:
         history.authority === 'pi-jsonl' &&
         history.piSessionFile !== null &&
@@ -343,7 +342,6 @@ export class SessionPersistence {
         authority: 'legacy-import',
         piSessionId: null,
         piSessionFile: null,
-        activeLeafId: null,
         legacyImport: { status: 'pending', sourceFile },
       })
     } else {
@@ -351,7 +349,6 @@ export class SessionPersistence {
         authority: 'pi-jsonl',
         piSessionId: piIdentity?.id ?? null,
         piSessionFile: piIdentity?.file ?? null,
-        activeLeafId: null,
         legacyImport: { status: 'not-required', sourceFile: null },
       })
     }
@@ -429,7 +426,6 @@ export class SessionPersistence {
       authority: 'pi-jsonl',
       piSessionId: null,
       piSessionFile: null,
-      activeLeafId: null,
       legacyImport: { status: 'not-required', sourceFile: null },
     }
   }
