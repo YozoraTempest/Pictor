@@ -145,6 +145,13 @@ active leaf，并以 `fork(position: "at")` 复制当前完整分支。历史节
 Clone；两者共享并发锁、取消语义、目标 JSONL 移动和 Repository 提交事务，目标标题分别使用
 `(Fork)` 与 `(Clone)` 区分。
 
+Pi Session Import 是独立的 Project 级 Runtime operation。Renderer 只提交目标 Project identity，
+Electron Main 的原生文件选择器取得源 `.jsonl` 路径；utility host 调用
+`AgentSessionRuntime.importFromJsonl(source, projectRoot)`，让 Pi 复制文件并执行原生 resume
+lifecycle。Pictor 只脱敏和绑定目标副本，绝不重写或移动源文件；失效或其他平台的原始 cwd 由当前
+Project 根目录覆盖。Runtime completed 后 Repository 才提交新 Session，取消或失败不会留下
+Pictor metadata。
+
 Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全集中在内部
 `SessionPersistence` module；Pi JSONL 到桌面模型的映射集中在纯投影 module。它们直接使用本地
 文件系统和现有凭据迁移函数，不增加通用 Repository、DAO 或存储 provider。相关测试通过真实

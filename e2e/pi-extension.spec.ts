@@ -89,6 +89,46 @@ test('loads an unmodified native Pi Extension from the user Store', async ({
   const userDataDirectory = testInfo.outputPath('pi-extension-user-data')
   const projectRoot = testInfo.outputPath('pi-extension-project')
   await mkdir(projectRoot, { recursive: true })
+  const importSource = testInfo.outputPath('import-source.jsonl')
+  const importedJsonl = [
+    JSON.stringify({
+      type: 'session',
+      version: 3,
+      id: 'imported-pi-session',
+      timestamp: new Date().toISOString(),
+      cwd: '/missing/import-project',
+    }),
+    JSON.stringify({
+      type: 'message',
+      id: 'imported-user',
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      message: { role: 'user', content: 'Imported root task' },
+    }),
+    JSON.stringify({
+      type: 'message',
+      id: 'imported-original',
+      parentId: 'imported-user',
+      timestamp: new Date().toISOString(),
+      message: { role: 'assistant', content: 'Imported original answer', stopReason: 'stop' },
+    }),
+    JSON.stringify({
+      type: 'message',
+      id: 'imported-branch-user',
+      parentId: 'imported-user',
+      timestamp: new Date().toISOString(),
+      message: { role: 'user', content: 'Imported branch task' },
+    }),
+    JSON.stringify({
+      type: 'message',
+      id: 'imported-branch-answer',
+      parentId: 'imported-branch-user',
+      timestamp: new Date().toISOString(),
+      message: { role: 'assistant', content: 'Imported branch answer', stopReason: 'stop' },
+    }),
+    '',
+  ].join('\n')
+  await writeFile(importSource, importedJsonl)
   const store = new PluginStore({
     userDataDirectory,
     bundledPluginsDirectory: resolve('.pictor/bundled-plugins'),
@@ -125,6 +165,7 @@ import { join } from 'node:path'
 export default function (pi) {
   const record = (ctx, value) => appendFileSync(join(ctx.cwd, 'fork-lifecycle.log'), value + '\\n')
   pi.on('session_before_fork', (event, ctx) => record(ctx, 'before_fork:' + event.entryId + ':' + event.position))
+  pi.on('session_before_switch', (_event, ctx) => record(ctx, 'before_switch'))
   pi.on('session_shutdown', (event, ctx) => record(ctx, 'shutdown:' + event.reason))
   pi.on('session_start', (event, ctx) => record(ctx, 'start:' + event.reason))
 }
@@ -139,25 +180,43 @@ export default function (pi) {
   try {
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
-    await window.getByRole('button', { name: '设置' }).click()
-    await window.getByLabel('API Base URL').fill(`http://127.0.0.1:${address.port}/v1`)
-    await window.getByRole('textbox', { name: '模型', exact: true }).fill('pictor-e2e-model')
-    await window.getByLabel('API Key').fill(credentialFixtures.localRuntime)
-    await window.getByRole('button', { name: '保存设置' }).click()
-
-    const project = await window.evaluate(
-      async (rootPath) =>
-        (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.registerProject({
-          rootPath,
-          trusted: true,
-        }),
-      projectRoot,
+    const setup = await window.evaluate(
+      async ({ apiKey, baseUrl, rootPath }) => {
+        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+        const settings = await bridge.saveSettings({
+          apiProtocol: 'chat-completions',
+          baseUrl,
+          modelId: 'pictor-e2e-model',
+          reasoningEffort: null,
+          temperature: null,
+          maxOutputTokens: null,
+          apiKey: { action: 'replace', value: apiKey },
+        })
+        const project = await bridge.registerProject({ rootPath, trusted: true })
+        if (!project.ok) return { settings, project, session: null }
+        const session = await bridge.createSession({ projectId: project.value.id })
+        return { settings, project, session }
+      },
+      {
+        apiKey: credentialFixtures.localRuntime,
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        rootPath: projectRoot,
+      },
     )
-    expect(project.ok).toBe(true)
+    expect(setup).toMatchObject({
+      settings: { ok: true },
+      project: { ok: true },
+      session: { ok: true },
+    })
     await window.reload()
-    await window.getByRole('button', { name: '新建 Session' }).first().click()
-    await window.getByRole('textbox', { name: '任务描述' }).fill('Use the hello tool.')
-    await window.getByRole('button', { name: '发送任务' }).click()
+    const startSelectedRun = (prompt: string) =>
+      window.evaluate(async (value) => {
+        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+        const snapshot = await bridge.getSnapshot()
+        if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
+        return bridge.startRun({ sessionId: snapshot.value.selectedSessionId, prompt: value })
+      }, prompt)
+    expect(await startSelectedRun('Use the hello tool.')).toMatchObject({ ok: true })
 
     await expect(window.getByText('Extension Tool')).toBeVisible({ timeout: 30_000 })
     await window.getByText('查看输出').click()
@@ -165,8 +224,7 @@ export default function (pi) {
     await expect(window.getByText('Native extension completed.')).toBeVisible({ timeout: 30_000 })
     await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
 
-    await window.getByRole('textbox', { name: '任务描述' }).fill('Ask through the GUI.')
-    await window.getByRole('button', { name: '发送任务' }).click()
+    expect(await startSelectedRun('Ask through the GUI.')).toMatchObject({ ok: true })
     await expect(window.getByRole('heading', { name: 'Enter a value' })).toBeVisible()
     await window.getByLabel('输入').fill('GUI response')
     await window.getByRole('button', { name: '确认' }).click()
@@ -245,6 +303,43 @@ export default function (pi) {
     const clonedLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
     expect(clonedLifecycle.match(/shutdown:fork/g)).toHaveLength(2)
     expect(clonedLifecycle.match(/start:fork/g)).toHaveLength(2)
+
+    await electronApp.evaluate(({ dialog }, sourcePath) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sourcePath] })
+    }, importSource)
+    await window.getByLabel('pi-extension-project 项目操作').click()
+    await window.getByRole('button', { name: '导入 Pi Session' }).click()
+
+    await expect(window.getByRole('heading', { name: 'import-source (Import)' })).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(window.locator('.timeline').getByText('Imported branch answer')).toBeVisible()
+    await window.getByRole('button', { name: 'Session Tree' }).click()
+    const importedTree = window.getByRole('complementary', { name: 'Session Tree' })
+    await expect(
+      importedTree.getByRole('button', { name: 'Imported original answer' }),
+    ).toBeVisible()
+    await expect(importedTree.getByRole('button', { name: 'Imported branch answer' })).toBeVisible()
+    const importedSnapshot = await window.evaluate(async () => {
+      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
+      return bridge.getSnapshot()
+    })
+    expect(importedSnapshot).toMatchObject({
+      ok: true,
+      value: {
+        selectedSessionId: expect.any(String),
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ title: 'import-source (Import)' }),
+        ]),
+      },
+    })
+    expect(await readFile(importSource, 'utf8')).toBe(importedJsonl)
+    await expect
+      .poll(() => readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8'))
+      .toEqual(expect.stringContaining('before_switch'))
+    const importedLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
+    expect(importedLifecycle).toContain('shutdown:resume')
+    expect(importedLifecycle).toContain('start:resume')
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

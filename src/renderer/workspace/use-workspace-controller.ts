@@ -29,6 +29,7 @@ export type WorkspaceBridge = Pick<
   | 'inspectSessionHistory'
   | 'forkSession'
   | 'cloneSession'
+  | 'importSession'
   | 'startRun'
   | 'approveCommand'
   | 'rejectCommand'
@@ -56,6 +57,7 @@ export interface WorkspaceController {
   canInspectSessionTree: boolean
   forkingEntryId: string | null
   cloningSession: boolean
+  importingProjectId: string | null
   activeSessionSummary: SessionSummary | null
   activeRun: RunRecord | null
   anotherSessionRunning: boolean
@@ -79,6 +81,7 @@ export interface WorkspaceController {
   inspectSessionHistory: (entryId: string | null) => Promise<void>
   forkSession: (entryId: string) => Promise<boolean>
   cloneSession: () => Promise<boolean>
+  importSession: (projectId: string) => Promise<boolean>
   startRun: () => Promise<void>
   queueMessage: (mode: 'steer' | 'follow-up') => Promise<void>
   clearQueue: () => Promise<void>
@@ -101,8 +104,11 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const [session, setSession] = useState<SessionRecord | null>(null)
   const [sessionTree, setSessionTree] = useState<SessionTreeView | null>(null)
   const [sessionTreeLoading, setSessionTreeLoading] = useState(false)
-  const [sessionDerivation, setSessionDerivation] = useState<
-    { kind: 'fork'; entryId: string } | { kind: 'clone' } | null
+  const [sessionOperation, setSessionOperation] = useState<
+    | { kind: 'fork'; entryId: string }
+    | { kind: 'clone' }
+    | { kind: 'import'; projectId: string }
+    | null
   >(null)
   const [loading, setLoading] = useState(true)
   const [sessionLoading, setSessionLoading] = useState(false)
@@ -315,8 +321,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const forkSession = useCallback(
     async (entryId: string): Promise<boolean> => {
       const sourceSessionId = selectedSessionIdRef.current
-      if (!sourceSessionId || sessionDerivation) return false
-      setSessionDerivation({ kind: 'fork', entryId })
+      if (!sourceSessionId || sessionOperation) return false
+      setSessionOperation({ kind: 'fork', entryId })
       setActionError(null)
       try {
         const response = await bridge.forkSession({ sessionId: sourceSessionId, entryId })
@@ -331,16 +337,16 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
         setActionError(errorMessage(error))
         return false
       } finally {
-        setSessionDerivation(null)
+        setSessionOperation(null)
       }
     },
-    [bridge, selectSession, sessionDerivation],
+    [bridge, selectSession, sessionOperation],
   )
 
   const cloneSession = useCallback(async (): Promise<boolean> => {
     const sourceSessionId = selectedSessionIdRef.current
-    if (!sourceSessionId || sessionDerivation) return false
-    setSessionDerivation({ kind: 'clone' })
+    if (!sourceSessionId || sessionOperation) return false
+    setSessionOperation({ kind: 'clone' })
     setActionError(null)
     try {
       const response = await bridge.cloneSession({ sessionId: sourceSessionId })
@@ -355,12 +361,37 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       setActionError(errorMessage(error))
       return false
     } finally {
-      setSessionDerivation(null)
+      setSessionOperation(null)
     }
-  }, [bridge, selectSession, sessionDerivation])
+  }, [bridge, selectSession, sessionOperation])
 
-  const forkingEntryId = sessionDerivation?.kind === 'fork' ? sessionDerivation.entryId : null
-  const cloningSession = sessionDerivation?.kind === 'clone'
+  const importSession = useCallback(
+    async (projectId: string): Promise<boolean> => {
+      if (sessionOperation) return false
+      setSessionOperation({ kind: 'import', projectId })
+      setActionError(null)
+      try {
+        const response = await bridge.importSession({ projectId })
+        if (!response.ok) {
+          setActionError(response.error.message)
+          return false
+        }
+        if (!response.value) return false
+        await selectSession(response.value.projectId, response.value.id)
+        return true
+      } catch (error) {
+        setActionError(errorMessage(error))
+        return false
+      } finally {
+        setSessionOperation(null)
+      }
+    },
+    [bridge, selectSession, sessionOperation],
+  )
+
+  const forkingEntryId = sessionOperation?.kind === 'fork' ? sessionOperation.entryId : null
+  const cloningSession = sessionOperation?.kind === 'clone'
+  const importingProjectId = sessionOperation?.kind === 'import' ? sessionOperation.projectId : null
 
   const pickProject = useCallback(
     async (relinkProjectId: string | null = null): Promise<WorkspaceTrustRequest | null> => {
@@ -610,6 +641,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     canInspectSessionTree,
     forkingEntryId,
     cloningSession,
+    importingProjectId,
     activeSessionSummary,
     activeRun,
     anotherSessionRunning,
@@ -633,6 +665,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     inspectSessionHistory,
     forkSession,
     cloneSession,
+    importSession,
     startRun,
     queueMessage,
     clearQueue,

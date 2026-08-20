@@ -78,6 +78,7 @@ function createBridge(
         : { ok: false, error: { code: 'not-found', message: '不存在' } },
     forkSession: async () => ok(null),
     cloneSession: async () => ok(null),
+    importSession: async () => ok(null),
     getSettings: async () => ok(snapshot.settings),
     saveSettings: async () => ok(snapshot.settings!),
     testSettings: async () => ok({ outcome: 'success', message: '连接成功' }),
@@ -338,6 +339,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   const bridge = createBridge(snapshot, activeSession)
   bridge.forkSession = vi.fn(async () => ok(null))
   bridge.cloneSession = vi.fn(async () => ok(null))
+  bridge.importSession = vi.fn(async () => ok(null))
   bridge.inspectSessionHistory = vi.fn(async ({ entryId }) => {
     const selectedEntryId = entryId ?? 'active-entry'
     return ok({
@@ -377,6 +379,8 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   renderApp(bridge)
 
   await screen.findByText('Active response details')
+  fireEvent.click(screen.getByRole('button', { name: '导入 Pi Session' }))
+  await waitFor(() => expect(bridge.importSession).toHaveBeenCalledWith({ projectId }))
   fireEvent.click(screen.getByRole('button', { name: 'Session Tree' }))
   expect(await screen.findByRole('complementary', { name: 'Session Tree' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Fork 为新 Session' })).toBeDisabled()

@@ -122,6 +122,29 @@ parentPort.on('message', (messageEvent) => {
     return
   }
 
+  if (command.type === 'import') {
+    void statePromise
+      .then((state) => requireRuntime(state).importSession(command))
+      .then((result) =>
+        parentPort.postMessage({
+          type: 'host.importResult',
+          operationId: command.operationId,
+          targetSessionId: command.targetSessionId,
+          ...result,
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.importResult',
+          operationId: command.operationId,
+          targetSessionId: command.targetSessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Pi Session Import failed',
+        }),
+      )
+    return
+  }
+
   void statePromise
     .then((state) => {
       const runtime = requireRuntime(state)

@@ -72,6 +72,9 @@ it.each(['a', 'id', 'running'])(
       createDerivedSession: vi.fn(async () => {
         throw new Error('not used')
       }),
+      createImportedSession: vi.fn(async () => {
+        throw new Error('not used')
+      }),
       getProject: vi.fn(
         () =>
           ({
@@ -109,6 +112,9 @@ it.each(['a', 'id', 'running'])(
       isActive: vi.fn(() => false),
       start,
       fork: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+      importSession: vi.fn(async () => {
         throw new Error('not used')
       }),
       approve: vi.fn(),
@@ -278,6 +284,9 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     createDerivedSession: vi.fn(async () => {
       throw new Error('not used')
     }),
+    createImportedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
     getProject: vi.fn(
       () =>
         ({
@@ -314,6 +323,9 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     isActive: vi.fn(() => false),
     start: vi.fn(async () => undefined),
     fork: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    importSession: vi.fn(async () => {
       throw new Error('not used')
     }),
     approve: vi.fn(),
@@ -376,6 +388,9 @@ it('keeps a pending Legacy Session Import read-only', async () => {
     createDerivedSession: vi.fn(async () => {
       throw new Error('not used')
     }),
+    createImportedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
     getProject: vi.fn(() => {
       throw new Error('must not resolve the project for read-only history')
     }),
@@ -394,6 +409,9 @@ it('keeps a pending Legacy Session Import read-only', async () => {
     fork: vi.fn(async () => {
       throw new Error('not used')
     }),
+    importSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -407,7 +425,7 @@ it('keeps a pending Legacy Session Import read-only', async () => {
   expect(start).not.toHaveBeenCalled()
 })
 
-it('creates a new Pictor Session only after native Pi Fork completes', async () => {
+it('commits native Pi Session derivation and Import operations', async () => {
   const now = new Date().toISOString()
   const session: SessionRecord = {
     schemaVersion: 1,
@@ -433,6 +451,11 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
     id: '71234567-89ab-4def-8123-456789abcdef',
     title: 'Source session (Clone)',
   }
+  const importedSummary: SessionSummary = {
+    ...forkedSummary,
+    id: '81234567-89ab-4def-8123-456789abcdef',
+    title: 'source-history (Import)',
+  }
   let releaseCommit!: () => void
   const commitGate = new Promise<void>((resolve) => {
     releaseCommit = resolve
@@ -443,6 +466,7 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
       return kind === 'clone' ? clonedSummary : forkedSummary
     },
   )
+  const createImportedSession = vi.fn(async () => importedSummary)
   const inspectSessionHistory = vi.fn(
     async (_sourceSessionId: string, selectedEntryId: string | null) => ({
       ...historyView(session, 'active-entry'),
@@ -468,6 +492,7 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
     bindPiSession: vi.fn(async () => undefined),
     rebuildSessionProjection: vi.fn(async () => session),
     createDerivedSession,
+    createImportedSession,
     getProject: vi.fn(
       () =>
         ({
@@ -508,10 +533,19 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
     piSessionId: 'forked-pi-session',
     piSessionFile: 'forked.jsonl',
   }))
+  const importSession = vi.fn<RuntimeHost['importSession']>(async (config) => ({
+    type: 'host.importResult',
+    operationId: config.operationId,
+    targetSessionId: config.targetSessionId,
+    outcome: 'completed',
+    piSessionId: 'imported-pi-session',
+    piSessionFile: 'source-history.jsonl',
+  }))
   const supervisor: RuntimeHost = {
     isActive: () => false,
     start: vi.fn(async () => undefined),
     fork,
+    importSession,
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -570,4 +604,30 @@ it('creates a new Pictor Session only after native Pi Fork completes', async () 
     '请使用 Clone 复制当前分支',
   )
   expect(fork).toHaveBeenCalledTimes(3)
+
+  await expect(
+    coordinator.importSession(projectId, '/imports/source-history.jsonl'),
+  ).resolves.toEqual(importedSummary)
+  const importConfig = importSession.mock.calls[0]![0]
+  expect(importConfig).toMatchObject({
+    type: 'import',
+    projectRoot: '/fixture',
+    sourceJsonlPath: '/imports/source-history.jsonl',
+    targetSessionDirectory: expect.stringMatching(/^\/sessions\//),
+  })
+  expect(createImportedSession).toHaveBeenCalledWith(
+    projectId,
+    importConfig.targetSessionId,
+    'source-history (Import)',
+    { id: 'imported-pi-session', file: 'source-history.jsonl' },
+  )
+
+  importSession.mockResolvedValueOnce({
+    type: 'host.importResult',
+    operationId: '91234567-89ab-4def-8123-456789abcdef',
+    targetSessionId: 'a1234567-89ab-4def-8123-456789abcdef',
+    outcome: 'cancelled',
+  })
+  await expect(coordinator.importSession(projectId, '/imports/cancelled.jsonl')).resolves.toBeNull()
+  expect(createImportedSession).toHaveBeenCalledOnce()
 })

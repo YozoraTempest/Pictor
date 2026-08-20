@@ -30,6 +30,7 @@ export const bridgeKeys = [
   'installPiExtension',
   'installPiPackage',
   'inspectSessionHistory',
+  'importSession',
   'listModels',
   'queueRuntimeMessage',
   'pickProjectDirectory',

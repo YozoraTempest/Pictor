@@ -76,6 +76,10 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - Pi Session Clone 测试必须证明 Main 从权威 Pi Session History 推导 active leaf，Renderer 不提交
   leaf ID，并通过同一原生 Fork lifecycle 创建标题、identity 和 JSONL 均独立的新 Pictor Session；
   E2E 必须从 Tree View 的活跃叶节点完成 Clone 并观察第二次 lifecycle。
+- Pi Session Import 测试必须覆盖 completed/cancelled/failed host result、源 JSONL 保留、目标副本
+  脱敏、失效 cwd override、完整 Tree Projection 和新 Pictor Session 提交；文件路径只能由 Main
+  的原生选择器取得。E2E 必须观察 `session_before_switch`、`session_shutdown(reason: "resume")`
+  与 `session_start(reason: "resume")`。
 - 零 Plugin E2E 先通过真实 Store 将全部 Bundled Plugin 标记为 `removed`，重启后只能由 Core
   Shell 提供 Plugin Manager；安全模式使用同一 Core Shell，但不改变用户 Registry。
 - `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，

@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   RuntimeEvent,
   RuntimeForkConfig,
+  RuntimeImportConfig,
   RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
 import { REDACTED_SECRET } from '../shared/secret-redaction.js'
@@ -23,6 +24,7 @@ const sessionFactory = async () => ({
   followUp: async () => undefined,
   clearQueue: () => ({ steering: [], followUp: [] }),
   fork: async () => ({ cancelled: false }),
+  importFromJsonl: async () => ({ cancelled: false }),
   getSessionStats: () => ({
     sessionFile: undefined,
     sessionId: 'test-session',
@@ -152,6 +154,7 @@ describe('PiAgentRuntime cleanup', () => {
         followUp,
         clearQueue,
         fork: async () => ({ cancelled: false }),
+        importFromJsonl: async () => ({ cancelled: false }),
         abort: async () => undefined,
         waitForIdle,
         dispose: () => undefined,
@@ -244,6 +247,7 @@ describe('PiAgentRuntime cleanup', () => {
         followUp: async () => undefined,
         clearQueue: () => ({ steering: [], followUp: [] }),
         fork: nativeFork,
+        importFromJsonl: async () => ({ cancelled: false }),
         getSessionStats: () => ({
           sessionFile: currentFile,
           sessionId: currentId,
@@ -308,5 +312,114 @@ describe('PiAgentRuntime cleanup', () => {
       'forked',
     )
     await expect(readFile(forkedFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('imports through the native Pi Session lifecycle without rewriting the source JSONL', async () => {
+    const sourceDirectory = join(root, 'imports')
+    const targetSessionDirectory = join(root, 'imported-session')
+    const sourceFile = join(sourceDirectory, 'source-history.jsonl')
+    const initialFile = join(targetSessionDirectory, 'initial.jsonl')
+    const importedFile = join(targetSessionDirectory, 'source-history.jsonl')
+    await mkdir(sourceDirectory)
+    await writeFile(
+      sourceFile,
+      [
+        JSON.stringify({ type: 'session', version: 3, id: 'source-session', cwd: '/old' }),
+        JSON.stringify({
+          type: 'message',
+          id: 'entry',
+          parentId: null,
+          message: { role: 'user', content: 'test-key' },
+        }),
+        '',
+      ].join('\n'),
+    )
+    let currentFile = initialFile
+    let currentId = 'initial-session'
+    const nativeImport = vi.fn(async (inputPath: string, cwdOverride: string) => {
+      expect(cwdOverride).toBe(join(root, 'project'))
+      await copyFile(inputPath, importedFile)
+      currentFile = importedFile
+      currentId = 'source-session'
+      return { cancelled: false }
+    })
+    const dispose = vi.fn(async () => undefined)
+    const runtime = new PiAgentRuntime(
+      () => undefined,
+      async () => {
+        await mkdir(targetSessionDirectory, { recursive: true })
+        await writeFile(initialFile, '{"type":"session","id":"initial-session"}\n')
+        return {
+          subscribe: () => () => undefined,
+          prompt: async () => undefined,
+          abort: async () => undefined,
+          waitForIdle: async () => undefined,
+          steer: async () => undefined,
+          followUp: async () => undefined,
+          clearQueue: () => ({ steering: [], followUp: [] }),
+          fork: async () => ({ cancelled: false }),
+          importFromJsonl: nativeImport,
+          getSessionStats: () => ({
+            sessionFile: currentFile,
+            sessionId: currentId,
+            userMessages: 0,
+            assistantMessages: 0,
+            toolCalls: 0,
+            toolResults: 0,
+            totalMessages: 0,
+            tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            cost: 0,
+          }),
+          getSessionId: () => currentId,
+          getSessionFile: () => currentFile,
+          dispose,
+          bindExtensionUi: async () => undefined,
+        }
+      },
+    )
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const config = {
+      type: 'import',
+      operationId: '01234567-89ab-4def-8123-456789abcdef',
+      targetSessionId: '21234567-89ab-4def-8123-456789abcdef',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-import'),
+      sourceJsonlPath: sourceFile,
+      targetSessionDirectory,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+    } satisfies RuntimeImportConfig
+
+    await expect(runtime.importSession(config)).resolves.toEqual({
+      outcome: 'completed',
+      piSessionId: 'source-session',
+      piSessionFile: 'source-history.jsonl',
+    })
+    expect(nativeImport).toHaveBeenCalledWith(sourceFile, join(root, 'project'))
+    expect(dispose).toHaveBeenCalledOnce()
+    await expect(readFile(sourceFile, 'utf8')).resolves.toContain('test-key')
+    const imported = await readFile(importedFile, 'utf8')
+    expect(imported).toContain(REDACTED_SECRET)
+    expect(imported).not.toContain('test-key')
+    await expect(readFile(initialFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

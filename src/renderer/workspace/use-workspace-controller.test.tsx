@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { SessionHistoryView, SessionRecord } from '../../shared/domain'
+import type { SessionHistoryView, SessionRecord, SessionSummary } from '../../shared/domain'
 import type { AppSnapshot, IpcResult, RuntimeEvent } from '../../shared/desktop-bridge'
 import { useWorkspaceController, type WorkspaceBridge } from './use-workspace-controller'
 
@@ -9,6 +9,7 @@ const projectId = '11111111-1111-4111-8111-111111111111'
 const firstSessionId = '22222222-2222-4222-8222-222222222222'
 const secondSessionId = '33333333-3333-4333-8333-333333333333'
 const thirdSessionId = '77777777-7777-4777-8777-777777777777'
+const fourthSessionId = '88888888-8888-4888-8888-888888888888'
 const runId = '44444444-4444-4444-8444-444444444444'
 const messageId = '55555555-5555-4555-8555-555555555555'
 const toolId = '66666666-6666-4666-8666-666666666666'
@@ -156,6 +157,7 @@ function createBridge(
   inspectSessionHistory: ReturnType<typeof vi.fn>
   forkSession: ReturnType<typeof vi.fn>
   cloneSession: ReturnType<typeof vi.fn>
+  importSession: ReturnType<typeof vi.fn>
   startRun: ReturnType<typeof vi.fn>
   stopRun: ReturnType<typeof vi.fn>
   approveCommand: ReturnType<typeof vi.fn>
@@ -182,6 +184,7 @@ function createBridge(
   const startRun = vi.fn(async () => ok({ runId }))
   const forkSession = vi.fn(async () => ok(null))
   const cloneSession = vi.fn(async () => ok(null))
+  const importSession = vi.fn(async () => ok(null))
   const stopRun = vi.fn(async () => ok(null))
   const approveCommand = vi.fn(async () => ok(null))
   const rejectCommand = vi.fn(async () => ok(null))
@@ -207,6 +210,7 @@ function createBridge(
     inspectSessionHistory,
     forkSession,
     cloneSession,
+    importSession,
     startRun,
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
@@ -532,11 +536,17 @@ describe('useWorkspaceController', () => {
       messageContent: 'Active answer',
       runStatus: 'completed',
     })
+    const imported = createSession(fourthSessionId, {
+      title: 'history (Import)',
+      messageContent: 'Imported answer',
+      runStatus: 'completed',
+    })
     const bridge = createBridge({
       sessions: {
         [firstSessionId]: active,
         [secondSessionId]: forked,
         [thirdSessionId]: cloned,
+        [fourthSessionId]: imported,
       },
     })
     bridge.inspectSessionHistory.mockImplementation(
@@ -601,6 +611,41 @@ describe('useWorkspaceController', () => {
     expect(bridge.cloneSession).toHaveBeenCalledWith({ sessionId: firstSessionId })
     expect(result.current.selectedSessionId).toBe(thirdSessionId)
     expect(result.current.session?.title).toBe('Source session (Clone)')
+
+    bridge.importSession.mockResolvedValueOnce(
+      ok({
+        id: fourthSessionId,
+        projectId,
+        title: 'history (Import)',
+        lastRunStatus: 'completed',
+        historyAuthority: 'pi-jsonl',
+        createdAt: now,
+        updatedAt: now,
+      }),
+    )
+    await act(async () => result.current.importSession(projectId))
+    expect(bridge.importSession).toHaveBeenCalledWith({ projectId })
+    expect(result.current.selectedSessionId).toBe(fourthSessionId)
+    expect(result.current.session?.title).toBe('history (Import)')
+  })
+
+  it('keeps one Session Import operation active until file selection completes', async () => {
+    const bridge = createBridge()
+    const pending = deferred<IpcResult<SessionSummary | null>>()
+    bridge.importSession.mockReturnValueOnce(pending.promise)
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.session).not.toBeNull())
+
+    let importing!: Promise<boolean>
+    act(() => {
+      importing = result.current.importSession(projectId)
+    })
+    expect(result.current.importingProjectId).toBe(projectId)
+    await expect(result.current.cloneSession()).resolves.toBe(false)
+
+    pending.resolve(ok(null))
+    await act(async () => importing)
+    expect(result.current.importingProjectId).toBeNull()
   })
 
   it('coordinates Run intents and reports bridge failures', async () => {
