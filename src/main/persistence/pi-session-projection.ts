@@ -58,6 +58,7 @@ export type PiSessionProjection = SessionProjection & { tree: SessionTreeView }
 export function projectPiSessionJsonl(
   content: string,
   selectedEntryId?: string | null,
+  activeLeafIdOverride?: string | null,
 ): PiSessionProjection {
   const entries = content
     .split('\n')
@@ -66,7 +67,11 @@ export function projectPiSessionJsonl(
     .filter((entry) => entry.type !== 'session' && typeof entry.id === 'string')
   const entriesById = new Map(entries.map((entry) => [entry.id!, entry]))
   const branch: PiEntry[] = []
-  const activeLeafId = entries.at(-1)?.id ?? null
+  const activeLeafId =
+    activeLeafIdOverride === undefined ? (entries.at(-1)?.id ?? null) : activeLeafIdOverride
+  if (activeLeafId && !entriesById.has(activeLeafId)) {
+    throw new Error(`Pi Session active leaf not found: ${activeLeafId}`)
+  }
   const selectedId = selectedEntryId ?? activeLeafId
   if (selectedId && !entriesById.has(selectedId)) {
     throw new Error(`Pi Session entry not found: ${selectedId}`)

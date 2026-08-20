@@ -396,9 +396,10 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await window.screenshot({ path: testInfo.outputPath('session-tree.png') })
 
     await tree.getByRole('button', { name: '返回当前节点' }).click()
-    await expect(
-      window.locator('.timeline').getByText('Historical branch from JSONL'),
-    ).toBeVisible()
+    await expect(window.locator('.timeline').getByText('Task completed.')).toBeVisible()
+    await expect(window.locator('.timeline').getByText('Historical branch from JSONL')).toHaveCount(
+      0,
+    )
     await expect(window.getByText(/正在查看历史分支/)).toBeHidden()
     expect(
       await readFile(

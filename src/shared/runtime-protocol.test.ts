@@ -8,6 +8,7 @@ import {
   runtimeForkResultSchema,
   runtimeHostMessageSchema,
   runtimeImportResultSchema,
+  runtimeNavigateResultSchema,
 } from './runtime-protocol.js'
 
 const operationId = '01234567-89ab-4def-8123-456789abcdef'
@@ -145,6 +146,53 @@ describe('Runtime Session operation protocol', () => {
     ] as const
     for (const result of results) {
       expect(runtimeExportResultSchema.parse(result)).toEqual(result)
+      expect(runtimeHostMessageSchema.parse(result)).toEqual(result)
+    }
+  })
+
+  it('accepts same-file Pi Session Tree Navigation commands and host results', () => {
+    expect(
+      runtimeCommandSchema.parse({
+        type: 'navigate',
+        operationId,
+        sourceSessionId,
+        entryId: 'historical-answer',
+        activeLeafId: 'active-answer',
+        projectRoot: '/project',
+        agentDirectory: '/agent',
+        sourceSessionDirectory: '/sessions/source',
+        sourcePiSessionFile: 'source.jsonl',
+        settings: {
+          apiProtocol: 'responses',
+          baseUrl: 'https://example.test/v1',
+          modelId: 'test-model',
+          reasoningEffort: null,
+          temperature: null,
+          maxOutputTokens: 1024,
+        },
+        apiKey: 'test-key',
+      }),
+    ).toMatchObject({ type: 'navigate', operationId, sourceSessionId })
+
+    const results = [
+      {
+        type: 'host.navigateResult',
+        operationId,
+        sourceSessionId,
+        outcome: 'completed',
+        activeLeafId: 'historical-answer',
+      },
+      { type: 'host.navigateResult', operationId, sourceSessionId, outcome: 'cancelled' },
+      {
+        type: 'host.navigateResult',
+        operationId,
+        sourceSessionId,
+        outcome: 'failed',
+        message: 'Navigation failed',
+      },
+    ] as const
+    for (const result of results) {
+      expect(runtimeNavigateResultSchema.parse(result)).toEqual(result)
       expect(runtimeHostMessageSchema.parse(result)).toEqual(result)
     }
   })

@@ -215,6 +215,7 @@ export function App({
         sessionTree={workspace.sessionTree}
         sessionTreeLoading={workspace.sessionTreeLoading}
         canInspectSessionTree={workspace.canInspectSessionTree}
+        navigatingEntryId={workspace.navigatingEntryId}
         forkingEntryId={workspace.forkingEntryId}
         cloningSession={workspace.cloningSession}
         onDraftChange={workspace.setDraft}
@@ -222,6 +223,7 @@ export function App({
         onQueue={(mode) => void workspace.queueMessage(mode)}
         onClearQueue={() => void workspace.clearQueue()}
         onInspectSessionHistory={(entryId) => void workspace.inspectSessionHistory(entryId)}
+        onNavigateSessionTree={(entryId) => void workspace.navigateSessionTree(entryId)}
         onForkSession={(entryId) => void workspace.forkSession(entryId)}
         onCloneSession={() => void workspace.cloneSession()}
         onStop={(runId) => void workspace.stopRun(runId)}

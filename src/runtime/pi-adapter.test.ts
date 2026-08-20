@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -11,6 +11,7 @@ import type {
   RuntimeExportConfig,
   RuntimeForkConfig,
   RuntimeImportConfig,
+  RuntimeNavigateConfig,
   RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
 import { REDACTED_SECRET } from '../shared/secret-redaction.js'
@@ -26,6 +27,7 @@ const sessionFactory = async () => ({
   clearQueue: () => ({ steering: [], followUp: [] }),
   fork: async () => ({ cancelled: false }),
   importFromJsonl: async () => ({ cancelled: false }),
+  navigateTree: async () => ({ cancelled: false }),
   exportToHtml: async (outputPath: string) => outputPath,
   exportToJsonl: (outputPath: string) => outputPath,
   getSessionStats: () => ({
@@ -41,6 +43,7 @@ const sessionFactory = async () => ({
   }),
   getSessionId: () => 'test-pi-session',
   getSessionFile: () => '/tmp/test-pi-session.jsonl',
+  getActiveLeafId: () => 'active-entry',
   dispose: () => undefined,
 })
 
@@ -158,6 +161,7 @@ describe('PiAgentRuntime cleanup', () => {
         clearQueue,
         fork: async () => ({ cancelled: false }),
         importFromJsonl: async () => ({ cancelled: false }),
+        navigateTree: async () => ({ cancelled: false }),
         exportToHtml: async (outputPath: string) => outputPath,
         exportToJsonl: (outputPath: string) => outputPath,
         abort: async () => undefined,
@@ -176,6 +180,7 @@ describe('PiAgentRuntime cleanup', () => {
         }),
         getSessionId: () => 'test-pi-session',
         getSessionFile: () => '/tmp/test-pi-session.jsonl',
+        getActiveLeafId: () => 'active-entry',
       }),
     )
     runtime.configure({
@@ -253,6 +258,7 @@ describe('PiAgentRuntime cleanup', () => {
         clearQueue: () => ({ steering: [], followUp: [] }),
         fork: nativeFork,
         importFromJsonl: async () => ({ cancelled: false }),
+        navigateTree: async () => ({ cancelled: false }),
         exportToHtml: async (outputPath: string) => outputPath,
         exportToJsonl: (outputPath: string) => outputPath,
         getSessionStats: () => ({
@@ -268,6 +274,7 @@ describe('PiAgentRuntime cleanup', () => {
         }),
         getSessionId: () => currentId,
         getSessionFile: () => currentFile,
+        getActiveLeafId: () => 'active-entry',
         dispose,
         bindExtensionUi: async () => undefined,
       }),
@@ -366,6 +373,7 @@ describe('PiAgentRuntime cleanup', () => {
           clearQueue: () => ({ steering: [], followUp: [] }),
           fork: async () => ({ cancelled: false }),
           importFromJsonl: nativeImport,
+          navigateTree: async () => ({ cancelled: false }),
           exportToHtml: async (outputPath: string) => outputPath,
           exportToJsonl: (outputPath: string) => outputPath,
           getSessionStats: () => ({
@@ -381,6 +389,7 @@ describe('PiAgentRuntime cleanup', () => {
           }),
           getSessionId: () => currentId,
           getSessionFile: () => currentFile,
+          getActiveLeafId: () => 'active-entry',
           dispose,
           bindExtensionUi: async () => undefined,
         }
@@ -434,6 +443,10 @@ describe('PiAgentRuntime cleanup', () => {
 
   it('exports through native Pi Session methods without loading Extension code', async () => {
     const sourceSessionDirectory = join(root, 'export-source')
+    const sourceFile = join(sourceSessionDirectory, 'source.jsonl')
+    const sourceContent = '{"type":"session","version":3,"id":"source-session"}\n'
+    await mkdir(sourceSessionDirectory)
+    await writeFile(sourceFile, sourceContent)
     const exportToJsonl = vi.fn((outputPath: string) => outputPath)
     const exportToHtml = vi.fn(async (outputPath: string) => outputPath)
     const dispose = vi.fn(async () => undefined)
@@ -500,6 +513,10 @@ describe('PiAgentRuntime cleanup', () => {
     ).resolves.toEqual({ outcome: 'completed' })
     expect(exportToHtml).toHaveBeenCalledWith(join(root, 'exported.html'))
     expect(dispose).toHaveBeenCalledTimes(2)
+    await expect(readFile(sourceFile, 'utf8')).resolves.toBe(sourceContent)
+    expect(
+      (await readdir(sourceSessionDirectory)).filter((name) => name.startsWith('.pictor-export-')),
+    ).toEqual([])
 
     await expect(
       runtime.exportSession({
@@ -509,5 +526,104 @@ describe('PiAgentRuntime cleanup', () => {
       }),
     ).rejects.toThrow('cannot overwrite its source history')
     expect(factory).toHaveBeenCalledTimes(2)
+  })
+
+  it('navigates the active leaf through the native Pi Session lifecycle', async () => {
+    const sourceSessionDirectory = join(root, 'navigate-source')
+    const sourceFile = join(sourceSessionDirectory, 'source.jsonl')
+    await mkdir(sourceSessionDirectory)
+    await writeFile(
+      sourceFile,
+      [
+        JSON.stringify({
+          type: 'session',
+          version: 3,
+          id: 'pi-session',
+          cwd: join(root, 'project'),
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'active-answer',
+          parentId: null,
+          message: { role: 'assistant', content: 'Active answer', stopReason: 'stop' },
+        }),
+        '',
+      ].join('\n'),
+    )
+    let activeLeafId = 'active-answer'
+    const navigateTree = vi.fn(async (entryId: string, options: { summarize: false }) => {
+      expect(options).toEqual({ summarize: false })
+      activeLeafId = entryId
+      return { cancelled: false }
+    })
+    const bindExtensionUi = vi.fn(async () => undefined)
+    const dispose = vi.fn(async () => undefined)
+    const factory = vi.fn(async () => ({
+      ...(await sessionFactory()),
+      navigateTree,
+      getSessionFile: () => sourceFile,
+      getActiveLeafId: () => activeLeafId,
+      dispose,
+      bindExtensionUi,
+    }))
+    const runtime = new PiAgentRuntime(() => undefined, factory)
+    runtime.configure({
+      extensionPaths: ['/trusted/extensions'],
+      skillPaths: ['/trusted/skills'],
+      promptPaths: ['/trusted/prompts'],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const config = {
+      type: 'navigate',
+      operationId: '01234567-89ab-4def-8123-456789abcdef',
+      sourceSessionId: '11234567-89ab-4def-8123-456789abcdef',
+      entryId: 'historical-answer',
+      activeLeafId: 'active-answer',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-navigate'),
+      sourceSessionDirectory,
+      sourcePiSessionFile: 'source.jsonl',
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+    } satisfies RuntimeNavigateConfig
+
+    await expect(runtime.navigateSession(config)).resolves.toEqual({
+      outcome: 'completed',
+      activeLeafId: 'historical-answer',
+    })
+    expect(navigateTree).toHaveBeenCalledWith('historical-answer', { summarize: false })
+    expect(factory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionFile: 'source.jsonl',
+        extensionPaths: ['/trusted/extensions'],
+        skillPaths: ['/trusted/skills'],
+        promptPaths: ['/trusted/prompts'],
+        config: expect.objectContaining({ activeLeafId: 'active-answer' }),
+      }),
+    )
+    expect(bindExtensionUi).toHaveBeenCalledOnce()
+    expect(dispose).toHaveBeenCalledOnce()
+
+    navigateTree.mockResolvedValueOnce({ cancelled: true })
+    await expect(
+      runtime.navigateSession({
+        ...config,
+        operationId: '21234567-89ab-4def-8123-456789abcdef',
+      }),
+    ).resolves.toEqual({ outcome: 'cancelled' })
   })
 })

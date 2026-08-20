@@ -5,6 +5,7 @@ import type {
   RuntimeExportConfig,
   RuntimeForkConfig,
   RuntimeImportConfig,
+  RuntimeNavigateConfig,
   RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
 
@@ -14,6 +15,9 @@ export type AgentRuntimeForkResult =
 export type AgentRuntimeImportResult = AgentRuntimeForkResult
 
 export type AgentRuntimeExportResult = { outcome: 'completed' }
+
+export type AgentRuntimeNavigateResult =
+  { outcome: 'completed'; activeLeafId: string | null } | { outcome: 'cancelled' }
 
 export interface ModelRuntimeProvider {
   id: string
@@ -38,6 +42,7 @@ export interface AgentRuntimeProvider {
   fork(config: RuntimeForkConfig): Promise<AgentRuntimeForkResult>
   importSession(config: RuntimeImportConfig): Promise<AgentRuntimeImportResult>
   exportSession(config: RuntimeExportConfig): Promise<AgentRuntimeExportResult>
+  navigateSession(config: RuntimeNavigateConfig): Promise<AgentRuntimeNavigateResult>
   resolveApproval(runId: string, callId: string, allowed: boolean): void
   abort(runId: string): Promise<void>
   queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void>

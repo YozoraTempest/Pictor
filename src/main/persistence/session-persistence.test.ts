@@ -261,6 +261,18 @@ describe('SessionPersistence', () => {
     expect((await persistence.read(session.id)).messages.map((message) => message.content)).toEqual(
       ['Root task', 'Active answer'],
     )
+
+    await persistence.setActiveLeaf(session.id, 'historical-answer')
+    expect(persistence.getRuntimePaths(session.projectId, session.id).activeLeafId).toBe(
+      'historical-answer',
+    )
+    await persistence.rebuildProjection(session.id)
+    expect((await persistence.read(session.id)).messages.map((message) => message.content)).toEqual(
+      ['Root task', 'Historical answer'],
+    )
+    await expect(persistence.inspectHistory(session.id, null)).resolves.toMatchObject({
+      tree: { activeLeafId: 'historical-answer', selectedEntryId: 'historical-answer' },
+    })
   })
 
   it('repairs historical content, summaries, and unfinished runs during recovery', async () => {
@@ -352,6 +364,7 @@ describe('SessionPersistence', () => {
       authority: 'pi-jsonl',
       piSessionId,
       piSessionFile: piFile,
+      activeLeafId: null,
       legacyImport: { status: 'not-required', sourceFile: null },
     })
     await expect(

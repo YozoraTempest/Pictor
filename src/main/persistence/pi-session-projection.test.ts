@@ -216,6 +216,44 @@ describe('Pi Session Projection', () => {
     ])
   })
 
+  it('projects a persisted active leaf independently from the last JSONL entry', () => {
+    const content = jsonl([
+      { type: 'session', version: 3, id: 'pi-session', timestamp, cwd: '/project' },
+      {
+        type: 'message',
+        id: 'root-user',
+        parentId: null,
+        timestamp,
+        message: { role: 'user', content: 'Root task' },
+      },
+      {
+        type: 'message',
+        id: 'historical-answer',
+        parentId: 'root-user',
+        timestamp,
+        message: { role: 'assistant', content: 'Historical answer', stopReason: 'stop' },
+      },
+      {
+        type: 'message',
+        id: 'last-answer',
+        parentId: 'root-user',
+        timestamp,
+        message: { role: 'assistant', content: 'Last answer', stopReason: 'stop' },
+      },
+    ])
+
+    const projection = projectPiSessionJsonl(content, null, 'historical-answer')
+
+    expect(projection.messages.map((message) => message.content)).toEqual([
+      'Root task',
+      'Historical answer',
+    ])
+    expect(projection.tree).toMatchObject({
+      activeLeafId: 'historical-answer',
+      selectedEntryId: 'historical-answer',
+    })
+  })
+
   it('uses the same readable Runtime failure classification as live events', () => {
     const projection = projectPiSessionJsonl(
       jsonl([

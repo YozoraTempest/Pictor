@@ -64,6 +64,14 @@ _Avoid_: Session source of truth, duplicate history
 A read-only desktop view of every branch in Pi Session History. Selecting an entry changes only the displayed Session Projection, never the active Runtime branch.
 _Avoid_: Fork, Runtime branch switch, editable history
 
+**Pi Session Active Leaf**:
+The entry that defines the current branch context and the parent position for the next appended history entry.
+_Avoid_: Selected Tree entry, latest JSONL line
+
+**Pi Session Tree Navigation**:
+A same-file change of the Pi Session Active Leaf within existing Pi Session History.
+_Avoid_: Session Tree selection, Pi Session Fork, Pi Session Clone
+
 **Pi Session Fork**:
 A new independent Pi Session created from one entry in existing Pi Session History through Pi's native Fork lifecycle.
 _Avoid_: Session Tree selection, in-place branch switch, copied GUI history

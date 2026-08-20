@@ -1,4 +1,14 @@
-import { mkdir, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
 import { basename, isAbsolute, relative, resolve } from 'node:path'
 
 import {
@@ -21,6 +31,7 @@ import {
   type RuntimeExportConfig,
   type RuntimeForkConfig,
   type RuntimeImportConfig,
+  type RuntimeNavigateConfig,
   type RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
 import { classifyRuntimeFailure, type RuntimeFailure } from '../shared/runtime-failure.js'
@@ -29,6 +40,7 @@ import type {
   AgentRuntimeForkResult,
   AgentRuntimeExportResult,
   AgentRuntimeImportResult,
+  AgentRuntimeNavigateResult,
   AgentRuntimeResources,
   ModelRuntimeProvider,
 } from './plugin-interface.js'
@@ -59,11 +71,16 @@ interface PiSessionLike {
   clearQueue(): { steering: string[]; followUp: string[] }
   fork(entryId: string): Promise<{ cancelled: boolean }>
   importFromJsonl(inputPath: string, cwdOverride: string): Promise<{ cancelled: boolean }>
+  navigateTree(
+    entryId: string,
+    options: { summarize: false },
+  ): Promise<{ cancelled: boolean; editorText?: string }>
   exportToHtml(outputPath: string): Promise<string>
   exportToJsonl(outputPath: string): string
   getSessionStats(): SessionStats
   getSessionId(): string
   getSessionFile(): string | undefined
+  getActiveLeafId(): string | null
   dispose(): void | Promise<void>
   bindExtensionUi?(context: ExtensionUIContext): Promise<void>
 }
@@ -155,6 +172,7 @@ async function createProductionSession({
     : config.resumeSession
       ? SessionManager.continueRecent(config.projectRoot, config.sessionDirectory)
       : SessionManager.create(config.projectRoot, config.sessionDirectory)
+  if (config.activeLeafId) sessionManager.branch(config.activeLeafId)
   const createRuntime = async ({
     cwd,
     agentDir,
@@ -263,6 +281,13 @@ class PiSessionRuntime implements PiSessionLike {
     return this.runtime.importFromJsonl(inputPath, cwdOverride)
   }
 
+  navigateTree(
+    entryId: string,
+    options: { summarize: false },
+  ): Promise<{ cancelled: boolean; editorText?: string }> {
+    return this.runtime.session.navigateTree(entryId, options)
+  }
+
   exportToHtml(outputPath: string): Promise<string> {
     return this.runtime.session.exportToHtml(outputPath)
   }
@@ -281,6 +306,10 @@ class PiSessionRuntime implements PiSessionLike {
 
   getSessionFile(): string | undefined {
     return this.runtime.session.sessionFile
+  }
+
+  getActiveLeafId(): string | null {
+    return this.runtime.session.sessionManager.getLeafId()
   }
 
   dispose(): Promise<void> {
@@ -393,6 +422,7 @@ export class PiAgentRuntime {
       })
       const session = await this.sessionFactory({
         config,
+        ...(config.piSessionFile ? { sessionFile: config.piSessionFile } : {}),
         tools,
         extensionPaths: this.extensionPaths,
         skillPaths: this.skillPaths,
@@ -425,6 +455,10 @@ export class PiAgentRuntime {
         cost: stats.cost,
         context: stats.contextUsage ?? null,
       })
+      this.emitEvent(config, {
+        type: 'session.activeLeafChanged',
+        activeLeafId: session.getActiveLeafId(),
+      })
 
       if (current.cancelled) {
         this.emitEvent(config, { type: 'run.stateChanged', status: 'stopped', error: null })
@@ -444,6 +478,12 @@ export class PiAgentRuntime {
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Pi runtime failed'
+      if (current.session) {
+        this.emitEvent(config, {
+          type: 'session.activeLeafChanged',
+          activeLeafId: current.session.getActiveLeafId(),
+        })
+      }
       if (current.cancelled) {
         this.emitEvent(config, { type: 'run.stateChanged', status: 'stopped', error: null })
       } else {
@@ -629,6 +669,9 @@ export class PiAgentRuntime {
     }
 
     const redactor = createSecretRedactor([config.apiKey])
+    const temporarySessionDirectory = await mkdtemp(
+      resolve(config.sourceSessionDirectory, '.pictor-export-'),
+    )
     const eventConfig: RuntimeStartConfig = {
       type: 'start',
       runId: config.operationId,
@@ -636,8 +679,9 @@ export class PiAgentRuntime {
       messageId: config.operationId,
       projectRoot: config.projectRoot,
       agentDirectory: config.agentDirectory,
-      sessionDirectory: config.sourceSessionDirectory,
+      sessionDirectory: temporarySessionDirectory,
       resumeSession: true,
+      activeLeafId: config.activeLeafId,
       settings: config.settings,
       apiKey: config.apiKey,
       prompt: 'Export Pi Session',
@@ -647,6 +691,7 @@ export class PiAgentRuntime {
     let session: PiSessionLike | null = null
 
     try {
+      await copyFile(sourcePath, resolve(temporarySessionDirectory, config.sourcePiSessionFile))
       session = await this.sessionFactory({
         config: eventConfig,
         sessionFile: config.sourcePiSessionFile,
@@ -661,6 +706,65 @@ export class PiAgentRuntime {
       return { outcome: 'completed' }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Pi Session Export failed'
+      throw new Error(redactor.redactText(detail), { cause: error })
+    } finally {
+      broker.cancelAll()
+      if (session) await Promise.resolve(session.dispose()).catch(() => undefined)
+      await rm(temporarySessionDirectory, { recursive: true, force: true })
+      if (this.sessionOperationUi?.operationId === config.operationId) {
+        this.sessionOperationUi = null
+      }
+    }
+  }
+
+  async navigateSession(config: RuntimeNavigateConfig): Promise<AgentRuntimeNavigateResult> {
+    if (this.current || this.sessionOperationUi)
+      throw new Error('Only one Runtime operation can be active')
+    if (config.sourcePiSessionFile !== basename(config.sourcePiSessionFile)) {
+      throw new Error('Source Pi Session file must be a basename')
+    }
+    const redactor = createSecretRedactor([config.apiKey])
+    const eventConfig: RuntimeStartConfig = {
+      type: 'start',
+      runId: config.operationId,
+      sessionId: config.sourceSessionId,
+      messageId: config.operationId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: config.sourceSessionDirectory,
+      resumeSession: true,
+      activeLeafId: config.activeLeafId,
+      settings: config.settings,
+      apiKey: config.apiKey,
+      prompt: 'Navigate Pi Session Tree',
+    }
+    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
+    this.sessionOperationUi = { operationId: config.operationId, broker }
+    let session: PiSessionLike | null = null
+
+    try {
+      session = await this.sessionFactory({
+        config: eventConfig,
+        sessionFile: config.sourcePiSessionFile,
+        tools: [],
+        extensionPaths: this.extensionPaths,
+        skillPaths: this.skillPaths,
+        promptPaths: this.promptPaths,
+        modelProvider: this.getModelProvider(),
+      })
+      await session.bindExtensionUi?.(broker.createContext())
+      const result = await session.navigateTree(config.entryId, { summarize: false })
+      if (result.cancelled) return { outcome: 'cancelled' }
+      if (result.editorText !== undefined) {
+        throw new Error('User Message tree navigation requires editor text support')
+      }
+      await sanitizePiTranscript(
+        resolve(config.sourceSessionDirectory, config.sourcePiSessionFile),
+        redactor,
+      )
+      return { outcome: 'completed', activeLeafId: session.getActiveLeafId() }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Pi Session Tree Navigation failed'
       throw new Error(redactor.redactText(detail), { cause: error })
     } finally {
       broker.cancelAll()

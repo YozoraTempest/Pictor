@@ -21,6 +21,7 @@ import {
   MessageSquareText,
   Play,
   Plus,
+  Route,
   Send,
   ShieldAlert,
   Square,
@@ -66,11 +67,13 @@ interface ConversationProps {
   canInspectSessionTree: boolean
   forkingEntryId: string | null
   cloningSession: boolean
+  navigatingEntryId: string | null
   onDraftChange: (value: string) => void
   onSend: () => void
   onQueue: (mode: 'steer' | 'follow-up') => void
   onClearQueue: () => void
   onInspectSessionHistory: (entryId: string | null) => void
+  onNavigateSessionTree: (entryId: string) => void
   onForkSession: (entryId: string) => void
   onCloneSession: () => void
   onStop: (runId: string) => void
@@ -388,7 +391,9 @@ function SessionTreePanel({
   loading,
   forkingEntryId,
   cloningSession,
+  navigatingEntryId,
   onSelect,
+  onNavigate,
   onFork,
   onClone,
   onClose,
@@ -397,15 +402,24 @@ function SessionTreePanel({
   loading: boolean
   forkingEntryId: string | null
   cloningSession: boolean
+  navigatingEntryId: string | null
   onSelect: (entryId: string | null) => void
+  onNavigate: (entryId: string) => void
   onFork: (entryId: string) => void
   onClone: () => void
   onClose: () => void
 }): React.JSX.Element {
   const selectedEntryId = tree?.selectedEntryId ?? null
+  const selectedNode = tree?.nodes.find((node) => node.id === selectedEntryId)
   const canFork = Boolean(selectedEntryId && selectedEntryId !== tree?.activeLeafId)
   const canClone = Boolean(tree?.activeLeafId && selectedEntryId === tree.activeLeafId)
-  const derivationBusy = forkingEntryId !== null || cloningSession
+  const canNavigate = Boolean(
+    selectedNode &&
+    selectedEntryId !== tree?.activeLeafId &&
+    selectedNode.kind !== 'user' &&
+    selectedNode.kind !== 'custom-message',
+  )
+  const operationBusy = forkingEntryId !== null || cloningSession || navigatingEntryId !== null
   return (
     <aside className="session-tree-panel" aria-label="Session Tree">
       <div className="session-tree-header">
@@ -418,9 +432,21 @@ function SessionTreePanel({
           <button
             className="mini-icon-button"
             type="button"
+            aria-label="切换到此节点"
+            title="切换到此节点"
+            disabled={!canNavigate || operationBusy}
+            onClick={() => {
+              if (selectedEntryId) onNavigate(selectedEntryId)
+            }}
+          >
+            {navigatingEntryId ? <LoaderCircle className="spin" size={14} /> : <Route size={14} />}
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
             aria-label="Fork 为新 Session"
             title="Fork 为新 Session"
-            disabled={!canFork || derivationBusy}
+            disabled={!canFork || operationBusy}
             onClick={() => {
               if (selectedEntryId) onFork(selectedEntryId)
             }}
@@ -432,7 +458,7 @@ function SessionTreePanel({
             type="button"
             aria-label="Clone 当前分支为新 Session"
             title="Clone 当前分支为新 Session"
-            disabled={!canClone || derivationBusy}
+            disabled={!canClone || operationBusy}
             onClick={onClone}
           >
             {cloningSession ? <LoaderCircle className="spin" size={14} /> : <Copy size={14} />}
@@ -518,11 +544,13 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     canInspectSessionTree,
     forkingEntryId,
     cloningSession,
+    navigatingEntryId,
     onDraftChange,
     onSend,
     onQueue,
     onClearQueue,
     onInspectSessionHistory,
+    onNavigateSessionTree,
     onForkSession,
     onCloneSession,
     onStop,
@@ -694,7 +722,9 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             loading={sessionTreeLoading}
             forkingEntryId={forkingEntryId}
             cloningSession={cloningSession}
+            navigatingEntryId={navigatingEntryId}
             onSelect={onInspectSessionHistory}
+            onNavigate={onNavigateSessionTree}
             onFork={onForkSession}
             onClone={onCloneSession}
             onClose={() => setTreeOpen(false)}

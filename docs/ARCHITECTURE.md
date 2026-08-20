@@ -119,16 +119,26 @@ Manifest 的 `pi.skills` 与 `pi.prompts` 直接展开为 Runtime resource path�
 
 `AppRepository` 是 Main 进程的工作区状态入口，只协调 Project、Settings、导航选择和持久化
 初始化。Pi JSONL 是 Agent conversation history 的唯一 authority；Pictor schema v2 只保存导航
-元数据、Pi Session identity 和可重建的 Session Projection。Runtime 首次创建 Pi Session 时通过
-`session.bound` 绑定 identity，终态事件到达后由 Main 从 JSONL 重建投影；流式事件只服务当前
-交互，不成为第二份历史。旧 schema v1 若无法发现对应 Pi JSONL，会被脱敏归档为只读 Legacy
-Session Import，不允许在缺失上下文时启动新 Run。
+元数据、Pi Session identity、active leaf cursor 和可重建的 Session Projection。Pi 原生同文件导航
+只改变内存 leaf，不追加 JSONL entry，因此 cursor 负责让该选择跨 utility process 生命周期保持；
+它不复制消息或取代 JSONL authority。Runtime 首次创建 Pi Session 时通过 `session.bound` 绑定
+identity，Run 通过 `session.activeLeafChanged` 更新实际 leaf，终态事件到达后由 Main 从 JSONL
+重建投影；流式事件只服务当前交互，不成为第二份历史。旧 schema v1 若无法发现对应 Pi JSONL，
+会被脱敏归档为只读 Legacy Session Import，不允许在缺失上下文时启动新 Run。
 
 `inspectSessionHistory` 是 Session Tree View 的只读 Interface。它由 `SessionPersistence` 在一次
 JSONL 解析中生成完整树、active leaf、selected entry 和对应 Session Projection；Renderer 只消费
 结果，不重建 parent graph。选择历史节点不写 schema v2、不调用 Pi `branch()`/`navigateTree()`，
 也不改变下次 Runtime resume 的 active leaf；Composer 在 selected entry 不是 active leaf 时保持
 只读。普通 Session 加载和 Runtime event 不扫描树，只有用户打开 Tree View 时才执行 inspect。
+
+Pi Session Tree Navigation 是独立的同文件 Runtime operation。Renderer 只提交 Session identity 和
+目标 entry；Main 先用只读 Tree 验证目标存在、不是 active leaf，且不属于会返回 `editorText` 的
+User/Custom Message。utility host 精确打开已绑定的 Pi JSONL、恢复当前 active leaf cursor，并调用
+Pi `navigateTree(entryId, { summarize: false })`，保留 `session_before_tree` 取消和 `session_tree`
+lifecycle。成功后 Main 持久化 Pi 返回的实际 leaf、重建同一 Session Projection 并退出历史只读
+状态；不创建或复制 Session。下一次 Run 同样精确打开绑定文件并恢复 cursor，而不是按 cwd 或目录
+猜测最近文件。
 
 Pi Session Fork 是独立的 Runtime operation，不伪装成 Run。Main 先生成 operation/target Session
 identity，但不写 Pictor metadata；utility host 精确打开已绑定的源 JSONL，绑定 Extension RPC UI，
@@ -155,8 +165,9 @@ Pictor metadata。
 Pi Session Export 是独立的 Session 级 Runtime operation。Renderer 只提交源 Session identity 和
 `jsonl`/`html` 格式，保存路径始终由 Electron Main 的原生选择器取得。utility host 精确打开已绑定
 的权威 JSONL，并调用 Pi 原生 `exportToJsonl` 或 `exportToHtml`；JSONL 线性化当前活跃分支，HTML
-保留完整 Tree。导出不创建 Session、不更新 Projection，也不改写权威历史；目标路径不得指向源
-JSONL。Runtime Plugin 同时携带 Pi HTML 模板和内置主题资产，避免依赖开发机的 `node_modules`。
+保留完整 Tree。Runtime 在临时 JSONL 副本上创建只读导出 Session，避免 Pi 初始化追加的设置 entry
+改写权威历史；导出不创建 Pictor Session、不更新 Projection，目标路径也不得指向源 JSONL。
+Runtime Plugin 同时携带 Pi HTML 模板和内置主题资产，避免依赖开发机的 `node_modules`。
 
 Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退出恢复及 Pi resume 安全集中在内部
 `SessionPersistence` module；Pi JSONL 到桌面模型的映射集中在纯投影 module。它们直接使用本地

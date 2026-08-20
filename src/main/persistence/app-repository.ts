@@ -210,6 +210,8 @@ export class AppRepository {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
+    piSessionFile: string | null
+    activeLeafId: string | null
   } {
     this.ensureInitialized()
     return this.sessionPersistence.getRuntimePaths(projectId, sessionId)
@@ -226,6 +228,14 @@ export class AppRepository {
   async bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void> {
     const session = await this.getSession(sessionId)
     await this.sessionPersistence.bindPiSession(session, identity)
+  }
+
+  async setPiSessionActiveLeaf(sessionId: string, activeLeafId: string | null): Promise<void> {
+    this.ensureInitialized()
+    if (!this.state.sessions.some((session) => session.id === sessionId)) {
+      throw new PictorError('not-found', '会话不存在或已被删除')
+    }
+    await this.sessionPersistence.setActiveLeaf(sessionId, activeLeafId)
   }
 
   async rebuildSessionProjection(sessionId: string): Promise<SessionRecord> {

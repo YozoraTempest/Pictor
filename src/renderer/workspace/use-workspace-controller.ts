@@ -32,6 +32,7 @@ export type WorkspaceBridge = Pick<
   | 'deleteSession'
   | 'getSession'
   | 'inspectSessionHistory'
+  | 'navigateSessionTree'
   | 'forkSession'
   | 'cloneSession'
   | 'importSession'
@@ -61,6 +62,7 @@ export interface WorkspaceController {
   sessionTree: SessionTreeView | null
   sessionTreeLoading: boolean
   canInspectSessionTree: boolean
+  navigatingEntryId: string | null
   forkingEntryId: string | null
   cloningSession: boolean
   importingProjectId: string | null
@@ -86,6 +88,7 @@ export interface WorkspaceController {
   deleteSession: (sessionId: string) => Promise<boolean>
   renameSession: (sessionId: string, title: string) => Promise<boolean>
   inspectSessionHistory: (entryId: string | null) => Promise<void>
+  navigateSessionTree: (entryId: string) => Promise<boolean>
   forkSession: (entryId: string) => Promise<boolean>
   cloneSession: () => Promise<boolean>
   importSession: (projectId: string) => Promise<boolean>
@@ -114,6 +117,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const [sessionTreeLoading, setSessionTreeLoading] = useState(false)
   const [sessionOperation, setSessionOperation] = useState<
     | { kind: 'fork'; entryId: string }
+    | { kind: 'navigate'; entryId: string }
     | { kind: 'clone' }
     | { kind: 'import'; projectId: string }
     | { kind: 'export'; sessionId: string; format: SessionExportFormat }
@@ -204,6 +208,40 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       setSessionTreeLoading(false)
     },
     [bridge],
+  )
+
+  const navigateSessionTree = useCallback(
+    async (entryId: string): Promise<boolean> => {
+      const sourceSessionId = selectedSessionIdRef.current
+      if (!sourceSessionId || sessionOperation) return false
+      sessionRequestId.current += 1
+      setSessionOperation({ kind: 'navigate', entryId })
+      setSessionTreeLoading(true)
+      setActionError(null)
+      try {
+        const response = await bridge.navigateSessionTree({
+          sessionId: sourceSessionId,
+          entryId,
+        })
+        if (!response.ok) {
+          setActionError(response.error.message)
+          return false
+        }
+        if (!response.value) return false
+        setSession(response.value.session)
+        setSessionTree(response.value.tree)
+        setRuntimeUsage(response.value.session.usage ?? null)
+        await refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error)))
+        return true
+      } catch (error) {
+        setActionError(errorMessage(error))
+        return false
+      } finally {
+        setSessionTreeLoading(false)
+        setSessionOperation(null)
+      }
+    },
+    [bridge, refreshSnapshot, sessionOperation],
   )
 
   useEffect(() => {
@@ -421,6 +459,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   )
 
   const forkingEntryId = sessionOperation?.kind === 'fork' ? sessionOperation.entryId : null
+  const navigatingEntryId = sessionOperation?.kind === 'navigate' ? sessionOperation.entryId : null
   const cloningSession = sessionOperation?.kind === 'clone'
   const importingProjectId = sessionOperation?.kind === 'import' ? sessionOperation.projectId : null
   const exportingSession =
@@ -674,6 +713,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     sessionTree,
     sessionTreeLoading,
     canInspectSessionTree,
+    navigatingEntryId,
     forkingEntryId,
     cloningSession,
     importingProjectId,
@@ -699,6 +739,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     deleteSession,
     renameSession,
     inspectSessionHistory,
+    navigateSessionTree,
     forkSession,
     cloneSession,
     importSession,

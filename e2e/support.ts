@@ -30,6 +30,7 @@ export const bridgeKeys = [
   'inspectSessionHistory',
   'importSession',
   'listModels',
+  'navigateSessionTree',
   'queueRuntimeMessage',
   'pickProjectDirectory',
   'onRuntimeEvent',

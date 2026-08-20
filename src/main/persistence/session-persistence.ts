@@ -206,6 +206,7 @@ export class SessionPersistence {
       authority: 'pi-jsonl',
       piSessionId: identity.id,
       piSessionFile: identity.file,
+      activeLeafId: null,
       legacyImport: { status: 'not-required', sourceFile: null },
     })
     this.histories.set(session.id, history)
@@ -217,7 +218,11 @@ export class SessionPersistence {
     const history = this.getHistory(sessionId)
     const transcriptPath = this.transcriptPath(session, history)
     if (!transcriptPath) throw new Error('Pi Session identity is not bound')
-    const projection = projectPiSessionJsonl(await readFile(transcriptPath, 'utf8'))
+    const projection = projectPiSessionJsonl(
+      await readFile(transcriptPath, 'utf8'),
+      null,
+      history.activeLeafId ?? undefined,
+    )
     session.messages = projection.messages
     session.runs = projection.runs
     session.usage = projection.usage
@@ -244,6 +249,7 @@ export class SessionPersistence {
     const projection = projectPiSessionJsonl(
       await readFile(transcriptPath, 'utf8'),
       selectedEntryId,
+      history.activeLeafId ?? undefined,
     )
     const redactor = createSecretRedactor(await this.getKnownSecretValues())
     const inspectedSession = sessionRecordSchema.parse(
@@ -291,12 +297,16 @@ export class SessionPersistence {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
+    piSessionFile: string | null
+    activeLeafId: string | null
   } {
     const sessionDirectory = join(this.dataDirectory, 'pi', projectId, sessionId)
     const history = this.getHistory(sessionId)
     return {
       agentDirectory: join(this.dataDirectory, 'pi', 'agent'),
       sessionDirectory,
+      piSessionFile: history.piSessionFile,
+      activeLeafId: history.activeLeafId ?? null,
       resumeSession:
         history.authority === 'pi-jsonl' &&
         history.piSessionFile !== null &&
@@ -307,6 +317,17 @@ export class SessionPersistence {
             isPathWithin(unsafePath, sessionDirectory),
         ),
     }
+  }
+
+  async setActiveLeaf(sessionId: string, activeLeafId: string | null): Promise<void> {
+    const session = await this.read(sessionId)
+    const history = this.getHistory(sessionId)
+    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+      throw new Error('Pi Session identity is not bound')
+    }
+    const updated = sessionHistoryStateSchema.parse({ ...history, activeLeafId })
+    this.histories.set(sessionId, updated)
+    await this.writeV2(session, updated)
   }
 
   private async migrateV1(session: SessionRecord): Promise<SessionRecord> {
@@ -322,6 +343,7 @@ export class SessionPersistence {
         authority: 'legacy-import',
         piSessionId: null,
         piSessionFile: null,
+        activeLeafId: null,
         legacyImport: { status: 'pending', sourceFile },
       })
     } else {
@@ -329,6 +351,7 @@ export class SessionPersistence {
         authority: 'pi-jsonl',
         piSessionId: piIdentity?.id ?? null,
         piSessionFile: piIdentity?.file ?? null,
+        activeLeafId: null,
         legacyImport: { status: 'not-required', sourceFile: null },
       })
     }
@@ -406,6 +429,7 @@ export class SessionPersistence {
       authority: 'pi-jsonl',
       piSessionId: null,
       piSessionFile: null,
+      activeLeafId: null,
       legacyImport: { status: 'not-required', sourceFile: null },
     }
   }

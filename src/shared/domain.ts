@@ -142,6 +142,7 @@ export const sessionHistoryStateSchema = z.object({
   authority: z.enum(['pi-jsonl', 'legacy-import']),
   piSessionId: z.string().min(1).nullable(),
   piSessionFile: z.string().min(1).nullable(),
+  activeLeafId: z.string().min(1).nullable().optional(),
   legacyImport: z.object({
     status: z.enum(['not-required', 'pending', 'imported']),
     sourceFile: z.string().min(1).nullable(),
