@@ -6,6 +6,7 @@ import {
   runRecordSchema,
   sessionRecordSchema,
   toolEventSchema,
+  type ImageAttachment,
   type Project,
   type SessionHistoryState,
   type SessionHistoryView,
@@ -114,7 +115,11 @@ export class RuntimeCoordinator {
     private readonly commandInterpreterPath: string | null = null,
   ) {}
 
-  async start(sessionId: string, prompt: string): Promise<{ runId: string }> {
+  async start(
+    sessionId: string,
+    prompt: string,
+    images: ImageAttachment[] = [],
+  ): Promise<{ runId: string }> {
     if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
       throw new PictorError('invalid-input', '已有 Agent 运行正在执行，请先等待或停止该运行')
     }
@@ -146,6 +151,7 @@ export class RuntimeCoordinator {
         id: randomUUID(),
         role: 'user',
         content: sanitizedPrompt,
+        images,
         status: 'completed',
         createdAt: now,
         updatedAt: now,
@@ -197,6 +203,7 @@ export class RuntimeCoordinator {
         },
         apiKey,
         prompt: sanitizedPrompt,
+        ...(images.length > 0 ? { images } : {}),
       })
     } catch (error) {
       this.active = null

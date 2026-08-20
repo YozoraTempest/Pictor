@@ -85,6 +85,8 @@ export class SecretRedactor {
         }
       case 'runtime.error':
         return { ...event, message: this.redactText(event.message) }
+      case 'runtime.diagnostic':
+        return { ...event, message: this.redactText(event.message) }
       case 'extension.ui.requested':
         return {
           ...event,

@@ -26,10 +26,17 @@ export const runStatusSchema = z.enum([
   'interrupted',
 ])
 
+export const imageAttachmentSchema = z.object({
+  data: z.string().min(1),
+  mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']),
+  name: z.string().min(1).nullable(),
+})
+
 export const messageSchema = z.object({
   id: idSchema,
   role: z.enum(['user', 'assistant']),
   content: z.string(),
+  images: z.array(imageAttachmentSchema).optional(),
   status: z.enum(['streaming', 'completed', 'failed']),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
@@ -176,6 +183,7 @@ export const dataIssueSchema = z.object({
 })
 
 export type Project = z.infer<typeof projectSchema>
+export type ImageAttachment = z.infer<typeof imageAttachmentSchema>
 export type SessionRecord = z.infer<typeof sessionRecordSchema>
 export type SessionHistoryView = z.infer<typeof sessionHistoryViewSchema>
 export type SessionSummary = z.infer<typeof sessionSummarySchema>

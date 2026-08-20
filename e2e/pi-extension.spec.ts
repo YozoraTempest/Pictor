@@ -89,6 +89,14 @@ test('loads an unmodified native Pi Extension from the user Store', async ({
   const userDataDirectory = testInfo.outputPath('pi-extension-user-data')
   const projectRoot = testInfo.outputPath('pi-extension-project')
   await mkdir(projectRoot, { recursive: true })
+  const imageFixture = testInfo.outputPath('fixture.png')
+  await writeFile(
+    imageFixture,
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z6i0AAAAASUVORK5CYII=',
+      'base64',
+    ),
+  )
   const importSource = testInfo.outputPath('import-source.jsonl')
   const importedAssistantMessage = (content: string) => ({
     role: 'assistant',
@@ -190,6 +198,17 @@ export default function (pi) {
     `import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 export default function (pi) {
+  pi.registerCommand('e2e-note', {
+    description: 'Append a visible Extension note',
+    handler: async (args) => {
+      pi.sendMessage({ customType: 'e2e-note', content: 'Extension note: ' + args, display: true, details: {} })
+      pi.appendEntry('e2e-command-state', { args })
+    },
+  })
+  pi.registerCommand('e2e-user', {
+    description: 'Send a User Message from an Extension',
+    handler: async () => pi.sendUserMessage('Extension-originated user message'),
+  })
   const record = (ctx, value) => appendFileSync(join(ctx.cwd, 'fork-lifecycle.log'), value + '\\n')
   pi.on('session_before_fork', (event, ctx) => record(ctx, 'before_fork:' + event.entryId + ':' + event.position))
   pi.on('session_before_switch', (_event, ctx) => record(ctx, 'before_switch'))
@@ -621,6 +640,39 @@ export default function (pi) {
     await expect
       .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
       .toContain('Continue after compaction.')
+
+    await expect(window.getByRole('button', { name: '发送任务' })).toHaveAttribute(
+      'title',
+      '发送任务',
+      { timeout: 30_000 },
+    )
+    await electronApp.evaluate(({ dialog }, imagePath) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [imagePath] })
+    }, imageFixture)
+    await window.getByRole('button', { name: '添加图片' }).click()
+    await expect(window.getByAltText('fixture.png')).toBeVisible()
+    await window.getByRole('textbox', { name: '任务描述' }).fill('Inspect the attached image.')
+    await window.getByRole('button', { name: '发送任务' }).click()
+    await expect
+      .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
+      .toContain('"type":"image"')
+
+    await expect(window.getByRole('button', { name: '发送任务' })).toHaveAttribute(
+      'title',
+      '发送任务',
+      { timeout: 30_000 },
+    )
+    expect(await startSelectedRun('/e2e-note hello')).toMatchObject({ ok: true })
+    await expect
+      .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
+      .toContain('Extension note: hello')
+    await expect(timeline.getByText('Extension note: hello')).toBeVisible({ timeout: 30_000 })
+    expect(await readFile(authoritativeJsonlPath, 'utf8')).toContain('e2e-command-state')
+
+    expect(await startSelectedRun('/e2e-user')).toMatchObject({ ok: true })
+    await expect
+      .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
+      .toContain('Extension-originated user message')
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

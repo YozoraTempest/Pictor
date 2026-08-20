@@ -4,7 +4,7 @@ import { vi } from 'vitest'
 
 import { AboutSettings } from '../modules/updater/AboutSettings'
 import type { UpdaterClient } from '../modules/updater/shared'
-import type { SessionHistoryView, SessionRecord } from '../shared/domain'
+import type { ImageAttachment, SessionHistoryView, SessionRecord } from '../shared/domain'
 import type {
   AppSnapshot,
   IpcResult,
@@ -111,6 +111,7 @@ function createBridge(
     listModels: async () =>
       ok({ outcome: 'success', message: '已获取 1 个可用模型', models: ['gpt-5.6-sol'] }),
     startRun: async () => ok({ runId }),
+    pickMessageImages: async () => ok([]),
     approveCommand,
     rejectCommand: async () => ok(null),
     stopRun: async () => ok(null),
@@ -386,6 +387,11 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
       ...request.controls,
     } satisfies SessionRuntimeControls),
   )
+  bridge.pickMessageImages = vi.fn(async () =>
+    ok([
+      { data: 'aW1hZ2U=', mimeType: 'image/png', name: 'fixture.png' },
+    ] satisfies ImageAttachment[]),
+  )
   bridge.inspectSessionHistory = vi.fn(async ({ entryId }) => {
     const selectedEntryId = entryId ?? 'active-entry'
     return ok({
@@ -464,6 +470,10 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
       },
     }),
   )
+  fireEvent.click(screen.getByRole('button', { name: '添加图片' }))
+  expect(await screen.findByAltText('fixture.png')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '移除 fixture.png' }))
+  expect(screen.queryByAltText('fixture.png')).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '压缩上下文' }))
   expect(screen.getByRole('dialog', { name: '压缩上下文' })).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('自定义摘要指令（可选）'), {

@@ -83,6 +83,8 @@ export function App({
           setExtensionUiValue(event.value ?? event.options[0] ?? '')
         } else if (event.type === 'extension.ui.notification') {
           setExtensionNotice(event.message)
+        } else if (event.type === 'runtime.diagnostic') {
+          setExtensionNotice(event.message)
         } else if (event.type === 'extension.ui.status' && event.text) {
           setExtensionNotice(event.text)
         }
@@ -278,6 +280,7 @@ export function App({
         session={workspace.session}
         loading={workspace.sessionLoading}
         draft={workspace.draft}
+        draftImages={workspace.draftImages}
         appVersion={appInfo?.version ?? null}
         platform={appInfo?.platform ?? null}
         commandInterpreter={appInfo?.commandInterpreter ?? null}
@@ -297,6 +300,8 @@ export function App({
         compactingSession={workspace.compactingSession}
         runtimeCompactionReason={workspace.runtimeCompactionReason}
         onDraftChange={workspace.setDraft}
+        onPickMessageImages={() => void workspace.pickMessageImages()}
+        onRemoveMessageImage={workspace.removeMessageImage}
         onSend={() => void workspace.startRun()}
         onQueue={(mode) => void workspace.queueMessage(mode)}
         onClearQueue={() => void workspace.clearQueue()}

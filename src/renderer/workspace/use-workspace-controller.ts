@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   Project,
+  ImageAttachment,
   RunRecord,
   SessionRecord,
   SessionSummary,
@@ -40,6 +41,7 @@ export type WorkspaceBridge = Pick<
   | 'importSession'
   | 'exportSession'
   | 'startRun'
+  | 'pickMessageImages'
   | 'approveCommand'
   | 'rejectCommand'
   | 'stopRun'
@@ -75,6 +77,7 @@ export interface WorkspaceController {
   activeRun: RunRecord | null
   anotherSessionRunning: boolean
   draft: string
+  draftImages: ImageAttachment[]
   disabledReason: string | null
   loading: boolean
   sessionLoading: boolean
@@ -103,6 +106,8 @@ export interface WorkspaceController {
   compactSession: (customInstructions: string | null) => Promise<boolean>
   cancelSessionOperation: () => Promise<boolean>
   startRun: () => Promise<void>
+  pickMessageImages: () => Promise<void>
+  removeMessageImage: (index: number) => void
   queueMessage: (mode: 'steer' | 'follow-up') => Promise<void>
   clearQueue: () => Promise<void>
   stopRun: (runId: string) => Promise<void>
@@ -138,6 +143,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [draftImages, setDraftImages] = useState<Record<string, ImageAttachment[]>>({})
   const [approvalBusyCallId, setApprovalBusyCallId] = useState<string | null>(null)
   const [queuedMessages, setQueuedMessages] = useState({ steering: 0, followUp: 0 })
   const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsage | null>(null)
@@ -664,6 +670,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     activeSessionSummary && activeSessionSummary.id !== selectedSessionId,
   )
   const draft = selectedSessionId ? (drafts[selectedSessionId] ?? '') : ''
+  const selectedDraftImages = selectedSessionId ? (draftImages[selectedSessionId] ?? []) : []
 
   const disabledReason = useMemo(() => {
     if (!selectedProject || !session) return '请先选择一个 Session'
@@ -700,20 +707,45 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const startRun = useCallback(async (): Promise<void> => {
     const sessionId = selectedSessionIdRef.current
     const prompt = sessionId ? (drafts[sessionId] ?? '').trim() : ''
+    const images = sessionId ? (draftImages[sessionId] ?? []) : []
     if (!sessionId || !prompt || disabledReason) return
     setActionError(null)
     setRuntimeUsage(null)
-    const response = await bridge.startRun({ sessionId, prompt })
+    const response = await bridge.startRun({ sessionId, prompt, images })
     if (!response.ok) {
       setActionError(response.error.message)
       return
     }
     setDrafts((current) => ({ ...current, [sessionId]: '' }))
+    setDraftImages((current) => ({ ...current, [sessionId]: [] }))
     await Promise.all([
       loadSession(sessionId, false),
       refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error))),
     ])
-  }, [bridge, disabledReason, drafts, loadSession, refreshSnapshot])
+  }, [bridge, disabledReason, draftImages, drafts, loadSession, refreshSnapshot])
+
+  const pickMessageImages = useCallback(async (): Promise<void> => {
+    const sessionId = selectedSessionIdRef.current
+    if (!sessionId) return
+    const response = await bridge.pickMessageImages()
+    if (!response.ok) {
+      setActionError(response.error.message)
+      return
+    }
+    setDraftImages((current) => ({
+      ...current,
+      [sessionId]: [...(current[sessionId] ?? []), ...response.value],
+    }))
+  }, [bridge])
+
+  const removeMessageImage = useCallback((index: number): void => {
+    const sessionId = selectedSessionIdRef.current
+    if (!sessionId) return
+    setDraftImages((current) => ({
+      ...current,
+      [sessionId]: (current[sessionId] ?? []).filter((_, candidate) => candidate !== index),
+    }))
+  }, [])
 
   const stopRun = useCallback(
     async (runId: string): Promise<void> => {
@@ -798,6 +830,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     activeRun,
     anotherSessionRunning,
     draft,
+    draftImages: selectedDraftImages,
     disabledReason,
     loading,
     sessionLoading,
@@ -823,6 +856,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     compactSession,
     cancelSessionOperation,
     startRun,
+    pickMessageImages,
+    removeMessageImage,
     queueMessage,
     clearQueue,
     stopRun,

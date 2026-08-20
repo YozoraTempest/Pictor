@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   dataIssueSchema,
   idSchema,
+  imageAttachmentSchema,
   projectSchema,
   sessionHistoryViewSchema,
   sessionRecordSchema,
@@ -110,6 +111,7 @@ export const renameSessionRequestSchema = z.object({
 export const startRunRequestSchema = z.object({
   sessionId: idSchema,
   prompt: z.string().trim().min(1).max(200_000),
+  images: z.array(imageAttachmentSchema).optional(),
 })
 export const runIdRequestSchema = z.object({ runId: idSchema })
 export const approvalResolutionRequestSchema = z.object({
@@ -157,6 +159,7 @@ export const connectionTestIpcResultSchema = ipcResultSchema(connectionTestResul
 export const modelCatalogIpcResultSchema = ipcResultSchema(modelCatalogResultSchema)
 export const voidResultSchema = ipcResultSchema(z.null())
 export const startRunResultSchema = ipcResultSchema(z.object({ runId: idSchema }))
+export const imageAttachmentsResultSchema = ipcResultSchema(z.array(imageAttachmentSchema))
 
 export type AppSnapshot = z.infer<typeof appSnapshotSchema>
 export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
@@ -237,6 +240,7 @@ export interface PictorBridge {
   startRun: (
     request: z.infer<typeof startRunRequestSchema>,
   ) => Promise<IpcResult<{ runId: string }>>
+  pickMessageImages: () => Promise<IpcResult<z.infer<typeof imageAttachmentSchema>[]>>
   approveCommand: (
     request: z.infer<typeof approvalResolutionRequestSchema>,
   ) => Promise<IpcResult<null>>

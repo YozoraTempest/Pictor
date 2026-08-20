@@ -16,6 +16,7 @@ import {
   FolderSearch2,
   GitBranch,
   GitFork,
+  ImagePlus,
   LoaderCircle,
   LocateFixed,
   MessageSquareText,
@@ -37,6 +38,7 @@ import remarkGfm from 'remark-gfm'
 
 import type {
   Project,
+  ImageAttachment,
   RunRecord,
   SessionRecord,
   SessionTreeNode,
@@ -53,6 +55,7 @@ interface ConversationProps {
   session: SessionRecord | null
   loading: boolean
   draft: string
+  draftImages: ImageAttachment[]
   appVersion: string | null
   platform: AppInfo['platform'] | null
   commandInterpreter: AppInfo['commandInterpreter'] | null
@@ -72,6 +75,8 @@ interface ConversationProps {
   compactingSession: boolean
   runtimeCompactionReason: 'manual' | 'threshold' | 'overflow' | null
   onDraftChange: (value: string) => void
+  onPickMessageImages: () => void
+  onRemoveMessageImage: (index: number) => void
   onSend: () => void
   onQueue: (mode: 'steer' | 'follow-up') => void
   onClearQueue: () => void
@@ -368,6 +373,17 @@ function Timeline({
                 正在处理
               </div>
             ) : null}
+            {message.images && message.images.length > 0 ? (
+              <div className="message-images">
+                {message.images.map((image, index) => (
+                  <img
+                    src={`data:${image.mimeType};base64,${image.data}`}
+                    alt={image.name ?? `图片 ${index + 1}`}
+                    key={`${message.id}-image-${index}`}
+                  />
+                ))}
+              </div>
+            ) : null}
             {run ? (
               <div className="run-footer">
                 <StatusBadge status={run.status} />
@@ -545,6 +561,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     session,
     loading,
     draft,
+    draftImages,
     appVersion,
     platform,
     commandInterpreter,
@@ -564,6 +581,8 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     compactingSession,
     runtimeCompactionReason,
     onDraftChange,
+    onPickMessageImages,
+    onRemoveMessageImage,
     onSend,
     onQueue,
     onClearQueue,
@@ -815,6 +834,26 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
       </div>
 
       <div className="composer-wrap">
+        {draftImages.length > 0 ? (
+          <div className="composer-images">
+            {draftImages.map((image, index) => (
+              <div className="composer-image" key={`${image.name ?? 'image'}-${index}`}>
+                <img
+                  src={`data:${image.mimeType};base64,${image.data}`}
+                  alt={image.name ?? `图片 ${index + 1}`}
+                />
+                <button
+                  className="mini-icon-button"
+                  type="button"
+                  aria-label={`移除 ${image.name ?? `图片 ${index + 1}`}`}
+                  onClick={() => onRemoveMessageImage(index)}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {disabledReason && !runActive ? (
           <div className="composer-reason">
             {disabledReason}
@@ -853,6 +892,16 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           </div>
         ) : null}
         <div className="composer">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="添加图片"
+            title="添加图片"
+            disabled={loading || viewingHistoricalEntry || runActive}
+            onClick={onPickMessageImages}
+          >
+            <ImagePlus size={17} />
+          </button>
           <textarea
             value={draft}
             rows={3}

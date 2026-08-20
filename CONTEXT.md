@@ -84,6 +84,10 @@ _Avoid_: Pi Session Compaction, Fork summary, flattened history
 Per-Session choices for Thinking Level, active Tools, and queued-message delivery that apply when its Pi Runtime is restored.
 _Avoid_: Global model credentials, Plugin permissions, TUI settings
 
+**Pi Image Message**:
+A User Message containing text and one or more Pi-native image content blocks.
+_Avoid_: Project file attachment, image path, embedded Markdown image
+
 **Pi Session Fork**:
 A new independent Pi Session created from one entry in existing Pi Session History through Pi's native Fork lifecycle.
 _Avoid_: Session Tree selection, in-place branch switch, copied GUI history

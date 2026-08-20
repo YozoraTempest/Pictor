@@ -13,6 +13,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 - 在 Tree Navigation 时总结被放弃分支，或选择历史 User Message 回填 Composer 后重新编辑；
 - 配置每个 Session 的 Thinking Level、Active Tools 和 Steering/Follow-up delivery mode；
 - 显示当前分支 Model/Thinking，重新加载 Runtime 资源，并把 Pictor 标题同步到 Pi Session Name；
+- 从原生选择器附加图片并发送 Pi Image Message，重建后继续显示图片内容；
+- 从 Composer 调用 Pi slash command，并显示 Extension `sendMessage`/`sendUserMessage` 与 diagnostic；
 - 从 Session Tree 的历史节点执行 Pi 原生 Fork，创建并切换到独立的新 Pictor Session；
 - 从 Session Tree 的活跃叶节点 Clone 当前分支，创建并切换到独立的新 Pictor Session；
 - 从项目菜单导入原生 Pi Session JSONL 副本，保留完整 Tree 并绑定到当前项目；
