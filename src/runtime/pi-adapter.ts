@@ -623,7 +623,9 @@ export class PiAgentRuntime {
     }
     const expectedExtension = config.format === 'jsonl' ? '.jsonl' : '.html'
     if (config.destinationPath.toLowerCase().endsWith(expectedExtension) === false) {
-      throw new Error(`Pi Session ${config.format.toUpperCase()} export requires ${expectedExtension}`)
+      throw new Error(
+        `Pi Session ${config.format.toUpperCase()} export requires ${expectedExtension}`,
+      )
     }
 
     const redactor = createSecretRedactor([config.apiKey])
