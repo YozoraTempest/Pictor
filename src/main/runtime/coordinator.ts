@@ -5,6 +5,7 @@ import {
   runRecordSchema,
   toolEventSchema,
   type Project,
+  type SessionHistoryState,
   type SessionRecord,
 } from '../../shared/domain.js'
 import { PictorError } from '../../shared/errors.js'
@@ -14,6 +15,9 @@ import { createSecretRedactor, type SecretRedactor } from '../../shared/secret-r
 
 export interface RuntimePersistence {
   getSession(sessionId: string): Promise<SessionRecord>
+  getSessionHistory(sessionId: string): SessionHistoryState
+  bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void>
+  rebuildSessionProjection(sessionId: string): Promise<SessionRecord>
   getProject(projectId: string): Project
   getSettings(): Promise<ModelSettings | null>
   getApiKey(): Promise<string | null>
@@ -62,6 +66,13 @@ export class RuntimeCoordinator {
       throw new PictorError('invalid-input', '已有 Agent 运行正在执行，请先等待或停止该运行')
     }
     const session = await this.repository.getSession(sessionId)
+    const history = this.repository.getSessionHistory(sessionId)
+    if (history.authority === 'legacy-import') {
+      throw new PictorError(
+        'invalid-input',
+        '此会话是旧版只读历史；请先显式导入为 Pi Session，或新建 Session 继续工作',
+      )
+    }
     const project = this.repository.getProject(session.projectId)
     if (project.availability !== 'available') {
       throw new PictorError('project-unavailable', '项目目录当前不可用，请重新关联或移除项目')
@@ -190,6 +201,27 @@ export class RuntimeCoordinator {
     const terminalEvent =
       sanitizedEvent.type === 'run.stateChanged' &&
       ['completed', 'failed', 'stopped', 'interrupted'].includes(sanitizedEvent.status)
+    if (sanitizedEvent.type === 'session.bound') {
+      this.persistenceQueue = this.persistenceQueue
+        .then(() =>
+          this.repository.bindPiSession(sanitizedEvent.sessionId, {
+            id: sanitizedEvent.piSessionId,
+            file: sanitizedEvent.piSessionFile,
+          }),
+        )
+        .then(() => this.broadcast(sanitizedEvent))
+        .catch(() =>
+          this.broadcast({
+            type: 'runtime.error',
+            runId: sanitizedEvent.runId,
+            sessionId: sanitizedEvent.sessionId,
+            at: new Date().toISOString(),
+            category: 'runtime',
+            message: 'Pi Session identity 无法写入本地存储，请停止当前任务并检查磁盘权限',
+          }),
+        )
+      return
+    }
     this.applyEvent(active, sanitizedEvent)
     if (
       sanitizedEvent.type === 'message.delta' ||
@@ -199,7 +231,13 @@ export class RuntimeCoordinator {
       this.broadcast(sanitizedEvent)
     } else {
       this.persistenceQueue = this.persistenceQueue
-        .then(() => this.repository.saveSession(active.session))
+        .then(() => {
+          if (!terminalEvent) return this.repository.saveSession(active.session)
+          const history = this.repository.getSessionHistory(active.session.id)
+          return history.authority === 'pi-jsonl' && history.piSessionFile
+            ? this.repository.rebuildSessionProjection(active.session.id)
+            : this.repository.saveSession(active.session)
+        })
         .then(() => {
           if (terminalEvent && this.active === active) this.active = null
           this.broadcast(sanitizedEvent)

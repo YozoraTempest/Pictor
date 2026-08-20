@@ -98,9 +98,105 @@ describe('SessionPersistence', () => {
     expect(summary.title).toContain('[REDACTED]')
     expect(stored).not.toContain(secret)
     expect(restored.messages[0]?.content).toContain('[REDACTED]')
+    expect(JSON.parse(stored)).toMatchObject({
+      schemaVersion: 2,
+      history: {
+        authority: 'pi-jsonl',
+        piSessionId: null,
+        piSessionFile: null,
+        legacyImport: { status: 'not-required', sourceFile: null },
+      },
+      projection: { messages: expect.any(Array), runs: expect.any(Array) },
+    })
 
     await persistence.delete(session.id)
     await expect(persistence.read(session.id)).rejects.toThrow('Session file is missing')
+  })
+
+  it('rebuilds the Session Projection from bound Pi JSONL', async () => {
+    const persistence = new SessionPersistence(dataDirectory, secretStore)
+    await persistence.recover([], [])
+    const session = createSession({ content: 'stale projection' })
+    await persistence.save(session)
+    expect(persistence.getRuntimePaths(session.projectId, session.id).resumeSession).toBe(false)
+    const piFile = 'bound-session.jsonl'
+    const piDirectory = join(dataDirectory, 'pi', session.projectId, session.id)
+    await mkdir(piDirectory, { recursive: true })
+    await writeFile(
+      join(piDirectory, piFile),
+      [
+        JSON.stringify({
+          type: 'session',
+          version: 3,
+          id: 'bound-pi-session',
+          timestamp: session.createdAt,
+          cwd: testRoot,
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'pi-user',
+          parentId: null,
+          timestamp: session.createdAt,
+          message: { role: 'user', content: 'Pi is authoritative' },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'pi-assistant',
+          parentId: 'pi-user',
+          timestamp: session.updatedAt,
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Projected from JSONL' }],
+            stopReason: 'stop',
+            usage: {
+              input: 12,
+              output: 8,
+              cacheRead: 2,
+              cacheWrite: 1,
+              totalTokens: 23,
+              cost: { input: 0.5, output: 0.75, cacheRead: 0, cacheWrite: 0, total: 1.25 },
+            },
+          },
+        }),
+        '',
+      ].join('\n'),
+    )
+    await persistence.bindPiSession(session, { id: 'bound-pi-session', file: piFile })
+    expect(persistence.getRuntimePaths(session.projectId, session.id).resumeSession).toBe(true)
+
+    const rebuilt = await persistence.rebuildProjection(session.id)
+
+    expect(rebuilt.messages.map(({ content }) => content)).toEqual([
+      'Pi is authoritative',
+      'Projected from JSONL',
+    ])
+    expect(rebuilt.usage).toEqual({
+      tokens: { input: 12, output: 8, cacheRead: 2, cacheWrite: 1, total: 23 },
+      cost: 1.25,
+      context: null,
+    })
+    expect(rebuilt.runs).toEqual([expect.objectContaining({ status: 'completed', toolEvents: [] })])
+    const stored = JSON.parse(
+      await readFile(join(dataDirectory, 'sessions', `${session.id}.json`), 'utf8'),
+    )
+    expect(stored).toMatchObject({
+      schemaVersion: 2,
+      history: {
+        authority: 'pi-jsonl',
+        piSessionId: 'bound-pi-session',
+        piSessionFile: piFile,
+      },
+      projection: {
+        usage: {
+          tokens: { input: 12, output: 8, cacheRead: 2, cacheWrite: 1, total: 23 },
+          cost: 1.25,
+          context: null,
+        },
+        messages: expect.arrayContaining([
+          expect.objectContaining({ content: 'Projected from JSONL' }),
+        ]),
+      },
+    })
   })
 
   it('repairs historical content, summaries, and unfinished runs during recovery', async () => {
@@ -128,7 +224,12 @@ describe('SessionPersistence', () => {
 
     expect(result).toMatchObject({
       changed: true,
-      issues: [],
+      issues: [
+        expect.objectContaining({
+          code: 'legacy-session-import-pending',
+          sessionId: session.id,
+        }),
+      ],
       summaries: [{ id: session.id, title: 'Recovered session', lastRunStatus: 'interrupted' }],
     })
     expect(restored.runs[0]).toMatchObject({
@@ -136,6 +237,99 @@ describe('SessionPersistence', () => {
       error: '应用在运行完成前关闭，任务未自动重放',
     })
     expect(stored).not.toContain(secret)
+    expect(JSON.parse(stored)).toMatchObject({
+      schemaVersion: 2,
+      history: {
+        authority: 'legacy-import',
+        legacyImport: {
+          status: 'pending',
+          sourceFile: `legacy-imports/${session.id}-schema-v1.json`,
+        },
+      },
+    })
+    expect(
+      await readFile(
+        join(dataDirectory, 'sessions', 'legacy-imports', `${session.id}-schema-v1.json`),
+        'utf8',
+      ),
+    ).not.toContain(secret)
+  })
+
+  it('binds a legacy projection to an existing Pi JSONL identity', async () => {
+    const persistence = new SessionPersistence(dataDirectory, secretStore)
+    const session = createSession({ content: 'existing Pi history' })
+    const summary = summarize(session)
+    const piSessionId = '01a01c00-0000-7000-8000-000000000001'
+    const piFile = '2026-08-20T00-00-00-000Z_session.jsonl'
+    const piDirectory = join(dataDirectory, 'pi', session.projectId, session.id)
+    await Promise.all([
+      mkdir(join(dataDirectory, 'sessions'), { recursive: true }),
+      mkdir(piDirectory, { recursive: true }),
+    ])
+    await writeFile(
+      join(dataDirectory, 'sessions', `${session.id}.json`),
+      `${JSON.stringify(session, null, 2)}\n`,
+    )
+    await writeFile(
+      join(piDirectory, piFile),
+      `${JSON.stringify({
+        type: 'session',
+        version: 3,
+        id: piSessionId,
+        timestamp: new Date().toISOString(),
+        cwd: testRoot,
+      })}\n`,
+    )
+
+    const result = await persistence.recover([summary], [])
+
+    expect(result.issues).toEqual([])
+    expect(persistence.getHistory(session.id)).toEqual({
+      authority: 'pi-jsonl',
+      piSessionId,
+      piSessionFile: piFile,
+      legacyImport: { status: 'not-required', sourceFile: null },
+    })
+    await expect(
+      readFile(
+        join(dataDirectory, 'sessions', 'legacy-imports', `${session.id}-schema-v1.json`),
+        'utf8',
+      ),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('migrates an empty legacy Session without creating a pending import', async () => {
+    const persistence = new SessionPersistence(dataDirectory, secretStore)
+    const session = createSession()
+    await mkdir(join(dataDirectory, 'sessions'), { recursive: true })
+    await writeFile(
+      join(dataDirectory, 'sessions', `${session.id}.json`),
+      `${JSON.stringify(session, null, 2)}\n`,
+    )
+
+    const result = await persistence.recover([summarize(session)], [])
+
+    expect(result.issues).toEqual([])
+    expect(persistence.getHistory(session.id)).toMatchObject({
+      authority: 'pi-jsonl',
+      piSessionId: null,
+      piSessionFile: null,
+    })
+  })
+
+  it('removes stale Legacy Session Import issues during recovery', async () => {
+    const persistence = new SessionPersistence(dataDirectory, secretStore)
+    const issue: DataIssue = {
+      code: 'legacy-session-import-pending',
+      sessionId: randomUUID(),
+      message: 'stale issue',
+    }
+
+    await expect(persistence.recover([], [issue])).resolves.toEqual({
+      summaries: [],
+      issues: [],
+      changed: true,
+    })
   })
 
   it('quarantines a corrupt session without affecting valid sessions', async () => {
@@ -169,6 +363,12 @@ describe('SessionPersistence', () => {
     }))
 
     const failedResult = await failed.recover([], [])
+    const unsafeSession = createSession({ id: unsafeSessionId, projectId })
+    const safeSession = createSession({ id: safeSessionId, projectId })
+    const unsafeSummary = await failed.save(unsafeSession)
+    const safeSummary = await failed.save(safeSession)
+    await failed.bindPiSession(unsafeSession, { id: 'unsafe-pi', file: 'unsafe.jsonl' })
+    await failed.bindPiSession(safeSession, { id: 'safe-pi', file: 'safe.jsonl' })
 
     expect(failedResult.issues).toEqual([
       expect.objectContaining({ code: 'credential-migration-failed', sessionId: null }),
@@ -178,7 +378,10 @@ describe('SessionPersistence', () => {
 
     const migrateSuccessfully = vi.fn(async () => ({ attempted: true, failures: [] }))
     const recovered = new SessionPersistence(dataDirectory, secretStore, migrateSuccessfully)
-    const recoveredResult = await recovered.recover([], failedResult.issues)
+    const recoveredResult = await recovered.recover(
+      [unsafeSummary, safeSummary],
+      failedResult.issues,
+    )
 
     expect(migrateSuccessfully).toHaveBeenCalledWith(dataDirectory, ['migration-credential-value'])
     expect(recoveredResult.issues).toEqual([])
@@ -193,6 +396,9 @@ describe('SessionPersistence', () => {
     const sessionId = randomUUID()
 
     const failedResult = await failed.recover([], [])
+    const session = createSession({ id: sessionId, projectId })
+    const summary = await failed.save(session)
+    await failed.bindPiSession(session, { id: 'blocked-pi', file: 'blocked.jsonl' })
 
     expect(migrateCredentials).not.toHaveBeenCalled()
     expect(failedResult.issues).toEqual([
@@ -206,7 +412,7 @@ describe('SessionPersistence', () => {
       attempted: true,
       failures: [],
     }))
-    const recoveredResult = await recovered.recover([], previousIssues)
+    const recoveredResult = await recovered.recover([summary], previousIssues)
 
     expect(recoveredResult.issues).toEqual([])
     expect(recovered.getRuntimePaths(projectId, sessionId).resumeSession).toBe(true)

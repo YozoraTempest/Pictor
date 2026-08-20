@@ -276,38 +276,60 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     })
 
     expect(await readFile(join(projectRoot, 'command-approved.txt'), 'utf8')).toBe('approved')
-    expect(evidence).toEqual(
+    if (!evidence?.ok) throw new Error('Session evidence is unavailable')
+    expect(evidence.value.messages).toContainEqual(
       expect.objectContaining({
-        ok: true,
-        value: expect.objectContaining({
-          messages: expect.arrayContaining([
-            expect.objectContaining({
-              role: 'assistant',
-              content: expect.stringContaining('Remaining work: none.'),
-            }),
-          ]),
-          runs: expect.arrayContaining([
-            expect.objectContaining({
-              status: 'completed',
-              toolEvents: expect.arrayContaining([
-                expect.objectContaining({
-                  kind: 'write',
-                  path: 'agent-created.txt',
-                  status: 'completed',
-                }),
-                expect.objectContaining({
-                  kind: 'command',
-                  status: 'completed',
-                  command: expect.objectContaining({ approval: 'allowed' }),
-                  output: expect.stringContaining('exit: 0'),
-                }),
-              ]),
-            }),
-            expect.objectContaining({ status: 'stopped' }),
-          ]),
-        }),
+        role: 'assistant',
+        content: expect.stringContaining('Remaining work: none.'),
       }),
     )
+    const projectedTools = evidence.value.runs.flatMap((run) => run.toolEvents)
+    expect(projectedTools).toContainEqual(
+      expect.objectContaining({
+        kind: 'write',
+        path: 'agent-created.txt',
+        status: 'completed',
+      }),
+    )
+    expect(projectedTools).toContainEqual(
+      expect.objectContaining({
+        kind: 'command',
+        status: 'completed',
+        command: expect.objectContaining({ approval: 'allowed' }),
+        output: expect.stringContaining('exit: 0'),
+      }),
+    )
+    expect(evidence.value.runs).toContainEqual(expect.objectContaining({ status: 'stopped' }))
+    const persistedSession = JSON.parse(
+      await readFile(
+        join(userDataDirectory, 'data-v1', 'sessions', `${evidence.value.id}.json`),
+        'utf8',
+      ),
+    )
+    expect(persistedSession).toMatchObject({
+      schemaVersion: 2,
+      history: {
+        authority: 'pi-jsonl',
+        piSessionId: expect.any(String),
+        piSessionFile: expect.stringMatching(/\.jsonl$/),
+      },
+      projection: {
+        usage: {
+          tokens: {
+            input: expect.any(Number),
+            output: expect.any(Number),
+            cacheRead: expect.any(Number),
+            cacheWrite: expect.any(Number),
+            total: expect.any(Number),
+          },
+          cost: expect.any(Number),
+          context: null,
+        },
+        messages: expect.arrayContaining([
+          expect.objectContaining({ content: expect.stringContaining('Remaining work: none.') }),
+        ]),
+      },
+    })
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

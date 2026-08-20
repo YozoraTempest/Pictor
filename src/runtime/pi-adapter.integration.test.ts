@@ -301,6 +301,13 @@ it('streams normalized text events through the real Pi SDK', async () => {
   })
 
   expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'session.bound',
+      piSessionId: expect.any(String),
+      piSessionFile: expect.stringMatching(/\.jsonl$/),
+    }),
+  )
+  expect(events).toContainEqual(
     expect.objectContaining({ type: 'message.delta', delta: 'Hello from Pi' }),
   )
   expect(events).toContainEqual(

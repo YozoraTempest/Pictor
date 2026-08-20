@@ -11,6 +11,7 @@ import {
   sessionRecordSchema,
   sessionSummarySchema,
   type Project,
+  type SessionHistoryState,
   type SessionRecord,
   type SessionSummary,
 } from '../../shared/domain.js'
@@ -211,6 +212,25 @@ export class AppRepository {
   } {
     this.ensureInitialized()
     return this.sessionPersistence.getRuntimePaths(projectId, sessionId)
+  }
+
+  getSessionHistory(sessionId: string): SessionHistoryState {
+    this.ensureInitialized()
+    if (!this.state.sessions.some((session) => session.id === sessionId)) {
+      throw new PictorError('not-found', '会话不存在或已被删除')
+    }
+    return this.sessionPersistence.getHistory(sessionId)
+  }
+
+  async bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void> {
+    const session = await this.getSession(sessionId)
+    await this.sessionPersistence.bindPiSession(session, identity)
+  }
+
+  async rebuildSessionProjection(sessionId: string): Promise<SessionRecord> {
+    const session = await this.sessionPersistence.rebuildProjection(sessionId)
+    await this.saveSession(session)
+    return session
   }
 
   async createSession(projectId: string): Promise<SessionSummary> {

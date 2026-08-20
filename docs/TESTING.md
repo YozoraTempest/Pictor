@@ -65,6 +65,9 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   event/response 在 Renderer 与 utility process 之间完整往返。
 - Pi Runtime 集成覆盖原生 queue event、Session stats、Skills/Prompt resource path 和凭据脱敏；
   E2E 必须看到由真实 Pi Session 产生的 token usage，而不是 Renderer 计算的替代值。
+- Pi Session 投影测试使用真实 JSONL 形态覆盖 parent/branch、compaction、Tool、usage 和终态错误；
+  相同 JSONL 必须产生稳定投影。持久化测试必须覆盖首次 identity 绑定、重启重建、已有 Pi identity
+  的 schema v1 迁移，以及无 Pi JSONL 的 v1 只读归档，不能用旧平面消息自动制造新上下文。
 - 零 Plugin E2E 先通过真实 Store 将全部 Bundled Plugin 标记为 `removed`，重启后只能由 Core
   Shell 提供 Plugin Manager；安全模式使用同一 Core Shell，但不改变用户 Registry。
 - `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，
@@ -75,7 +78,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - Smoke 用例在标题中添加 `@smoke`。单一核心委托场景同时验证应用启动、Renderer 隔离和完整
   委托链路；独立 Shell、设置迁移、故障恢复、第二协议和中断恢复属于 Full。
 - 测试不得访问真实模型、用户目录或网络服务。E2E 必须使用 `testInfo.outputPath()` 隔离数据，
-  并在 `finally` 中关闭 Electron 和本地服务。
+  并在 `finally` 中关闭 Electron 和本地服务。验证退出生命周期的场景必须给关闭等待设置明确
+  上限，超时后终止测试进程并报告退出失败，不能消耗整个场景超时。
 - 目标桌面验收可设置 `PICTOR_E2E_EXECUTABLE`，让核心委托 Smoke 直接启动已安装或已解包的
   发布应用；变量未设置时继续使用仓库构建产物。
 - Main、Preload、Renderer、Runtime 和 Shared 的测试归属及允许依赖方向见
