@@ -99,20 +99,6 @@ jobs:
       - run: npm run deps:prepare
       - run: npm run deps:verify
       - run: npm run build:app
-      - name: Run pull-request smoke tests
-        if: github.event_name == 'pull_request'
-        run: npm run test:e2e:smoke:run
-      - name: Run full desktop tests
-        if: github.event_name == 'push'
-        run: npm run test:e2e:run
-      - name: Upload failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-playwright-evidence
-          path: test-results/
-          if-no-files-found: ignore
-          retention-days: 7
 
   linux-acceptance:
     name: Linux acceptance

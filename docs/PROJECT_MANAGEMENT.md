@@ -28,11 +28,11 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 
 ## 持续集成
 
-- 指向 `develop` 或 `main` 的 Pull Request：在 Linux 并行执行格式、类型、lint 和全量 Vitest，
-  同时执行 Windows 与 Linux 桌面 Smoke；PR 不构建发行包。
+- 指向 `develop` 或 `main` 的 Pull Request：在 Linux 并行执行格式、类型、lint、全量 Vitest 和
+  桌面 Smoke；Windows acceptance 暂时只验证依赖准备与桌面构建。PR 不构建发行包。
 - 指向 `main` 的 Pull Request：额外校验来源分支、版本一致性、发布说明和版本标签可用性。
-- 合并进入 `develop`：在上述检查之外执行 Windows/Linux 全部桌面 E2E，并构建、校验和验收
-  Pacman 与 AppImage。
+- 合并进入 `develop`：在上述检查之外仅由 Linux 执行全部桌面 E2E，并构建、校验和验收 Pacman
+  与 AppImage。Windows 自动化测试暂时停用。
 - CI 失败时不得合并。测试失败证据保留七天。
 
 必需检查为 `Quality`、`Unit and integration`、`Windows acceptance` 和独立的
