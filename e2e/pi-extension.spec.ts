@@ -420,6 +420,10 @@ export default function (pi) {
       followUpMode: 'one-at-a-time',
       activeTools: expect.not.arrayContaining(['pictor_delete']),
     })
+    await window.getByRole('button', { name: 'Session Controls' }).click()
+    await window.getByRole('button', { name: '重新加载资源' }).click()
+    await expect(window.getByText('Runtime 资源已重载')).toBeVisible()
+    await window.getByText('Runtime 资源已重载').click()
 
     const exportSelectedSession = (format: 'jsonl' | 'html') =>
       window.evaluate(async (selectedFormat) => {
@@ -562,6 +566,7 @@ export default function (pi) {
       timeout: 30_000,
     })
     await expect(timeline.getByText('Continue from the historical answer.')).toBeVisible()
+    await expect(window.locator('.workspace-header').getByText(/pictor-e2e-model/)).toBeVisible()
     await expect(timeline.getByText('Imported branch answer')).toHaveCount(0)
     const metadataAfterRun = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
       history: { piSessionFile: string; activeLeafId?: string | null }

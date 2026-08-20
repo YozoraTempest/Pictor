@@ -199,6 +199,10 @@ export class RuntimeSupervisor {
     return this.activeRunId !== null
   }
 
+  async reloadResources(): Promise<void> {
+    await this.dispose()
+  }
+
   async dispose(): Promise<void> {
     const child = this.child
     if (!child) return

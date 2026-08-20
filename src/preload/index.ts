@@ -152,6 +152,10 @@ const bridge = Object.freeze({
         saveSessionRuntimeControlsRequestSchema.parse(input),
       ),
     ),
+  reloadSessionResources: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke('session:reload-resources', sessionIdRequestSchema.parse(input)),
+    ),
   forkSession: async (input) =>
     forkSessionResultSchema.parse(
       await ipcRenderer.invoke('session:fork', forkSessionRequestSchema.parse(input)),

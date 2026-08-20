@@ -82,6 +82,10 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   result、自定义指令、`abortCompaction()`、Extension 提供结果、active leaf 和 Projection 重建。
   Linux E2E 必须观察 `session_before_compact`/`session_compact`、取消不追加 entry、Summary/Tree 可见，
   并证明 Compaction 后可以继续 Run。
+- Session Runtime Controls 测试必须覆盖 schema v2 偏好持久化、Thinking、Active Tools、Steering 与
+  Follow-up mode 注入；Model/Thinking Projection 从 active branch 的 change entry 或 assistant
+  message 重建。Linux E2E 必须验证 Controls 保存、Runtime Host resource reload、Pi Session Name
+  同步和下一次 Run 恢复，不得把 API Key 或 Provider 凭据写入 controls metadata。
 - Pi Session Fork 测试必须覆盖 completed/cancelled/failed host result、精确源 JSONL、独立目标
   identity、源文件保留、目标文件移动和新 Pictor Session 提交；E2E 必须由原生 Extension 观察到
   `session_before_fork`、`session_shutdown(reason: "fork")` 与 `session_start(reason: "fork")`。

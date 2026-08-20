@@ -136,6 +136,7 @@ it.each(['a', 'id', 'running'])(
         throw new Error('not used')
       }),
       abortSessionOperation: vi.fn(),
+      reloadResources: vi.fn(async () => undefined),
       approve: vi.fn(),
       reject: vi.fn(),
       stop: vi.fn(),
@@ -372,6 +373,7 @@ it('persists a terminal failure when Pi Session identity was never bound', async
       throw new Error('not used')
     }),
     abortSessionOperation: vi.fn(),
+    reloadResources: vi.fn(async () => undefined),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -467,6 +469,7 @@ it('keeps a pending Legacy Session Import read-only', async () => {
       throw new Error('not used')
     }),
     abortSessionOperation: vi.fn(),
+    reloadResources: vi.fn(async () => undefined),
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),
@@ -665,6 +668,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     estimatedTokensAfter: 25,
   }))
   const abortSessionOperation = vi.fn()
+  const reloadResources = vi.fn(async () => undefined)
   const supervisor: RuntimeHost = {
     isActive: () => false,
     start: vi.fn(async () => undefined),
@@ -674,6 +678,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     navigateSession,
     compactSession,
     abortSessionOperation,
+    reloadResources,
     approve: vi.fn(),
     reject: vi.fn(),
     stop: vi.fn(),

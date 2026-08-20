@@ -734,6 +734,12 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
                 : ` · ${Math.round(runtimeUsage.context.percent)}% context`}
             </span>
           ) : null}
+          {session.runtimeState?.modelId ? (
+            <span className="usage-summary" title={session.runtimeState.modelId}>
+              {session.runtimeState.modelId}
+              {session.runtimeState.thinkingLevel ? ` · ${session.runtimeState.thinkingLevel}` : ''}
+            </span>
+          ) : null}
           {activeRun ? <StatusBadge status={activeRun.status} /> : null}
           {activeRun &&
           ['queued', 'running', 'awaiting-approval', 'stopping'].includes(activeRun.status) ? (

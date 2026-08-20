@@ -100,6 +100,7 @@ function createBridge(
         availableTools: ['pictor_read', 'pictor_write'],
         ...request.controls,
       }),
+    reloadSessionResources: async () => ok(null),
     forkSession: async () => ok(null),
     cloneSession: async () => ok(null),
     importSession: async () => ok(null),

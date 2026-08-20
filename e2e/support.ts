@@ -39,6 +39,7 @@ export const bridgeKeys = [
   'onRuntimeEvent',
   'registerProject',
   'relinkProject',
+  'reloadSessionResources',
   'removePlugin',
   'removeProject',
   'respondToExtensionUi',

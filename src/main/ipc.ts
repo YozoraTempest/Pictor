@@ -304,6 +304,15 @@ export function registerIpc(dependencies: IpcDependencies): void {
     })
   })
 
+  ipcMain.handle('session:reload-resources', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = sessionIdRequestSchema.parse(input)
+      await runtimeCoordinator.reloadSessionResources(request.sessionId)
+      return null
+    })
+  })
+
   ipcMain.handle('session:fork', (event, input: unknown) => {
     validateSender(event.senderFrame)
     return ipcResult(async () => {

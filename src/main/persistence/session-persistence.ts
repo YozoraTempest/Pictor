@@ -28,6 +28,7 @@ const sessionProjectionSchema = sessionRecordSchema.pick({
   messages: true,
   runs: true,
   usage: true,
+  runtimeState: true,
 })
 const persistedSessionV2Schema = z.object({
   schemaVersion: z.literal(2),
@@ -225,6 +226,7 @@ export class SessionPersistence {
     session.messages = projection.messages
     session.runs = projection.runs
     session.usage = projection.usage
+    session.runtimeState = projection.runtimeState
     session.updatedAt =
       [
         ...session.messages.map((message) => message.updatedAt),
@@ -257,6 +259,7 @@ export class SessionPersistence {
         messages: projection.messages,
         runs: projection.runs,
         usage: projection.usage,
+        runtimeState: projection.runtimeState,
       }),
     )
     return sessionHistoryViewSchema.parse({
@@ -415,6 +418,7 @@ export class SessionPersistence {
         messages: session.messages,
         runs: session.runs,
         usage: session.usage ?? null,
+        runtimeState: session.runtimeState,
         generatedAt: new Date().toISOString(),
       },
       createdAt: session.createdAt,
@@ -432,6 +436,7 @@ export class SessionPersistence {
       messages: session.projection.messages,
       runs: session.projection.runs,
       usage: session.projection.usage ?? null,
+      runtimeState: session.projection.runtimeState,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
     })

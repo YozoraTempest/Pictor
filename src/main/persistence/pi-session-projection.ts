@@ -52,7 +52,7 @@ const piUsageSchema = z.object({
   cost: z.object({ total: z.number().nonnegative() }),
 })
 
-export type SessionProjection = Pick<SessionRecord, 'messages' | 'runs' | 'usage'>
+export type SessionProjection = Pick<SessionRecord, 'messages' | 'runs' | 'usage' | 'runtimeState'>
 export type PiSessionProjection = SessionProjection & { tree: SessionTreeView }
 
 export function projectPiSessionJsonl(
@@ -97,8 +97,28 @@ export function projectPiSessionJsonl(
     cost: 0,
     entries: 0,
   }
+  const runtimeState: NonNullable<SessionRecord['runtimeState']> = {
+    modelId: null,
+    modelProvider: null,
+    thinkingLevel: null,
+  }
 
   for (const entry of branch) {
+    if (entry.type === 'model_change') {
+      runtimeState.modelId = typeof entry.modelId === 'string' ? entry.modelId : null
+      runtimeState.modelProvider =
+        typeof Reflect.get(entry, 'provider') === 'string'
+          ? String(Reflect.get(entry, 'provider'))
+          : null
+      continue
+    }
+    if (entry.type === 'thinking_level_change') {
+      const level = z
+        .enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+        .safeParse(entry.thinkingLevel)
+      runtimeState.thinkingLevel = level.success ? level.data : null
+      continue
+    }
     if (
       (entry.type === 'compaction' || entry.type === 'branch_summary') &&
       typeof entry.summary === 'string'
@@ -145,6 +165,12 @@ export function projectPiSessionJsonl(
       continue
     }
     if (message.role === 'assistant') {
+      if (typeof Reflect.get(message, 'model') === 'string') {
+        runtimeState.modelId = String(Reflect.get(message, 'model'))
+      }
+      if (typeof Reflect.get(message, 'provider') === 'string') {
+        runtimeState.modelProvider = String(Reflect.get(message, 'provider'))
+      }
       const usage = piUsageSchema.safeParse(message.usage)
       if (usage.success) {
         usageTotals.input += usage.data.input
@@ -211,6 +237,7 @@ export function projectPiSessionJsonl(
             context: null,
           })
         : null,
+    runtimeState,
     tree: projectTree(entries, entriesById, activeLeafId, selectedId),
   }
 }

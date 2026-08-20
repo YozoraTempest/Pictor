@@ -194,6 +194,19 @@ export function App({
     else workspace.reportActionError(response.error.message)
   }
 
+  const reloadSessionResources = async () => {
+    if (!workspace.selectedSessionId) return
+    setModalBusy(true)
+    const response = await window.pictor.reloadSessionResources({
+      sessionId: workspace.selectedSessionId,
+    })
+    setModalBusy(false)
+    if (response.ok) {
+      setSessionControls(null)
+      setExtensionNotice('Runtime 资源已重载')
+    } else workspace.reportActionError(response.error.message)
+  }
+
   const respondToExtensionUi = async (value: string | boolean | null) => {
     if (!extensionUiRequest) return
     setModalBusy(true)
@@ -683,6 +696,14 @@ export function App({
             </div>
           </fieldset>
           <footer className="modal-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={modalBusy}
+              onClick={() => void reloadSessionResources()}
+            >
+              重新加载资源
+            </button>
             <button
               className="secondary-button"
               type="button"

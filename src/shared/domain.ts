@@ -122,6 +122,13 @@ export const sessionRecordSchema = z.object({
   messages: z.array(messageSchema),
   runs: z.array(runRecordSchema),
   usage: usageSnapshotSchema.nullable().optional(),
+  runtimeState: z
+    .object({
+      modelId: z.string().min(1).nullable(),
+      modelProvider: z.string().min(1).nullable(),
+      thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullable(),
+    })
+    .optional(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
 })

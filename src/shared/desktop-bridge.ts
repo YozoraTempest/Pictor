@@ -215,6 +215,9 @@ export interface PictorBridge {
   saveSessionRuntimeControls: (
     request: z.infer<typeof saveSessionRuntimeControlsRequestSchema>,
   ) => Promise<IpcResult<SessionRuntimeControls>>
+  reloadSessionResources: (
+    request: z.infer<typeof sessionIdRequestSchema>,
+  ) => Promise<IpcResult<null>>
   forkSession: (
     request: z.infer<typeof forkSessionRequestSchema>,
   ) => Promise<IpcResult<SessionSummary | null>>

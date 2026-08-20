@@ -80,6 +80,10 @@ _Avoid_: History deletion, Branch Summary, transcript truncation
 A Pi Session Tree Navigation that summarizes the abandoned branch before changing the Pi Session Active Leaf.
 _Avoid_: Pi Session Compaction, Fork summary, flattened history
 
+**Session Runtime Controls**:
+Per-Session choices for Thinking Level, active Tools, and queued-message delivery that apply when its Pi Runtime is restored.
+_Avoid_: Global model credentials, Plugin permissions, TUI settings
+
 **Pi Session Fork**:
 A new independent Pi Session created from one entry in existing Pi Session History through Pi's native Fork lifecycle.
 _Avoid_: Session Tree selection, in-place branch switch, copied GUI history
