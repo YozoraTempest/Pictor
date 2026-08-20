@@ -163,6 +163,7 @@ function createBridge(
   importSession: ReturnType<typeof vi.fn>
   exportSession: ReturnType<typeof vi.fn>
   startRun: ReturnType<typeof vi.fn>
+  pickMessageImages: ReturnType<typeof vi.fn>
   stopRun: ReturnType<typeof vi.fn>
   approveCommand: ReturnType<typeof vi.fn>
   rejectCommand: ReturnType<typeof vi.fn>
@@ -186,6 +187,7 @@ function createBridge(
     },
   )
   const startRun = vi.fn(async () => ok({ runId }))
+  const pickMessageImages = vi.fn(async () => ok([]))
   const navigateSessionTree = vi.fn(async () => ok(null))
   const compactSession = vi.fn(async () => ok(null))
   const cancelSessionOperation = vi.fn(async () => ok(false))
@@ -224,6 +226,7 @@ function createBridge(
     importSession,
     exportSession,
     startRun,
+    pickMessageImages,
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
     approveCommand,
@@ -827,6 +830,28 @@ describe('useWorkspaceController', () => {
     expect(result.current.actionError).toBeNull()
   })
 
+  it('attaches selected images to the next Run and clears them after start', async () => {
+    const bridge = createBridge()
+    bridge.pickMessageImages.mockResolvedValueOnce(
+      ok([{ data: 'aW1hZ2U=', mimeType: 'image/png', name: 'fixture.png' }]),
+    )
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.session).not.toBeNull())
+
+    await act(async () => result.current.pickMessageImages())
+    expect(result.current.draftImages).toEqual([
+      { data: 'aW1hZ2U=', mimeType: 'image/png', name: 'fixture.png' },
+    ])
+    act(() => result.current.setDraft('Inspect this image'))
+    await act(async () => result.current.startRun())
+    expect(bridge.startRun).toHaveBeenCalledWith({
+      sessionId: firstSessionId,
+      prompt: 'Inspect this image',
+      images: [{ data: 'aW1hZ2U=', mimeType: 'image/png', name: 'fixture.png' }],
+    })
+    expect(result.current.draftImages).toEqual([])
+  })
+
   it('coordinates Run intents and reports bridge failures', async () => {
     const idle = createSession(firstSessionId)
     const running = createSession(firstSessionId, { runStatus: 'running' })
@@ -842,7 +867,11 @@ describe('useWorkspaceController', () => {
 
     act(() => result.current.setDraft('  run this  '))
     await act(async () => result.current.startRun())
-    expect(bridge.startRun).toHaveBeenCalledWith({ sessionId: firstSessionId, prompt: 'run this' })
+    expect(bridge.startRun).toHaveBeenCalledWith({
+      sessionId: firstSessionId,
+      prompt: 'run this',
+      images: [],
+    })
     expect(result.current.actionError).toBe('启动失败')
 
     await act(async () => result.current.startRun())

@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 import {
   messageSchema,
+  imageAttachmentSchema,
   runRecordSchema,
   sessionTreeViewSchema,
   toolEventSchema,
@@ -147,16 +148,42 @@ export function projectPiSessionJsonl(
       )
       continue
     }
+    if (entry.type === 'custom_message' && Reflect.get(entry, 'display') !== false) {
+      const timestamp = entry.timestamp ?? new Date(0).toISOString()
+      messages.push(
+        messageSchema.parse({
+          id: stableUuid(`custom-message:${entry.id}`),
+          role: 'assistant',
+          content: contentText(entry.content),
+          status: 'completed',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }),
+      )
+      runs.push(
+        runRecordSchema.parse({
+          id: stableUuid(`custom-message-run:${entry.id}`),
+          status: 'completed',
+          toolEvents: [],
+          error: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }),
+      )
+      continue
+    }
     if (entry.type !== 'message') continue
     const message = asObject(entry.message) as PiMessage | null
     if (!message) continue
     const timestamp = entry.timestamp ?? new Date(0).toISOString()
     if (message.role === 'user') {
+      const images = imageAttachments(message.content)
       messages.push(
         messageSchema.parse({
           id: stableUuid(`message:${entry.id}`),
           role: 'user',
           content: contentText(message.content),
+          ...(images.length > 0 ? { images } : {}),
           status: 'completed',
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -240,6 +267,19 @@ export function projectPiSessionJsonl(
     runtimeState,
     tree: projectTree(entries, entriesById, activeLeafId, selectedId),
   }
+}
+
+function imageAttachments(content: unknown): Array<z.infer<typeof imageAttachmentSchema>> {
+  if (!Array.isArray(content)) return []
+  return content.flatMap((block) => {
+    if (!block || typeof block !== 'object' || Reflect.get(block, 'type') !== 'image') return []
+    const parsed = imageAttachmentSchema.safeParse({
+      data: Reflect.get(block, 'data'),
+      mimeType: Reflect.get(block, 'mimeType'),
+      name: null,
+    })
+    return parsed.success ? [parsed.data] : []
+  })
 }
 
 function projectTree(

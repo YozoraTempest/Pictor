@@ -66,7 +66,13 @@ const toolKinds = {
 
 interface PiSessionLike {
   subscribe(listener: (event: AgentSessionEvent) => void): () => void
-  prompt(text: string, options?: { expandPromptTemplates?: boolean }): Promise<void>
+  prompt(
+    text: string,
+    options?: {
+      expandPromptTemplates?: boolean
+      images?: Array<{ type: 'image'; data: string; mimeType: string }>
+    },
+  ): Promise<void>
   abort(): Promise<void>
   waitForIdle(): Promise<void>
   steer(text: string): Promise<void>
@@ -87,6 +93,7 @@ interface PiSessionLike {
   getSessionId(): string
   getSessionFile(): string | undefined
   getActiveLeafId(): string | null
+  getDiagnostics?(): ReadonlyArray<{ type: 'info' | 'warning' | 'error'; message: string }>
   dispose(): void | Promise<void>
   bindExtensionUi?(context: ExtensionUIContext): Promise<void>
 }
@@ -264,7 +271,13 @@ class PiSessionRuntime implements PiSessionLike {
     return this.runtime.session.subscribe(listener)
   }
 
-  prompt(text: string, options?: { expandPromptTemplates?: boolean }): Promise<void> {
+  prompt(
+    text: string,
+    options?: {
+      expandPromptTemplates?: boolean
+      images?: Array<{ type: 'image'; data: string; mimeType: string }>
+    },
+  ): Promise<void> {
     return this.runtime.session.prompt(text, options)
   }
 
@@ -338,6 +351,13 @@ class PiSessionRuntime implements PiSessionLike {
 
   getActiveLeafId(): string | null {
     return this.runtime.session.sessionManager.getLeafId()
+  }
+
+  getDiagnostics(): ReadonlyArray<{
+    type: 'info' | 'warning' | 'error'
+    message: string
+  }> {
+    return this.runtime.diagnostics
   }
 
   dispose(): Promise<void> {
@@ -464,6 +484,7 @@ export class PiAgentRuntime {
         modelProvider: this.getModelProvider(),
       })
       current.session = session
+      this.emitDiagnostics(config, session)
       const piSessionFile = session.getSessionFile()
       if (!piSessionFile) throw new Error('Pi Session did not provide a persistent JSONL file')
       this.emitEvent(config, {
@@ -478,7 +499,16 @@ export class PiAgentRuntime {
       current.unsubscribe = session.subscribe((event) => this.handlePiEvent(current, event))
       await session.bindExtensionUi?.(current.extensionUi.createContext())
       await session.prompt(current.redactor.redactText(config.prompt), {
-        expandPromptTemplates: false,
+        expandPromptTemplates: true,
+        ...(config.images && config.images.length > 0
+          ? {
+              images: config.images.map(({ data, mimeType }) => ({
+                type: 'image' as const,
+                data,
+                mimeType,
+              })),
+            }
+          : {}),
       })
       await session.waitForIdle()
       await sanitizePiTranscripts(config.sessionDirectory, current.redactor)
@@ -990,6 +1020,16 @@ export class PiAgentRuntime {
     if (this.modelProviders.length > 1)
       throw new Error('Multiple Model Runtime Providers are active')
     return this.modelProviders[0]!
+  }
+
+  private emitDiagnostics(config: RuntimeStartConfig, session: PiSessionLike): void {
+    for (const diagnostic of session.getDiagnostics?.() ?? []) {
+      this.emitEvent(config, {
+        type: 'runtime.diagnostic',
+        severity: diagnostic.type,
+        message: diagnostic.message,
+      })
+    }
   }
 
   private handlePiEvent(current: ActiveRuntime, event: AgentSessionEvent): void {

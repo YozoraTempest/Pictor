@@ -145,6 +145,7 @@ describe('PiAgentRuntime cleanup', () => {
   )
 
   it('delegates steering, follow-up, and queue clearing to the active Pi Session', async () => {
+    const events: RuntimeEvent[] = []
     let finishIdle: (() => void) | undefined
     const prompt = vi.fn(async () => undefined)
     const steer = vi.fn(async () => undefined)
@@ -157,7 +158,7 @@ describe('PiAgentRuntime cleanup', () => {
         }),
     )
     const runtime = new PiAgentRuntime(
-      () => undefined,
+      (event) => events.push(event),
       async () => ({
         subscribe: () => () => undefined,
         prompt,
@@ -189,6 +190,7 @@ describe('PiAgentRuntime cleanup', () => {
         getSessionId: () => 'test-pi-session',
         getSessionFile: () => '/tmp/test-pi-session.jsonl',
         getActiveLeafId: () => 'active-entry',
+        getDiagnostics: () => [{ type: 'warning', message: 'Extension warning' }],
       }),
     )
     runtime.configure({
@@ -224,8 +226,20 @@ describe('PiAgentRuntime cleanup', () => {
       },
       apiKey: 'test-key',
       prompt: 'start',
+      images: [{ data: 'aW1hZ2U=', mimeType: 'image/png', name: 'fixture.png' }],
     })
     await vi.waitFor(() => expect(prompt).toHaveBeenCalled())
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'runtime.diagnostic',
+        severity: 'warning',
+        message: 'Extension warning',
+      }),
+    )
+    expect(prompt).toHaveBeenCalledWith('start', {
+      expandPromptTemplates: true,
+      images: [{ type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' }],
+    })
 
     await runtime.queueMessage(runId, 'steer', 'redirect')
     await runtime.queueMessage(runId, 'follow-up', 'continue')

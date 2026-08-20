@@ -1,4 +1,5 @@
 import { basename, extname } from 'node:path'
+import { readFile } from 'node:fs/promises'
 
 import { dialog, ipcMain, type WebFrameMain } from 'electron'
 
@@ -60,6 +61,14 @@ const defaultRuntimeTools = [
   'pictor_delete',
   'pictor_command',
 ] as const
+
+const imageMimeTypes: Record<string, 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+}
 
 function exportFileName(title: string, extension: string): string {
   const printableTitle = [...title]
@@ -182,6 +191,29 @@ export function registerIpc(dependencies: IpcDependencies): void {
         rootPath,
         existingProjectId: existing?.id ?? null,
       }
+    })
+  })
+
+  ipcMain.handle('message:pick-images', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '选择图片',
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+      })
+      if (selection.canceled) return []
+      return Promise.all(
+        selection.filePaths.map(async (path) => {
+          const mimeType = imageMimeTypes[extname(path).toLowerCase()]
+          if (!mimeType) throw new PictorError('invalid-input', '请选择支持的图片格式')
+          return {
+            data: (await readFile(path)).toString('base64'),
+            mimeType,
+            name: basename(path),
+          }
+        }),
+      )
     })
   })
 
@@ -423,7 +455,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = startRunRequestSchema.parse(input)
-      return runtimeCoordinator.start(request.sessionId, request.prompt)
+      return runtimeCoordinator.start(request.sessionId, request.prompt, request.images ?? [])
     })
   })
 

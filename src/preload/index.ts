@@ -23,6 +23,7 @@ import {
   forkSessionResultSchema,
   importSessionRequestSchema,
   importSessionResultSchema,
+  imageAttachmentsResultSchema,
   inspectSessionHistoryRequestSchema,
   listModelsRequestSchema,
   navigateSessionTreeRequestSchema,
@@ -189,6 +190,8 @@ const bridge = Object.freeze({
     startRunResultSchema.parse(
       await ipcRenderer.invoke('runtime:start', startRunRequestSchema.parse(input)),
     ),
+  pickMessageImages: async () =>
+    imageAttachmentsResultSchema.parse(await ipcRenderer.invoke('message:pick-images')),
   approveCommand: async (input) =>
     voidResultSchema.parse(
       await ipcRenderer.invoke('runtime:approve', approvalResolutionRequestSchema.parse(input)),

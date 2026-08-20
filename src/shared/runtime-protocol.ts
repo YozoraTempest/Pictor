@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import {
   idSchema,
+  imageAttachmentSchema,
   runStatusSchema,
   sessionHistoryStateSchema,
   timestampSchema,
@@ -78,6 +79,11 @@ export const runtimeEventSchema = z.discriminatedUnion('type', [
     message: z.string().min(1),
   }),
   runtimeEventBaseSchema.extend({
+    type: z.literal('runtime.diagnostic'),
+    severity: z.enum(['info', 'warning', 'error']),
+    message: z.string().min(1),
+  }),
+  runtimeEventBaseSchema.extend({
     type: z.literal('extension.ui.requested'),
     requestId: z.uuid(),
     kind: z.enum(['select', 'confirm', 'input', 'editor']),
@@ -132,6 +138,7 @@ export const runtimeStartConfigSchema = z.object({
   settings: modelSettingsInputSchema,
   apiKey: z.string().min(1),
   prompt: z.string().min(1),
+  images: z.array(imageAttachmentSchema).optional(),
 })
 
 export const runtimeForkConfigSchema = z.object({

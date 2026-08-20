@@ -36,6 +36,7 @@ export const bridgeKeys = [
   'navigateSessionTree',
   'queueRuntimeMessage',
   'pickProjectDirectory',
+  'pickMessageImages',
   'onRuntimeEvent',
   'registerProject',
   'relinkProject',

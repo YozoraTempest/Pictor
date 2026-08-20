@@ -283,6 +283,63 @@ describe('Pi Session Projection', () => {
     })
   })
 
+  it('projects Pi User Message image blocks as desktop attachments', () => {
+    const projection = projectPiSessionJsonl(
+      jsonl([
+        { type: 'session', version: 3, id: 'pi-session', timestamp, cwd: '/project' },
+        {
+          type: 'message',
+          id: 'image-user',
+          parentId: null,
+          timestamp,
+          message: {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Inspect this image' },
+              { type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' },
+            ],
+          },
+        },
+      ]),
+    )
+
+    expect(projection.messages[0]).toMatchObject({
+      content: 'Inspect this image',
+      images: [{ data: 'aW1hZ2U=', mimeType: 'image/png', name: null }],
+    })
+  })
+
+  it('projects visible Extension messages and keeps hidden state entries out of the Timeline', () => {
+    const projection = projectPiSessionJsonl(
+      jsonl([
+        { type: 'session', version: 3, id: 'pi-session', timestamp, cwd: '/project' },
+        {
+          type: 'custom_message',
+          id: 'visible-note',
+          parentId: null,
+          timestamp,
+          customType: 'extension-note',
+          content: 'Visible Extension note',
+          display: true,
+        },
+        {
+          type: 'custom_message',
+          id: 'hidden-state',
+          parentId: 'visible-note',
+          timestamp,
+          customType: 'extension-state',
+          content: 'Hidden Extension state',
+          display: false,
+        },
+      ]),
+    )
+
+    expect(projection.messages.map((message) => message.content)).toEqual([
+      'Visible Extension note',
+    ])
+    expect(projection.runs).toHaveLength(1)
+  })
+
   it('uses the same readable Runtime failure classification as live events', () => {
     const projection = projectPiSessionJsonl(
       jsonl([
