@@ -1,13 +1,13 @@
 {
   "id": "pictor.git-changes",
   "name": "Git Changes",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Git working tree status for the selected project",
   "engines": {
-    "pictor": "^0.2.0"
+    "pictor": "^0.3.0"
   },
   "dependencies": {
-    "pictor.agent-workspace": "^0.2.0"
+    "pictor.agent-workspace": "^0.3.0"
   },
   "modules": {
     "main": "./dist/main.js",
