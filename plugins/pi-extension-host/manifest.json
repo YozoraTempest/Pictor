@@ -1,13 +1,13 @@
 {
   "id": "pictor.pi-extension-host",
   "name": "Pi Extension Host",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Native Pi Extension and Pi Package resource loading",
   "engines": {
-    "pictor": "^0.2.0"
+    "pictor": "^0.3.0"
   },
   "dependencies": {
-    "pictor.pi-agent-runtime": "^0.2.0"
+    "pictor.pi-agent-runtime": "^0.3.0"
   },
   "modules": {
     "runtime": "./dist/runtime.js"

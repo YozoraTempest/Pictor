@@ -1,10 +1,10 @@
 {
   "id": "pictor.agent-workspace",
   "name": "Agent Workspace",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Project, Session, Conversation, file tools, and command approval workspace",
   "engines": {
-    "pictor": "^0.2.0"
+    "pictor": "^0.3.0"
   },
   "dependencies": {},
   "modules": {

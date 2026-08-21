@@ -1,10 +1,10 @@
 {
   "id": "pictor.updater",
   "name": "Updater",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Pictor release information and on-demand update checks",
   "engines": {
-    "pictor": "^0.2.0"
+    "pictor": "^0.3.0"
   },
   "dependencies": {},
   "modules": {
