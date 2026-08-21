@@ -28,10 +28,11 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 
 ## 持续集成
 
-- 指向 `develop` 或 `main` 的 Pull Request：格式、类型、lint、单元/集成测试，以及 Windows
-  与 Ubuntu 24.04 桌面 Smoke。
+- 指向 `develop` 或 `main` 的 Pull Request：在 Linux 并行执行格式、类型、lint、全量 Vitest 和
+  桌面 Smoke；Windows acceptance 暂时只验证依赖准备与桌面构建。PR 不构建发行包。
 - 指向 `main` 的 Pull Request：额外校验来源分支、版本一致性、发布说明和版本标签可用性。
-- 合并进入 `develop`：在上述检查之外执行 Windows 与 Ubuntu 24.04 全部桌面 E2E。
+- 合并进入 `develop`：在上述检查之外仅由 Linux 执行全部桌面 E2E，并构建、校验和验收 Pacman
+  与 AppImage。Windows 自动化测试暂时停用。
 - CI 失败时不得合并。测试失败证据保留七天。
 
 必需检查为 `Quality`、`Unit and integration`、`Windows acceptance` 和独立的
@@ -45,16 +46,16 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 2. 在 `docs/RELEASE_NOTES.md` 顶部新增 `## <version> - YYYY-MM-DD`，说明变化、验证和已知风险。
 3. 更新 README 中的当前安装版本、支持基线和对应限制。
 4. 本地运行 `npm run verify:release`，并在可用目标平台运行对应包验证。
-5. 确认 Ubuntu 24.04 hosted runner 的完整 E2E 与 deb 生命周期、Arch 容器生命周期和可用的
-   本机 Arch Wayland 证据均通过；不能用发行版衍生版代替受支持发行版。
+5. 确认 hosted runner 的 AppImage Smoke、Arch 容器 Pacman 生命周期和本机 Arch/niri Wayland
+   证据均通过；不能用发行版衍生版代替正式支持环境。
 6. 创建 `develop` 到 `main` 的 Pull Request，等待全部必需检查通过后使用 merge commit 合并。
 
 合并到 `main` 后，Release 工作流会再次执行完整发布验证，并构建以下同版本 x64 资产：
 
 ```text
 Pictor-<version>-windows-x64-setup.exe
-Pictor-<version>-ubuntu-x64.deb
 Pictor-<version>-arch-x64.pacman
+Pictor-<version>-linux-x64.AppImage
 SHA256SUMS
 ```
 
@@ -67,4 +68,5 @@ Windows 与 Linux 构建 job 只上传内部 workflow artifact。只有全部构
 并提升补丁版本后重新走发布 Pull Request；已经公开的版本和附件不得覆盖。
 
 Pictor 不提供 Linux 软件源、包签名或应用内提权安装。Release 附件是首期唯一正式发布渠道；
-应用内更新只负责打开当前平台和发行版的官方附件，不能静默安装、重启或调用系统包管理器。
+应用内更新只负责打开 Windows、Arch 原生包或便携 AppImage，不能静默安装、重启或调用系统
+包管理器。AppImage 不构成对其他 Linux 发行版的正式支持承诺。

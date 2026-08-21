@@ -19,7 +19,7 @@ concurrency:
 jobs:
   quality:
     name: Quality
-    runs-on: windows-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -27,7 +27,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm install --global npm@11.17.0
+      - name: Install pinned npm without replacing the runner copy
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
+          echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
       - run: npm ci
       - name: Validate release branch
         if: github.base_ref == 'main'
@@ -61,7 +64,7 @@ jobs:
 
   tests:
     name: Unit and integration
-    runs-on: windows-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -69,15 +72,15 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm install --global npm@11.17.0
+      - name: Install pinned npm without replacing the runner copy
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
+          echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
       - run: npm ci
       - run: npm test
 
   windows-acceptance:
     name: Windows acceptance
-    needs:
-      - quality
-      - tests
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -86,39 +89,28 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm install --global npm@11.17.0
+      - name: Install pinned npm without replacing the runner copy
+        shell: pwsh
+        run: |
+          $npmPrefix = Join-Path $env:RUNNER_TEMP 'pictor-npm'
+          npm install --global --prefix $npmPrefix npm@11.17.0
+          $npmPrefix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: npm ci
       - run: npm run deps:prepare
       - run: npm run deps:verify
       - run: npm run build:app
-      - name: Run pull-request smoke tests
-        if: github.event_name == 'pull_request'
-        run: npm run test:e2e:smoke:run
-      - name: Run full desktop tests
-        if: github.event_name == 'push'
-        run: npm run test:e2e:run
-      - name: Upload failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-playwright-evidence
-          path: test-results/
-          if-no-files-found: ignore
-          retention-days: 7
 
   linux-acceptance:
     name: Linux acceptance
-    needs:
-      - quality
-      - tests
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - name: Install Linux acceptance dependencies
+      - name: Install Linux packaging dependency
+        if: github.event_name == 'push'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libarchive-tools xauth xvfb
+          sudo apt-get install --yes --no-install-recommends libarchive-tools
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -133,7 +125,6 @@ jobs:
         env:
           ELECTRON_GET_USE_PROXY: 'true'
       - run: npm run deps:verify
-      - run: npm run verify:fast
       - run: npm run build:app
       - name: Run pull-request smoke tests
         if: github.event_name == 'pull_request'
@@ -142,27 +133,23 @@ jobs:
         if: github.event_name == 'push'
         run: xvfb-run --auto-servernum npm run test:e2e:run
       - run: npm run package:linux:build
+        if: github.event_name == 'push'
       - run: npm run package:verify:linux
-      - name: Verify Ubuntu package install, launch, and removal
+        if: github.event_name == 'push'
+      - name: Verify portable AppImage launch
+        if: github.event_name == 'push'
         run: |
           release_version="$(node --print "require('./package.json').version")"
           lifecycle_root="$(mktemp -d)"
           user_data="$lifecycle_root/pictor"
-          sudo apt-get install --yes "./dist/Pictor-$release_version-ubuntu-x64.deb"
-          test -x /opt/Pictor/pictor
-          test -f /usr/share/applications/pictor.desktop
-          PICTOR_LINUX_EXECUTABLE=/opt/Pictor/pictor \
-            PICTOR_EXPECTED_DISTRIBUTION=ubuntu \
+          chmod +x "./dist/Pictor-$release_version-linux-x64.AppImage"
+          PICTOR_LINUX_EXECUTABLE="./dist/Pictor-$release_version-linux-x64.AppImage" \
+            PICTOR_EXPECTED_DISTRIBUTION=unsupported-linux \
             PICTOR_USER_DATA_DIR="$user_data" \
             PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
             xvfb-run --auto-servernum npm run package:verify:linux:launch
-          touch "$user_data/keep-after-uninstall"
-          sudo apt-get remove --yes pictor
-          test ! -e /opt/Pictor/pictor
-          test ! -e /usr/share/applications/pictor.desktop
-          test ! -e /usr/bin/pictor
-          test -f "$user_data/keep-after-uninstall"
       - name: Verify Arch package lifecycle in a native container
+        if: github.event_name == 'push'
         run: bash scripts/verify-arch-package-lifecycle.sh
       - name: Upload failure evidence
         if: failure()

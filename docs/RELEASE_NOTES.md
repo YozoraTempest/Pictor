@@ -1,5 +1,49 @@
 # 发布说明
 
+## 0.3.0 - 2026-08-21
+
+Pictor 0.3.0 将产品能力迁入可组合 Plugin Host。Core Host 现在只保留 Electron 生命周期、空
+Shell、Plugin Store/Registry、Plugin Manager 和跨进程 transport；Project、Session、Model、
+Updater、Git Changes、Agent Resources、Pi Runtime 与 Pi Extension Host 都由可安装、可禁用、
+可删除和可恢复的 Bundled Plugin 提供。Plugin 使用 SemVer 依赖图组合，缺失或失败的 Provider
+只阻塞传递依赖者；删除全部 Plugin 后仍可启动 Core Shell 并恢复默认能力。
+
+Agent 会话现在直接使用 Pi `AgentSessionRuntime`，Pi JSONL 是 Session Tree、消息、Tool、Usage、
+Compaction 和 Extension entry 的唯一权威历史。桌面支持 Tree 查看与原生分支导航、Fork、Clone、
+Import、JSONL/HTML Export、Branch Summary、手动与自动 Compaction、Active Leaf、Session Label、
+Thinking、Model override、Tool 与消息队列控制、Token/Cost 状态、图片消息、资源重载和自动 Retry。
+Pictor 投影只负责 GUI 展示，Runtime 重启时从绑定的 Pi Session 重建，不重放历史 Tool。
+
+原生 `.ts/.js` Pi Extension、Extension 目录和 Pi Package 无需 Pictor wrapper 即可安装并交给 Pi
+ResourceLoader/ExtensionRunner 执行。Extension 可以注册 Tool、Command、Provider、事件和消息；
+select/confirm/input/editor、notify 与文本状态通过 GUI adapter 呈现，TUI-only 能力返回明确诊断。
+本地 live source、项目 `.pi/extensions`、显式 npm/git/local Package spec、Developer Profile、
+`plugin:new` 和独立 Plugin 测试循环共同构成快速开发路径。
+
+Linux 发布策略不再把 GitHub Hosted Ubuntu runner 当作受支持发行版。原生 Arch Linux x64/niri
+是唯一正式支持的 Linux 基线，Release 提供 `.pacman`；其他 Linux x64 只提供便携 `.AppImage`，
+不承诺发行版兼容。0.3.0 不再生成 Ubuntu `.deb`。同一个 Release 原子发布 Windows NSIS、Arch
+Pacman、Linux AppImage 和 `SHA256SUMS`。
+
+### 验收基线
+
+- 原生 Arch Linux x64，2026-08-21 滚动快照、内核 7.1.8-arch1-3、niri Wayland；允许 Electron
+  使用 XWayland。
+- Linux 完成格式、类型与 lint、217 项单元/集成测试、10 项真实 Electron E2E、Pacman/AppImage
+  结构校验、AppImage 启动 Smoke 和 Arch Pacman 安装生命周期。
+- Windows 11 x64 仅由 Hosted Runner 验证依赖准备、桌面构建、NSIS、`app.asar` 与 x64 PE 结构；
+  0.3.0 没有 Windows Runtime、GUI、安装或干净机器行为验收。
+
+### 已知风险
+
+- Windows 与 Linux 发布物均未签名，应用仍使用 Electron 默认图标。
+- Pi Extension 是以当前用户权限运行的可信代码，不受 Pictor 命令逐条审批限制；安装前必须确认
+  来源。
+- Chat Completions 和 Responses 由本地确定性端点覆盖，尚未使用真实第三方 API Key 验证服务商
+  兼容性、计费或可用性。
+- Arch 是滚动发行版，支持承诺以本节快照为证据；AppImage 不构成其他 Linux 发行版支持承诺。
+- 当前持久化格式仍处于 MVP 阶段，尚未形成跨版本兼容承诺。
+
 ## 0.2.1 - 2026-08-14
 
 Pictor 0.2.1 将正式桌面支持扩展到 Ubuntu 24.04 LTS x64 和原生 Arch Linux x64，同时保留

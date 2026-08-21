@@ -1,38 +1,62 @@
 import {
   AlertCircle,
   AlertTriangle,
+  Bot,
+  Brain,
   Check,
   CheckCircle2,
   ChevronDown,
   Circle,
   Clock3,
+  Combine,
   Copy,
+  Cpu,
   FilePenLine,
   FileSearch,
   FolderSearch2,
+  GitBranch,
+  GitFork,
+  ImagePlus,
   LoaderCircle,
+  LocateFixed,
   MessageSquareText,
   Play,
   Plus,
+  Route,
   Send,
   ShieldAlert,
+  SlidersHorizontal,
   Square,
+  Tag,
   TerminalSquare,
+  Wrench,
   X,
   XCircle,
 } from 'lucide-react'
-import { isValidElement, useEffect, useRef, type ReactNode } from 'react'
+import { isValidElement, useEffect, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import type { Project, RunRecord, SessionRecord, ToolEvent } from '../../shared/domain'
-import type { AppInfo } from '../../shared/desktop-bridge'
+import type {
+  Project,
+  ImageAttachment,
+  RunRecord,
+  SessionRecord,
+  SessionTreeNode,
+  SessionTreeView,
+  ToolEvent,
+  UsageSnapshot,
+} from '../../shared/domain'
+import type { AppInfo } from '../../shared/app-info'
+
+type RuntimeUsage = UsageSnapshot
 
 interface ConversationProps {
   project: Project | null
   session: SessionRecord | null
   loading: boolean
   draft: string
+  draftImages: ImageAttachment[]
   appVersion: string | null
   platform: AppInfo['platform'] | null
   commandInterpreter: AppInfo['commandInterpreter'] | null
@@ -41,8 +65,31 @@ interface ConversationProps {
   anotherSessionRunning: boolean
   actionError: string | null
   approvalBusyCallId: string | null
+  queuedMessages: { steering: number; followUp: number }
+  runtimeUsage: RuntimeUsage | null
+  sessionTree: SessionTreeView | null
+  sessionTreeLoading: boolean
+  canInspectSessionTree: boolean
+  forkingEntryId: string | null
+  cloningSession: boolean
+  navigatingEntryId: string | null
+  compactingSession: boolean
+  runtimeCompactionReason: 'manual' | 'threshold' | 'overflow' | null
   onDraftChange: (value: string) => void
+  onPickMessageImages: () => void
+  onRemoveMessageImage: (index: number) => void
   onSend: () => void
+  onQueue: (mode: 'steer' | 'follow-up') => void
+  onClearQueue: () => void
+  onInspectSessionHistory: (entryId: string | null) => void
+  onNavigateSessionTree: (entryId: string) => void
+  onOpenBranchSummary: (entryId: string) => void
+  onOpenEntryLabel: (entryId: string, label: string) => void
+  onOpenCompaction: () => void
+  onCancelSessionOperation: () => void
+  onOpenSessionControls: () => void
+  onForkSession: (entryId: string) => void
+  onCloneSession: () => void
   onStop: (runId: string) => void
   onApprove: (runId: string, callId: string) => void
   onReject: (runId: string, callId: string) => void
@@ -72,10 +119,12 @@ const toolLabels: Record<ToolEvent['kind'], string> = {
   move: '移动文件',
   delete: '删除文件',
   command: '执行命令',
+  custom: 'Extension Tool',
 }
 
 function ToolIcon({ kind }: { kind: ToolEvent['kind'] }): React.JSX.Element {
   if (kind === 'command') return <TerminalSquare size={15} />
+  if (kind === 'custom') return <Wrench size={15} />
   if (kind === 'edit' || kind === 'write' || kind === 'move' || kind === 'delete') {
     return <FilePenLine size={15} />
   }
@@ -160,6 +209,8 @@ function ToolActivity({
   tool,
   busy,
   platform,
+  outputOpen,
+  onOutputOpenChange,
   onApprove,
   onReject,
 }: {
@@ -167,6 +218,8 @@ function ToolActivity({
   tool: ToolEvent
   busy: boolean
   platform: AppInfo['platform'] | null
+  outputOpen: boolean
+  onOutputOpenChange: (callId: string, open: boolean) => void
   onApprove: (runId: string, callId: string) => void
   onReject: (runId: string, callId: string) => void
 }): React.JSX.Element {
@@ -236,8 +289,13 @@ function ToolActivity({
       ) : null}
 
       {tool.output ? (
-        <details className="tool-output" open={tool.status === 'failed'}>
-          <summary>
+        <details className="tool-output" open={outputOpen}>
+          <summary
+            onClick={(event) => {
+              event.preventDefault()
+              onOutputOpenChange(tool.callId, !outputOpen)
+            }}
+          >
             <ChevronDown size={14} />
             查看输出
           </summary>
@@ -259,7 +317,18 @@ function Timeline({
   'session' | 'approvalBusyCallId' | 'platform' | 'onApprove' | 'onReject'
 >): React.JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(() => new Set())
   const contentKey = session?.messages.map((message) => message.content.length).join(':') ?? ''
+
+  const updateToolOutput = (callId: string, open: boolean): void => {
+    setExpandedToolCalls((current) => {
+      if (current.has(callId) === open) return current
+      const next = new Set(current)
+      if (open) next.add(callId)
+      else next.delete(callId)
+      return next
+    })
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ block: 'end' })
@@ -285,11 +354,13 @@ function Timeline({
             <div className="turn-label">{message.role === 'user' ? '你' : 'Pictor'}</div>
             {run?.toolEvents.map((tool) => (
               <ToolActivity
-                key={tool.id}
+                key={tool.callId}
                 run={run}
                 tool={tool}
                 busy={approvalBusyCallId === tool.callId}
                 platform={platform}
+                outputOpen={tool.status === 'failed' || expandedToolCalls.has(tool.callId)}
+                onOutputOpenChange={updateToolOutput}
                 onApprove={onApprove}
                 onReject={onReject}
               />
@@ -302,6 +373,17 @@ function Timeline({
               <div className="agent-thinking">
                 <LoaderCircle className="spin" size={14} />
                 正在处理
+              </div>
+            ) : null}
+            {message.images && message.images.length > 0 ? (
+              <div className="message-images">
+                {message.images.map((image, index) => (
+                  <img
+                    src={`data:${image.mimeType};base64,${image.data}`}
+                    alt={image.name ?? `图片 ${index + 1}`}
+                    key={`${message.id}-image-${index}`}
+                  />
+                ))}
               </div>
             ) : null}
             {run ? (
@@ -318,12 +400,184 @@ function Timeline({
   )
 }
 
+function TreeNodeIcon({ kind }: { kind: SessionTreeNode['kind'] }): React.JSX.Element {
+  if (kind === 'user') return <MessageSquareText size={14} />
+  if (kind === 'assistant') return <Bot size={14} />
+  if (kind === 'tool-result') return <Wrench size={14} />
+  if (kind === 'compaction' || kind === 'branch-summary') return <Combine size={14} />
+  if (kind === 'model') return <Cpu size={14} />
+  if (kind === 'thinking') return <Brain size={14} />
+  if (kind === 'custom' || kind === 'custom-message') return <Wrench size={14} />
+  return <Circle size={10} />
+}
+
+function SessionTreePanel({
+  tree,
+  loading,
+  forkingEntryId,
+  cloningSession,
+  navigatingEntryId,
+  onSelect,
+  onNavigate,
+  onOpenBranchSummary,
+  onOpenEntryLabel,
+  onFork,
+  onClone,
+  onClose,
+}: {
+  tree: SessionTreeView | null
+  loading: boolean
+  forkingEntryId: string | null
+  cloningSession: boolean
+  navigatingEntryId: string | null
+  onSelect: (entryId: string | null) => void
+  onNavigate: (entryId: string) => void
+  onOpenBranchSummary: (entryId: string) => void
+  onOpenEntryLabel: (entryId: string, label: string) => void
+  onFork: (entryId: string) => void
+  onClone: () => void
+  onClose: () => void
+}): React.JSX.Element {
+  const selectedEntryId = tree?.selectedEntryId ?? null
+  const selectedNode = tree?.nodes.find((node) => node.id === selectedEntryId)
+  const canFork = Boolean(selectedEntryId && selectedEntryId !== tree?.activeLeafId)
+  const canClone = Boolean(tree?.activeLeafId && selectedEntryId === tree.activeLeafId)
+  const canNavigate = Boolean(selectedNode && selectedEntryId !== tree?.activeLeafId)
+  const operationBusy = forkingEntryId !== null || cloningSession || navigatingEntryId !== null
+  return (
+    <aside className="session-tree-panel" aria-label="Session Tree">
+      <div className="session-tree-header">
+        <div>
+          <GitBranch size={15} />
+          <strong>Session Tree</strong>
+          {tree ? <span>{tree.nodes.length}</span> : null}
+        </div>
+        <div className="session-tree-actions">
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="切换到此节点"
+            title="切换到此节点"
+            disabled={!canNavigate || operationBusy}
+            onClick={() => {
+              if (selectedEntryId) onNavigate(selectedEntryId)
+            }}
+          >
+            {navigatingEntryId ? <LoaderCircle className="spin" size={14} /> : <Route size={14} />}
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="标记节点"
+            title="标记节点"
+            disabled={!selectedNode || operationBusy}
+            onClick={() => {
+              if (selectedNode) onOpenEntryLabel(selectedNode.id, selectedNode.label)
+            }}
+          >
+            <Tag size={14} />
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="总结后切换到此节点"
+            title="总结后切换到此节点"
+            disabled={!canNavigate || operationBusy}
+            onClick={() => {
+              if (selectedEntryId) onOpenBranchSummary(selectedEntryId)
+            }}
+          >
+            <Combine size={14} />
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="Fork 为新 Session"
+            title="Fork 为新 Session"
+            disabled={!canFork || operationBusy}
+            onClick={() => {
+              if (selectedEntryId) onFork(selectedEntryId)
+            }}
+          >
+            {forkingEntryId ? <LoaderCircle className="spin" size={14} /> : <GitFork size={14} />}
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="Clone 当前分支为新 Session"
+            title="Clone 当前分支为新 Session"
+            disabled={!canClone || operationBusy}
+            onClick={onClone}
+          >
+            {cloningSession ? <LoaderCircle className="spin" size={14} /> : <Copy size={14} />}
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="返回当前节点"
+            title="返回当前节点"
+            disabled={!tree?.activeLeafId || tree.selectedEntryId === tree.activeLeafId}
+            onClick={() => onSelect(null)}
+          >
+            <LocateFixed size={14} />
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            aria-label="关闭 Session Tree"
+            title="关闭 Session Tree"
+            onClick={onClose}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+      <div className="session-tree-list">
+        {loading ? (
+          <div className="session-tree-state">
+            <LoaderCircle className="spin" size={16} />
+            加载 Session Tree
+          </div>
+        ) : tree && tree.nodes.length > 0 ? (
+          tree.nodes.map((node) => (
+            <button
+              className={`session-tree-node${node.isSelected ? ' is-selected' : ''}${
+                node.isActivePath ? ' is-active-path' : ''
+              }`}
+              style={{ '--tree-depth': Math.min(node.depth, 8) } as React.CSSProperties}
+              type="button"
+              key={node.id}
+              aria-current={node.isSelected ? 'true' : undefined}
+              title={node.label}
+              onClick={() => onSelect(node.id)}
+            >
+              <span className="session-tree-node__icon">
+                <TreeNodeIcon kind={node.kind} />
+              </span>
+              <span className="session-tree-node__label">{node.label}</span>
+              {node.childCount > 1 ? (
+                <span className="session-tree-node__branches">{node.childCount}</span>
+              ) : null}
+              {node.isActiveLeaf ? (
+                <LocateFixed className="session-tree-node__leaf" size={12} />
+              ) : null}
+            </button>
+          ))
+        ) : (
+          <div className="session-tree-state">暂无树记录</div>
+        )}
+      </div>
+    </aside>
+  )
+}
+
 export function Conversation(props: ConversationProps): React.JSX.Element {
   const {
     project,
     session,
     loading,
     draft,
+    draftImages,
     appVersion,
     platform,
     commandInterpreter,
@@ -332,8 +586,31 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     anotherSessionRunning,
     actionError,
     approvalBusyCallId,
+    queuedMessages,
+    runtimeUsage,
+    sessionTree,
+    sessionTreeLoading,
+    canInspectSessionTree,
+    forkingEntryId,
+    cloningSession,
+    navigatingEntryId,
+    compactingSession,
+    runtimeCompactionReason,
     onDraftChange,
+    onPickMessageImages,
+    onRemoveMessageImage,
     onSend,
+    onQueue,
+    onClearQueue,
+    onInspectSessionHistory,
+    onNavigateSessionTree,
+    onOpenBranchSummary,
+    onOpenEntryLabel,
+    onOpenCompaction,
+    onCancelSessionOperation,
+    onOpenSessionControls,
+    onForkSession,
+    onCloneSession,
     onStop,
     onApprove,
     onReject,
@@ -342,6 +619,18 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     onOpenSettings,
     onRelinkProject,
   } = props
+  const [queueMode, setQueueMode] = useState<'steer' | 'follow-up'>('steer')
+  const [treeOpen, setTreeOpen] = useState(false)
+  const runActive = Boolean(
+    activeRun && ['queued', 'running', 'awaiting-approval', 'stopping'].includes(activeRun.status),
+  )
+  const viewingHistoricalEntry = Boolean(
+    sessionTree?.selectedEntryId && sessionTree.selectedEntryId !== sessionTree.activeLeafId,
+  )
+  const send = (): void => {
+    if (!runActive) setTreeOpen(false)
+    onSend()
+  }
 
   if (!project) {
     return (
@@ -421,6 +710,72 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           <h1>{session.title}</h1>
         </div>
         <div className="header-actions">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Session Controls"
+            title="Session Controls"
+            disabled={!canInspectSessionTree || compactingSession}
+            onClick={onOpenSessionControls}
+          >
+            <SlidersHorizontal size={16} />
+          </button>
+          {compactingSession ? (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="取消上下文压缩"
+              title="取消上下文压缩"
+              onClick={onCancelSessionOperation}
+            >
+              <Square size={15} />
+            </button>
+          ) : (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="压缩上下文"
+              title="压缩上下文"
+              disabled={!canInspectSessionTree || runtimeCompactionReason !== null}
+              onClick={onOpenCompaction}
+            >
+              {runtimeCompactionReason ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <Combine size={16} />
+              )}
+            </button>
+          )}
+          {canInspectSessionTree ? (
+            <button
+              className="icon-button session-tree-toggle"
+              type="button"
+              aria-label="Session Tree"
+              title="Session Tree"
+              aria-pressed={treeOpen}
+              onClick={() => {
+                const nextOpen = !treeOpen
+                setTreeOpen(nextOpen)
+                if (nextOpen && !sessionTree) onInspectSessionHistory(null)
+              }}
+            >
+              <GitBranch size={16} />
+            </button>
+          ) : null}
+          {runtimeUsage ? (
+            <span className="usage-summary">
+              {runtimeUsage.tokens.total.toLocaleString()} tokens
+              {runtimeUsage.context?.percent === null || runtimeUsage.context === null
+                ? ''
+                : ` · ${Math.round(runtimeUsage.context.percent)}% context`}
+            </span>
+          ) : null}
+          {session.runtimeState?.modelId ? (
+            <span className="usage-summary" title={session.runtimeState.modelId}>
+              {session.runtimeState.modelId}
+              {session.runtimeState.thinkingLevel ? ` · ${session.runtimeState.thinkingLevel}` : ''}
+            </span>
+          ) : null}
           {activeRun ? <StatusBadge status={activeRun.status} /> : null}
           {activeRun &&
           ['queued', 'running', 'awaiting-approval', 'stopping'].includes(activeRun.status) ? (
@@ -460,25 +815,64 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="timeline" aria-live="polite">
-        {loading ? (
-          <div className="loading-state">
-            <LoaderCircle className="spin" size={18} />
-            加载 Session
-          </div>
-        ) : (
-          <Timeline
-            session={session}
-            approvalBusyCallId={approvalBusyCallId}
-            platform={platform}
-            onApprove={onApprove}
-            onReject={onReject}
+      <div className="conversation-main">
+        {treeOpen ? (
+          <SessionTreePanel
+            tree={sessionTree}
+            loading={sessionTreeLoading}
+            forkingEntryId={forkingEntryId}
+            cloningSession={cloningSession}
+            navigatingEntryId={navigatingEntryId}
+            onSelect={onInspectSessionHistory}
+            onNavigate={onNavigateSessionTree}
+            onOpenBranchSummary={onOpenBranchSummary}
+            onOpenEntryLabel={onOpenEntryLabel}
+            onFork={onForkSession}
+            onClone={onCloneSession}
+            onClose={() => setTreeOpen(false)}
           />
-        )}
+        ) : null}
+        <div className="timeline" aria-live="polite">
+          {loading ? (
+            <div className="loading-state">
+              <LoaderCircle className="spin" size={18} />
+              加载 Session
+            </div>
+          ) : (
+            <Timeline
+              key={session.id}
+              session={session}
+              approvalBusyCallId={approvalBusyCallId}
+              platform={platform}
+              onApprove={onApprove}
+              onReject={onReject}
+            />
+          )}
+        </div>
       </div>
 
       <div className="composer-wrap">
-        {disabledReason ? (
+        {draftImages.length > 0 ? (
+          <div className="composer-images">
+            {draftImages.map((image, index) => (
+              <div className="composer-image" key={`${image.name ?? 'image'}-${index}`}>
+                <img
+                  src={`data:${image.mimeType};base64,${image.data}`}
+                  alt={image.name ?? `图片 ${index + 1}`}
+                />
+                <button
+                  className="mini-icon-button"
+                  type="button"
+                  aria-label={`移除 ${image.name ?? `图片 ${index + 1}`}`}
+                  onClick={() => onRemoveMessageImage(index)}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {disabledReason && !runActive ? (
           <div className="composer-reason">
             {disabledReason}
             {disabledReason.includes('模型') ? (
@@ -488,18 +882,55 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             ) : null}
           </div>
         ) : null}
+        {runActive ? (
+          <div className="queue-controls">
+            <div className="protocol-switch" role="group" aria-label="队列模式">
+              <button
+                type="button"
+                className={queueMode === 'steer' ? 'is-active' : ''}
+                aria-pressed={queueMode === 'steer'}
+                onClick={() => setQueueMode('steer')}
+              >
+                引导 ({queuedMessages.steering})
+              </button>
+              <button
+                type="button"
+                className={queueMode === 'follow-up' ? 'is-active' : ''}
+                aria-pressed={queueMode === 'follow-up'}
+                onClick={() => setQueueMode('follow-up')}
+              >
+                跟进 ({queuedMessages.followUp})
+              </button>
+            </div>
+            {queuedMessages.steering + queuedMessages.followUp > 0 ? (
+              <button className="secondary-button" type="button" onClick={onClearQueue}>
+                清空队列
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="composer">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="添加图片"
+            title="添加图片"
+            disabled={loading || viewingHistoricalEntry || runActive}
+            onClick={onPickMessageImages}
+          >
+            <ImagePlus size={17} />
+          </button>
           <textarea
             value={draft}
             rows={3}
             placeholder="描述要在当前项目中完成的任务…"
             aria-label="任务描述"
-            disabled={loading}
+            disabled={loading || viewingHistoricalEntry}
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
                 event.preventDefault()
-                onSend()
+                send()
               }
             }}
           />
@@ -507,9 +938,9 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             className="send-button"
             type="button"
             aria-label="发送任务"
-            title="发送任务"
-            disabled={Boolean(disabledReason) || !draft.trim() || loading}
-            onClick={onSend}
+            title={runActive ? '加入队列' : '发送任务'}
+            disabled={(!runActive && Boolean(disabledReason)) || !draft.trim() || loading}
+            onClick={() => (runActive ? onQueue(queueMode) : send())}
           >
             <Send size={17} />
           </button>

@@ -2,15 +2,16 @@
 
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { afterEach, beforeEach, expect, it } from 'vitest'
 
 import { SessionManager } from '@earendil-works/pi-coding-agent'
 
 import type { RuntimeEvent } from '../shared/runtime-protocol.js'
+import { openAiCompatibleModelProvider } from './openai-model-provider.js'
 import { PiAgentRuntime } from './pi-adapter.js'
 
 let server: Server
@@ -20,8 +21,21 @@ let lastRequestBody: Record<string, unknown>
 let failureMode: 'success' | 'authentication' | 'server' | 'malformed' | 'disconnect'
 let chatResponseText: string
 let chatToolArguments: Record<string, string> | null
+let chatToolName: string
+let chatToolCallId: string
 let chatRequestCount: number
 const localApiKey = ['local', 'test', 'key'].join('-')
+
+function createRuntime(emit: (event: RuntimeEvent) => void): PiAgentRuntime {
+  const runtime = new PiAgentRuntime(emit)
+  runtime.configure({
+    extensionPaths: [],
+    skillPaths: [],
+    promptPaths: [],
+    modelProviders: [openAiCompatibleModelProvider],
+  })
+  return runtime
+}
 
 beforeEach(async () => {
   testRoot = await mkdtemp(join(tmpdir(), 'pictor-pi-runtime-'))
@@ -30,6 +44,8 @@ beforeEach(async () => {
   failureMode = 'success'
   chatResponseText = 'Hello from Pi'
   chatToolArguments = null
+  chatToolName = 'pictor_write'
+  chatToolCallId = 'call-pictor-redaction'
   chatRequestCount = 0
   server = createServer(async (request, response) => {
     let requestBody = ''
@@ -166,10 +182,10 @@ beforeEach(async () => {
                 tool_calls: [
                   {
                     index: 0,
-                    id: 'call-pictor-redaction',
+                    id: chatToolCallId,
                     type: 'function',
                     function: {
-                      name: 'pictor_write',
+                      name: chatToolName,
                       arguments: JSON.stringify(chatToolArguments),
                     },
                   },
@@ -262,7 +278,7 @@ afterEach(async () => {
 
 it('streams normalized text events through the real Pi SDK', async () => {
   const events: RuntimeEvent[] = []
-  const runtime = new PiAgentRuntime((event) => events.push(event))
+  const runtime = createRuntime((event) => events.push(event))
   await runtime.start({
     type: 'start',
     runId: '01234567-89ab-4def-8123-456789abcdef',
@@ -285,6 +301,13 @@ it('streams normalized text events through the real Pi SDK', async () => {
   })
 
   expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'session.bound',
+      piSessionId: expect.any(String),
+      piSessionFile: expect.stringMatching(/\.jsonl$/),
+    }),
+  )
+  expect(events).toContainEqual(
     expect.objectContaining({ type: 'message.delta', delta: 'Hello from Pi' }),
   )
   expect(events).toContainEqual(
@@ -298,7 +321,7 @@ it('streams normalized text events through the real Pi SDK', async () => {
 
 it('streams Responses API events through the real Pi SDK', async () => {
   const events: RuntimeEvent[] = []
-  const runtime = new PiAgentRuntime((event) => events.push(event))
+  const runtime = createRuntime((event) => events.push(event))
   await runtime.start({
     type: 'start',
     runId: '31234567-89ab-4def-8123-456789abcdef',
@@ -335,6 +358,83 @@ it('streams Responses API events through the real Pi SDK', async () => {
   expect(lastRequestBody.reasoning).toEqual(expect.objectContaining({ effort: 'xhigh' }))
 }, 20_000)
 
+it('loads an unmodified official Pi Extension and exposes its custom tool', async () => {
+  const events: RuntimeEvent[] = []
+  chatToolName = 'hello'
+  chatToolCallId = 'call-official-hello'
+  chatToolArguments = { name: 'Pictor' }
+  const runtime = createRuntime((event) => events.push(event))
+  runtime.configure({
+    extensionPaths: [
+      resolve('node_modules/@earendil-works/pi-coding-agent/examples/extensions/hello.ts'),
+    ],
+    skillPaths: [],
+    promptPaths: [],
+    modelProviders: [openAiCompatibleModelProvider],
+  })
+
+  await runAgent(runtime, 'chat-completions', 'Use the hello tool.')
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'tool.started',
+      callId: 'call-official-hello',
+      kind: 'custom',
+      label: 'hello',
+    }),
+  )
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'tool.completed',
+      callId: 'call-official-hello',
+      output: 'Hello, Pictor!',
+      isError: false,
+    }),
+  )
+}, 20_000)
+
+it('does not auto-load project Pi Extensions without explicit project authorization', async () => {
+  const projectExtensionDirectory = join(testRoot, 'project', '.pi', 'extensions')
+  await mkdir(projectExtensionDirectory, { recursive: true })
+  await writeFile(
+    join(projectExtensionDirectory, 'project-only.ts'),
+    `export default function (pi) {
+  pi.registerTool({
+    name: 'project_only',
+    label: 'Project only',
+    description: 'Must remain disabled',
+    parameters: { type: 'object', properties: {} },
+    async execute() { return { content: [{ type: 'text', text: 'unexpected' }], details: {} } },
+  })
+}
+`,
+  )
+  chatToolName = 'project_only'
+  chatToolCallId = 'call-project-only'
+  chatToolArguments = {}
+  const events: RuntimeEvent[] = []
+  const runtime = createRuntime((event) => events.push(event))
+  runtime.configure({
+    extensionPaths: [
+      resolve('node_modules/@earendil-works/pi-coding-agent/examples/extensions/hello.ts'),
+    ],
+    skillPaths: [],
+    promptPaths: [],
+    modelProviders: [openAiCompatibleModelProvider],
+  })
+
+  await runAgent(runtime, 'chat-completions', 'Do not load project code.')
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'tool.completed',
+      callId: 'call-project-only',
+      output: 'Tool project_only not found',
+      isError: true,
+    }),
+  )
+}, 20_000)
+
 it.each(['a', 'id', 'running', ['pi', 'transcript', 'credential'].join('-')])(
   'redacts configured credential %s from real Pi transcripts and emitted events',
   async (secret) => {
@@ -351,7 +451,7 @@ it.each(['a', 'id', 'running', ['pi', 'transcript', 'credential'].join('-')])(
       role: secret,
       name: secret,
     }
-    const runtime = new PiAgentRuntime((event) => events.push(event))
+    const runtime = createRuntime((event) => events.push(event))
 
     await runtime.start({
       type: 'start',
@@ -442,7 +542,7 @@ it.each([
   'fails a %s Agent run for %s and accepts a recovery run',
   async (protocol, mode, category, readableMessage) => {
     const events: RuntimeEvent[] = []
-    const runtime = new PiAgentRuntime((event) => events.push(event))
+    const runtime = createRuntime((event) => events.push(event))
     failureMode = mode
 
     await runAgent(runtime, protocol, `Trigger ${mode}.`)

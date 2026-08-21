@@ -1,10 +1,15 @@
 import { _electron as electron, expect, test } from '@playwright/test'
-import { mkdir, readFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 
 import type { PictorBridge } from '../src/shared/desktop-bridge.js'
-import { credentialFixtures, readSelectedRunStatus } from './support.js'
+import {
+  bridgeKeys,
+  credentialFixtures,
+  moduleBridgeKeys,
+  readSelectedRunStatus,
+} from './support.js'
 
 test('@smoke completes the delegate flow through the GUI and utility-process boundary', async ({
   browserName: _browserName,
@@ -175,6 +180,20 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
   try {
     const window = await electronApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
+    await expect(window).toHaveTitle('Pictor')
+    await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
+    const rendererGlobals = await window.evaluate(() => ({
+      bodyTextLength: document.body.innerText.length,
+      bridgeKeys: Object.keys((globalThis as typeof globalThis & { pictor: object }).pictor),
+      moduleBridgeKeys: Object.keys(
+        (globalThis as typeof globalThis & { pictorModules: object }).pictorModules,
+      ),
+      nodeProcessType: typeof Reflect.get(globalThis, 'process'),
+    }))
+    expect(rendererGlobals.bodyTextLength).toBeGreaterThan(0)
+    expect(rendererGlobals.bridgeKeys.sort()).toEqual(bridgeKeys.toSorted())
+    expect(rendererGlobals.moduleBridgeKeys.sort()).toEqual(moduleBridgeKeys.toSorted())
+    expect(rendererGlobals.nodeProcessType).toBe('undefined')
 
     await window.getByRole('button', { name: '设置' }).click()
     await expect(window.getByRole('button', { name: 'Chat Completions' })).toHaveAttribute(
@@ -225,6 +244,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
     await expect(window.getByText('Task completed.')).toBeVisible()
     await expect(window.getByText('Changed files:')).toBeVisible()
+    await expect(window.getByText(/tokens/)).toBeVisible()
     expect(await readSelectedRunStatus(window)).toBe('completed')
 
     await window.setViewportSize({ width: 900, height: 620 })
@@ -256,38 +276,137 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     })
 
     expect(await readFile(join(projectRoot, 'command-approved.txt'), 'utf8')).toBe('approved')
-    expect(evidence).toEqual(
+    if (!evidence?.ok) throw new Error('Session evidence is unavailable')
+    expect(evidence.value.messages).toContainEqual(
       expect.objectContaining({
-        ok: true,
-        value: expect.objectContaining({
-          messages: expect.arrayContaining([
-            expect.objectContaining({
-              role: 'assistant',
-              content: expect.stringContaining('Remaining work: none.'),
-            }),
-          ]),
-          runs: expect.arrayContaining([
-            expect.objectContaining({
-              status: 'completed',
-              toolEvents: expect.arrayContaining([
-                expect.objectContaining({
-                  kind: 'write',
-                  path: 'agent-created.txt',
-                  status: 'completed',
-                }),
-                expect.objectContaining({
-                  kind: 'command',
-                  status: 'completed',
-                  command: expect.objectContaining({ approval: 'allowed' }),
-                  output: expect.stringContaining('exit: 0'),
-                }),
-              ]),
-            }),
-            expect.objectContaining({ status: 'stopped' }),
-          ]),
-        }),
+        role: 'assistant',
+        content: expect.stringContaining('Remaining work: none.'),
       }),
     )
+    const projectedTools = evidence.value.runs.flatMap((run) => run.toolEvents)
+    expect(projectedTools).toContainEqual(
+      expect.objectContaining({
+        kind: 'write',
+        path: 'agent-created.txt',
+        status: 'completed',
+      }),
+    )
+    expect(projectedTools).toContainEqual(
+      expect.objectContaining({
+        kind: 'command',
+        status: 'completed',
+        command: expect.objectContaining({ approval: 'allowed' }),
+        output: expect.stringContaining('exit: 0'),
+      }),
+    )
+    expect(evidence.value.runs).toContainEqual(expect.objectContaining({ status: 'stopped' }))
+    const persistedSession = JSON.parse(
+      await readFile(
+        join(userDataDirectory, 'data-v1', 'sessions', `${evidence.value.id}.json`),
+        'utf8',
+      ),
+    )
+    expect(persistedSession).toMatchObject({
+      schemaVersion: 2,
+      history: {
+        authority: 'pi-jsonl',
+        piSessionId: expect.any(String),
+        piSessionFile: expect.stringMatching(/\.jsonl$/),
+      },
+      projection: {
+        usage: {
+          tokens: {
+            input: expect.any(Number),
+            output: expect.any(Number),
+            cacheRead: expect.any(Number),
+            cacheWrite: expect.any(Number),
+            total: expect.any(Number),
+          },
+          cost: expect.any(Number),
+          context: null,
+        },
+        messages: expect.arrayContaining([
+          expect.objectContaining({ content: expect.stringContaining('Remaining work: none.') }),
+        ]),
+      },
+    })
+
+    const transcriptPath = join(
+      userDataDirectory,
+      'data-v1',
+      'pi',
+      evidence.value.projectId,
+      evidence.value.id,
+      persistedSession.history.piSessionFile,
+    )
+    const transcriptEntries = (await readFile(transcriptPath, 'utf8'))
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+    const rootUser = transcriptEntries.find(
+      (entry) => entry.type === 'message' && entry.message?.role === 'user',
+    )
+    if (!rootUser?.id) throw new Error('Pi Session root user entry is unavailable')
+    const alternateEntry = {
+      type: 'message',
+      id: 'e2e-alternate-branch',
+      parentId: rootUser.id,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Historical branch from JSONL' }],
+        api: 'openai-completions',
+        provider: 'pictor-openai-compatible',
+        model: 'pictor-e2e-model',
+        usage: {
+          input: 1,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 2,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'stop',
+        timestamp: Date.now(),
+      },
+    }
+    await appendFile(transcriptPath, `${JSON.stringify(alternateEntry)}\n`, 'utf8')
+    await window.reload()
+    await window.waitForLoadState('domcontentloaded')
+
+    await window.getByRole('button', { name: 'Session Tree' }).click()
+    const tree = window.getByRole('complementary', { name: 'Session Tree' })
+    await expect(tree).toBeVisible()
+    await expect(tree.getByRole('button', { name: 'Historical branch from JSONL' })).toBeVisible()
+    await tree.getByRole('button', { name: /Task completed/ }).click()
+    await expect(window.locator('.timeline').getByText('Task completed.')).toBeVisible()
+    await expect(window.getByText(/正在查看历史分支/)).toBeVisible()
+    await expect(window.getByRole('textbox', { name: '任务描述' })).toBeDisabled()
+    await expect(window.getByRole('button', { name: '发送任务' })).toBeDisabled()
+    const treeLayout = await window.evaluate(() => ({
+      bodyWidth: document.body.scrollWidth,
+      viewportWidth: globalThis.innerWidth,
+      tree: document.querySelector('.session-tree-panel')?.getBoundingClientRect().toJSON(),
+      timeline: document.querySelector('.timeline')?.getBoundingClientRect().toJSON(),
+    }))
+    expect(treeLayout.bodyWidth).toBeLessThanOrEqual(treeLayout.viewportWidth)
+    expect(treeLayout.tree?.width).toBeGreaterThanOrEqual(220)
+    expect(treeLayout.tree?.width).toBeLessThanOrEqual(280)
+    expect(treeLayout.timeline?.width).toBeGreaterThan(300)
+    await window.screenshot({ path: testInfo.outputPath('session-tree.png') })
+
+    await tree.getByRole('button', { name: '返回当前节点' }).click()
+    await expect(window.locator('.timeline').getByText('Task completed.')).toBeVisible()
+    await expect(window.locator('.timeline').getByText('Historical branch from JSONL')).toHaveCount(
+      0,
+    )
+    await expect(window.getByText(/正在查看历史分支/)).toBeHidden()
+    expect(
+      await readFile(
+        join(userDataDirectory, 'data-v1', 'sessions', `${evidence.value.id}.json`),
+        'utf8',
+      ),
+    ).not.toContain('Historical branch from JSONL')
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

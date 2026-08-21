@@ -11,6 +11,8 @@ import {
   sessionRecordSchema,
   sessionSummarySchema,
   type Project,
+  type SessionHistoryView,
+  type SessionHistoryState,
   type SessionRecord,
   type SessionSummary,
 } from '../../shared/domain.js'
@@ -208,9 +210,50 @@ export class AppRepository {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
+    piSessionFile: string | null
+    activeLeafId?: string | null
+    runtimePreferences?: SessionHistoryState['runtimePreferences']
   } {
     this.ensureInitialized()
     return this.sessionPersistence.getRuntimePaths(projectId, sessionId)
+  }
+
+  getSessionHistory(sessionId: string): SessionHistoryState {
+    this.ensureInitialized()
+    if (!this.state.sessions.some((session) => session.id === sessionId)) {
+      throw new PictorError('not-found', '会话不存在或已被删除')
+    }
+    return this.sessionPersistence.getHistory(sessionId)
+  }
+
+  async bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void> {
+    const session = await this.getSession(sessionId)
+    await this.sessionPersistence.bindPiSession(session, identity)
+  }
+
+  async setPiSessionActiveLeaf(sessionId: string, activeLeafId: string | null): Promise<void> {
+    this.ensureInitialized()
+    if (!this.state.sessions.some((session) => session.id === sessionId)) {
+      throw new PictorError('not-found', '会话不存在或已被删除')
+    }
+    await this.sessionPersistence.setActiveLeaf(sessionId, activeLeafId)
+  }
+
+  async setSessionRuntimePreferences(
+    sessionId: string,
+    runtimePreferences: NonNullable<SessionHistoryState['runtimePreferences']>,
+  ): Promise<void> {
+    this.ensureInitialized()
+    if (!this.state.sessions.some((session) => session.id === sessionId)) {
+      throw new PictorError('not-found', '会话不存在或已被删除')
+    }
+    await this.sessionPersistence.setRuntimePreferences(sessionId, runtimePreferences)
+  }
+
+  async rebuildSessionProjection(sessionId: string): Promise<SessionRecord> {
+    const session = await this.sessionPersistence.rebuildProjection(sessionId)
+    await this.saveSession(session)
+    return session
   }
 
   async createSession(projectId: string): Promise<SessionSummary> {
@@ -247,6 +290,84 @@ export class AppRepository {
       throw new PictorError('not-found', '会话不存在或已被删除')
     }
     return this.sessionPersistence.read(sessionId)
+  }
+
+  async inspectSessionHistory(
+    sessionId: string,
+    selectedEntryId: string | null,
+  ): Promise<SessionHistoryView> {
+    this.ensureInitialized()
+    if (!this.state.sessions.some((session) => session.id === sessionId)) {
+      throw new PictorError('not-found', '会话不存在或已被删除')
+    }
+    return this.sessionPersistence.inspectHistory(sessionId, selectedEntryId)
+  }
+
+  async createDerivedSession(
+    sourceSessionId: string,
+    targetSessionId: string,
+    kind: 'fork' | 'clone',
+    identity: { id: string; file: string },
+  ): Promise<SessionSummary> {
+    this.ensureInitialized()
+    if (this.state.sessions.some((session) => session.id === targetSessionId)) {
+      throw new PictorError('invalid-input', '目标 Session 已存在')
+    }
+    const source = await this.getSession(sourceSessionId)
+    const now = new Date().toISOString()
+    const target = sessionRecordSchema.parse({
+      schemaVersion: 1,
+      id: targetSessionId,
+      projectId: source.projectId,
+      title: `${source.title} (${kind === 'clone' ? 'Clone' : 'Fork'})`.slice(0, 120),
+      messages: [],
+      runs: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    return this.commitPiSession(target, identity)
+  }
+
+  async createImportedSession(
+    projectId: string,
+    targetSessionId: string,
+    title: string,
+    identity: { id: string; file: string },
+  ): Promise<SessionSummary> {
+    this.ensureInitialized()
+    this.getProject(projectId)
+    if (this.state.sessions.some((session) => session.id === targetSessionId)) {
+      throw new PictorError('invalid-input', '目标 Session 已存在')
+    }
+    const now = new Date().toISOString()
+    const target = sessionRecordSchema.parse({
+      schemaVersion: 1,
+      id: targetSessionId,
+      projectId,
+      title,
+      messages: [],
+      runs: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    return this.commitPiSession(target, identity)
+  }
+
+  private async commitPiSession(
+    target: SessionRecord,
+    identity: { id: string; file: string },
+  ): Promise<SessionSummary> {
+    const now = target.createdAt
+    await this.sessionPersistence.bindPiSession(target, identity)
+    const rebuilt = await this.sessionPersistence.rebuildProjection(target.id)
+    rebuilt.createdAt = now
+    rebuilt.updatedAt = now
+    const summary = await this.sessionPersistence.save(rebuilt)
+    this.state.sessions.push(summary)
+    this.state.selectedProjectId = target.projectId
+    this.state.selectedSessionId = target.id
+    await this.persistState()
+    return summary
   }
 
   async saveSession(session: SessionRecord): Promise<SessionSummary> {

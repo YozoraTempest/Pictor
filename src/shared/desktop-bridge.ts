@@ -3,14 +3,17 @@ import { z } from 'zod'
 import {
   dataIssueSchema,
   idSchema,
+  imageAttachmentSchema,
   projectSchema,
+  sessionHistoryViewSchema,
   sessionRecordSchema,
   sessionSummarySchema,
   type Project,
+  type SessionHistoryView,
   type SessionRecord,
   type SessionSummary,
 } from './domain.js'
-import { ipcErrorSchema, type IpcError } from './errors.js'
+import { ipcResultSchema, type IpcResult } from './errors.js'
 import {
   connectionTestResultSchema,
   listModelsRequestSchema,
@@ -25,29 +28,20 @@ import {
   type SaveSettingsRequest,
   type TestSettingsRequest,
 } from './model.js'
-import { runtimeEventSchema, type RuntimeEvent } from './runtime-protocol.js'
-
-export const appInfoSchema = z.object({
-  name: z.string().min(1),
-  version: z.string().min(1),
-  platform: z.enum(['win32', 'linux']),
-  arch: z.literal('x64'),
-  distribution: z.enum(['windows', 'ubuntu', 'arch', 'unsupported-linux']),
-  commandInterpreter: z.object({
-    kind: z.literal('bash'),
-    available: z.boolean(),
-    message: z.string().min(1).nullable(),
-  }),
-})
-
-export const updateCheckResultSchema = z.object({
-  currentVersion: z.string().min(1),
-  latestVersion: z.string().min(1),
-  updateAvailable: z.boolean(),
-  packageAvailable: z.boolean(),
-  packageKind: z.enum(['windows-nsis', 'ubuntu-deb', 'arch-pacman']).nullable(),
-  publishedAt: z.iso.datetime().nullable(),
-})
+import {
+  runtimeEventSchema,
+  sessionExportFormatSchema,
+  type RuntimeEvent,
+} from './runtime-protocol.js'
+import { appInfoSchema, type AppInfo } from './app-info.js'
+import { pluginBootstrapSchema, type PluginBootstrap } from './plugins.js'
+import type {
+  pluginIdRequestSchema,
+  removePluginRequestSchema,
+  setPluginEnabledRequestSchema,
+  PluginManagerSnapshot,
+} from './plugins.js'
+import { pluginManagerSnapshotSchema } from './plugins.js'
 
 export const appSnapshotSchema = z.object({
   projects: z.array(projectSchema),
@@ -74,7 +68,43 @@ export const relinkProjectRequestSchema = registerProjectRequestSchema.extend({
 })
 
 export const projectIdRequestSchema = z.object({ projectId: idSchema })
+export const packageSpecRequestSchema = z.object({ spec: z.string().trim().min(1).max(2_000) })
 export const sessionIdRequestSchema = z.object({ sessionId: idSchema })
+export const inspectSessionHistoryRequestSchema = sessionIdRequestSchema.extend({
+  entryId: z.string().min(1).nullable(),
+})
+export const navigateSessionTreeRequestSchema = sessionIdRequestSchema.extend({
+  entryId: z.string().min(1),
+  summarize: z.boolean().default(false),
+  customInstructions: z.string().trim().max(20_000).nullable().default(null),
+})
+export const compactSessionRequestSchema = sessionIdRequestSchema.extend({
+  customInstructions: z.string().trim().max(20_000).nullable(),
+})
+export const labelSessionEntryRequestSchema = sessionIdRequestSchema.extend({
+  entryId: z.string().min(1),
+  label: z.string().trim().max(120).nullable(),
+})
+export const sessionRuntimeControlsSchema = z.object({
+  modelId: z.string().min(1),
+  thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
+  activeTools: z.array(z.string().min(1)),
+  availableTools: z.array(z.string().min(1)),
+  steeringMode: z.enum(['all', 'one-at-a-time']),
+  followUpMode: z.enum(['all', 'one-at-a-time']),
+  projectExtensionsEnabled: z.boolean(),
+})
+export const saveSessionRuntimeControlsRequestSchema = sessionIdRequestSchema.extend({
+  controls: sessionRuntimeControlsSchema.omit({ availableTools: true }),
+})
+export const forkSessionRequestSchema = sessionIdRequestSchema.extend({
+  entryId: z.string().min(1),
+})
+export const cloneSessionRequestSchema = sessionIdRequestSchema
+export const importSessionRequestSchema = projectIdRequestSchema
+export const exportSessionRequestSchema = sessionIdRequestSchema.extend({
+  format: sessionExportFormatSchema,
+})
 export const createSessionRequestSchema = z.object({ projectId: idSchema })
 export const selectContextRequestSchema = z.object({
   projectId: idSchema.nullable(),
@@ -87,44 +117,82 @@ export const renameSessionRequestSchema = z.object({
 export const startRunRequestSchema = z.object({
   sessionId: idSchema,
   prompt: z.string().trim().min(1).max(200_000),
+  images: z.array(imageAttachmentSchema).optional(),
 })
 export const runIdRequestSchema = z.object({ runId: idSchema })
 export const approvalResolutionRequestSchema = z.object({
   runId: idSchema,
   callId: z.string().min(1),
 })
-
-export function ipcResultSchema<T extends z.ZodType>(valueSchema: T) {
-  return z.discriminatedUnion('ok', [
-    z.object({ ok: z.literal(true), value: valueSchema }),
-    z.object({ ok: z.literal(false), error: ipcErrorSchema }),
-  ])
-}
+export const extensionUiResponseRequestSchema = z.object({
+  runId: idSchema,
+  requestId: z.uuid(),
+  value: z.union([z.string(), z.boolean(), z.null()]),
+})
+export const queueRuntimeMessageRequestSchema = z.object({
+  runId: idSchema,
+  mode: z.enum(['steer', 'follow-up']),
+  message: z.string().trim().min(1).max(200_000),
+})
 
 export const appSnapshotResultSchema = ipcResultSchema(appSnapshotSchema)
+export const appInfoResultSchema = ipcResultSchema(appInfoSchema)
+export const pluginBootstrapResultSchema = ipcResultSchema(pluginBootstrapSchema)
+export const pluginManagerResultSchema = ipcResultSchema(pluginManagerSnapshotSchema)
 export const projectCandidateResultSchema = ipcResultSchema(projectCandidateSchema.nullable())
 export const projectResultSchema = ipcResultSchema(projectSchema)
 export const sessionSummaryResultSchema = ipcResultSchema(sessionSummarySchema)
 export const sessionRecordResultSchema = ipcResultSchema(sessionRecordSchema)
+export const sessionHistoryViewResultSchema = ipcResultSchema(sessionHistoryViewSchema)
+export const sessionNavigationResultSchema = z.object({
+  history: sessionHistoryViewSchema,
+  editorText: z.string().nullable(),
+  summaryCreated: z.boolean(),
+})
+export const navigateSessionTreeResultSchema = ipcResultSchema(
+  sessionNavigationResultSchema.nullable(),
+)
+export const compactSessionResultSchema = ipcResultSchema(sessionHistoryViewSchema.nullable())
+export const cancelSessionOperationResultSchema = ipcResultSchema(z.boolean())
+export const sessionRuntimeControlsResultSchema = ipcResultSchema(sessionRuntimeControlsSchema)
+export const forkSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
+export const cloneSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
+export const importSessionResultSchema = ipcResultSchema(sessionSummarySchema.nullable())
+export const exportSessionResultSchema = ipcResultSchema(z.boolean())
 export const settingsResultSchema = ipcResultSchema(modelSettingsSchema.nullable())
 export const savedSettingsResultSchema = ipcResultSchema(modelSettingsSchema)
 export const connectionTestIpcResultSchema = ipcResultSchema(connectionTestResultSchema)
 export const modelCatalogIpcResultSchema = ipcResultSchema(modelCatalogResultSchema)
-export const updateCheckIpcResultSchema = ipcResultSchema(updateCheckResultSchema)
 export const voidResultSchema = ipcResultSchema(z.null())
 export const startRunResultSchema = ipcResultSchema(z.object({ runId: idSchema }))
+export const imageAttachmentsResultSchema = ipcResultSchema(z.array(imageAttachmentSchema))
 
-export type AppInfo = z.infer<typeof appInfoSchema>
-export type UpdateCheckResult = z.infer<typeof updateCheckResultSchema>
 export type AppSnapshot = z.infer<typeof appSnapshotSchema>
 export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
-export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: IpcError }
+export type SessionExportFormat = z.infer<typeof sessionExportFormatSchema>
+export type SessionRuntimeControls = z.infer<typeof sessionRuntimeControlsSchema>
 
 export interface PictorBridge {
-  getAppInfo: () => Promise<AppInfo>
-  checkForUpdates: () => Promise<IpcResult<UpdateCheckResult>>
-  openUpdate: () => Promise<IpcResult<null>>
   getSnapshot: () => Promise<IpcResult<AppSnapshot>>
+  getAppInfo: () => Promise<IpcResult<AppInfo>>
+  getPluginBootstrap: () => Promise<IpcResult<PluginBootstrap>>
+  getPluginManagerSnapshot: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installLocalPlugin: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installDevelopmentPlugin: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installPiExtension: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installPiPackage: () => Promise<IpcResult<PluginManagerSnapshot>>
+  installPiPackageSpec: (
+    request: z.infer<typeof packageSpecRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
+  setPluginEnabled: (
+    request: z.infer<typeof setPluginEnabledRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
+  removePlugin: (
+    request: z.infer<typeof removePluginRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
+  restoreBundledPlugin: (
+    request: z.infer<typeof pluginIdRequestSchema>,
+  ) => Promise<IpcResult<PluginManagerSnapshot>>
   pickProjectDirectory: () => Promise<IpcResult<ProjectCandidate | null>>
   registerProject: (
     request: z.infer<typeof registerProjectRequestSchema>,
@@ -142,6 +210,42 @@ export interface PictorBridge {
   ) => Promise<IpcResult<SessionSummary>>
   deleteSession: (request: z.infer<typeof sessionIdRequestSchema>) => Promise<IpcResult<null>>
   getSession: (request: z.infer<typeof sessionIdRequestSchema>) => Promise<IpcResult<SessionRecord>>
+  inspectSessionHistory: (
+    request: z.infer<typeof inspectSessionHistoryRequestSchema>,
+  ) => Promise<IpcResult<SessionHistoryView>>
+  navigateSessionTree: (
+    request: z.infer<typeof navigateSessionTreeRequestSchema>,
+  ) => Promise<IpcResult<z.infer<typeof sessionNavigationResultSchema> | null>>
+  compactSession: (
+    request: z.infer<typeof compactSessionRequestSchema>,
+  ) => Promise<IpcResult<SessionHistoryView | null>>
+  cancelSessionOperation: (
+    request: z.infer<typeof sessionIdRequestSchema>,
+  ) => Promise<IpcResult<boolean>>
+  getSessionRuntimeControls: (
+    request: z.infer<typeof sessionIdRequestSchema>,
+  ) => Promise<IpcResult<SessionRuntimeControls>>
+  saveSessionRuntimeControls: (
+    request: z.infer<typeof saveSessionRuntimeControlsRequestSchema>,
+  ) => Promise<IpcResult<SessionRuntimeControls>>
+  reloadSessionResources: (
+    request: z.infer<typeof sessionIdRequestSchema>,
+  ) => Promise<IpcResult<null>>
+  labelSessionEntry: (
+    request: z.infer<typeof labelSessionEntryRequestSchema>,
+  ) => Promise<IpcResult<SessionHistoryView>>
+  forkSession: (
+    request: z.infer<typeof forkSessionRequestSchema>,
+  ) => Promise<IpcResult<SessionSummary | null>>
+  cloneSession: (
+    request: z.infer<typeof cloneSessionRequestSchema>,
+  ) => Promise<IpcResult<SessionSummary | null>>
+  importSession: (
+    request: z.infer<typeof importSessionRequestSchema>,
+  ) => Promise<IpcResult<SessionSummary | null>>
+  exportSession: (
+    request: z.infer<typeof exportSessionRequestSchema>,
+  ) => Promise<IpcResult<boolean>>
   getSettings: () => Promise<IpcResult<ModelSettings | null>>
   saveSettings: (request: SaveSettingsRequest) => Promise<IpcResult<ModelSettings>>
   testSettings: (request: TestSettingsRequest) => Promise<IpcResult<ConnectionTestResult>>
@@ -149,6 +253,7 @@ export interface PictorBridge {
   startRun: (
     request: z.infer<typeof startRunRequestSchema>,
   ) => Promise<IpcResult<{ runId: string }>>
+  pickMessageImages: () => Promise<IpcResult<z.infer<typeof imageAttachmentSchema>[]>>
   approveCommand: (
     request: z.infer<typeof approvalResolutionRequestSchema>,
   ) => Promise<IpcResult<null>>
@@ -156,6 +261,13 @@ export interface PictorBridge {
     request: z.infer<typeof approvalResolutionRequestSchema>,
   ) => Promise<IpcResult<null>>
   stopRun: (request: z.infer<typeof runIdRequestSchema>) => Promise<IpcResult<null>>
+  respondToExtensionUi: (
+    request: z.infer<typeof extensionUiResponseRequestSchema>,
+  ) => Promise<IpcResult<null>>
+  queueRuntimeMessage: (
+    request: z.infer<typeof queueRuntimeMessageRequestSchema>,
+  ) => Promise<IpcResult<null>>
+  clearRuntimeQueue: (request: z.infer<typeof runIdRequestSchema>) => Promise<IpcResult<null>>
   onRuntimeEvent: (listener: (event: RuntimeEvent) => void) => () => void
 }
 
@@ -165,4 +277,10 @@ export {
   saveSettingsRequestSchema,
   testSettingsRequestSchema,
 }
+export {
+  pluginIdRequestSchema,
+  removePluginRequestSchema,
+  setPluginEnabledRequestSchema,
+} from './plugins.js'
 export type { RuntimeEvent } from './runtime-protocol.js'
+export type { IpcResult } from './errors.js'

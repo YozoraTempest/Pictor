@@ -5,15 +5,16 @@ import { collectLaunchEvidence } from './linux-launch-readiness.mjs'
 describe('collectLaunchEvidence', () => {
   it('waits for the renderer terminal state after DOMContentLoaded', async () => {
     globalThis.document.body.innerHTML = '<main class="app-loading">正在打开 Pictor</main>'
-    globalThis.pictor = {
-      getAppInfo: vi.fn().mockResolvedValue({
-        name: 'pictor',
-        version: '0.2.1',
-        platform: 'linux',
-        arch: 'x64',
-        distribution: 'ubuntu',
-        commandInterpreter: { kind: 'bash', available: true, message: null },
-      }),
+    const invoke = vi.fn().mockResolvedValue({
+      name: 'pictor',
+      version: '0.2.1',
+      platform: 'linux',
+      arch: 'x64',
+      distribution: 'unsupported-linux',
+      commandInterpreter: { kind: 'bash', available: true, message: null },
+    })
+    globalThis.pictorModules = {
+      invoke,
     }
     const window = {
       waitForLoadState: vi.fn().mockResolvedValue(undefined),
@@ -31,12 +32,13 @@ describe('collectLaunchEvidence', () => {
     expect(evidence.terminalState).toBe('ready')
     expect(evidence.shell).not.toBeNull()
     expect(evidence.appInfo.version).toBe('0.2.1')
+    expect(invoke).toHaveBeenCalledWith('pictor.updater', 'getAppInfo', null)
   })
 
   it('reports fatal renderer text without retrying the failed app-info IPC', async () => {
     globalThis.document.body.innerHTML = '<main class="app-loading">正在打开 Pictor</main>'
-    const getAppInfo = vi.fn().mockRejectedValue(new Error('IPC unavailable'))
-    globalThis.pictor = { getAppInfo }
+    const invoke = vi.fn().mockRejectedValue(new Error('IPC unavailable'))
+    globalThis.pictorModules = { invoke }
     const window = {
       waitForLoadState: vi.fn().mockResolvedValue(undefined),
       waitForFunction: vi.fn().mockImplementation(async (predicate) => {
@@ -53,6 +55,6 @@ describe('collectLaunchEvidence', () => {
     )
 
     expect(window.waitForFunction).toHaveBeenCalledOnce()
-    expect(getAppInfo).not.toHaveBeenCalled()
+    expect(invoke).not.toHaveBeenCalled()
   })
 })

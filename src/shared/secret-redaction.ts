@@ -85,6 +85,35 @@ export class SecretRedactor {
         }
       case 'runtime.error':
         return { ...event, message: this.redactText(event.message) }
+      case 'runtime.diagnostic':
+        return { ...event, message: this.redactText(event.message) }
+      case 'retry.stateChanged':
+        return { ...event, error: event.error === null ? null : this.redactText(event.error) }
+      case 'extension.ui.requested':
+        return {
+          ...event,
+          title: this.redactText(event.title),
+          message: event.message === null ? null : this.redactText(event.message),
+          options: event.options.map((option) => this.redactText(option)),
+          value: event.value === null ? null : this.redactText(event.value),
+        }
+      case 'extension.ui.notification':
+        return { ...event, message: this.redactText(event.message) }
+      case 'extension.ui.status':
+        return { ...event, text: event.text === null ? null : this.redactText(event.text) }
+      case 'queue.updated':
+        return {
+          ...event,
+          steering: event.steering.map((message) => this.redactText(message)),
+          followUp: event.followUp.map((message) => this.redactText(message)),
+        }
+      case 'usage.updated':
+      case 'session.activeLeafChanged':
+        return event
+      case 'compaction.stateChanged':
+        return { ...event, error: event.error === null ? null : this.redactText(event.error) }
+      case 'session.bound':
+        return event
       case 'message.started':
       case 'approval.resolved':
         return event

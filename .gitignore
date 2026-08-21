@@ -5,6 +5,7 @@ coverage/
 playwright-report/
 test-results/
 .noctis/
+.pictor/
 *.tsbuildinfo
 *.log
 .env

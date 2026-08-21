@@ -1,9 +1,9 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { resolve } from 'node:path'
 
-import { bridgeKeys } from './support.js'
+import { bridgeKeys, moduleBridgeKeys } from './support.js'
 
-test('@smoke launches a sandboxed, nonblank desktop shell', async ({
+test('launches a sandboxed, nonblank desktop shell', async ({
   browserName: _browserName,
 }, testInfo) => {
   const electronApp = await electron.launch({
@@ -16,6 +16,12 @@ test('@smoke launches a sandboxed, nonblank desktop shell', async ({
 
   try {
     const window = await electronApp.firstWindow()
+    if (process.env.PICTOR_E2E_NO_FOCUS === '1') {
+      const focusedAtLaunch = await electronApp.evaluate(({ BrowserWindow }) =>
+        Boolean(BrowserWindow.getAllWindows()[0]?.isFocused()),
+      )
+      expect(focusedAtLaunch).toBe(false)
+    }
     const rendererErrors: string[] = []
     window.on('console', (message) => {
       if (message.type() === 'error') {
@@ -41,13 +47,15 @@ test('@smoke launches a sandboxed, nonblank desktop shell', async ({
     }
 
     const rendererGlobals = await window.evaluate(() => ({
-      bridgeKeys: Object.keys(
-        (globalThis as typeof globalThis & { pictor: { getAppInfo: unknown } }).pictor,
+      bridgeKeys: Object.keys((globalThis as typeof globalThis & { pictor: object }).pictor),
+      moduleBridgeKeys: Object.keys(
+        (globalThis as typeof globalThis & { pictorModules: object }).pictorModules,
       ),
       nodeProcessType: typeof Reflect.get(globalThis, 'process'),
     }))
 
     expect(rendererGlobals.bridgeKeys.sort()).toEqual(bridgeKeys.toSorted())
+    expect(rendererGlobals.moduleBridgeKeys.sort()).toEqual(moduleBridgeKeys.toSorted())
     expect(rendererGlobals.nodeProcessType).toBe('undefined')
 
     await window.getByRole('button', { name: '设置' }).click()

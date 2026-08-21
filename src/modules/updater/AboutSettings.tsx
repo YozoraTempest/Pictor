@@ -1,30 +1,50 @@
 import { CheckCircle2, Download, LoaderCircle, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import type { AppInfo, UpdateCheckResult } from '../../shared/desktop-bridge'
+import type { AppInfo, UpdateCheckResult, UpdaterClient } from './shared'
 
 interface AboutSettingsProps {
-  appInfo: AppInfo | null
+  client: UpdaterClient
 }
 
-export function AboutSettings({ appInfo }: AboutSettingsProps): React.JSX.Element {
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '无法读取应用信息'
+}
+
+export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element {
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [busy, setBusy] = useState<'check' | 'open' | null>(null)
   const [result, setResult] = useState<UpdateCheckResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const packageLabel =
     result?.packageKind === 'windows-nsis'
       ? 'Windows x64 安装包'
-      : result?.packageKind === 'ubuntu-deb'
-        ? 'Ubuntu x64 DEB 包'
-        : result?.packageKind === 'arch-pacman'
-          ? 'Arch Linux x64 Pacman 包'
+      : result?.packageKind === 'arch-pacman'
+        ? 'Arch Linux x64 Pacman 包'
+        : result?.packageKind === 'linux-appimage'
+          ? 'Linux x64 AppImage'
           : null
+
+  useEffect(() => {
+    let active = true
+    void client
+      .getAppInfo()
+      .then((value) => {
+        if (active) setAppInfo(value)
+      })
+      .catch((cause: unknown) => {
+        if (active) setError(errorMessage(cause))
+      })
+    return () => {
+      active = false
+    }
+  }, [client])
 
   const handleCheckForUpdates = async () => {
     setBusy('check')
     setError(null)
     setResult(null)
-    const response = await window.pictor.checkForUpdates()
+    const response = await client.checkForUpdates()
     setBusy(null)
     if (response.ok) setResult(response.value)
     else setError(response.error.message)
@@ -33,7 +53,7 @@ export function AboutSettings({ appInfo }: AboutSettingsProps): React.JSX.Elemen
   const handleOpenUpdate = async () => {
     setBusy('open')
     setError(null)
-    const response = await window.pictor.openUpdate()
+    const response = await client.openUpdate()
     setBusy(null)
     if (!response.ok) setError(response.error.message)
   }
@@ -109,7 +129,7 @@ export function AboutSettings({ appInfo }: AboutSettingsProps): React.JSX.Elemen
                 <span>
                   {result.packageAvailable
                     ? `可以下载官方${packageLabel ?? '发行包'}。`
-                    : '该版本未附带匹配的安装包，可前往发布页查看。'}
+                    : '该版本未附带匹配的发行包，可前往发布页查看。'}
                 </span>
               ) : null}
             </div>

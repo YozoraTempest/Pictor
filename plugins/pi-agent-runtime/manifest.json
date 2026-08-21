@@ -1,0 +1,13 @@
+{
+  "id": "pictor.pi-agent-runtime",
+  "name": "Pi Agent Runtime",
+  "version": "0.3.0",
+  "description": "Native Pi Agent session runtime for Pictor",
+  "engines": {
+    "pictor": "^0.3.0"
+  },
+  "dependencies": {},
+  "modules": {
+    "runtime": "./dist/runtime.js"
+  }
+}

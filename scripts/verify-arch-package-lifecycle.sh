@@ -2,14 +2,16 @@
 
 set -euo pipefail
 
-release_version="${RELEASE_VERSION:-$(node --print "require('./package.json').version")}"
+script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repository_root="$(cd -- "$script_directory/.." && pwd)"
+release_version="${RELEASE_VERSION:-$(node --print "require('$repository_root/package.json').version")}"
 package_name="Pictor-$release_version-arch-x64.pacman"
 
-test -f "dist/$package_name"
+test -f "$repository_root/dist/$package_name"
 
 docker run --rm \
   --env PACKAGE_NAME="$package_name" \
-  --volume "$PWD/dist:/artifacts:ro" \
+  --volume "$repository_root/dist:/artifacts:ro" \
   archlinux:base \
   bash -euo pipefail -c '
     package_path="/artifacts/$PACKAGE_NAME"

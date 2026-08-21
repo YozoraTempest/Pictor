@@ -1,6 +1,6 @@
 import {
   CheckCircle2,
-  Info,
+  Blocks,
   KeyRound,
   LoaderCircle,
   RefreshCw,
@@ -16,13 +16,15 @@ import {
   type ConnectionTestResult,
   type ModelSettings,
 } from '../../shared/model'
-import type { AppInfo } from '../../shared/desktop-bridge'
-import { AboutSettings } from './AboutSettings'
+import type { SettingsSection } from '../../modules/shell/settings'
+import type { PluginStatus } from '../../plugin/host'
 import { Modal } from '../ui/Modal'
+import { PluginManager } from './PluginManager'
 
 interface SettingsDialogProps {
-  appInfo: AppInfo | null
   initial: ModelSettings | null
+  sections: readonly SettingsSection[]
+  rendererPluginStatuses: readonly PluginStatus[]
   onClose: () => void
   onSaved: (settings: ModelSettings) => void
 }
@@ -52,12 +54,13 @@ function createFormState(settings: ModelSettings | null): FormState {
 }
 
 export function SettingsDialog({
-  appInfo,
   initial,
+  sections,
+  rendererPluginStatuses,
   onClose,
   onSaved,
 }: SettingsDialogProps): React.JSX.Element {
-  const [activeTab, setActiveTab] = useState<'model' | 'about'>('model')
+  const [activeTab, setActiveTab] = useState('model')
   const [form, setForm] = useState(() => createFormState(initial))
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<'save' | 'test' | 'models' | null>(null)
@@ -175,7 +178,7 @@ export function SettingsDialog({
   return (
     <Modal
       title="设置"
-      description="配置模型连接，查看版本并获取更新。"
+      description="管理模型连接、Plugins 与应用信息。"
       onClose={onClose}
       width="wide"
     >
@@ -191,13 +194,28 @@ export function SettingsDialog({
         </button>
         <button
           type="button"
-          className={activeTab === 'about' ? 'is-active' : ''}
-          aria-current={activeTab === 'about' ? 'page' : undefined}
-          onClick={() => setActiveTab('about')}
+          className={activeTab === 'plugins' ? 'is-active' : ''}
+          aria-current={activeTab === 'plugins' ? 'page' : undefined}
+          onClick={() => setActiveTab('plugins')}
         >
-          <Info size={15} />
-          关于
+          <Blocks size={15} />
+          Plugins
         </button>
+        {sections.map((section) => {
+          const Icon = section.icon
+          return (
+            <button
+              key={section.id}
+              type="button"
+              className={activeTab === section.id ? 'is-active' : ''}
+              aria-current={activeTab === section.id ? 'page' : undefined}
+              onClick={() => setActiveTab(section.id)}
+            >
+              <Icon size={15} />
+              {section.label}
+            </button>
+          )
+        })}
       </nav>
 
       {activeTab === 'model' ? (
@@ -422,9 +440,11 @@ export function SettingsDialog({
             </button>
           </footer>
         </>
-      ) : (
-        <AboutSettings appInfo={appInfo} />
-      )}
+      ) : null}
+      {activeTab === 'plugins' ? (
+        <PluginManager rendererPluginStatuses={rendererPluginStatuses} />
+      ) : null}
+      {sections.find((section) => section.id === activeTab)?.render() ?? null}
     </Modal>
   )
 }

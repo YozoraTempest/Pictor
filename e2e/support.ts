@@ -3,9 +3,6 @@ import type { ServerResponse } from 'node:http'
 
 import type { PictorBridge } from '../src/shared/desktop-bridge.js'
 
-// Hidden Wayland windows do not produce the compositor frames Playwright needs for actionability.
-process.env.PICTOR_E2E_HEADLESS = process.platform === 'win32' ? '1' : '0'
-
 export const credentialFixtures = {
   storedSettings: ['pictor', 'e2e', 'secret'].join('-'),
   localRuntime: ['local', 'e2e', 'key'].join('-'),
@@ -16,28 +13,54 @@ export const credentialFixtures = {
 
 export const bridgeKeys = [
   'approveCommand',
-  'checkForUpdates',
+  'cloneSession',
+  'compactSession',
+  'cancelSessionOperation',
   'createSession',
   'deleteSession',
+  'exportSession',
   'getAppInfo',
+  'getPluginBootstrap',
+  'getPluginManagerSnapshot',
   'getSession',
+  'getSessionRuntimeControls',
   'getSettings',
   'getSnapshot',
+  'forkSession',
+  'installLocalPlugin',
+  'installDevelopmentPlugin',
+  'installPiExtension',
+  'installPiPackage',
+  'installPiPackageSpec',
+  'inspectSessionHistory',
+  'importSession',
   'listModels',
+  'labelSessionEntry',
+  'navigateSessionTree',
+  'queueRuntimeMessage',
   'pickProjectDirectory',
+  'pickMessageImages',
   'onRuntimeEvent',
-  'openUpdate',
   'registerProject',
   'relinkProject',
+  'reloadSessionResources',
+  'removePlugin',
   'removeProject',
+  'respondToExtensionUi',
+  'clearRuntimeQueue',
   'renameSession',
+  'restoreBundledPlugin',
   'rejectCommand',
   'saveSettings',
+  'saveSessionRuntimeControls',
   'selectContext',
+  'setPluginEnabled',
   'startRun',
   'stopRun',
   'testSettings',
 ]
+
+export const moduleBridgeKeys = ['invoke', 'onEvent']
 
 export async function readSelectedRunStatus(window: Page): Promise<string | null> {
   return window.evaluate(async () => {
