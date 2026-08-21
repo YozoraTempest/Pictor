@@ -1,7 +1,8 @@
 # Pictor
 
-Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发环境。当前版本提供本地
-项目、持久化 Session、Pi Agent 流式对话、项目文件操作、逐条命令审批和单个模型 API 配置。
+Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发环境。当前 0.3.0 版本提供
+可组合 Plugin Host、本地项目、Pi JSONL 权威 Session、原生 Pi Agent Runtime 与 Extension、
+项目文件操作、逐条命令审批和 OpenAI 兼容模型配置。
 
 ## 当前能力
 
@@ -53,7 +54,7 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 | 平台           | 环境                                               | Release Asset | 支持语义                   |
 | -------------- | -------------------------------------------------- | ------------- | -------------------------- |
 | Windows x64    | Windows 11 x64                                     | NSIS `.exe`   | 正式支持                   |
-| Arch Linux x64 | 原生 Arch Linux，2026-08-14 滚动快照、niri Wayland | `.pacman`     | 唯一正式支持的 Linux 环境  |
+| Arch Linux x64 | 原生 Arch Linux，2026-08-21 滚动快照、niri Wayland | `.pacman`     | 唯一正式支持的 Linux 环境  |
 | 其他 Linux x64 | 未指定                                             | `.AppImage`   | 便携资产，不承诺发行版兼容 |
 
 Arch 的 Wayland 会话可以由 Electron 使用 XWayland，不承诺强制原生 Wayland。Arch 衍生版和
@@ -68,7 +69,7 @@ Linux 缺少 Bash 时，Pictor 仍可启动并使用不依赖命令执行的功�
 
 ## 安装与卸载
 
-后续正式 GitHub Release 原子提供以下 x64 发布包及 `SHA256SUMS`：
+从 0.3.0 起，正式 GitHub Release 原子提供以下 x64 发布包及 `SHA256SUMS`：
 
 ```text
 Pictor-<version>-windows-x64-setup.exe
