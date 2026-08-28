@@ -20,7 +20,6 @@ import {
   LoaderCircle,
   LocateFixed,
   MessageSquareText,
-  Play,
   Plus,
   Route,
   Send,
@@ -47,9 +46,13 @@ import type {
   ToolEvent,
   UsageSnapshot,
 } from '../../shared/domain'
-import type { AppInfo } from '../../shared/app-info'
-
 type RuntimeUsage = UsageSnapshot
+
+export interface ExtensionWidget {
+  key: string
+  lines: string[]
+  placement: 'aboveEditor' | 'belowEditor'
+}
 
 interface ConversationProps {
   project: Project | null
@@ -57,14 +60,12 @@ interface ConversationProps {
   loading: boolean
   draft: string
   draftImages: ImageAttachment[]
+  extensionWidgets: readonly ExtensionWidget[]
   appVersion: string | null
-  platform: AppInfo['platform'] | null
-  commandInterpreter: AppInfo['commandInterpreter'] | null
   disabledReason: string | null
   activeRun: RunRecord | null
   anotherSessionRunning: boolean
   actionError: string | null
-  approvalBusyCallId: string | null
   queuedMessages: { steering: number; followUp: number }
   runtimeUsage: RuntimeUsage | null
   sessionTree: SessionTreeView | null
@@ -91,8 +92,6 @@ interface ConversationProps {
   onForkSession: (entryId: string) => void
   onCloneSession: () => void
   onStop: (runId: string) => void
-  onApprove: (runId: string, callId: string) => void
-  onReject: (runId: string, callId: string) => void
   onAddProject: () => void
   onCreateSession: (projectId: string) => void
   onOpenSettings: () => void
@@ -168,6 +167,26 @@ function MarkdownMessage({ content }: { content: string }): React.JSX.Element {
   )
 }
 
+function ExtensionWidgets({
+  widgets,
+  placement,
+}: {
+  widgets: readonly ExtensionWidget[]
+  placement: ExtensionWidget['placement']
+}): React.JSX.Element | null {
+  const visible = widgets.filter((widget) => widget.placement === placement)
+  if (visible.length === 0) return null
+  return (
+    <div className={`extension-widgets extension-widgets--${placement}`} aria-live="polite">
+      {visible.map((widget) => (
+        <pre className="extension-widget" key={widget.key}>
+          {widget.lines.join('\n')}
+        </pre>
+      ))}
+    </div>
+  )
+}
+
 function StatusBadge({ status }: { status: RunRecord['status'] }): React.JSX.Element {
   const icon =
     status === 'completed' ? (
@@ -192,40 +211,17 @@ function StatusBadge({ status }: { status: RunRecord['status'] }): React.JSX.Ele
   )
 }
 
-function CommandInterpreterNotice({
-  commandInterpreter,
-}: Pick<ConversationProps, 'commandInterpreter'>): React.JSX.Element | null {
-  if (!commandInterpreter || commandInterpreter.available) return null
-  return (
-    <div className="workspace-notice workspace-notice--info" role="status">
-      <TerminalSquare size={15} />
-      <span>{commandInterpreter.message}</span>
-    </div>
-  )
-}
-
 function ToolActivity({
-  run,
   tool,
-  busy,
-  platform,
   outputOpen,
   onOutputOpenChange,
-  onApprove,
-  onReject,
 }: {
-  run: RunRecord
   tool: ToolEvent
-  busy: boolean
-  platform: AppInfo['platform'] | null
   outputOpen: boolean
   onOutputOpenChange: (callId: string, open: boolean) => void
-  onApprove: (runId: string, callId: string) => void
-  onReject: (runId: string, callId: string) => void
 }): React.JSX.Element {
-  const pendingApproval = tool.command?.approval === 'pending'
   return (
-    <article className={`tool-activity ${pendingApproval ? 'tool-activity--approval' : ''}`}>
+    <article className="tool-activity">
       <div className="tool-heading">
         <span className="tool-icon">
           <ToolIcon kind={tool.kind} />
@@ -259,32 +255,6 @@ function ToolActivity({
           <p>{tool.command.purpose}</p>
           <code>{tool.command.command}</code>
           <span>工作目录：{tool.command.cwd}</span>
-          {pendingApproval ? (
-            <div className="approval-actions">
-              <div className="approval-warning">
-                <ShieldAlert size={14} />
-                {`此命令将以当前 ${platform === 'linux' ? 'Linux' : 'Windows'} 用户权限运行`}
-              </div>
-              <button
-                className="secondary-button"
-                type="button"
-                disabled={busy}
-                onClick={() => onReject(run.id, tool.callId)}
-              >
-                <X size={14} />
-                拒绝
-              </button>
-              <button
-                className="primary-button"
-                type="button"
-                disabled={busy}
-                onClick={() => onApprove(run.id, tool.callId)}
-              >
-                {busy ? <LoaderCircle className="spin" size={14} /> : <Play size={14} />}
-                允许一次
-              </button>
-            </div>
-          ) : null}
         </div>
       ) : null}
 
@@ -306,16 +276,7 @@ function ToolActivity({
   )
 }
 
-function Timeline({
-  session,
-  approvalBusyCallId,
-  platform,
-  onApprove,
-  onReject,
-}: Pick<
-  ConversationProps,
-  'session' | 'approvalBusyCallId' | 'platform' | 'onApprove' | 'onReject'
->): React.JSX.Element {
+function Timeline({ session }: Pick<ConversationProps, 'session'>): React.JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(() => new Set())
   const contentKey = session?.messages.map((message) => message.content.length).join(':') ?? ''
@@ -355,14 +316,9 @@ function Timeline({
             {run?.toolEvents.map((tool) => (
               <ToolActivity
                 key={tool.callId}
-                run={run}
                 tool={tool}
-                busy={approvalBusyCallId === tool.callId}
-                platform={platform}
                 outputOpen={tool.status === 'failed' || expandedToolCalls.has(tool.callId)}
                 onOutputOpenChange={updateToolOutput}
-                onApprove={onApprove}
-                onReject={onReject}
               />
             ))}
             {message.content ? (
@@ -578,14 +534,12 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     loading,
     draft,
     draftImages,
+    extensionWidgets,
     appVersion,
-    platform,
-    commandInterpreter,
     disabledReason,
     activeRun,
     anotherSessionRunning,
     actionError,
-    approvalBusyCallId,
     queuedMessages,
     runtimeUsage,
     sessionTree,
@@ -612,8 +566,6 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
     onForkSession,
     onCloneSession,
     onStop,
-    onApprove,
-    onReject,
     onAddProject,
     onCreateSession,
     onOpenSettings,
@@ -642,7 +594,6 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           </div>
           <span className="version-label">{appVersion ? `v${appVersion}` : '正在连接'}</span>
         </header>
-        <CommandInterpreterNotice commandInterpreter={commandInterpreter} />
         <div className="empty-state">
           <div className="empty-icon">
             <MessageSquareText size={24} />
@@ -668,7 +619,6 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           </div>
           <span className="version-label">{appVersion ? `v${appVersion}` : ''}</span>
         </header>
-        <CommandInterpreterNotice commandInterpreter={commandInterpreter} />
         <div className="empty-state">
           <div className="empty-icon">
             {project.availability === 'available' ? (
@@ -801,7 +751,6 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
           </button>
         </div>
       ) : null}
-      <CommandInterpreterNotice commandInterpreter={commandInterpreter} />
       {anotherSessionRunning ? (
         <div className="workspace-notice workspace-notice--info">
           <Clock3 size={15} />
@@ -839,19 +788,13 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
               加载 Session
             </div>
           ) : (
-            <Timeline
-              key={session.id}
-              session={session}
-              approvalBusyCallId={approvalBusyCallId}
-              platform={platform}
-              onApprove={onApprove}
-              onReject={onReject}
-            />
+            <Timeline key={session.id} session={session} />
           )}
         </div>
       </div>
 
       <div className="composer-wrap">
+        <ExtensionWidgets widgets={extensionWidgets} placement="aboveEditor" />
         {draftImages.length > 0 ? (
           <div className="composer-images">
             {draftImages.map((image, index) => (
@@ -945,6 +888,7 @@ export function Conversation(props: ConversationProps): React.JSX.Element {
             <Send size={17} />
           </button>
         </div>
+        <ExtensionWidgets widgets={extensionWidgets} placement="belowEditor" />
       </div>
     </section>
   )

@@ -189,8 +189,8 @@ describe('PluginStore', () => {
 
     await writeFile(extensionPath, source.replace('agent_start', 'turn_start'))
     const live = (await store.getSnapshot()).nativeExtensions[0]
-    expect(live?.runtimePaths).toEqual([extensionPath])
-    await expect(readFile(live!.runtimePaths[0]!, 'utf8')).resolves.toContain('turn_start')
+    expect(live?.runtimePath).toBe(extensionPath)
+    await expect(readFile(live!.runtimePath, 'utf8')).resolves.toContain('turn_start')
 
     await store.setNativeExtensionEnabled('pi-extension', 'hello', false)
     expect((await store.getSnapshot()).nativeExtensions).toEqual([])
@@ -223,7 +223,7 @@ describe('PluginStore', () => {
       id: 'example-pi-package',
       version: '1.2.3',
     })
-    expect(installed.runtimePaths).toEqual([join(installed.runtimePath, 'extensions', 'hello.js')])
+    expect(installed.runtimePath).toBe(join(fixture.userData, 'pi-packages', 'example-pi-package'))
     await expect(
       readFile(join(installed.runtimePath, 'extensions', 'hello.js'), 'utf8'),
     ).resolves.toContain('export default')
@@ -252,6 +252,6 @@ describe('PluginStore', () => {
       source: packagePath,
       version: '2.0.0',
     })
-    expect(installed.runtimePaths).toEqual([join(installed.runtimePath, 'extensions', 'spec.js')])
+    expect(installed.runtimePath).toBe(join(fixture.userData, 'pi-packages', 'spec-pi-package'))
   })
 })

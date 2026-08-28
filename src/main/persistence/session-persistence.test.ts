@@ -103,7 +103,7 @@ describe('SessionPersistence', () => {
       history: {
         authority: 'pi-jsonl',
         piSessionId: null,
-        piSessionFile: null,
+        piSessionPath: null,
         legacyImport: { status: 'not-required', sourceFile: null },
       },
       projection: { messages: expect.any(Array), runs: expect.any(Array) },
@@ -115,6 +115,51 @@ describe('SessionPersistence', () => {
 
     await persistence.delete(session.id)
     await expect(persistence.read(session.id)).rejects.toThrow('Session file is missing')
+  })
+
+  it('converts legacy Pi file metadata and tool preferences to the native contract once', async () => {
+    const persistence = new SessionPersistence(dataDirectory, secretStore)
+    await persistence.recover([], [])
+    const session = createSession({ title: 'Legacy Pi metadata' })
+    await persistence.save(session)
+    const metadataPath = join(dataDirectory, 'sessions', `${session.id}.json`)
+    const persisted = JSON.parse(await readFile(metadataPath, 'utf8')) as Record<string, unknown>
+    persisted.history = {
+      authority: 'pi-jsonl',
+      piSessionId: 'legacy-pi-session',
+      piSessionFile: 'legacy.jsonl',
+      runtimePreferences: {
+        modelId: 'legacy-model',
+        thinkingLevel: 'high',
+        activeTools: ['pictor_read', 'pictor_delete'],
+        steeringMode: 'all',
+        followUpMode: 'one-at-a-time',
+        projectExtensionsEnabled: true,
+      },
+      legacyImport: { status: 'not-required', sourceFile: null },
+    }
+    await writeFile(metadataPath, `${JSON.stringify(persisted)}\n`)
+
+    await persistence.read(session.id)
+
+    expect(persistence.getHistory(session.id)).toEqual({
+      authority: 'pi-jsonl',
+      piSessionId: 'legacy-pi-session',
+      piSessionPath: join(dataDirectory, 'pi', session.projectId, session.id, 'legacy.jsonl'),
+      runtimePreferences: {
+        modelId: 'legacy-model',
+        thinkingLevel: 'high',
+        activeTools: ['read'],
+        steeringMode: 'all',
+        followUpMode: 'one-at-a-time',
+      },
+      legacyImport: { status: 'not-required', sourceFile: null },
+    })
+    const rewritten = JSON.parse(await readFile(metadataPath, 'utf8')) as {
+      history: { runtimePreferences: Record<string, unknown> } & Record<string, unknown>
+    }
+    expect(rewritten.history).not.toHaveProperty('piSessionFile')
+    expect(rewritten.history.runtimePreferences).not.toHaveProperty('projectExtensionsEnabled')
   })
 
   it('rebuilds the Session Projection from bound Pi JSONL', async () => {
@@ -188,7 +233,7 @@ describe('SessionPersistence', () => {
       history: {
         authority: 'pi-jsonl',
         piSessionId: 'bound-pi-session',
-        piSessionFile: piFile,
+        piSessionPath: join(piDirectory, piFile),
       },
       projection: {
         usage: {
@@ -287,15 +332,13 @@ describe('SessionPersistence', () => {
       activeTools: ['pictor_read'],
       steeringMode: 'all',
       followUpMode: 'one-at-a-time',
-      projectExtensionsEnabled: true,
     })
     expect(persistence.getRuntimePaths(session.projectId, session.id).runtimePreferences).toEqual({
       modelId: 'session-model',
       thinkingLevel: 'high',
-      activeTools: ['pictor_read'],
+      activeTools: ['read'],
       steeringMode: 'all',
       followUpMode: 'one-at-a-time',
-      projectExtensionsEnabled: true,
     })
     await persistence.bindPiSession(session, {
       id: 'rebound-pi-session',
@@ -306,7 +349,7 @@ describe('SessionPersistence', () => {
       runtimePreferences: {
         modelId: 'session-model',
         thinkingLevel: 'high',
-        projectExtensionsEnabled: true,
+        activeTools: ['read'],
       },
     })
   })
@@ -399,7 +442,7 @@ describe('SessionPersistence', () => {
     expect(persistence.getHistory(session.id)).toEqual({
       authority: 'pi-jsonl',
       piSessionId,
-      piSessionFile: piFile,
+      piSessionPath: join(piDirectory, piFile),
       legacyImport: { status: 'not-required', sourceFile: null },
     })
     await expect(
@@ -425,7 +468,7 @@ describe('SessionPersistence', () => {
     expect(persistence.getHistory(session.id)).toMatchObject({
       authority: 'pi-jsonl',
       piSessionId: null,
-      piSessionFile: null,
+      piSessionPath: null,
     })
   })
 

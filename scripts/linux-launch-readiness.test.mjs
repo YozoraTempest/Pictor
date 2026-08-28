@@ -11,7 +11,6 @@ describe('collectLaunchEvidence', () => {
       platform: 'linux',
       arch: 'x64',
       distribution: 'unsupported-linux',
-      commandInterpreter: { kind: 'bash', available: true, message: null },
     })
     globalThis.pictorModules = {
       invoke,

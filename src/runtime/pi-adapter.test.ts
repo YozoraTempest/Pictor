@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
+import type {
+  AgentSessionEvent,
+  ExtensionCommandContextActions,
+  ExtensionUIContext,
+} from '@earendil-works/pi-coding-agent'
 
 import type {
   RuntimeCompactConfig,
@@ -145,6 +149,171 @@ describe('PiAgentRuntime cleanup', () => {
       })
     },
   )
+
+  it('reuses one open Pi Session across multiple Pictor Runs', async () => {
+    const prompt = vi.fn(async () => undefined)
+    const dispose = vi.fn(async () => undefined)
+    const factory = vi.fn(async () => ({
+      ...(await sessionFactory()),
+      prompt,
+      dispose,
+    }))
+    const runtime = new PiAgentRuntime(() => undefined, factory)
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const createConfig = (runId: string, messageId: string): RuntimeStartConfig => ({
+      type: 'start',
+      runId,
+      sessionId: '11234567-89ab-4def-8123-456789abcdef',
+      messageId,
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-long-session'),
+      sessionDirectory: join(root, 'session-long-session'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+      prompt: 'continue',
+    })
+
+    await runtime.start(
+      createConfig('01234567-89ab-4def-8123-456789abcdef', '21234567-89ab-4def-8123-456789abcdef'),
+    )
+    await runtime.start(
+      createConfig('31234567-89ab-4def-8123-456789abcdef', '41234567-89ab-4def-8123-456789abcdef'),
+    )
+
+    expect(factory).toHaveBeenCalledOnce()
+    expect(prompt).toHaveBeenCalledTimes(2)
+    expect(dispose).not.toHaveBeenCalled()
+    await runtime.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('coordinates native Session replacement with Main prepare and commit acknowledgements', async () => {
+    const events: RuntimeEvent[] = []
+    const sourcePath = join(root, 'session-replacement', 'source.jsonl')
+    const targetPath = join(root, 'session-replacement', 'target.jsonl')
+    let currentPath = sourcePath
+    let currentId = 'source-pi-session'
+    let beforeRebind: (() => Promise<void>) | undefined
+    let commandActions: ExtensionCommandContextActions | undefined
+    const withSession = vi.fn(async () => undefined)
+    const nativeNewSession = vi.fn(
+      async (options?: Parameters<ExtensionCommandContextActions['newSession']>[0]) => {
+        currentPath = targetPath
+        currentId = 'target-pi-session'
+        await beforeRebind?.()
+        await options?.withSession?.({} as never)
+        return { cancelled: false }
+      },
+    )
+    const runtime = new PiAgentRuntime(
+      (event) => events.push(event),
+      async () => ({
+        ...(await sessionFactory()),
+        newSession: nativeNewSession,
+        getSessionId: () => currentId,
+        getSessionFile: () => currentPath,
+        bindExtensionUi: async (
+          _context: ExtensionUIContext,
+          options?: {
+            commandContextActions?: ExtensionCommandContextActions
+            beforeRebind?: () => Promise<void>
+          },
+        ) => {
+          commandActions = options?.commandContextActions
+          beforeRebind = options?.beforeRebind
+        },
+      }),
+    )
+    const replacementRequests: Array<{
+      phase: 'prepare' | 'commit'
+      kind: 'new' | 'fork' | 'switch'
+      targetSessionId: string
+      piSessionId: string | null
+      piSessionPath: string | null
+    }> = []
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+      requestSessionReplacement: async (request) => {
+        replacementRequests.push(request)
+        return request.phase === 'prepare'
+          ? { accepted: true, targetSessionId: '21234567-89ab-4def-8123-456789abcdef' }
+          : { accepted: true }
+      },
+    })
+
+    await runtime.start({
+      type: 'start',
+      runId: '01234567-89ab-4def-8123-456789abcdef',
+      sessionId: '11234567-89ab-4def-8123-456789abcdef',
+      messageId: '31234567-89ab-4def-8123-456789abcdef',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-replacement'),
+      sessionDirectory: join(root, 'session-replacement'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+      prompt: 'start',
+    })
+
+    expect(commandActions).toBeDefined()
+    const replacement = await commandActions!.newSession({ withSession })
+
+    expect(replacement).toEqual({ cancelled: false })
+    expect(nativeNewSession).toHaveBeenCalledOnce()
+    expect(withSession).toHaveBeenCalledOnce()
+    expect(replacementRequests.map(({ phase }) => phase)).toEqual(['prepare', 'commit'])
+    expect(replacementRequests[1]).toMatchObject({
+      kind: 'new',
+      targetSessionId: '21234567-89ab-4def-8123-456789abcdef',
+      piSessionId: 'target-pi-session',
+      piSessionPath: targetPath,
+    })
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.replaced',
+        sourceSessionId: '11234567-89ab-4def-8123-456789abcdef',
+        targetSessionId: '21234567-89ab-4def-8123-456789abcdef',
+        piSessionPath: targetPath,
+      }),
+    )
+  })
 
   it('delegates steering, follow-up, and queue clearing to the active Pi Session', async () => {
     const events: RuntimeEvent[] = []
@@ -346,9 +515,8 @@ describe('PiAgentRuntime cleanup', () => {
     ).toBe('Thinking\n\nReasoning step\n\nFinal answer')
   })
 
-  it('forks through the native Pi Session lifecycle and moves the new JSONL', async () => {
+  it('forks through the native Pi Session lifecycle and preserves Pi file placement', async () => {
     const sourceSessionDirectory = join(root, 'source-session')
-    const targetSessionDirectory = join(root, 'target-session')
     await mkdir(sourceSessionDirectory)
     const sourceFile = join(sourceSessionDirectory, 'source.jsonl')
     const forkedFile = join(sourceSessionDirectory, 'forked.jsonl')
@@ -420,9 +588,7 @@ describe('PiAgentRuntime cleanup', () => {
       entryId: 'selected-entry',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
-      targetSessionDirectory,
+      sourcePiSessionPath: sourceFile,
       settings: {
         apiProtocol: 'responses',
         baseUrl: 'https://example.test/v1',
@@ -437,15 +603,12 @@ describe('PiAgentRuntime cleanup', () => {
     await expect(runtime.fork(config)).resolves.toEqual({
       outcome: 'completed',
       piSessionId: 'forked-pi-session',
-      piSessionFile: 'forked.jsonl',
+      piSessionPath: forkedFile,
     })
     expect(nativeFork).toHaveBeenCalledWith('selected-entry')
     expect(dispose).toHaveBeenCalledOnce()
     await expect(readFile(sourceFile, 'utf8')).resolves.toContain('source')
-    await expect(readFile(join(targetSessionDirectory, 'forked.jsonl'), 'utf8')).resolves.toContain(
-      'forked',
-    )
-    await expect(readFile(forkedFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(forkedFile, 'utf8')).resolves.toContain('forked')
   })
 
   it('imports through the native Pi Session lifecycle without rewriting the source JSONL', async () => {
@@ -554,7 +717,7 @@ describe('PiAgentRuntime cleanup', () => {
     await expect(runtime.importSession(config)).resolves.toEqual({
       outcome: 'completed',
       piSessionId: 'source-session',
-      piSessionFile: 'source-history.jsonl',
+      piSessionPath: importedFile,
     })
     expect(nativeImport).toHaveBeenCalledWith(sourceFile, join(root, 'project'))
     expect(dispose).toHaveBeenCalledOnce()
@@ -602,8 +765,7 @@ describe('PiAgentRuntime cleanup', () => {
       format: 'jsonl',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent-export'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: sourceFile,
       destinationPath: join(root, 'exported.jsonl'),
       settings: {
         apiProtocol: 'responses',
@@ -620,7 +782,7 @@ describe('PiAgentRuntime cleanup', () => {
     expect(exportToJsonl).toHaveBeenCalledWith(join(root, 'exported.jsonl'))
     expect(factory).toHaveBeenCalledWith(
       expect.objectContaining({
-        sessionFile: 'source.jsonl',
+        sessionFile: expect.stringMatching(/\.pictor-export-/),
         extensionPaths: [],
         skillPaths: [],
         promptPaths: [],
@@ -719,8 +881,7 @@ describe('PiAgentRuntime cleanup', () => {
       activeLeafId: 'active-answer',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent-navigate'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: sourceFile,
       settings: {
         apiProtocol: 'responses',
         baseUrl: 'https://example.test/v1',
@@ -741,7 +902,7 @@ describe('PiAgentRuntime cleanup', () => {
     expect(navigateTree).toHaveBeenCalledWith('historical-answer', { summarize: false })
     expect(factory).toHaveBeenCalledWith(
       expect.objectContaining({
-        sessionFile: 'source.jsonl',
+        sessionFile: sourceFile,
         extensionPaths: ['/trusted/extensions'],
         skillPaths: ['/trusted/skills'],
         promptPaths: ['/trusted/prompts'],
@@ -843,8 +1004,7 @@ describe('PiAgentRuntime cleanup', () => {
       activeLeafId: 'active-entry',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent-compact'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: sourceFile,
       settings: {
         apiProtocol: 'responses',
         baseUrl: 'https://example.test/v1',
@@ -912,8 +1072,7 @@ describe('PiAgentRuntime cleanup', () => {
       activeLeafId: 'active-entry',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent-label'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: sourceFile,
       settings: {
         apiProtocol: 'responses',
         baseUrl: 'https://example.test/v1',

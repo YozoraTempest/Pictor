@@ -22,7 +22,6 @@ it('contributes the Updater contract through the Module Kernel', async () => {
         platform: 'linux',
         arch: 'x64',
         distribution: 'arch',
-        commandInterpreter: { kind: 'bash', available: true, message: null },
       }),
     }),
   ])

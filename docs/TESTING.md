@@ -130,13 +130,12 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 
 ## Linux 专项回归
 
-- 路径守卫必须在大小写敏感文件系统上拒绝绝对路径大小写兄弟目录和符号链接逃逸；`/Repo`
-  与 `/repo` 可以注册为不同项目。Windows 路径身份继续忽略大小写。
-- Bash 发现覆盖 `PICTOR_BASH_PATH`、`PATH` 和受支持平台的固定候选；Main 必须传递经过
-  `realpath` 验证的绝对普通可执行文件。缺少 Bash 只禁用命令工具，不阻止应用启动。
-- 命令环境必须移除 `BASH_ENV`、`ENV`、导出的 Bash 函数和其他隐式启动变量，避免审批框未
-  展示的脚本先于获批命令运行。
-- 命令执行覆盖用户停止和超时；两种情况都要证明外层 Bash 及后台/孙进程不再存活。
+- Pi 原生 `read`、`write`、`edit`、`bash`、`grep`、`find` 和 `ls` 必须通过真实 Pi SDK
+  集成测试；Pictor 不再维护第二套工具包装、Bash 发现、审批或路径守卫测试。
+- 真实 Runtime 测试覆盖同一 utility process 在多个 Pictor Run 间复用同一 Pi Session，以及
+  `newSession`、`fork`、`switchSession` 的 prepare/commit replacement seam。
+- 受信任 Project 的 `.pi/extensions`、Skills、Prompts 和 Context files 必须由 Pi 原生
+  ResourceLoader 自动加载；资源 reload 必须复用当前 Session，而不是重建 Pictor 专属资源层。
 - 更新资产选择覆盖 Windows NSIS、Arch pacman、便携 AppImage、错误平台/架构/版本、非官方 URL
   和无匹配资产回退。
 - Pacman 使用 `zstd` 压缩，优先缩短 develop 与 Release 的包构建反馈；不为减小附件体积改回

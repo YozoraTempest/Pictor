@@ -165,8 +165,6 @@ function createBridge(
   startRun: ReturnType<typeof vi.fn>
   pickMessageImages: ReturnType<typeof vi.fn>
   stopRun: ReturnType<typeof vi.fn>
-  approveCommand: ReturnType<typeof vi.fn>
-  rejectCommand: ReturnType<typeof vi.fn>
 } {
   let snapshot = options.snapshot ?? createSnapshot()
   const sessions = options.sessions ?? {
@@ -196,8 +194,7 @@ function createBridge(
   const importSession = vi.fn(async () => ok(null))
   const exportSession = vi.fn(async () => ok(false))
   const stopRun = vi.fn(async () => ok(null))
-  const approveCommand = vi.fn(async () => ok(null))
-  const rejectCommand = vi.fn(async () => ok(null))
+  const syncComposerText = vi.fn(async () => ok(null))
 
   return {
     getSnapshot,
@@ -230,9 +227,8 @@ function createBridge(
     pickMessageImages,
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
-    approveCommand,
-    rejectCommand,
     stopRun,
+    syncComposerText,
     onRuntimeEvent: (listener) => {
       options.onRuntimeListener?.(listener)
       return () => undefined
@@ -862,7 +858,6 @@ describe('useWorkspaceController', () => {
       .mockResolvedValueOnce(ok({ runId }))
     bridge.getSession.mockResolvedValueOnce(ok(idle)).mockResolvedValue(ok(running))
     bridge.stopRun.mockResolvedValue(failure<null>('停止失败'))
-    bridge.rejectCommand.mockResolvedValue(failure<null>('拒绝失败'))
     const { result } = renderHook(() => useWorkspaceController(bridge))
     await waitFor(() => expect(result.current.session).toEqual(idle))
 
@@ -882,12 +877,5 @@ describe('useWorkspaceController', () => {
     await act(async () => result.current.stopRun(runId))
     expect(result.current.activeRun?.status).toBe('stopping')
     expect(result.current.actionError).toBe('停止失败')
-
-    await act(async () => result.current.resolveApproval(runId, 'call-1', true))
-    expect(bridge.approveCommand).toHaveBeenCalledWith({ runId, callId: 'call-1' })
-    await act(async () => result.current.resolveApproval(runId, 'call-1', false))
-    expect(bridge.rejectCommand).toHaveBeenCalledWith({ runId, callId: 'call-1' })
-    expect(result.current.actionError).toBe('拒绝失败')
-    expect(result.current.approvalBusyCallId).toBeNull()
   })
 })

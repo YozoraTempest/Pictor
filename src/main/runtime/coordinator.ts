@@ -30,9 +30,12 @@ import {
   type RuntimeNavigateConfig,
   type RuntimeNavigateResult,
   type RuntimeStartConfig,
+  type RuntimeSessionReplacementRequest,
   type SessionExportFormat,
 } from '../../shared/runtime-protocol.js'
 import { createSecretRedactor, type SecretRedactor } from '../../shared/secret-redaction.js'
+
+const defaultRuntimeTools = ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls']
 
 export interface RuntimePersistence {
   getSession(sessionId: string): Promise<SessionRecord>
@@ -41,22 +44,35 @@ export interface RuntimePersistence {
     sessionId: string,
     selectedEntryId: string | null,
   ): Promise<SessionHistoryView>
-  bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void>
+  bindPiSession(sessionId: string, identity: { id: string; path: string }): Promise<void>
   rebuildSessionProjection(sessionId: string): Promise<SessionRecord>
   setPiSessionActiveLeaf(sessionId: string, activeLeafId: string | null): Promise<void>
+  setSessionRuntimePreferences?(
+    sessionId: string,
+    runtimePreferences: NonNullable<SessionHistoryState['runtimePreferences']>,
+  ): Promise<void>
   createDerivedSession(
     sourceSessionId: string,
     targetSessionId: string,
     kind: 'fork' | 'clone',
-    identity: { id: string; file: string },
+    identity: { id: string; path: string },
   ): Promise<SessionSummary>
   createImportedSession(
     projectId: string,
     targetSessionId: string,
     title: string,
-    identity: { id: string; file: string },
+    identity: { id: string; path: string },
   ): Promise<SessionSummary>
+  commitSessionReplacement?(
+    sourceSessionId: string,
+    targetSessionId: string,
+    kind: 'new' | 'fork' | 'switch',
+    identity: { id: string; path: string },
+    targetProjectId?: string,
+  ): Promise<SessionSummary>
+  findSessionByPiSessionPath?(piSessionPath: string): Promise<SessionSummary | null>
   getProject(projectId: string): Project
+  findProjectByPath?(rootPath: string): Promise<Project | null>
   getSettings(): Promise<ModelSettings | null>
   getApiKey(): Promise<string | null>
   getRuntimePaths(
@@ -66,7 +82,7 @@ export interface RuntimePersistence {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
-    piSessionFile?: string | null
+    piSessionPath?: string | null
     activeLeafId?: string | null
     runtimePreferences?: SessionHistoryState['runtimePreferences']
   }
@@ -83,10 +99,27 @@ export interface RuntimeHost {
   labelSessionEntry(config: RuntimeLabelConfig): Promise<RuntimeLabelResult>
   abortSessionOperation(operationId: string): void
   reloadResources(): Promise<void>
-  approve(runId: string, callId: string): void
-  reject(runId: string, callId: string): void
+  getRuntimeControls?(sessionId: string): Promise<{
+    modelId: string | null
+    thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    activeTools: string[]
+    availableTools: string[]
+    steeringMode: 'all' | 'one-at-a-time'
+    followUpMode: 'all' | 'one-at-a-time'
+  } | null>
+  setRuntimeControls?(
+    sessionId: string,
+    controls: {
+      modelId: string | null
+      thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+      activeTools: string[]
+      steeringMode: 'all' | 'one-at-a-time'
+      followUpMode: 'all' | 'one-at-a-time'
+    },
+  ): void
   stop(runId: string): void
-  respondToExtensionUi(runId: string, requestId: string, value: string | boolean | null): void
+  respondToExtensionUi(sessionId: string, requestId: string, value: string | boolean | null): void
+  updateComposerText?(sessionId: string, text: string): void
   queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): void
   clearQueue(runId: string): void
   isActive(): boolean
@@ -110,12 +143,20 @@ export class RuntimeCoordinator {
   private sessionOperationId: string | null = null
   private cancellableSessionOperation: { operationId: string; sessionId: string } | null = null
   private persistenceQueue = Promise.resolve()
+  private readonly replacementTransactions = new Map<
+    string,
+    {
+      sourceSessionId: string
+      targetSessionId: string
+      kind: 'new' | 'fork' | 'switch'
+      targetProjectId?: string
+    }
+  >()
 
   constructor(
     private readonly repository: RuntimePersistence,
     private readonly supervisor: RuntimeHost,
     private readonly broadcast: (event: RuntimeEvent) => void,
-    private readonly commandInterpreterPath: string | null = null,
   ) {}
 
   async start(
@@ -195,7 +236,6 @@ export class RuntimeCoordinator {
         messageId: assistantMessageId,
         projectRoot: project.rootPath,
         ...runtimePaths,
-        commandInterpreterPath: this.commandInterpreterPath,
         settings: {
           apiProtocol: settings.apiProtocol,
           baseUrl: settings.baseUrl,
@@ -245,7 +285,7 @@ export class RuntimeCoordinator {
     await this.persistenceQueue
     const source = await this.repository.getSession(sourceSessionId)
     const history = this.repository.getSessionHistory(sourceSessionId)
-    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+    if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       throw new PictorError('invalid-input', '当前 Session 没有可导航的 Pi JSONL 历史')
     }
     const historyView = await this.repository.inspectSessionHistory(sourceSessionId, entryId)
@@ -291,8 +331,7 @@ export class RuntimeCoordinator {
         activeLeafId: tree.activeLeafId,
         projectRoot: project.rootPath,
         agentDirectory: sourcePaths.agentDirectory,
-        sourceSessionDirectory: sourcePaths.sessionDirectory,
-        sourcePiSessionFile: history.piSessionFile,
+        sourcePiSessionPath: history.piSessionPath,
         settings: {
           apiProtocol: settings.apiProtocol,
           baseUrl: settings.baseUrl,
@@ -330,7 +369,7 @@ export class RuntimeCoordinator {
     await this.persistenceQueue
     const source = await this.repository.getSession(sourceSessionId)
     const history = this.repository.getSessionHistory(sourceSessionId)
-    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+    if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       throw new PictorError('invalid-input', '当前 Session 没有可压缩的 Pi JSONL 历史')
     }
     const historyView = await this.repository.inspectSessionHistory(sourceSessionId, null)
@@ -367,8 +406,7 @@ export class RuntimeCoordinator {
         activeLeafId: activeLeafId ?? null,
         projectRoot: project.rootPath,
         agentDirectory: sourcePaths.agentDirectory,
-        sourceSessionDirectory: sourcePaths.sessionDirectory,
-        sourcePiSessionFile: history.piSessionFile,
+        sourcePiSessionPath: history.piSessionPath,
         settings: {
           apiProtocol: settings.apiProtocol,
           baseUrl: settings.baseUrl,
@@ -402,7 +440,7 @@ export class RuntimeCoordinator {
     }
     const source = await this.repository.getSession(sourceSessionId)
     const history = this.repository.getSessionHistory(sourceSessionId)
-    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+    if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       throw new PictorError('invalid-input', '当前 Session 没有可标记的 Pi JSONL 历史')
     }
     const inspected = await this.repository.inspectSessionHistory(sourceSessionId, entryId)
@@ -429,8 +467,7 @@ export class RuntimeCoordinator {
         activeLeafId: activeLeafId ?? null,
         projectRoot: project.rootPath,
         agentDirectory: paths.agentDirectory,
-        sourceSessionDirectory: paths.sessionDirectory,
-        sourcePiSessionFile: history.piSessionFile,
+        sourcePiSessionPath: history.piSessionPath,
         settings: {
           apiProtocol: settings.apiProtocol,
           baseUrl: settings.baseUrl,
@@ -462,10 +499,51 @@ export class RuntimeCoordinator {
       throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
     }
     const history = this.repository.getSessionHistory(sessionId)
-    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+    if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       throw new PictorError('invalid-input', '当前 Session 没有可重载的 Pi Runtime 资源')
     }
     await this.supervisor.reloadResources()
+  }
+
+  async getSessionRuntimeControls(sessionId: string): Promise<{
+    modelId: string
+    thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    activeTools: string[]
+    availableTools: string[]
+    steeringMode: 'all' | 'one-at-a-time'
+    followUpMode: 'all' | 'one-at-a-time'
+  }> {
+    const live = await this.supervisor.getRuntimeControls?.(sessionId)
+    const settings = await this.repository.getSettings()
+    if (!settings) throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
+    if (live) return { ...live, modelId: live.modelId ?? settings.modelId }
+    const history = this.repository.getSessionHistory(sessionId)
+    const preferences = history.runtimePreferences
+    return {
+      modelId: preferences?.modelId ?? settings.modelId,
+      thinkingLevel: preferences?.thinkingLevel ?? settings.reasoningEffort ?? 'off',
+      activeTools: preferences?.activeTools ?? defaultRuntimeTools,
+      availableTools: defaultRuntimeTools,
+      steeringMode: preferences?.steeringMode ?? 'one-at-a-time',
+      followUpMode: preferences?.followUpMode ?? 'one-at-a-time',
+    }
+  }
+
+  async setSessionRuntimeControls(
+    sessionId: string,
+    controls: {
+      modelId: string
+      thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+      activeTools: string[]
+      steeringMode: 'all' | 'one-at-a-time'
+      followUpMode: 'all' | 'one-at-a-time'
+    },
+  ): Promise<void> {
+    if (!this.repository.setSessionRuntimePreferences) {
+      throw new PictorError('persistence-failed', 'Session Controls 持久化接口不可用')
+    }
+    await this.repository.setSessionRuntimePreferences(sessionId, controls)
+    this.supervisor.setRuntimeControls?.(sessionId, controls)
   }
 
   private async deriveSession(
@@ -478,7 +556,7 @@ export class RuntimeCoordinator {
     await this.persistenceQueue
     const source = await this.repository.getSession(sourceSessionId)
     const history = this.repository.getSessionHistory(sourceSessionId)
-    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+    if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       throw new PictorError('invalid-input', '当前 Session 没有可派生的 Pi JSONL 历史')
     }
     const historyView = await this.repository.inspectSessionHistory(
@@ -516,7 +594,6 @@ export class RuntimeCoordinator {
         `Pi Session 凭据迁移尚未完成，当前历史不能安全 ${actionLabel}`,
       )
     }
-    const targetPaths = this.repository.getRuntimePaths(project.id, targetSessionId)
     this.sessionOperationId = operationId
     try {
       const result = await this.supervisor.fork({
@@ -527,9 +604,7 @@ export class RuntimeCoordinator {
         entryId,
         projectRoot: project.rootPath,
         agentDirectory: sourcePaths.agentDirectory,
-        sourceSessionDirectory: sourcePaths.sessionDirectory,
-        sourcePiSessionFile: history.piSessionFile,
-        targetSessionDirectory: targetPaths.sessionDirectory,
+        sourcePiSessionPath: history.piSessionPath,
         settings: {
           apiProtocol: settings.apiProtocol,
           baseUrl: settings.baseUrl,
@@ -548,7 +623,7 @@ export class RuntimeCoordinator {
         derivation.kind,
         {
           id: result.piSessionId,
-          file: result.piSessionFile,
+          path: result.piSessionPath,
         },
       )
     } finally {
@@ -607,7 +682,7 @@ export class RuntimeCoordinator {
         project.id,
         targetSessionId,
         `${sourceTitle} (Import)`.slice(0, 120),
-        { id: result.piSessionId, file: result.piSessionFile },
+        { id: result.piSessionId, path: result.piSessionPath },
       )
     } finally {
       if (this.sessionOperationId === operationId) this.sessionOperationId = null
@@ -632,7 +707,7 @@ export class RuntimeCoordinator {
     await this.persistenceQueue
     const source = await this.repository.getSession(sourceSessionId)
     const history = this.repository.getSessionHistory(sourceSessionId)
-    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+    if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       throw new PictorError('invalid-input', '当前 Session 没有可导出的 Pi JSONL 历史')
     }
     const project = this.repository.getProject(source.projectId)
@@ -662,8 +737,7 @@ export class RuntimeCoordinator {
         format,
         projectRoot: project.rootPath,
         agentDirectory: sourcePaths.agentDirectory,
-        sourceSessionDirectory: sourcePaths.sessionDirectory,
-        sourcePiSessionFile: history.piSessionFile,
+        sourcePiSessionPath: history.piSessionPath,
         ...(history.activeLeafId !== undefined ? { activeLeafId: history.activeLeafId } : {}),
         destinationPath,
         settings: {
@@ -682,20 +756,16 @@ export class RuntimeCoordinator {
     }
   }
 
-  approve(runId: string, callId: string): void {
-    this.supervisor.approve(runId, callId)
-  }
-
-  reject(runId: string, callId: string): void {
-    this.supervisor.reject(runId, callId)
-  }
-
   stop(runId: string): void {
     this.supervisor.stop(runId)
   }
 
-  respondToExtensionUi(runId: string, requestId: string, value: string | boolean | null): void {
-    this.supervisor.respondToExtensionUi(runId, requestId, value)
+  respondToExtensionUi(sessionId: string, requestId: string, value: string | boolean | null): void {
+    this.supervisor.respondToExtensionUi(sessionId, requestId, value)
+  }
+
+  updateComposerText(sessionId: string, text: string): void {
+    this.supervisor.updateComposerText?.(sessionId, text)
   }
 
   queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): void {
@@ -706,6 +776,73 @@ export class RuntimeCoordinator {
     this.supervisor.clearQueue(runId)
   }
 
+  async handleSessionReplacementRequest(
+    request: RuntimeSessionReplacementRequest,
+  ): Promise<{ accepted: boolean; targetSessionId?: string; message?: string }> {
+    if (request.phase === 'prepare') {
+      let targetSessionId = request.targetSessionId
+      let targetProjectId: string | undefined
+      if (request.kind === 'switch' && request.targetSessionPath) {
+        const existing = await this.repository.findSessionByPiSessionPath?.(
+          request.targetSessionPath,
+        )
+        if (existing) {
+          targetSessionId = existing.id
+          targetProjectId = existing.projectId
+        }
+      }
+      this.replacementTransactions.set(request.operationId, {
+        sourceSessionId: request.sourceSessionId,
+        targetSessionId,
+        kind: request.kind,
+        ...(targetProjectId ? { targetProjectId } : {}),
+      })
+      return { accepted: true, targetSessionId }
+    }
+
+    const transaction = this.replacementTransactions.get(request.operationId)
+    if (
+      !transaction ||
+      transaction.sourceSessionId !== request.sourceSessionId ||
+      transaction.targetSessionId !== request.targetSessionId ||
+      transaction.kind !== request.kind
+    ) {
+      return { accepted: false, message: 'Session replacement transaction is unknown' }
+    }
+    this.replacementTransactions.delete(request.operationId)
+    if (!request.piSessionId || !request.piSessionPath) {
+      return { accepted: false, message: 'Pi Session replacement returned no identity' }
+    }
+    try {
+      let targetProjectId = transaction.targetProjectId
+      if (!targetProjectId && request.cwd) {
+        const project = this.repository.findProjectByPath
+          ? await this.repository.findProjectByPath(request.cwd).catch(() => null)
+          : null
+        targetProjectId = project?.id
+      }
+      if (!targetProjectId) {
+        targetProjectId = (await this.repository.getSession(transaction.sourceSessionId)).projectId
+      }
+      if (!this.repository.commitSessionReplacement) {
+        return { accepted: false, message: 'Session replacement persistence is unavailable' }
+      }
+      await this.repository.commitSessionReplacement(
+        transaction.sourceSessionId,
+        transaction.targetSessionId,
+        transaction.kind,
+        { id: request.piSessionId, path: request.piSessionPath },
+        targetProjectId,
+      )
+      return { accepted: true }
+    } catch (error) {
+      return {
+        accepted: false,
+        message: error instanceof Error ? error.message : 'Session replacement commit failed',
+      }
+    }
+  }
+
   isActive(): boolean {
     return this.active !== null || this.sessionOperationId !== null || this.supervisor.isActive()
   }
@@ -713,6 +850,10 @@ export class RuntimeCoordinator {
   handleEvent(event: RuntimeEvent): void {
     const active = this.active
     const sanitizedEvent = active ? active.redactor.redactRuntimeEvent(event) : event
+    if (sanitizedEvent.runId === null) {
+      this.handleSessionEvent(sanitizedEvent)
+      return
+    }
     if (
       !active ||
       active.runId !== sanitizedEvent.runId ||
@@ -729,7 +870,7 @@ export class RuntimeCoordinator {
         .then(() =>
           this.repository.bindPiSession(sanitizedEvent.sessionId, {
             id: sanitizedEvent.piSessionId,
-            file: sanitizedEvent.piSessionFile,
+            path: sanitizedEvent.piSessionPath,
           }),
         )
         .then(() => this.broadcast(sanitizedEvent))
@@ -777,7 +918,7 @@ export class RuntimeCoordinator {
         .then(() => {
           if (sessionSnapshot) return this.repository.saveSession(sessionSnapshot)
           const history = this.repository.getSessionHistory(active.session.id)
-          return history.authority === 'pi-jsonl' && history.piSessionFile
+          return history.authority === 'pi-jsonl' && history.piSessionPath
             ? this.repository.rebuildSessionProjection(active.session.id)
             : this.repository.saveSession(active.session)
         })
@@ -797,6 +938,69 @@ export class RuntimeCoordinator {
           })
         })
     }
+  }
+
+  private handleSessionEvent(event: RuntimeEvent): void {
+    if (event.runId !== null) return
+    if (event.type === 'session.bound') {
+      this.persistenceQueue = this.persistenceQueue
+        .then(() =>
+          this.repository.bindPiSession(event.sessionId, {
+            id: event.piSessionId,
+            path: event.piSessionPath,
+          }),
+        )
+        .then(() => this.broadcast(event))
+        .catch(() =>
+          this.broadcast({
+            type: 'runtime.error',
+            runId: null,
+            sessionId: event.sessionId,
+            at: new Date().toISOString(),
+            category: 'runtime',
+            message: 'Pi Session identity 无法写入本地存储，请检查磁盘权限',
+          }),
+        )
+      return
+    }
+    if (event.type === 'session.activeLeafChanged') {
+      this.persistenceQueue = this.persistenceQueue
+        .then(() => this.repository.setPiSessionActiveLeaf(event.sessionId, event.activeLeafId))
+        .then(() => this.broadcast(event))
+        .catch(() =>
+          this.broadcast({
+            type: 'runtime.error',
+            runId: null,
+            sessionId: event.sessionId,
+            at: new Date().toISOString(),
+            category: 'runtime',
+            message: 'Pi Session 活跃分支持久化失败',
+          }),
+        )
+      return
+    }
+    if (event.type === 'session.infoChanged') {
+      this.persistenceQueue = this.persistenceQueue
+        .then(async () => {
+          const session = await this.repository.getSession(event.sessionId)
+          if (event.name) session.title = event.name
+          session.updatedAt = event.at
+          return this.repository.saveSession(session)
+        })
+        .then(() => this.broadcast(event))
+        .catch(() =>
+          this.broadcast({
+            type: 'runtime.error',
+            runId: null,
+            sessionId: event.sessionId,
+            at: new Date().toISOString(),
+            category: 'runtime',
+            message: 'Pi Session 名称持久化失败',
+          }),
+        )
+      return
+    }
+    this.broadcast(event)
   }
 
   private applyEvent(active: ActiveRun, event: RuntimeEvent): void {
@@ -856,24 +1060,6 @@ export class RuntimeCoordinator {
       tool.output = event.output
       tool.status = event.isError ? 'failed' : 'completed'
       tool.updatedAt = event.at
-      return
-    }
-    if (event.type === 'approval.requested' && tool) {
-      tool.command = {
-        command: event.command,
-        cwd: event.cwd,
-        purpose: event.purpose,
-        approval: 'pending',
-      }
-      run.status = 'awaiting-approval'
-      run.updatedAt = event.at
-      return
-    }
-    if (event.type === 'approval.resolved' && tool?.command) {
-      tool.command.approval = event.allowed ? 'allowed' : 'rejected'
-      if (!event.allowed) tool.status = 'rejected'
-      run.status = 'running'
-      run.updatedAt = event.at
       return
     }
     if (event.type === 'runtime.error') {

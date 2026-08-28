@@ -43,7 +43,7 @@ it.each(['a', 'id', 'running'])(
     let history: SessionHistoryState = {
       authority: 'pi-jsonl',
       piSessionId: null,
-      piSessionFile: null,
+      piSessionPath: null,
       legacyImport: { status: 'not-required', sourceFile: null },
     }
     let releasePersistence!: () => void
@@ -64,7 +64,7 @@ it.each(['a', 'id', 'running'])(
         history = {
           authority: 'pi-jsonl',
           piSessionId: identity.id,
-          piSessionFile: identity.file,
+          piSessionPath: identity.path ?? null,
           legacyImport: { status: 'not-required', sourceFile: null },
         }
       }),
@@ -105,15 +105,14 @@ it.each(['a', 'id', 'running'])(
         agentDirectory: 'C:\\fixture-agent',
         sessionDirectory: 'C:\\fixture-session',
         resumeSession: true,
-        piSessionFile: 'session.jsonl',
+        piSessionPath: 'C:\\fixture-session\\session.jsonl',
         activeLeafId: 'persisted-active-leaf',
         runtimePreferences: {
           modelId: 'session-model',
           thinkingLevel: 'high',
-          activeTools: ['pictor_read'],
+          activeTools: ['read'],
           steeringMode: 'all',
           followUpMode: 'one-at-a-time',
-          projectExtensionsEnabled: true,
         } satisfies NonNullable<SessionHistoryState['runtimePreferences']>,
       })),
       saveSession,
@@ -142,8 +141,6 @@ it.each(['a', 'id', 'running'])(
       }),
       abortSessionOperation: vi.fn(),
       reloadResources: vi.fn(async () => undefined),
-      approve: vi.fn(),
-      reject: vi.fn(),
       stop: vi.fn(),
       respondToExtensionUi: vi.fn(),
       queueMessage: vi.fn(),
@@ -158,7 +155,7 @@ it.each(['a', 'id', 'running'])(
         apiKey: secret,
         prompt: expect.stringContaining('[REDACTED]'),
         sessionName: expect.stringContaining('prompt'),
-        piSessionFile: 'session.jsonl',
+        piSessionPath: 'C:\\fixture-session\\session.jsonl',
         activeLeafId: 'persisted-active-leaf',
         runtimePreferences: expect.objectContaining({ thinkingLevel: 'high' }),
       }),
@@ -166,11 +163,11 @@ it.each(['a', 'id', 'running'])(
 
     coordinator.handleEvent({
       type: 'session.bound',
-      runId: started.runId,
+      runId: null,
       sessionId,
       at: new Date().toISOString(),
       piSessionId: 'pi-session-id',
-      piSessionFile: 'session.jsonl',
+      piSessionPath: 'C:\\fixture-session\\session.jsonl',
     })
 
     coordinator.handleEvent({
@@ -251,7 +248,7 @@ it.each(['a', 'id', 'running'])(
     await vi.waitFor(() =>
       expect(repository.bindPiSession).toHaveBeenCalledWith(sessionId, {
         id: 'pi-session-id',
-        file: 'session.jsonl',
+        path: 'C:\\fixture-session\\session.jsonl',
       }),
     )
     await vi.waitFor(() =>
@@ -313,7 +310,7 @@ it('persists a terminal failure when Pi Session identity was never bound', async
         ({
           authority: 'pi-jsonl',
           piSessionId: null,
-          piSessionFile: null,
+          piSessionPath: null,
           legacyImport: { status: 'not-required', sourceFile: null },
         }) satisfies SessionHistoryState,
     ),
@@ -382,8 +379,6 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     }),
     abortSessionOperation: vi.fn(),
     reloadResources: vi.fn(async () => undefined),
-    approve: vi.fn(),
-    reject: vi.fn(),
     stop: vi.fn(),
     respondToExtensionUi: vi.fn(),
     queueMessage: vi.fn(),
@@ -432,7 +427,7 @@ it('keeps a pending Legacy Session Import read-only', async () => {
         ({
           authority: 'legacy-import',
           piSessionId: null,
-          piSessionFile: null,
+          piSessionPath: null,
           legacyImport: { status: 'pending', sourceFile: 'legacy-imports/session.json' },
         }) satisfies SessionHistoryState,
     ),
@@ -481,8 +476,6 @@ it('keeps a pending Legacy Session Import read-only', async () => {
     }),
     abortSessionOperation: vi.fn(),
     reloadResources: vi.fn(async () => undefined),
-    approve: vi.fn(),
-    reject: vi.fn(),
     stop: vi.fn(),
     respondToExtensionUi: vi.fn(),
     queueMessage: vi.fn(),
@@ -594,7 +587,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
         ({
           authority: 'pi-jsonl',
           piSessionId: 'source-pi-session',
-          piSessionFile: 'source.jsonl',
+          piSessionPath: '/sessions/session-id/source.jsonl',
           activeLeafId,
           legacyImport: { status: 'not-required', sourceFile: null },
         }) satisfies SessionHistoryState,
@@ -644,7 +637,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     targetSessionId: config.targetSessionId,
     outcome: 'completed',
     piSessionId: 'forked-pi-session',
-    piSessionFile: 'forked.jsonl',
+    piSessionPath: '/sessions/forked-session.jsonl',
   }))
   const importSession = vi.fn<RuntimeHost['importSession']>(async (config) => ({
     type: 'host.importResult',
@@ -652,7 +645,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     targetSessionId: config.targetSessionId,
     outcome: 'completed',
     piSessionId: 'imported-pi-session',
-    piSessionFile: 'source-history.jsonl',
+    piSessionPath: '/sessions/imported-session/source-history.jsonl',
   }))
   const exportSession = vi.fn<RuntimeHost['exportSession']>(async (config) => ({
     type: 'host.exportResult',
@@ -698,8 +691,6 @@ it('commits native Pi Session derivation and Import operations', async () => {
     labelSessionEntry,
     abortSessionOperation,
     reloadResources,
-    approve: vi.fn(),
-    reject: vi.fn(),
     stop: vi.fn(),
     respondToExtensionUi: vi.fn(),
     queueMessage: vi.fn(),
@@ -718,15 +709,13 @@ it('commits native Pi Session derivation and Import operations', async () => {
       type: 'fork',
       sourceSessionId: sessionId,
       entryId: 'selected-entry',
-      sourceSessionDirectory: `/sessions/${sessionId}`,
-      sourcePiSessionFile: 'source.jsonl',
-      targetSessionDirectory: expect.stringMatching(/^\/sessions\//),
+      sourcePiSessionPath: '/sessions/session-id/source.jsonl',
     }),
   )
   const forkConfig = fork.mock.calls[0]![0]
   expect(createDerivedSession).toHaveBeenCalledWith(sessionId, forkConfig.targetSessionId, 'fork', {
     id: 'forked-pi-session',
-    file: 'forked.jsonl',
+    path: '/sessions/forked-session.jsonl',
   })
 
   fork.mockResolvedValueOnce({
@@ -748,7 +737,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     'clone',
     {
       id: 'forked-pi-session',
-      file: 'forked.jsonl',
+      path: '/sessions/forked-session.jsonl',
     },
   )
 
@@ -771,7 +760,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     projectId,
     importConfig.targetSessionId,
     'source-history (Import)',
-    { id: 'imported-pi-session', file: 'source-history.jsonl' },
+    { id: 'imported-pi-session', path: '/sessions/imported-session/source-history.jsonl' },
   )
 
   importSession.mockResolvedValueOnce({
@@ -791,8 +780,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
       type: 'export',
       sourceSessionId: sessionId,
       format: 'jsonl',
-      sourceSessionDirectory: `/sessions/${sessionId}`,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: '/sessions/session-id/source.jsonl',
       activeLeafId: 'active-entry',
       destinationPath: '/exports/source.jsonl',
     }),
@@ -813,8 +801,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
       summarize: false,
       customInstructions: null,
       activeLeafId: 'active-entry',
-      sourceSessionDirectory: `/sessions/${sessionId}`,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: '/sessions/session-id/source.jsonl',
     }),
   )
   expect(setPiSessionActiveLeaf).toHaveBeenCalledWith(sessionId, 'historical-entry')
@@ -840,7 +827,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
       sourceSessionId: sessionId,
       customInstructions: 'Keep decisions and unresolved work.',
       activeLeafId: 'historical-entry',
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: '/sessions/session-id/source.jsonl',
     }),
   )
   expect(setPiSessionActiveLeaf).toHaveBeenLastCalledWith(sessionId, 'compaction-entry')

@@ -431,16 +431,9 @@ export default function (pi) {
       `${importedSessionId}.json`,
     )
     const metadataBeforeNavigation = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
-      history: { piSessionFile: string; activeLeafId?: string | null }
+      history: { piSessionPath: string; activeLeafId?: string | null }
     }
-    const authoritativeJsonlPath = resolve(
-      userDataDirectory,
-      'data-v1',
-      'pi',
-      importedSummary.projectId,
-      importedSessionId,
-      metadataBeforeNavigation.history.piSessionFile,
-    )
+    const authoritativeJsonlPath = metadataBeforeNavigation.history.piSessionPath
     expect(await startSelectedRun('/project-note')).toMatchObject({ ok: true })
     await expect
       .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
@@ -448,14 +441,12 @@ export default function (pi) {
     await expect
       .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
       .toContain('Native extension completed.')
-    expect(await readFile(authoritativeJsonlPath, 'utf8')).not.toContain('Project Extension loaded')
+    expect(await readFile(authoritativeJsonlPath, 'utf8')).toContain('Project Extension loaded')
 
     await window.getByRole('button', { name: 'Session Controls' }).click()
     await window.getByLabel('Model').fill('pictor-session-model')
     await window.getByLabel('Thinking Level').selectOption('high')
     await window.getByLabel('Steering').selectOption('all')
-    await window.getByLabel('pictor_delete').uncheck()
-    await window.getByLabel('启用项目 .pi/extensions').check()
     await window.getByRole('button', { name: '保存' }).click()
     await expect(window.getByRole('dialog', { name: 'Session Controls' })).toBeHidden()
     const metadataAfterControls = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
@@ -466,8 +457,7 @@ export default function (pi) {
       thinkingLevel: 'high',
       steeringMode: 'all',
       followUpMode: 'one-at-a-time',
-      projectExtensionsEnabled: true,
-      activeTools: expect.not.arrayContaining(['pictor_delete']),
+      activeTools: expect.arrayContaining(['read', 'write', 'edit', 'bash']),
     })
     await window.getByRole('button', { name: 'Session Controls' }).click()
     await window.getByRole('button', { name: '重新加载资源' }).click()
@@ -556,10 +546,10 @@ export default function (pi) {
       },
     })
     const metadataAfterNavigation = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
-      history: { piSessionFile: string; activeLeafId?: string | null }
+      history: { piSessionPath: string; activeLeafId?: string | null }
     }
     expect(metadataAfterNavigation.history).toMatchObject({
-      piSessionFile: metadataBeforeNavigation.history.piSessionFile,
+      piSessionPath: metadataBeforeNavigation.history.piSessionPath,
       activeLeafId: 'imported-original',
     })
     await expect
@@ -624,10 +614,10 @@ export default function (pi) {
     ).toBeVisible()
     await expect(timeline.getByText('Imported branch answer')).toHaveCount(0)
     const metadataAfterRun = JSON.parse(await readFile(importedMetadataPath, 'utf8')) as {
-      history: { piSessionFile: string; activeLeafId?: string | null }
+      history: { piSessionPath: string; activeLeafId?: string | null }
     }
-    expect(metadataAfterRun.history.piSessionFile).toBe(
-      metadataBeforeNavigation.history.piSessionFile,
+    expect(metadataAfterRun.history.piSessionPath).toBe(
+      metadataBeforeNavigation.history.piSessionPath,
     )
     expect(metadataAfterRun.history.activeLeafId).not.toBe('imported-original')
     await expect.poll(() => readFile(authoritativeJsonlPath, 'utf8')).toContain('session_info')

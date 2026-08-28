@@ -44,7 +44,7 @@ beforeEach(async () => {
   failureMode = 'success'
   chatResponseText = 'Hello from Pi'
   chatToolArguments = null
-  chatToolName = 'pictor_write'
+  chatToolName = 'write'
   chatToolCallId = 'call-pictor-redaction'
   chatRequestCount = 0
   server = createServer(async (request, response) => {
@@ -304,7 +304,7 @@ it('streams normalized text events through the real Pi SDK', async () => {
     expect.objectContaining({
       type: 'session.bound',
       piSessionId: expect.any(String),
-      piSessionFile: expect.stringMatching(/\.jsonl$/),
+      piSessionPath: expect.stringMatching(/\.jsonl$/),
     }),
   )
   expect(events).toContainEqual(
@@ -393,7 +393,7 @@ it('loads an unmodified official Pi Extension and exposes its custom tool', asyn
   )
 }, 20_000)
 
-it('does not auto-load project Pi Extensions without explicit project authorization', async () => {
+it('auto-loads trusted project Pi Extensions through the native ResourceLoader', async () => {
   const projectExtensionDirectory = join(testRoot, 'project', '.pi', 'extensions')
   await mkdir(projectExtensionDirectory, { recursive: true })
   await writeFile(
@@ -402,7 +402,7 @@ it('does not auto-load project Pi Extensions without explicit project authorizat
   pi.registerTool({
     name: 'project_only',
     label: 'Project only',
-    description: 'Must remain disabled',
+    description: 'Must be loaded from the trusted project',
     parameters: { type: 'object', properties: {} },
     async execute() { return { content: [{ type: 'text', text: 'unexpected' }], details: {} } },
   })
@@ -423,14 +423,14 @@ it('does not auto-load project Pi Extensions without explicit project authorizat
     modelProviders: [openAiCompatibleModelProvider],
   })
 
-  await runAgent(runtime, 'chat-completions', 'Do not load project code.')
+  await runAgent(runtime, 'chat-completions', 'Use the trusted project tool.')
 
   expect(events).toContainEqual(
     expect.objectContaining({
       type: 'tool.completed',
       callId: 'call-project-only',
-      output: 'Tool project_only not found',
-      isError: true,
+      output: 'unexpected',
+      isError: false,
     }),
   )
 }, 20_000)
@@ -498,7 +498,7 @@ it.each(['a', 'id', 'running', ['pi', 'transcript', 'credential'].join('-')])(
             expect.objectContaining({
               type: 'toolCall',
               id: 'call-pictor-redaction',
-              name: 'pictor_write',
+              name: 'write',
               arguments: {
                 path: 'x.txt',
                 content: 'fixture',

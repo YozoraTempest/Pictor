@@ -1137,11 +1137,6 @@ textarea:disabled {
   background: var(--panel);
 }
 
-.tool-activity--approval {
-  border-color: #735a30;
-  background: #1d1912;
-}
-
 .tool-heading {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
@@ -1235,23 +1230,6 @@ textarea:disabled {
   overflow-wrap: anywhere;
 }
 
-.approval-actions {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.approval-warning {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  color: #d9b46a;
-  font-size: 10px;
-}
-
 .tool-output {
   border-top: 1px solid var(--border);
 }
@@ -1294,6 +1272,27 @@ textarea:disabled {
   flex: 0 0 auto;
   padding: 0 22px 18px;
   background: linear-gradient(to bottom, rgb(16 18 20 / 0%), var(--bg) 18px);
+}
+
+.extension-widgets {
+  width: min(780px, 100%);
+  margin: 0 auto 8px;
+}
+
+.extension-widget {
+  max-height: 180px;
+  margin: 0 0 6px;
+  overflow: auto;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #151a1a;
+  color: var(--text-soft);
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .composer-images {
@@ -2072,15 +2071,6 @@ textarea:disabled {
   .composer-wrap {
     padding-right: 16px;
     padding-left: 16px;
-  }
-
-  .approval-actions {
-    align-items: flex-end;
-    flex-wrap: wrap;
-  }
-
-  .approval-warning {
-    flex-basis: 100%;
   }
 }
 

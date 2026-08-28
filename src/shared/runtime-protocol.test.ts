@@ -28,9 +28,7 @@ describe('Runtime Session operation protocol', () => {
         entryId: 'pi-entry-id',
         projectRoot: '/project',
         agentDirectory: '/agent',
-        sourceSessionDirectory: '/sessions/source',
-        sourcePiSessionFile: 'source.jsonl',
-        targetSessionDirectory: '/sessions/target',
+        sourcePiSessionPath: '/sessions/source/source.jsonl',
         settings: {
           apiProtocol: 'responses',
           baseUrl: 'https://example.test/v1',
@@ -51,7 +49,7 @@ describe('Runtime Session operation protocol', () => {
       targetSessionId,
       outcome: 'completed',
       piSessionId: 'forked-pi-session',
-      piSessionFile: 'forked.jsonl',
+      piSessionPath: '/sessions/target/forked.jsonl',
     },
     { type: 'host.forkResult', operationId, targetSessionId, outcome: 'cancelled' },
     {
@@ -95,7 +93,7 @@ describe('Runtime Session operation protocol', () => {
         targetSessionId,
         outcome: 'completed',
         piSessionId: 'imported-pi-session',
-        piSessionFile: 'source.jsonl',
+        piSessionPath: '/sessions/imported/source.jsonl',
       },
       { type: 'host.importResult', operationId, targetSessionId, outcome: 'cancelled' },
       {
@@ -121,8 +119,7 @@ describe('Runtime Session operation protocol', () => {
         format: 'html',
         projectRoot: '/project',
         agentDirectory: '/agent',
-        sourceSessionDirectory: '/sessions/source',
-        sourcePiSessionFile: 'source.jsonl',
+        sourcePiSessionPath: '/sessions/source/source.jsonl',
         destinationPath: '/exports/source.html',
         settings: {
           apiProtocol: 'responses',
@@ -164,8 +161,7 @@ describe('Runtime Session operation protocol', () => {
         activeLeafId: 'active-answer',
         projectRoot: '/project',
         agentDirectory: '/agent',
-        sourceSessionDirectory: '/sessions/source',
-        sourcePiSessionFile: 'source.jsonl',
+        sourcePiSessionPath: '/sessions/source/source.jsonl',
         settings: {
           apiProtocol: 'responses',
           baseUrl: 'https://example.test/v1',
@@ -213,8 +209,7 @@ describe('Runtime Session operation protocol', () => {
         activeLeafId: 'active-answer',
         projectRoot: '/project',
         agentDirectory: '/agent',
-        sourceSessionDirectory: '/sessions/source',
-        sourcePiSessionFile: 'source.jsonl',
+        sourcePiSessionPath: '/sessions/source/source.jsonl',
         settings: {
           apiProtocol: 'responses',
           baseUrl: 'https://example.test/v1',
@@ -267,8 +262,7 @@ describe('Runtime Session operation protocol', () => {
         activeLeafId: 'active-entry',
         projectRoot: '/project',
         agentDirectory: '/agent',
-        sourceSessionDirectory: '/sessions/source',
-        sourcePiSessionFile: 'source.jsonl',
+        sourcePiSessionPath: '/sessions/source/source.jsonl',
         settings: {
           apiProtocol: 'responses',
           baseUrl: 'https://example.test/v1',

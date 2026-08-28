@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 
 import { z } from 'zod'
 
@@ -210,7 +210,7 @@ export class AppRepository {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
-    piSessionFile: string | null
+    piSessionPath: string | null
     activeLeafId?: string | null
     runtimePreferences?: SessionHistoryState['runtimePreferences']
   } {
@@ -226,7 +226,7 @@ export class AppRepository {
     return this.sessionPersistence.getHistory(sessionId)
   }
 
-  async bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void> {
+  async bindPiSession(sessionId: string, identity: { id: string; path: string }): Promise<void> {
     const session = await this.getSession(sessionId)
     await this.sessionPersistence.bindPiSession(session, identity)
   }
@@ -292,6 +292,18 @@ export class AppRepository {
     return this.sessionPersistence.read(sessionId)
   }
 
+  async findSessionByPiSessionPath(piSessionPath: string): Promise<SessionSummary | null> {
+    this.ensureInitialized()
+    const normalizedPath = resolve(piSessionPath)
+    for (const summary of this.state.sessions) {
+      const history = this.sessionPersistence.getHistory(summary.id)
+      if (history.piSessionPath && resolve(history.piSessionPath) === normalizedPath) {
+        return summary
+      }
+    }
+    return null
+  }
+
   async inspectSessionHistory(
     sessionId: string,
     selectedEntryId: string | null,
@@ -307,7 +319,7 @@ export class AppRepository {
     sourceSessionId: string,
     targetSessionId: string,
     kind: 'fork' | 'clone',
-    identity: { id: string; file: string },
+    identity: { id: string; path: string },
   ): Promise<SessionSummary> {
     this.ensureInitialized()
     if (this.state.sessions.some((session) => session.id === targetSessionId)) {
@@ -332,7 +344,7 @@ export class AppRepository {
     projectId: string,
     targetSessionId: string,
     title: string,
-    identity: { id: string; file: string },
+    identity: { id: string; path: string },
   ): Promise<SessionSummary> {
     this.ensureInitialized()
     this.getProject(projectId)
@@ -353,9 +365,52 @@ export class AppRepository {
     return this.commitPiSession(target, identity)
   }
 
+  async commitSessionReplacement(
+    sourceSessionId: string,
+    targetSessionId: string,
+    kind: 'new' | 'fork' | 'switch',
+    identity: { id: string; path: string },
+    targetProjectId?: string,
+  ): Promise<SessionSummary> {
+    this.ensureInitialized()
+    const existing = this.state.sessions.find((session) => session.id === targetSessionId)
+    if (existing) {
+      const existingSession = await this.getSession(existing.id)
+      await this.sessionPersistence.bindPiSession(existingSession, identity)
+      const rebuilt = await this.sessionPersistence.rebuildProjection(existing.id)
+      await this.saveSession(rebuilt)
+      this.state.selectedProjectId = existing.projectId
+      this.state.selectedSessionId = existing.id
+      await this.persistState()
+      return this.state.sessions.find((session) => session.id === existing.id) ?? existing
+    }
+
+    const source = await this.getSession(sourceSessionId)
+    const projectId = targetProjectId ?? source.projectId
+    this.getProject(projectId)
+    const now = new Date().toISOString()
+    const title =
+      kind === 'new'
+        ? '新建会话'
+        : kind === 'fork'
+          ? `${source.title} (Fork)`.slice(0, 120)
+          : `${basename(identity.path, '.jsonl')} (Session)`.slice(0, 120)
+    const target = sessionRecordSchema.parse({
+      schemaVersion: 1,
+      id: targetSessionId,
+      projectId,
+      title,
+      messages: [],
+      runs: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    return this.commitPiSession(target, identity)
+  }
+
   private async commitPiSession(
     target: SessionRecord,
-    identity: { id: string; file: string },
+    identity: { id: string; path: string },
   ): Promise<SessionSummary> {
     const now = target.createdAt
     await this.sessionPersistence.bindPiSession(target, identity)

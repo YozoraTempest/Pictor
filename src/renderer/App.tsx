@@ -8,7 +8,7 @@ import type { PluginStatus } from '../plugin/host'
 import type { RuntimeEvent, SessionRuntimeControls } from '../shared/desktop-bridge'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { Modal } from './ui/Modal'
-import { Conversation } from './workspace/Conversation'
+import { Conversation, type ExtensionWidget } from './workspace/Conversation'
 import { Sidebar } from './workspace/Sidebar'
 import {
   useWorkspaceController,
@@ -56,6 +56,9 @@ export function App({
   const [extensionUiRequest, setExtensionUiRequest] = useState<ExtensionUiRequest | null>(null)
   const [extensionUiValue, setExtensionUiValue] = useState('')
   const [extensionNotice, setExtensionNotice] = useState<string | null>(null)
+  const [extensionWidgets, setExtensionWidgets] = useState<
+    Record<string, Record<string, ExtensionWidget>>
+  >({})
 
   useEffect(() => {
     let active = true
@@ -77,24 +80,48 @@ export function App({
     }
   }, [])
 
-  useEffect(
-    () =>
-      window.pictor.onRuntimeEvent((event) => {
-        if (event.type === 'extension.ui.requested') {
-          setExtensionUiRequest(event)
-          setExtensionUiValue(event.value ?? event.options[0] ?? '')
-        } else if (event.type === 'extension.ui.notification') {
-          setExtensionNotice(event.message)
-        } else if (event.type === 'runtime.diagnostic') {
-          setExtensionNotice(event.message)
-        } else if (event.type === 'retry.stateChanged' && event.status === 'scheduled') {
-          setExtensionNotice(`模型请求重试 ${event.attempt}/${event.maxAttempts ?? '?'}`)
-        } else if (event.type === 'extension.ui.status' && event.text) {
-          setExtensionNotice(event.text)
-        }
-      }),
-    [],
-  )
+  useEffect(() => {
+    const unsubscribe = window.pictor.onRuntimeEvent((event) => {
+      if (event.type === 'session.replaced') {
+        setExtensionWidgets((current) => {
+          if (!(event.sourceSessionId in current)) return current
+          const next = { ...current }
+          delete next[event.sourceSessionId]
+          return next
+        })
+      } else if (event.type === 'extension.ui.widget') {
+        setExtensionWidgets((current) => {
+          const sessionWidgets = { ...(current[event.sessionId] ?? {}) }
+          if (event.lines === null) delete sessionWidgets[event.key]
+          else {
+            sessionWidgets[event.key] = {
+              key: event.key,
+              lines: event.lines,
+              placement: event.placement,
+            }
+          }
+          return { ...current, [event.sessionId]: sessionWidgets }
+        })
+      } else if (event.type === 'extension.ui.title') {
+        document.title = event.title || 'Pictor'
+      } else if (event.type === 'extension.ui.requested') {
+        setExtensionUiRequest(event)
+        setExtensionUiValue(event.value ?? event.options[0] ?? '')
+      } else if (event.type === 'extension.ui.notification') {
+        setExtensionNotice(event.message)
+      } else if (event.type === 'runtime.diagnostic') {
+        setExtensionNotice(event.message)
+      } else if (event.type === 'retry.stateChanged' && event.status === 'scheduled') {
+        setExtensionNotice(`模型请求重试 ${event.attempt}/${event.maxAttempts ?? '?'}`)
+      } else if (event.type === 'extension.ui.status' && event.text) {
+        setExtensionNotice(event.text)
+      }
+    })
+    return () => {
+      unsubscribe()
+      document.title = 'Pictor'
+    }
+  }, [])
 
   const pickProject = async (relinkProjectId: string | null = null) => {
     const request = await workspace.pickProject(relinkProjectId)
@@ -194,7 +221,6 @@ export function App({
         activeTools: sessionControls.activeTools,
         steeringMode: sessionControls.steeringMode,
         followUpMode: sessionControls.followUpMode,
-        projectExtensionsEnabled: sessionControls.projectExtensionsEnabled,
       },
     })
     setModalBusy(false)
@@ -230,7 +256,7 @@ export function App({
     if (!extensionUiRequest) return
     setModalBusy(true)
     const response = await window.pictor.respondToExtensionUi({
-      runId: extensionUiRequest.runId,
+      sessionId: extensionUiRequest.sessionId,
       requestId: extensionUiRequest.requestId,
       value,
     })
@@ -298,14 +324,16 @@ export function App({
         loading={workspace.sessionLoading}
         draft={workspace.draft}
         draftImages={workspace.draftImages}
+        extensionWidgets={
+          workspace.selectedSessionId
+            ? Object.values(extensionWidgets[workspace.selectedSessionId] ?? {})
+            : []
+        }
         appVersion={appInfo?.version ?? null}
-        platform={appInfo?.platform ?? null}
-        commandInterpreter={appInfo?.commandInterpreter ?? null}
         disabledReason={workspace.disabledReason}
         activeRun={workspace.activeRun}
         anotherSessionRunning={workspace.anotherSessionRunning}
         actionError={workspace.actionError ?? workspace.snapshot.issues[0]?.message ?? null}
-        approvalBusyCallId={workspace.approvalBusyCallId}
         queuedMessages={workspace.queuedMessages}
         runtimeUsage={workspace.runtimeUsage}
         sessionTree={workspace.sessionTree}
@@ -335,8 +363,6 @@ export function App({
         onForkSession={(entryId) => void workspace.forkSession(entryId)}
         onCloneSession={() => void workspace.cloneSession()}
         onStop={(runId) => void workspace.stopRun(runId)}
-        onApprove={(runId, callId) => void workspace.resolveApproval(runId, callId, true)}
-        onReject={(runId, callId) => void workspace.resolveApproval(runId, callId, false)}
         onAddProject={() => void pickProject()}
         onCreateSession={(id) => void workspace.createSession(id)}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -445,7 +471,9 @@ export function App({
             <p>
               Agent 可以读取和修改此目录中的文件，并会把完成任务所需的上下文发送到你配置的模型 API。
             </p>
-            <p>任何命令仍会逐条显示完整内容，得到你的批准后才会执行。</p>
+            <p>
+              Pi 原生工具和项目 Extension 会以当前用户权限运行；请只信任你了解的项目和代码来源。
+            </p>
           </div>
           <footer className="modal-actions">
             <button
@@ -728,20 +756,6 @@ export function App({
               ))}
             </div>
           </fieldset>
-          <label className="plugin-toggle">
-            <input
-              type="checkbox"
-              checked={sessionControls.projectExtensionsEnabled}
-              onChange={(event) =>
-                setSessionControls((current) =>
-                  current
-                    ? { ...current, projectExtensionsEnabled: event.target.checked }
-                    : current,
-                )
-              }
-            />
-            <span>启用项目 .pi/extensions</span>
-          </label>
           <footer className="modal-actions">
             <button
               className="secondary-button"

@@ -53,9 +53,6 @@ try {
       `Expected ${expectedDistribution} distribution, received ${appInfo.distribution}`,
     )
   }
-  if (appInfo.commandInterpreter.kind !== 'bash' || !appInfo.commandInterpreter.available) {
-    throw new Error('Expected Bash to be available on the supported Linux acceptance baseline')
-  }
   if (
     evidence.title !== 'Pictor' ||
     evidence.bodyTextLength === 0 ||

@@ -37,11 +37,7 @@ function emptySnapshot(): AppSnapshot {
   }
 }
 
-function createBridge(
-  snapshot: AppSnapshot,
-  session: SessionRecord | null = null,
-): PictorBridge & { approveCommand: ReturnType<typeof vi.fn> } {
-  const approveCommand = vi.fn(async () => ok(null))
+function createBridge(snapshot: AppSnapshot, session: SessionRecord | null = null): PictorBridge {
   return {
     getSnapshot: async () => ok(snapshot),
     getAppInfo: async () =>
@@ -51,7 +47,6 @@ function createBridge(
         platform: 'win32',
         arch: 'x64',
         distribution: 'windows',
-        commandInterpreter: { kind: 'bash', available: true, message: null },
       }),
     getPluginBootstrap: async () => ok({ safeMode: false, plugins: [] }),
     getPluginManagerSnapshot: async () =>
@@ -97,15 +92,14 @@ function createBridge(
       ok({
         modelId: 'test-model',
         thinkingLevel: 'off',
-        activeTools: ['pictor_read'],
-        availableTools: ['pictor_read', 'pictor_write'],
+        activeTools: ['read'],
+        availableTools: ['read', 'write'],
         steeringMode: 'one-at-a-time',
         followUpMode: 'one-at-a-time',
-        projectExtensionsEnabled: false,
       }),
     saveSessionRuntimeControls: async (request) =>
       ok({
-        availableTools: ['pictor_read', 'pictor_write'],
+        availableTools: ['read', 'write'],
         ...request.controls,
       }),
     reloadSessionResources: async () => ok(null),
@@ -120,12 +114,11 @@ function createBridge(
       ok({ outcome: 'success', message: '已获取 1 个可用模型', models: ['gpt-5.6-sol'] }),
     startRun: async () => ok({ runId }),
     pickMessageImages: async () => ok([]),
-    approveCommand,
-    rejectCommand: async () => ok(null),
     stopRun: async () => ok(null),
     respondToExtensionUi: async () => ok(null),
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
+    syncComposerText: async () => ok(null),
     onRuntimeEvent: (_listener: (event: RuntimeEvent) => void) => () => undefined,
   }
 }
@@ -142,7 +135,6 @@ function createUpdater(overrides: Partial<UpdaterClient> = {}): UpdaterClient {
       platform: 'win32',
       arch: 'x64',
       distribution: 'windows',
-      commandInterpreter: { kind: 'bash', available: true, message: null },
     }),
     checkForUpdates: async () =>
       ok({
@@ -382,16 +374,15 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
     ok({
       modelId: 'test-model',
       thinkingLevel: 'off',
-      activeTools: ['pictor_read'],
-      availableTools: ['pictor_read', 'pictor_write'],
+      activeTools: ['read'],
+      availableTools: ['read', 'write'],
       steeringMode: 'one-at-a-time',
       followUpMode: 'one-at-a-time',
-      projectExtensionsEnabled: false,
     } satisfies SessionRuntimeControls),
   )
   bridge.saveSessionRuntimeControls = vi.fn(async (request) =>
     ok({
-      availableTools: ['pictor_read', 'pictor_write'],
+      availableTools: ['read', 'write'],
       ...request.controls,
     } satisfies SessionRuntimeControls),
   )
@@ -465,7 +456,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   expect(await screen.findByRole('dialog', { name: 'Session Controls' })).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('Thinking Level'), { target: { value: 'high' } })
   fireEvent.change(screen.getByLabelText('Steering'), { target: { value: 'all' } })
-  fireEvent.click(screen.getByLabelText('pictor_write'))
+  fireEvent.click(screen.getByLabelText('write'))
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() =>
     expect(bridge.saveSessionRuntimeControls).toHaveBeenCalledWith({
@@ -473,10 +464,9 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
       controls: {
         modelId: 'test-model',
         thinkingLevel: 'high',
-        activeTools: ['pictor_read', 'pictor_write'],
+        activeTools: ['read', 'write'],
         steeringMode: 'all',
         followUpMode: 'one-at-a-time',
-        projectExtensionsEnabled: false,
       },
     }),
   )
@@ -587,11 +577,6 @@ it('shows the Linux platform in app information', async () => {
         platform: 'linux',
         arch: 'x64',
         distribution: 'arch',
-        commandInterpreter: {
-          kind: 'bash',
-          available: false,
-          message: '未找到 Bash；命令工具不可用。',
-        },
       }),
   }
   renderApp(
@@ -603,11 +588,6 @@ it('shows the Linux platform in app information', async () => {
         platform: 'linux',
         arch: 'x64',
         distribution: 'arch',
-        commandInterpreter: {
-          kind: 'bash',
-          available: false,
-          message: '未找到 Bash；命令工具不可用。',
-        },
       }),
     }),
   )
@@ -617,7 +597,6 @@ it('shows the Linux platform in app information', async () => {
   fireEvent.click(screen.getByRole('button', { name: '关于' }))
 
   expect(await screen.findByText('Linux x64')).toBeInTheDocument()
-  expect(screen.getByText('未找到 Bash；命令工具不可用。')).toBeInTheDocument()
 })
 
 it('saves the selected Responses compatibility mode', async () => {
@@ -779,10 +758,5 @@ it('renders an exact command approval and allows it once', async () => {
 
   expect(await screen.findByRole('heading', { name: '运行验证' })).toBeInTheDocument()
   expect(screen.getByText('npm test')).toBeInTheDocument()
-  expect(screen.getByText('此命令将以当前 Windows 用户权限运行')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '允许一次' }))
-
-  await waitFor(() =>
-    expect(bridge.approveCommand).toHaveBeenCalledWith({ runId, callId: 'call-1' }),
-  )
+  expect(screen.queryByRole('button', { name: '允许一次' })).not.toBeInTheDocument()
 })

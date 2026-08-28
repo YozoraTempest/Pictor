@@ -2,11 +2,11 @@
 
 Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发环境。当前 0.3.0 版本提供
 可组合 Plugin Host、本地项目、Pi JSONL 权威 Session、原生 Pi Agent Runtime 与 Extension、
-项目文件操作、逐条命令审批和 OpenAI 兼容模型配置。
+Pi 原生工具和 OpenAI 兼容模型配置。
 
 ## 当前能力
 
-- 添加、移除和重新关联本地项目，项目路径经过规范化后作为访问边界；
+- 添加、移除和重新关联本地项目，项目路径经过规范化后作为项目身份；
 - 创建、切换、重命名和删除 Session，重启后保留消息、运行与工具记录；
 - 打开 Pi Session Tree，查看完整分支结构并以只读 Projection 检查任意历史节点；
 - 从 Tree 中的历史节点执行 Pi 原生同文件导航，并从该分支继续下一次 Run；
@@ -14,6 +14,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 - 在 Tree Navigation 时总结被放弃分支，或选择历史 User Message 回填 Composer 后重新编辑；
 - 配置每个 Session 的 Thinking Level、Active Tools 和 Steering/Follow-up delivery mode；
 - 显示当前分支 Model/Thinking，重新加载 Runtime 资源，并把 Pictor 标题同步到 Pi Session Name；
+- 在同一个 utility process 中复用打开的 Pi Session，并支持 Extension 触发原生 `newSession`、`fork`
+  与 `switchSession` 的完整替换事务；
 - 流式展示 Thinking、显示 Pi 自动重试状态，并为任意 Session Tree 节点设置原生 Label；
 - 从原生选择器附加图片并发送 Pi Image Message，重建后继续显示图片内容；
 - 从 Composer 调用 Pi slash command，并显示 Extension `sendMessage`/`sendUserMessage` 与 diagnostic；
@@ -23,8 +25,7 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 - 从 Session 菜单用 Pi 原生语义导出当前分支 JSONL 或完整 Tree HTML，不改写权威历史；
 - 通过可删除的 `pictor.pi-agent-runtime` Bundled Plugin 原生使用 Pi `AgentSessionRuntime`，接入
   支持流式文本和工具调用的模型端点；
-- 列出、搜索、读取、创建、编辑、移动和删除项目内文件；
-- 在显示完整命令、工作目录和用途后，允许一次或拒绝 Bash 命令；
+- 直接使用 Pi 的 `read`、`write`、`edit`、`bash`、`grep`、`find` 和 `ls` 工具；
 - 展示 Markdown 回复、工具状态、命令输出、错误、停止和中断状态；
 - 配置 Chat Completions 或 Responses 兼容模式、API Base URL、模型标识、API Key、模型
   推理强度、温度和最大输出 Token 数；支持从兼容的 `/models` 端点获取并选择模型；
@@ -33,8 +34,8 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 - 通过 Plugin Host 从用户 Store 动态装配 Main/Renderer Module，支持 SemVer 依赖、故障隔离、
   安全模式和独立 Plugin 测试循环；Updater 已作为可删除、可恢复的 Bundled Plugin 运行。
 - `pictor.pi-extension-host` 可直接安装、禁用和删除原生 `.ts/.js` Pi Extension、Extension 目录
-  与本地 Pi Package；Package Manifest 和约定 `extensions/` 都会展开，自定义 Tool 和 RPC UI
-  dialog 无需 Pictor wrapper 即可进入会话 GUI。
+  与本地 Pi Package；Package Manifest 和约定 `extensions/` 都交给 Pi 原生解析，自定义 Tool 和
+  RPC UI dialog 无需 Pictor wrapper 即可进入会话 GUI。
 - 明确安装的本地 Pi Extension 直接从 live source 加载，修改源文件后下一次 Run 使用新版本；源
   不可用时回退到 Store 安装副本。
 - Project、Session 与 Conversation GUI 由可删除的 `pictor.agent-workspace` 提供；删除全部
@@ -60,12 +61,11 @@ Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发�
 Arch 的 Wayland 会话可以由 Electron 使用 XWayland，不承诺强制原生 Wayland。Arch 衍生版和
 其他 Linux 发行版不属于正式支持范围，即使 AppImage 可能可以运行。所有平台还需要：
 
-- Node.js 22.22.2 或更新版本，仅本地开发需要；
+- Node.js 22.22.2 或更新版本，仅本地开发需要；Pi 会按当前平台解析原生 Shell；
 - 一个兼容 OpenAI Chat Completions 或 Responses、SSE 流式响应和函数工具调用的模型端点。
 
-Linux 缺少 Bash 时，Pictor 仍可启动并使用不依赖命令执行的功能；界面会主动提示，命令工具
-会返回明确错误。首期固定使用非登录 Bash，并以 `--noprofile --norc -c` 执行每条获批命令，
-不读取用户的登录 Shell 配置。
+Pictor 不再预探测、替换或审批 Bash。`bash` 工具由 Pi 原生实现，以当前用户权限和当前 Session
+工作目录执行；具体 Shell、环境和超时行为遵循所使用的 Pi Agent 版本。
 
 ## 安装与卸载
 
@@ -162,7 +162,7 @@ AppImage 内容、桌面入口、`app.asar` 和 x64 ELF。结构校验不代替�
 签名或外部服务商兼容性验收。
 
 Electron E2E 使用本地确定性 OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、
-命令审批、取消、凭据重启、活动运行关闭确认和中断恢复，不需要外部模型凭据。完整分层、
+原生工具与 Extension、取消、凭据重启、活动运行关闭确认和中断恢复，不需要外部模型凭据。完整分层、
 CI 门禁和发行版验收见 [`docs/TESTING.md`](docs/TESTING.md)。
 
 应用源码统一位于 `src/`。`kernel/` 保存最小 Module Kernel，`modules/` 按 Feature 聚合新增
@@ -207,21 +207,20 @@ API Key 明文保存在独立的 `auth.json`，依靠当前用户的数据目录
 源码开发默认把数据写入独立的 `pictor-dev/data-v1`，自动化测试继续使用各自的临时目录。
 
 Renderer 启用 Chromium sandbox、context isolation 和限制性 CSP，不开放 Node 或原始
-Electron API。Pi Runtime Plugin 从用户 Store 动态加载到独立 utility process，只能调用 Pictor
-提供且经过路径守卫的工具；删除或禁用该 Plugin 后，项目与历史仍可查看，但不能启动新 Run。
-Pi Extension 是以当前用户权限运行的可信代码，并不受 Pictor 命令逐条审批限制；安装前必须确认
-来源。Pictor 的模型 API Key 不进入 Extension 配置、Runtime event 或 Pi JSONL。
-项目 `.pi/extensions` 默认不加载；只有受信任 Project 的 Session 在 Session Controls 中显式启用后，
-Runtime 才会展开标准 `.ts/.js` 和子目录 `index.ts/index.js` 入口。
+Electron API。Pi Runtime Plugin 从用户 Store 动态加载到独立 utility process，直接交给 Pi
+ResourceLoader、ExtensionRunner 和原生工具注册表；删除或禁用该 Plugin 后，项目与历史仍可查看，
+但不能启动新 Run。Pi Extension 和 Pi 原生工具以当前用户权限运行，安装或信任项目之前必须确认
+来源。Pictor 的模型 API Key 不进入 Extension 配置、Runtime event 或 Pi JSONL。受信任 Project 的
+`.pi/extensions`、Skills 和 Prompt Templates 由 Pi 原生资源解析器自动加载，Session Controls 只
+管理 Pi 暴露的模型、Thinking、工具和队列偏好。
 
 更新检查只在用户点击“检查更新”后由 Main Process 请求 Pictor 官方 GitHub Release API；
 应用不会在后台轮询。Linux 只在本机读取 `/etc/os-release` 识别原生 Arch，不上传或记录该
 文件。Arch 下载按钮优先打开匹配的官方 Pacman 资产，其他 Linux 只打开匹配版本和架构的官方
 AppImage；没有匹配资产时回退到官方发布页。
 
-项目文件操作限定在解析后的项目根目录内，并拒绝父目录跳转、大小写敏感兄弟目录、符号链接
-和目录联接逃逸。命令审批是明确的用户授权边界，不是操作系统沙箱：获批命令仍以当前用户权限
-运行。每条命令最多执行十分钟；Windows 会终止命令进程树，Linux 会终止独立 POSIX 进程组，
-包括外层 Bash 及其子进程。
+Pictor 不为 Pi 工具增加第二套项目路径守卫或命令审批；项目根目录作为 Pi Session 的工作目录，
+文件与 Shell 操作遵循 Pi 和当前操作系统的权限语义。需要更强隔离时，应使用操作系统或容器提供
+的隔离能力。
 
 当前持久化格式仍处于 MVP 阶段，尚未形成跨版本兼容承诺。

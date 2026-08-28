@@ -4,9 +4,9 @@ import { readFile } from 'node:fs/promises'
 import { dialog, ipcMain, type WebFrameMain } from 'electron'
 
 import {
-  approvalResolutionRequestSchema,
   cloneSessionRequestSchema,
   compactSessionRequestSchema,
+  composerTextRequestSchema,
   createSessionRequestSchema,
   extensionUiResponseRequestSchema,
   exportSessionRequestSchema,
@@ -52,17 +52,6 @@ interface IpcDependencies {
   getPluginBootstrap: () => Promise<PluginBootstrap>
   pluginManager: PluginManager
 }
-
-const defaultRuntimeTools = [
-  'pictor_list',
-  'pictor_search',
-  'pictor_read',
-  'pictor_write',
-  'pictor_edit',
-  'pictor_move',
-  'pictor_delete',
-  'pictor_command',
-] as const
 
 const imageMimeTypes: Record<string, 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'> = {
   '.png': 'image/png',
@@ -337,18 +326,8 @@ export function registerIpc(dependencies: IpcDependencies): void {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = sessionIdRequestSchema.parse(input)
-      const history = repository.getSessionHistory(request.sessionId)
-      const settings = await repository.getSettings()
-      if (!settings) throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
-      const preferences = history.runtimePreferences
       return sessionRuntimeControlsSchema.parse({
-        modelId: preferences?.modelId ?? settings.modelId,
-        thinkingLevel: preferences?.thinkingLevel ?? settings.reasoningEffort ?? 'off',
-        activeTools: preferences?.activeTools ?? defaultRuntimeTools,
-        availableTools: defaultRuntimeTools,
-        steeringMode: preferences?.steeringMode ?? 'one-at-a-time',
-        followUpMode: preferences?.followUpMode ?? 'one-at-a-time',
-        projectExtensionsEnabled: preferences?.projectExtensionsEnabled ?? false,
+        ...(await runtimeCoordinator.getSessionRuntimeControls(request.sessionId)),
       })
     })
   })
@@ -357,10 +336,11 @@ export function registerIpc(dependencies: IpcDependencies): void {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = saveSessionRuntimeControlsRequestSchema.parse(input)
-      await repository.setSessionRuntimePreferences(request.sessionId, request.controls)
+      await runtimeCoordinator.setSessionRuntimeControls(request.sessionId, request.controls)
       return sessionRuntimeControlsSchema.parse({
         ...request.controls,
-        availableTools: defaultRuntimeTools,
+        availableTools: (await runtimeCoordinator.getSessionRuntimeControls(request.sessionId))
+          .availableTools,
       })
     })
   })
@@ -488,24 +468,6 @@ export function registerIpc(dependencies: IpcDependencies): void {
     })
   })
 
-  ipcMain.handle('runtime:approve', (event, input: unknown) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      const request = approvalResolutionRequestSchema.parse(input)
-      runtimeCoordinator.approve(request.runId, request.callId)
-      return null
-    })
-  })
-
-  ipcMain.handle('runtime:reject', (event, input: unknown) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      const request = approvalResolutionRequestSchema.parse(input)
-      runtimeCoordinator.reject(request.runId, request.callId)
-      return null
-    })
-  })
-
   ipcMain.handle('runtime:stop', (event, input: unknown) => {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
@@ -519,7 +481,16 @@ export function registerIpc(dependencies: IpcDependencies): void {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = extensionUiResponseRequestSchema.parse(input)
-      runtimeCoordinator.respondToExtensionUi(request.runId, request.requestId, request.value)
+      runtimeCoordinator.respondToExtensionUi(request.sessionId, request.requestId, request.value)
+      return null
+    })
+  })
+
+  ipcMain.handle('runtime:composer-update', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = composerTextRequestSchema.parse(input)
+      runtimeCoordinator.updateComposerText(request.sessionId, request.text)
       return null
     })
   })

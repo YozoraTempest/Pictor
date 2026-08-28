@@ -43,11 +43,10 @@ export type WorkspaceBridge = Pick<
   | 'exportSession'
   | 'startRun'
   | 'pickMessageImages'
-  | 'approveCommand'
-  | 'rejectCommand'
   | 'stopRun'
   | 'queueRuntimeMessage'
   | 'clearRuntimeQueue'
+  | 'syncComposerText'
   | 'onRuntimeEvent'
 >
 
@@ -84,7 +83,6 @@ export interface WorkspaceController {
   sessionLoading: boolean
   loadError: string | null
   actionError: string | null
-  approvalBusyCallId: string | null
   queuedMessages: { steering: number; followUp: number }
   runtimeUsage: RuntimeUsage | null
   selectProject: (projectId: string) => Promise<void>
@@ -113,7 +111,6 @@ export interface WorkspaceController {
   queueMessage: (mode: 'steer' | 'follow-up') => Promise<void>
   clearQueue: () => Promise<void>
   stopRun: (runId: string) => Promise<void>
-  resolveApproval: (runId: string, callId: string, allowed: boolean) => Promise<void>
   setDraft: (value: string) => void
   applySettings: (settings: ModelSettings) => void
   reportActionError: (message: string) => void
@@ -146,7 +143,6 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const [actionError, setActionError] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [draftImages, setDraftImages] = useState<Record<string, ImageAttachment[]>>({})
-  const [approvalBusyCallId, setApprovalBusyCallId] = useState<string | null>(null)
   const [queuedMessages, setQueuedMessages] = useState({ steering: 0, followUp: 0 })
   const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsage | null>(null)
   const [runtimeCompactionReason, setRuntimeCompactionReason] = useState<
@@ -299,7 +295,16 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     if (loading) return
     return bridge.onRuntimeEvent((event) => {
       const currentSessionId = selectedSessionIdRef.current
-      if (event.sessionId === currentSessionId && event.type === 'message.delta') {
+      if (event.type === 'session.replaced') {
+        void refreshSnapshot()
+          .then((value) => {
+            if (!value) return
+            setSelectedProjectId(value.selectedProjectId)
+            updateSelectedSessionId(value.selectedSessionId)
+            return loadSession(value.selectedSessionId, false)
+          })
+          .catch((error: unknown) => setActionError(errorMessage(error)))
+      } else if (event.sessionId === currentSessionId && event.type === 'message.delta') {
         setSession((current) =>
           current?.id === event.sessionId
             ? {
@@ -342,6 +347,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       } else if (event.sessionId === currentSessionId && event.type === 'compaction.stateChanged') {
         setRuntimeCompactionReason(event.status === 'running' ? event.reason : null)
         if (event.status === 'failed' && event.error) setActionError(event.error)
+      } else if (event.type === 'extension.composer.changed') {
+        setDrafts((current) => ({ ...current, [event.sessionId]: event.text }))
       } else if (event.sessionId === currentSessionId) {
         void loadSession(event.sessionId, false).catch((error: unknown) =>
           setActionError(errorMessage(error)),
@@ -352,7 +359,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
         void refreshSnapshot().catch((error: unknown) => setActionError(errorMessage(error)))
       }
     })
-  }, [bridge, loadSession, loading, refreshSnapshot])
+  }, [bridge, loadSession, loading, refreshSnapshot, updateSelectedSessionId])
 
   const selectProject = useCallback(
     async (projectId: string): Promise<void> => {
@@ -719,10 +726,15 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     !selectedRunIsActive,
   )
 
-  const setDraft = useCallback((value: string) => {
-    const sessionId = selectedSessionIdRef.current
-    if (sessionId) setDrafts((current) => ({ ...current, [sessionId]: value }))
-  }, [])
+  const setDraft = useCallback(
+    (value: string) => {
+      const sessionId = selectedSessionIdRef.current
+      if (!sessionId) return
+      setDrafts((current) => ({ ...current, [sessionId]: value }))
+      void bridge.syncComposerText({ sessionId, text: value }).catch(() => undefined)
+    },
+    [bridge],
+  )
 
   const startRun = useCallback(async (): Promise<void> => {
     const sessionId = selectedSessionIdRef.current
@@ -806,24 +818,6 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     if (!response.ok) setActionError(response.error.message)
   }, [bridge, selectedRunIsActive, session])
 
-  const resolveApproval = useCallback(
-    async (runId: string, callId: string, allowed: boolean): Promise<void> => {
-      setApprovalBusyCallId(callId)
-      setActionError(null)
-      try {
-        const response = allowed
-          ? await bridge.approveCommand({ runId, callId })
-          : await bridge.rejectCommand({ runId, callId })
-        if (!response.ok) setActionError(response.error.message)
-      } catch (error) {
-        setActionError(errorMessage(error))
-      } finally {
-        setApprovalBusyCallId(null)
-      }
-    },
-    [bridge],
-  )
-
   const applySettings = useCallback((settings: ModelSettings) => {
     setSnapshot((current) => (current ? { ...current, settings } : current))
   }, [])
@@ -856,7 +850,6 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     sessionLoading,
     loadError,
     actionError,
-    approvalBusyCallId,
     queuedMessages,
     runtimeUsage,
     selectProject,
@@ -882,7 +875,6 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
     queueMessage,
     clearQueue,
     stopRun,
-    resolveApproval,
     setDraft,
     applySettings,
     reportActionError: setActionError,

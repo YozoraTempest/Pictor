@@ -211,7 +211,7 @@ describe('AppRepository', () => {
 
     const summary = await repository.createDerivedSession(source.id, targetSessionId, kind, {
       id: piSessionId,
-      file: piSessionFile,
+      path: join(targetDirectory, piSessionFile),
     })
     const snapshot = await repository.getSnapshot()
 
@@ -264,7 +264,7 @@ describe('AppRepository', () => {
       project.id,
       targetSessionId,
       'history (Import)',
-      { id: 'imported-pi-session', file: 'history.jsonl' },
+      { id: 'imported-pi-session', path: join(targetDirectory, 'history.jsonl') },
     )
 
     expect(summary).toMatchObject({
