@@ -29,8 +29,52 @@ The deterministic shell environment used to execute an individually approved Age
 _Avoid_: Terminal, user shell, Git Bash
 
 **Core Host**:
-The immutable Pictor desktop foundation that remains available when no optional product capability is installed.
+The immutable Pictor desktop foundation that remains available when no optional product capability is installed. It owns recovery and the generic Workbench, but no Project, Session, or Agent workflow.
 _Avoid_: Core Plugin, Built-in Plugin
+
+**Workbench**:
+The user-customizable desktop environment that arranges and hosts View Instances created from Plugin-contributed View Definitions.
+_Avoid_: Shell Application, fixed page layout, window manager
+
+**View Definition**:
+A Plugin-contributed description from which the Workbench creates View Instances.
+_Avoid_: React component, fixed slot, View Instance
+
+**View Instance**:
+A uniquely identified user-visible work surface created from one View Definition. It belongs to exactly one Workbench Window at a time.
+_Avoid_: React component instance, page, View Definition
+
+**Workbench Window**:
+A native Pictor window with stable identity and independent View arrangement, focus, and Project or Session selection.
+_Avoid_: Workspace, primary window, secondary window
+
+**Workbench Configuration**:
+User-authored policy and defaults for composing the Workbench.
+_Avoid_: Workbench State, UI database, Plugin Profile
+
+**Workbench State**:
+The persisted Workbench Windows, View Instance identities, placement, sizing, visibility, and focus of a user's Workbench.
+_Avoid_: Workbench Configuration, layout config
+
+**Workbench Action**:
+A user-invocable operation registered with the Workbench and available to interaction mechanisms such as key bindings.
+_Avoid_: UI Command, Pi command, shell command
+
+**Active View Instance**:
+The View Instance selected for Workbench navigation and Action context in one Workbench Window. It is independent of focus within the View's rendered content.
+_Avoid_: DOM focus, active element, selected Session
+
+**Workbench Preset**:
+A named Plugin-contributed starting composition for a Workbench Window.
+_Avoid_: Profile, hard-coded layout, Workbench State
+
+**Core Recovery Preset**:
+The Core Host Workbench Preset that exposes diagnostics and Plugin management when normal composition cannot load.
+_Avoid_: silent fallback, Agent Workspace, safe mode
+
+**Missing View**:
+A retained View Instance whose View Definition is unavailable.
+_Avoid_: removed View, ignored configuration, failed Window
 
 **Plugin**:
 An independently installed, versioned, enabled, disabled, or removed Pictor product capability.
@@ -91,6 +135,10 @@ _Avoid_: Project file attachment, image path, embedded Markdown image
 **Local Development Plugin**:
 A Pictor Plugin whose installed Registry entry points at a live source directory instead of a copied Store package.
 _Avoid_: Local Plugin copy, hot reload, Bundled Plugin
+
+**Renderer Plugin**:
+A trusted Plugin whose Renderer Module runs in the Core Host renderer realm and contributes Workbench capabilities.
+_Avoid_: sandboxed Plugin, Native Pi Extension, WebView Plugin
 
 **Pi Session Fork**:
 A new independent Pi Session created from one entry in existing Pi Session History through Pi's native Fork lifecycle.
