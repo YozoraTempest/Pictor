@@ -692,7 +692,7 @@ describe('PiAgentRuntime cleanup', () => {
       piSessionId: 'forked-pi-session',
       piSessionPath: forkedFile,
     })
-    expect(nativeFork).toHaveBeenCalledWith('selected-entry')
+    expect(nativeFork).toHaveBeenCalledWith('selected-entry', { position: 'at' })
     expect(dispose).toHaveBeenCalledOnce()
     await expect(readFile(sourceFile, 'utf8')).resolves.toContain('source')
     await expect(readFile(forkedFile, 'utf8')).resolves.toContain('forked')

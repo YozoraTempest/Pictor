@@ -989,7 +989,7 @@ export class PiAgentRuntime {
         this.sessionOperation.session = session
       }
       await session.bindExtensionUi?.(broker.createContext())
-      const result = await session.fork(config.entryId)
+      const result = await session.fork(config.entryId, { position: 'at' })
       if (result.cancelled) return { outcome: 'cancelled' }
 
       const piSessionPath = session.getSessionFile()
