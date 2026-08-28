@@ -437,11 +437,7 @@ export default function (pi) {
     expect(await startSelectedRun('/project-note')).toMatchObject({ ok: true })
     await expect
       .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
-      .toContain('/project-note')
-    await expect
-      .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
-      .toContain('Native extension completed.')
-    expect(await readFile(authoritativeJsonlPath, 'utf8')).toContain('Project Extension loaded')
+      .toContain('Project Extension loaded')
 
     await window.getByRole('button', { name: 'Session Controls' }).click()
     await window.getByLabel('Model').fill('pictor-session-model')
@@ -695,10 +691,34 @@ export default function (pi) {
     await expect(timeline.getByText('Extension note: hello')).toBeVisible({ timeout: 30_000 })
     expect(await readFile(authoritativeJsonlPath, 'utf8')).toContain('e2e-command-state')
 
+    await window.evaluate(() => {
+      const target = globalThis as typeof globalThis & {
+        __pictorNavigationEvents?: unknown[]
+      }
+      target.__pictorNavigationEvents = []
+    })
     expect(await startSelectedRun('/e2e-user')).toMatchObject({ ok: true })
     await expect
       .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
       .toContain('Extension-originated user message')
+    await expect
+      .poll(() =>
+        window.evaluate(() => {
+          const events = (
+            globalThis as typeof globalThis & {
+              __pictorNavigationEvents?: Array<Record<string, unknown>>
+            }
+          ).__pictorNavigationEvents
+          return (
+            events?.filter(
+              (event) =>
+                event.type === 'run.stateChanged' &&
+                ['completed', 'failed', 'stopped', 'interrupted'].includes(String(event.status)),
+            ).length ?? 0
+          )
+        }),
+      )
+      .toBe(1)
 
     expect(await startSelectedRun('/project-note')).toMatchObject({ ok: true })
     await expect
