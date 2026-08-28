@@ -8,6 +8,8 @@ Pi 原生工具和 OpenAI 兼容模型配置。
 
 - 添加、移除和重新关联本地项目，项目路径经过规范化后作为项目身份；
 - 创建、切换、重命名和删除 Session，重启后保留消息、运行与工具记录；
+- GUI 选择 Session 时同步打开对应的 Pi Session，并关闭此前驻留的 Pi Session；单个 utility
+  process 同时最多持有一个 Pi Session；
 - 打开 Pi Session Tree，查看完整分支结构并以只读 Projection 检查任意历史节点；
 - 从 Tree 中的历史节点执行 Pi 原生同文件导航，并从该分支继续下一次 Run；
 - 手动压缩当前 Pi 分支、提供自定义摘要指令、取消压缩，并显示自动 Compaction 状态；
@@ -36,8 +38,8 @@ Pi 原生工具和 OpenAI 兼容模型配置。
 - `pictor.pi-extension-host` 可直接安装、禁用和删除原生 `.ts/.js` Pi Extension、Extension 目录
   与本地 Pi Package；Package Manifest 和约定 `extensions/` 都交给 Pi 原生解析，自定义 Tool 和
   RPC UI dialog 无需 Pictor wrapper 即可进入会话 GUI。
-- 明确安装的本地 Pi Extension 直接从 live source 加载，修改源文件后下一次 Run 使用新版本；源
-  不可用时回退到 Store 安装副本。
+- 明确安装的本地 Pi Extension 直接从 live source 加载，修改源文件后下一次资源 reload 或新建
+  Session 使用新版本；源不可用时回退到 Store 安装副本。
 - Project、Session 与 Conversation GUI 由可删除的 `pictor.agent-workspace` 提供；删除全部
   Bundled Plugin 后，Core Shell 仍可启动并打开 Plugin Manager。
 - `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Main contract 与 Renderer 设置页显示

@@ -135,6 +135,10 @@ identity，多个 Pictor Run 复用同一个打开的 Pi Session；Run 通过 `s
 重建投影；流式事件只服务当前交互，不成为第二份历史。旧 schema v1 若无法发现对应 Pi JSONL，
 会被脱敏归档为只读 Legacy Session Import，不允许在缺失上下文时启动新 Run。
 
+GUI 的 `app:select-context` 由 Runtime Coordinator 先同步 Pi Session 生命周期，再提交 Pictor
+导航选择：选择 Session 会打开目标 JSONL，选择项目或清空 Session 会关闭驻留 Session。reload
+和 Session Controls 都携带并校验目标 `sessionId`，不会把空闲操作应用到另一个 Session。
+
 `inspectSessionHistory` 是 Session Tree View 的只读 Interface。它由 `SessionPersistence` 在一次
 JSONL 解析中生成完整树、active leaf、selected entry 和对应 Session Projection；Renderer 只消费
 结果，不重建 parent graph。选择历史节点不写 schema v2、不调用 Pi `branch()`/`navigateTree()`，
@@ -161,7 +165,8 @@ Steering/Follow-up delivery mode 和可选 Model ID override；endpoint 与凭�
 Settings 管理。每次
 精确恢复 Pi Session 时，Runtime 把偏好注入 in-memory SettingsManager 和 AgentSession，Pi 负责
 Thinking clamp、Tool registry 过滤和 queue delivery。Model/Thinking 的当前值从 active JSONL branch
-的 change entry 或 assistant message 重建并显示，不把偏好误当作运行结果。Pictor title 通过 Pi
+的 change entry 或 assistant message 重建并显示，不把偏好误当作运行结果。已打开 Session 的 Model
+Controls 通过 Pi `setModel()` 即时切换，失败会沿 Runtime protocol 返回 UI；Pictor title 通过 Pi
 `setSessionName()` 同步；“重新加载资源”调用当前打开 Session 的原生 `reload()`，不销毁 utility
 process 或另起一套资源解析器。
 
@@ -186,6 +191,11 @@ identity，但不写 Pictor metadata；utility host 精确打开已绑定的源 
 `AppRepository` 才绑定新 Pi identity、重建 Projection、提交新 Session 并更新导航；cancelled 不
 创建 Pictor Session。Fork operation 复用现有 active-operation 与 Extension UI response 通道，不能
 和 Run 并发。
+
+Extension 触发 `newSession`、`fork` 或 `switchSession` 时，Main 在 utility process 收到 Pi
+replacement 的 prepare 前写入 `session-replacement.json` journal；commit 会记录目标 JSONL
+identity，完成 Session、Project 和选择状态持久化后清理 journal。取消、Pi replacement 失败或
+进程退出会清理未提交的目标文件；重启时会恢复已进入 commit 阶段的事务。
 
 Pi Session Clone 复用同一个 Runtime operation 与 Pi 原生 Fork lifecycle，但表达不同的产品意图：
 Renderer 只提交源 Pictor Session identity，Main 通过 `inspectSessionHistory` 从权威 JSONL 推导

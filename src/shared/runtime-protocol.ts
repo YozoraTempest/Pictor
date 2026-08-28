@@ -149,12 +149,9 @@ export const runtimeEventSchema = z.discriminatedUnion('type', [
   }),
 ])
 
-export const runtimeStartConfigSchema = z.object({
-  type: z.literal('start'),
-  runId: idSchema,
+const runtimeSessionConfigSchema = z.object({
   sessionId: idSchema,
   sessionName: z.string().trim().min(1).max(120).optional(),
-  messageId: idSchema,
   projectRoot: z.string().min(1),
   agentDirectory: z.string().min(1),
   sessionDirectory: z.string().min(1),
@@ -164,8 +161,25 @@ export const runtimeStartConfigSchema = z.object({
   runtimePreferences: sessionHistoryStateSchema.shape.runtimePreferences,
   settings: modelSettingsInputSchema,
   apiKey: z.string().min(1),
+})
+
+export const runtimeStartConfigSchema = runtimeSessionConfigSchema.extend({
+  type: z.literal('start'),
+  runId: idSchema,
+  messageId: idSchema,
   prompt: z.string().min(1),
   images: z.array(imageAttachmentSchema).optional(),
+})
+
+export const runtimeSessionOpenConfigSchema = runtimeSessionConfigSchema.extend({
+  type: z.literal('session.open'),
+  operationId: idSchema,
+})
+
+export const runtimeSessionCloseConfigSchema = z.object({
+  type: z.literal('session.close'),
+  operationId: idSchema,
+  sessionId: idSchema,
 })
 
 export const runtimeForkConfigSchema = z.object({
@@ -397,7 +411,7 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('session.replacement.ack'),
     operationId: idSchema,
-    phase: z.enum(['prepare', 'commit']),
+    phase: z.enum(['prepare', 'commit', 'abort']),
     accepted: z.boolean(),
     targetSessionId: idSchema.optional(),
     message: z.string().nullable().optional(),
@@ -405,6 +419,7 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('controls.get'), sessionId: idSchema }),
   z.object({
     type: z.literal('controls.set'),
+    requestId: idSchema,
     sessionId: idSchema,
     modelId: z.string().min(1).nullable(),
     thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
@@ -412,7 +427,9 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
     steeringMode: z.enum(['all', 'one-at-a-time']),
     followUpMode: z.enum(['all', 'one-at-a-time']),
   }),
-  z.object({ type: z.literal('reload-resources') }),
+  z.object({ type: z.literal('reload-resources'), sessionId: idSchema }),
+  runtimeSessionOpenConfigSchema,
+  runtimeSessionCloseConfigSchema,
   z.object({ type: z.literal('dispose') }),
   z.object({ type: z.literal('abort-session-operation'), operationId: idSchema }),
 ])
@@ -428,7 +445,7 @@ export const runtimeHostMessageSchema = z.union([
   z.object({
     type: z.literal('session.replacement.requested'),
     operationId: idSchema,
-    phase: z.enum(['prepare', 'commit']),
+    phase: z.enum(['prepare', 'commit', 'abort']),
     kind: z.enum(['new', 'fork', 'switch']),
     sourceSessionId: idSchema,
     targetSessionId: idSchema,
@@ -436,9 +453,25 @@ export const runtimeHostMessageSchema = z.union([
     piSessionId: z.string().min(1).nullable(),
     piSessionPath: z.string().min(1).nullable(),
     cwd: z.string().min(1).nullable(),
+    sourcePiSessionPath: z.string().min(1).nullable(),
   }),
   z.object({
     type: z.literal('host.reloadResult'),
+    sessionId: idSchema,
+    outcome: z.enum(['completed', 'failed']),
+    message: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('host.sessionResult'),
+    operationId: idSchema,
+    sessionId: idSchema,
+    outcome: z.enum(['opened', 'closed', 'failed']),
+    message: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('host.controlsSetResult'),
+    requestId: idSchema,
+    sessionId: idSchema,
     outcome: z.enum(['completed', 'failed']),
     message: z.string().optional(),
   }),
@@ -448,7 +481,10 @@ export const runtimeHostMessageSchema = z.union([
 ])
 
 export type RuntimeEvent = z.infer<typeof runtimeEventSchema>
+export type RuntimeSessionConfig = z.infer<typeof runtimeSessionConfigSchema>
 export type RuntimeStartConfig = z.infer<typeof runtimeStartConfigSchema>
+export type RuntimeSessionOpenConfig = z.infer<typeof runtimeSessionOpenConfigSchema>
+export type RuntimeSessionCloseConfig = z.infer<typeof runtimeSessionCloseConfigSchema>
 export type RuntimeForkConfig = z.infer<typeof runtimeForkConfigSchema>
 export type RuntimeForkResult = z.infer<typeof runtimeForkResultSchema>
 export type RuntimeImportConfig = z.infer<typeof runtimeImportConfigSchema>

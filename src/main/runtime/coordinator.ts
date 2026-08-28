@@ -29,6 +29,7 @@ import {
   type RuntimeLabelResult,
   type RuntimeNavigateConfig,
   type RuntimeNavigateResult,
+  type RuntimeSessionOpenConfig,
   type RuntimeStartConfig,
   type RuntimeSessionReplacementRequest,
   type SessionExportFormat,
@@ -38,6 +39,7 @@ import { createSecretRedactor, type SecretRedactor } from '../../shared/secret-r
 const defaultRuntimeTools = ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls']
 
 export interface RuntimePersistence {
+  selectContext?(projectId: string | null, sessionId: string | null): Promise<void>
   getSession(sessionId: string): Promise<SessionRecord>
   getSessionHistory(sessionId: string): SessionHistoryState
   inspectSessionHistory(
@@ -64,15 +66,28 @@ export interface RuntimePersistence {
     identity: { id: string; path: string },
   ): Promise<SessionSummary>
   commitSessionReplacement?(
+    operationId: string,
     sourceSessionId: string,
     targetSessionId: string,
     kind: 'new' | 'fork' | 'switch',
     identity: { id: string; path: string },
     targetProjectId?: string,
+    cwd?: string,
   ): Promise<SessionSummary>
+  prepareSessionReplacement?(entry: {
+    operationId: string
+    sourceSessionId: string
+    targetSessionId: string
+    kind: 'new' | 'fork' | 'switch'
+    targetProjectId?: string
+    targetSessionPath: string | null
+    sourcePiSessionPath: string | null
+  }): Promise<void>
+  abortSessionReplacement?(operationId: string): Promise<void>
   findSessionByPiSessionPath?(piSessionPath: string): Promise<SessionSummary | null>
   getProject(projectId: string): Project
   findProjectByPath?(rootPath: string): Promise<Project | null>
+  ensureProjectByPath?(rootPath: string): Promise<Project>
   getSettings(): Promise<ModelSettings | null>
   getApiKey(): Promise<string | null>
   getRuntimePaths(
@@ -90,6 +105,8 @@ export interface RuntimePersistence {
 }
 
 export interface RuntimeHost {
+  openSession?(config: RuntimeSessionOpenConfig): Promise<void>
+  closeSession?(): Promise<void>
   start(config: RuntimeStartConfig): Promise<void>
   fork(config: RuntimeForkConfig): Promise<RuntimeForkResult>
   importSession(config: RuntimeImportConfig): Promise<RuntimeImportResult>
@@ -98,7 +115,7 @@ export interface RuntimeHost {
   compactSession(config: RuntimeCompactConfig): Promise<RuntimeCompactResult>
   labelSessionEntry(config: RuntimeLabelConfig): Promise<RuntimeLabelResult>
   abortSessionOperation(operationId: string): void
-  reloadResources(): Promise<void>
+  reloadResources(sessionId: string): Promise<void>
   getRuntimeControls?(sessionId: string): Promise<{
     modelId: string | null
     thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -116,7 +133,7 @@ export interface RuntimeHost {
       steeringMode: 'all' | 'one-at-a-time'
       followUpMode: 'all' | 'one-at-a-time'
     },
-  ): void
+  ): Promise<void>
   stop(runId: string): void
   respondToExtensionUi(sessionId: string, requestId: string, value: string | boolean | null): void
   updateComposerText?(sessionId: string, text: string): void
@@ -158,6 +175,43 @@ export class RuntimeCoordinator {
     private readonly supervisor: RuntimeHost,
     private readonly broadcast: (event: RuntimeEvent) => void,
   ) {}
+
+  async selectContext(projectId: string | null, sessionId: string | null): Promise<void> {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
+      throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
+    }
+    await this.persistenceQueue
+
+    if (projectId === null || sessionId === null) {
+      if (projectId !== null) this.repository.getProject(projectId)
+      await this.supervisor.closeSession?.()
+      await this.repository.selectContext?.(projectId, sessionId)
+      return
+    }
+
+    const session = await this.repository.getSession(sessionId)
+    if (session.projectId !== projectId) {
+      throw new PictorError('invalid-input', '会话不属于所选项目')
+    }
+    const history = this.repository.getSessionHistory(sessionId)
+    if (history.authority === 'pi-jsonl') {
+      if (this.supervisor.openSession) {
+        const settings = await this.repository.getSettings()
+        const apiKey = await this.repository.getApiKey()
+        if (settings && apiKey) {
+          await this.supervisor.openSession(
+            await this.createSessionOpenConfig(sessionId, randomUUID()),
+          )
+          await this.persistenceQueue
+        } else {
+          await this.supervisor.closeSession?.()
+        }
+      }
+    } else {
+      await this.supervisor.closeSession?.()
+    }
+    await this.repository.selectContext?.(projectId, sessionId)
+  }
 
   async start(
     sessionId: string,
@@ -502,7 +556,7 @@ export class RuntimeCoordinator {
     if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       throw new PictorError('invalid-input', '当前 Session 没有可重载的 Pi Runtime 资源')
     }
-    await this.supervisor.reloadResources()
+    await this.supervisor.reloadResources(sessionId)
   }
 
   async getSessionRuntimeControls(sessionId: string): Promise<{
@@ -542,8 +596,46 @@ export class RuntimeCoordinator {
     if (!this.repository.setSessionRuntimePreferences) {
       throw new PictorError('persistence-failed', 'Session Controls 持久化接口不可用')
     }
+    await this.supervisor.setRuntimeControls?.(sessionId, controls)
     await this.repository.setSessionRuntimePreferences(sessionId, controls)
-    this.supervisor.setRuntimeControls?.(sessionId, controls)
+  }
+
+  private async createSessionOpenConfig(
+    sessionId: string,
+    operationId: string,
+  ): Promise<RuntimeSessionOpenConfig> {
+    const session = await this.repository.getSession(sessionId)
+    const history = this.repository.getSessionHistory(sessionId)
+    if (history.authority !== 'pi-jsonl') {
+      throw new PictorError('invalid-input', '当前 Session 没有可打开的 Pi JSONL 历史')
+    }
+    const project = this.repository.getProject(session.projectId)
+    if (project.availability !== 'available') {
+      throw new PictorError('project-unavailable', '项目目录当前不可用，请重新关联或移除项目')
+    }
+    const settings = await this.repository.getSettings()
+    const apiKey = await this.repository.getApiKey()
+    if (!settings || !apiKey) {
+      throw new PictorError('invalid-input', '请先保存完整的模型 API 设置')
+    }
+    const runtimePaths = this.repository.getRuntimePaths(project.id, session.id)
+    return {
+      type: 'session.open',
+      operationId,
+      sessionId: session.id,
+      sessionName: session.title,
+      projectRoot: project.rootPath,
+      ...runtimePaths,
+      settings: {
+        apiProtocol: settings.apiProtocol,
+        baseUrl: settings.baseUrl,
+        modelId: settings.modelId,
+        reasoningEffort: settings.reasoningEffort,
+        temperature: settings.temperature,
+        maxOutputTokens: settings.maxOutputTokens,
+      },
+      apiKey,
+    }
   }
 
   private async deriveSession(
@@ -791,6 +883,25 @@ export class RuntimeCoordinator {
           targetProjectId = existing.projectId
         }
       }
+      if (!this.repository.prepareSessionReplacement) {
+        return { accepted: false, message: 'Session replacement journal is unavailable' }
+      }
+      try {
+        await this.repository.prepareSessionReplacement({
+          operationId: request.operationId,
+          sourceSessionId: request.sourceSessionId,
+          targetSessionId,
+          kind: request.kind,
+          ...(targetProjectId ? { targetProjectId } : {}),
+          targetSessionPath: request.targetSessionPath,
+          sourcePiSessionPath: request.sourcePiSessionPath,
+        })
+      } catch (error) {
+        return {
+          accepted: false,
+          message: error instanceof Error ? error.message : 'Session replacement prepare failed',
+        }
+      }
       this.replacementTransactions.set(request.operationId, {
         sourceSessionId: request.sourceSessionId,
         targetSessionId,
@@ -801,6 +912,27 @@ export class RuntimeCoordinator {
     }
 
     const transaction = this.replacementTransactions.get(request.operationId)
+    if (request.phase === 'abort') {
+      if (
+        transaction &&
+        (transaction.sourceSessionId !== request.sourceSessionId ||
+          transaction.targetSessionId !== request.targetSessionId ||
+          transaction.kind !== request.kind)
+      ) {
+        return { accepted: false, message: 'Session replacement transaction is unknown' }
+      }
+      try {
+        await this.repository.abortSessionReplacement?.(request.operationId)
+        this.replacementTransactions.delete(request.operationId)
+        return { accepted: true }
+      } catch (error) {
+        return {
+          accepted: false,
+          message: error instanceof Error ? error.message : 'Session replacement abort failed',
+        }
+      }
+    }
+
     if (
       !transaction ||
       transaction.sourceSessionId !== request.sourceSessionId ||
@@ -809,31 +941,38 @@ export class RuntimeCoordinator {
     ) {
       return { accepted: false, message: 'Session replacement transaction is unknown' }
     }
-    this.replacementTransactions.delete(request.operationId)
     if (!request.piSessionId || !request.piSessionPath) {
       return { accepted: false, message: 'Pi Session replacement returned no identity' }
     }
     try {
       let targetProjectId = transaction.targetProjectId
       if (!targetProjectId && request.cwd) {
-        const project = this.repository.findProjectByPath
-          ? await this.repository.findProjectByPath(request.cwd).catch(() => null)
-          : null
+        const project = this.repository.ensureProjectByPath
+          ? await this.repository.ensureProjectByPath(request.cwd).catch(() => null)
+          : this.repository.findProjectByPath
+            ? await this.repository.findProjectByPath(request.cwd).catch(() => null)
+            : null
         targetProjectId = project?.id
       }
-      if (!targetProjectId) {
+      if (!targetProjectId && !request.cwd && request.kind !== 'switch') {
         targetProjectId = (await this.repository.getSession(transaction.sourceSessionId)).projectId
+      }
+      if (!targetProjectId) {
+        return { accepted: false, message: 'Pi Session replacement target Project is unavailable' }
       }
       if (!this.repository.commitSessionReplacement) {
         return { accepted: false, message: 'Session replacement persistence is unavailable' }
       }
       await this.repository.commitSessionReplacement(
+        request.operationId,
         transaction.sourceSessionId,
         transaction.targetSessionId,
         transaction.kind,
         { id: request.piSessionId, path: request.piSessionPath },
         targetProjectId,
+        request.cwd ?? undefined,
       )
+      this.replacementTransactions.delete(request.operationId)
       return { accepted: true }
     } catch (error) {
       return {

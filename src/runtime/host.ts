@@ -126,13 +126,48 @@ parentPort.on('message', (messageEvent) => {
 
   if (command.type === 'reload-resources') {
     void statePromise
-      .then((state) => requireRuntime(state).reloadResources())
-      .then(() => parentPort.postMessage({ type: 'host.reloadResult', outcome: 'completed' }))
+      .then((state) => requireRuntime(state).reloadResources(command.sessionId))
+      .then(() =>
+        parentPort.postMessage({
+          type: 'host.reloadResult',
+          sessionId: command.sessionId,
+          outcome: 'completed',
+        }),
+      )
       .catch((error) =>
         parentPort.postMessage({
           type: 'host.reloadResult',
+          sessionId: command.sessionId,
           outcome: 'failed',
           message: error instanceof Error ? error.message : 'Pi resource reload failed',
+        }),
+      )
+    return
+  }
+
+  if (command.type === 'session.open' || command.type === 'session.close') {
+    void statePromise
+      .then((state) => {
+        const runtime = requireRuntime(state)
+        return command.type === 'session.open'
+          ? runtime.openSession(command)
+          : runtime.closeSession()
+      })
+      .then(() =>
+        parentPort.postMessage({
+          type: 'host.sessionResult',
+          operationId: command.operationId,
+          sessionId: command.sessionId,
+          outcome: command.type === 'session.open' ? 'opened' : 'closed',
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.sessionResult',
+          operationId: command.operationId,
+          sessionId: command.sessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Pi Session operation failed',
         }),
       )
     return
@@ -160,7 +195,23 @@ parentPort.on('message', (messageEvent) => {
           followUpMode: command.followUpMode,
         }),
       )
-      .catch(reportFatal)
+      .then(() =>
+        parentPort.postMessage({
+          type: 'host.controlsSetResult',
+          requestId: command.requestId,
+          sessionId: command.sessionId,
+          outcome: 'completed',
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.controlsSetResult',
+          requestId: command.requestId,
+          sessionId: command.sessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Session Controls update failed',
+        }),
+      )
     return
   }
   if (command.type === 'dispose') {

@@ -18,6 +18,68 @@ const sourceSessionId = '11234567-89ab-4def-8123-456789abcdef'
 const targetSessionId = '21234567-89ab-4def-8123-456789abcdef'
 
 describe('Runtime Session operation protocol', () => {
+  it('accepts explicit Session lifecycle and target-scoped control messages', () => {
+    const sessionConfig = {
+      sessionId: sourceSessionId,
+      operationId,
+      projectRoot: '/project',
+      agentDirectory: '/agent',
+      sessionDirectory: '/sessions',
+      resumeSession: true,
+      piSessionPath: '/sessions/source.jsonl',
+      activeLeafId: null,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 1024,
+      },
+      apiKey: 'test-key',
+    }
+    expect(runtimeCommandSchema.parse({ type: 'session.open', ...sessionConfig })).toMatchObject({
+      type: 'session.open',
+      operationId,
+      sessionId: sourceSessionId,
+    })
+    expect(
+      runtimeCommandSchema.parse({
+        type: 'session.close',
+        operationId,
+        sessionId: sourceSessionId,
+      }),
+    ).toEqual({ type: 'session.close', operationId, sessionId: sourceSessionId })
+    expect(
+      runtimeCommandSchema.parse({
+        type: 'controls.set',
+        requestId: targetSessionId,
+        sessionId: sourceSessionId,
+        modelId: 'next-model',
+        thinkingLevel: 'high',
+        activeTools: ['read'],
+        steeringMode: 'all',
+        followUpMode: 'one-at-a-time',
+      }),
+    ).toMatchObject({ type: 'controls.set', requestId: targetSessionId })
+    expect(
+      runtimeHostMessageSchema.parse({
+        type: 'host.controlsSetResult',
+        requestId: targetSessionId,
+        sessionId: sourceSessionId,
+        outcome: 'failed',
+        message: 'model unavailable',
+      }),
+    ).toMatchObject({ outcome: 'failed', requestId: targetSessionId })
+    expect(
+      runtimeHostMessageSchema.parse({
+        type: 'host.reloadResult',
+        sessionId: sourceSessionId,
+        outcome: 'completed',
+      }),
+    ).toMatchObject({ sessionId: sourceSessionId, outcome: 'completed' })
+  })
+
   it('accepts the complete source and target Session configuration', () => {
     expect(
       runtimeCommandSchema.parse({

@@ -134,6 +134,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   集成测试；Pictor 不再维护第二套工具包装、Bash 发现、审批或路径守卫测试。
 - 真实 Runtime 测试覆盖同一 utility process 在多个 Pictor Run 间复用同一 Pi Session，以及
   `newSession`、`fork`、`switchSession` 的 prepare/commit replacement seam。
+- Session selection 测试覆盖打开目标、关闭旧 Session、reload/Controls 的 `sessionId` 校验；
+  replacement journal 测试覆盖 prepare、取消清理、commit、Main/Runtime 进程退出后的恢复。
 - 受信任 Project 的 `.pi/extensions`、Skills、Prompts 和 Context files 必须由 Pi 原生
   ResourceLoader 自动加载；资源 reload 必须复用当前 Session，而不是重建 Pictor 专属资源层。
 - 更新资产选择覆盖 Windows NSIS、Arch pacman、便携 AppImage、错误平台/架构/版本、非官方 URL

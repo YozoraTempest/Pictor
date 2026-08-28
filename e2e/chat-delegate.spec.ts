@@ -221,7 +221,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await window.waitForLoadState('domcontentloaded')
 
     await window.getByRole('button', { name: '新建 Session' }).first().click()
-    await expect(window.getByRole('heading', { name: '新建会话' })).toBeVisible()
+    await expect(window.getByRole('heading', { name: '新建会话' })).toBeVisible({ timeout: 30_000 })
     await window.getByRole('textbox', { name: '任务描述' }).fill('Say hello.')
     await window.getByRole('button', { name: '发送任务' }).click()
 

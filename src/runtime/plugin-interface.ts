@@ -8,6 +8,7 @@ import type {
   RuntimeImportConfig,
   RuntimeLabelConfig,
   RuntimeNavigateConfig,
+  RuntimeSessionOpenConfig,
   RuntimeStartConfig,
   RuntimeSessionReplacementRequest,
   RuntimeControlsSnapshot,
@@ -62,6 +63,8 @@ export interface AgentRuntimeResources {
 export interface AgentRuntimeProvider {
   id: string
   configure(resources: AgentRuntimeResources): void
+  openSession(config: RuntimeSessionOpenConfig): Promise<void>
+  closeSession(): Promise<void>
   start(config: RuntimeStartConfig): Promise<void>
   fork(config: RuntimeForkConfig): Promise<AgentRuntimeForkResult>
   importSession(config: RuntimeImportConfig): Promise<AgentRuntimeImportResult>
@@ -69,12 +72,12 @@ export interface AgentRuntimeProvider {
   navigateSession(config: RuntimeNavigateConfig): Promise<AgentRuntimeNavigateResult>
   compactSession(config: RuntimeCompactConfig): Promise<AgentRuntimeCompactResult>
   labelSessionEntry(config: RuntimeLabelConfig): Promise<AgentRuntimeLabelResult>
-  reloadResources(): Promise<void>
+  reloadResources(sessionId: string): Promise<void>
   getRuntimeControls(sessionId: string): RuntimeControlsSnapshot | null
   setRuntimeControls(
     sessionId: string,
     controls: Omit<RuntimeControlsSnapshot, 'type' | 'sessionId' | 'availableTools'>,
-  ): void
+  ): Promise<void>
   abortSessionOperation(operationId: string): void
   abort(runId: string): Promise<void>
   queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void>

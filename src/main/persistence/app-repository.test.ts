@@ -300,4 +300,95 @@ describe('AppRepository', () => {
       readFile(join(dataDirectory, 'sessions', `${projectSession.id}.json`), 'utf8'),
     ).rejects.toMatchObject({ code: 'ENOENT' })
   })
+
+  it('journals and cleans up an aborted Pi Session replacement', async () => {
+    const repository = createRepository()
+    await repository.initialize()
+    const project = await repository.registerProject(projectDirectory)
+    const source = await repository.createSession(project.id)
+    const piDirectory = join(dataDirectory, 'pi', 'replacement')
+    const sourcePiPath = join(piDirectory, 'source.jsonl')
+    const orphanPiPath = join(piDirectory, 'orphan.jsonl')
+    await mkdir(piDirectory, { recursive: true })
+    await writeFile(sourcePiPath, '{"type":"session","id":"source"}\n')
+
+    const operationId = randomUUID()
+    const targetSessionId = randomUUID()
+    await repository.prepareSessionReplacement({
+      operationId,
+      sourceSessionId: source.id,
+      targetSessionId,
+      kind: 'fork',
+      targetProjectId: project.id,
+      targetSessionPath: null,
+      sourcePiSessionPath: sourcePiPath,
+    })
+    await writeFile(orphanPiPath, '{"type":"session","id":"orphan"}\n')
+
+    await repository.abortSessionReplacement(operationId)
+
+    await expect(readFile(orphanPiPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(sourcePiPath, 'utf8')).resolves.toContain('source')
+    await expect(
+      readFile(join(dataDirectory, 'session-replacement.json'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('recovers a committing replacement and keeps its target cwd project', async () => {
+    const repository = createRepository()
+    await repository.initialize()
+    const sourceProject = await repository.registerProject(projectDirectory)
+    const source = await repository.createSession(sourceProject.id)
+    const targetDirectory = join(testRoot, 'target-project')
+    await mkdir(targetDirectory)
+    const targetProject = await repository.ensureProjectByPath(targetDirectory)
+    const targetPiPath = join(targetDirectory, 'target.jsonl')
+    await writeFile(
+      targetPiPath,
+      `${JSON.stringify({
+        type: 'session',
+        version: 3,
+        id: 'target-pi-session',
+        timestamp: new Date().toISOString(),
+        cwd: targetDirectory,
+      })}\n`,
+    )
+
+    const operationId = randomUUID()
+    const targetSessionId = randomUUID()
+    await repository.prepareSessionReplacement({
+      operationId,
+      sourceSessionId: source.id,
+      targetSessionId,
+      kind: 'switch',
+      targetProjectId: targetProject.id,
+      targetSessionPath: targetPiPath,
+      sourcePiSessionPath: null,
+    })
+    const journalPath = join(dataDirectory, 'session-replacement.json')
+    const journal = JSON.parse(await readFile(journalPath, 'utf8')) as Record<string, unknown>
+    await writeFile(
+      journalPath,
+      JSON.stringify({
+        ...journal,
+        phase: 'committing',
+        piSessionId: 'target-pi-session',
+        piSessionPath: targetPiPath,
+        cwd: targetDirectory,
+      }),
+    )
+
+    const restored = createRepository()
+    await restored.initialize()
+
+    const snapshot = await restored.getSnapshot()
+    expect(snapshot.selectedSessionId).toBe(targetSessionId)
+    expect(snapshot.selectedProjectId).toBe(targetProject.id)
+    expect(snapshot.sessions).toContainEqual(
+      expect.objectContaining({ id: targetSessionId, projectId: targetProject.id }),
+    )
+    await expect(
+      readFile(join(dataDirectory, 'session-replacement.json'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+  })
 })

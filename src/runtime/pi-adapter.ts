@@ -28,6 +28,8 @@ import {
   type RuntimeImportConfig,
   type RuntimeLabelConfig,
   type RuntimeNavigateConfig,
+  type RuntimeSessionConfig,
+  type RuntimeSessionOpenConfig,
   type RuntimeSessionReplacementRequest,
   type RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
@@ -113,6 +115,8 @@ interface PiSessionLike {
     options?: {
       commandContextActions?: ExtensionCommandContextActions
       beforeRebind?: () => Promise<void>
+      beforeSessionInvalidate?: () => void
+      afterRebind?: () => Promise<void> | void
       onError?: (error: ExtensionError) => void
     },
   ): Promise<void>
@@ -122,6 +126,8 @@ interface PiSessionLike {
   getThinkingLevel?(): 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   getSteeringMode?(): 'all' | 'one-at-a-time'
   getFollowUpMode?(): 'all' | 'one-at-a-time'
+  getModelRuntime?(): ModelRuntime
+  setModel?(model: Parameters<AgentSessionRuntime['session']['setModel']>[0]): Promise<void>
   setActiveToolNames?(names: string[]): void
   setThinkingLevel?(level: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'): void
   setSteeringMode?(mode: 'all' | 'one-at-a-time'): void
@@ -130,7 +136,7 @@ interface PiSessionLike {
 }
 
 interface SessionFactoryInput {
-  config: RuntimeStartConfig
+  config: RuntimeSessionConfig
   sessionFile?: string
   extensionPaths: readonly string[]
   skillPaths: readonly string[]
@@ -155,7 +161,7 @@ interface ActiveRuntime {
 
 interface OpenRuntimeSession {
   sessionId: string
-  config: RuntimeStartConfig
+  config: RuntimeSessionConfig
   session: PiSessionLike
   extensionUi: ExtensionUiBroker
   unsubscribe: () => void
@@ -166,6 +172,7 @@ interface OpenRuntimeSession {
         kind: 'new' | 'fork' | 'switch'
         sourceSessionId: string
         targetSessionId: string
+        commitRequested: boolean
       }
     | undefined
 }
@@ -459,6 +466,14 @@ class PiSessionRuntime implements PiSessionLike {
     return this.runtime.session.followUpMode
   }
 
+  getModelRuntime(): ModelRuntime {
+    return this.runtime.session.modelRuntime
+  }
+
+  setModel(model: Parameters<AgentSessionRuntime['session']['setModel']>[0]): Promise<void> {
+    return this.runtime.session.setModel(model)
+  }
+
   setActiveToolNames(names: string[]): void {
     this.runtime.session.setActiveToolsByName(names)
   }
@@ -484,11 +499,14 @@ class PiSessionRuntime implements PiSessionLike {
     options?: {
       commandContextActions?: ExtensionCommandContextActions
       beforeRebind?: () => Promise<void>
+      beforeSessionInvalidate?: () => void
+      afterRebind?: () => Promise<void> | void
       onError?: (error: ExtensionError) => void
     },
   ): Promise<void> {
     const bind = async () => {
       await options?.beforeRebind?.()
+      this.runtime.setBeforeSessionInvalidate(options?.beforeSessionInvalidate)
       await this.runtime.session.bindExtensions({
         uiContext: context,
         mode: 'rpc',
@@ -497,6 +515,7 @@ class PiSessionRuntime implements PiSessionLike {
           : {}),
         ...(options?.onError ? { onError: options.onError } : {}),
       })
+      await options?.afterRebind?.()
     }
     this.runtime.setRebindSession(bind)
     return bind()
@@ -550,6 +569,20 @@ export class PiAgentRuntime {
     this.promptPaths = [...resources.promptPaths]
     this.modelProviders = [...resources.modelProviders]
     this.requestSessionReplacement = resources.requestSessionReplacement
+  }
+
+  async openSession(config: RuntimeSessionOpenConfig): Promise<void> {
+    if (this.current || this.sessionOperation) {
+      throw new Error('Only one Runtime operation can be active')
+    }
+    await this.ensureOpenSession(config)
+  }
+
+  async closeSession(): Promise<void> {
+    if (this.current || this.sessionOperation) {
+      throw new Error('Only one Runtime operation can be active')
+    }
+    if (this.opened) await this.closeOpenedSession(this.opened)
   }
 
   async start(config: RuntimeStartConfig): Promise<void> {
@@ -651,7 +684,7 @@ export class PiAgentRuntime {
     }
   }
 
-  private async ensureOpenSession(config: RuntimeStartConfig): Promise<OpenRuntimeSession> {
+  private async ensureOpenSession(config: RuntimeSessionConfig): Promise<OpenRuntimeSession> {
     const requestedPath = config.piSessionPath ? resolve(config.piSessionPath) : null
     const openedPath = this.opened?.session.getSessionFile()
     if (
@@ -674,6 +707,7 @@ export class PiAgentRuntime {
     })
     const piSessionPath = session.getSessionFile()
     if (!piSessionPath) throw new Error('Pi Session did not provide a persistent JSONL file')
+    config.piSessionPath = resolve(piSessionPath)
     const redactor = createSecretRedactor([config.apiKey])
     const opened: OpenRuntimeSession = {
       sessionId: config.sessionId,
@@ -693,12 +727,19 @@ export class PiAgentRuntime {
         piSessionId: session.getSessionId(),
         piSessionPath: resolve(piSessionPath),
       })
-      opened.unsubscribe = session.subscribe((event) => this.handlePiEvent(opened, event))
-      await session.bindExtensionUi?.(opened.extensionUi.createContext(), {
-        commandContextActions: this.createCommandContextActions(opened),
-        beforeRebind: () => this.commitPendingReplacement(opened),
-        onError: (error) => this.handleExtensionError(opened, error),
-      })
+      if (session.bindExtensionUi) {
+        await session.bindExtensionUi(opened.extensionUi.createContext(), {
+          commandContextActions: this.createCommandContextActions(opened),
+          beforeSessionInvalidate: () => opened.unsubscribe(),
+          afterRebind: () => {
+            this.rebindOpenedSession(opened, opened.session)
+            return this.commitPendingReplacement(opened)
+          },
+          onError: (error) => this.handleExtensionError(opened, error),
+        })
+      } else {
+        this.rebindOpenedSession(opened, session)
+      }
       return opened
     } catch (error) {
       await this.closeOpenedSession(opened)
@@ -711,6 +752,13 @@ export class PiAgentRuntime {
     opened.unsubscribe()
     opened.extensionUi.cancelAll()
     await Promise.resolve(opened.session.dispose())
+  }
+
+  private rebindOpenedSession(opened: OpenRuntimeSession, session: PiSessionLike): void {
+    if (this.opened !== opened) return
+    opened.unsubscribe()
+    opened.session = session
+    opened.unsubscribe = session.subscribe((event) => this.handlePiEvent(opened, event))
   }
 
   private createCommandContextActions(opened: OpenRuntimeSession): ExtensionCommandContextActions {
@@ -788,6 +836,7 @@ export class PiAgentRuntime {
       piSessionId: null,
       piSessionPath: null,
       cwd: null,
+      sourcePiSessionPath: opened.config.piSessionPath ?? null,
     })
     if (!prepared.accepted) return { cancelled: true } as T
     const resolvedTargetSessionId = prepared.targetSessionId ?? targetSessionId
@@ -797,10 +846,20 @@ export class PiAgentRuntime {
       kind,
       sourceSessionId: opened.sessionId,
       targetSessionId: resolvedTargetSessionId,
+      commitRequested: false,
     }
     try {
       const result = await invoke(withSession)
+      if (result?.cancelled) await this.abortPendingReplacement(opened, operationId)
       return result ?? ({ cancelled: false } as T)
+    } catch (error) {
+      if (!opened.pendingReplacement?.commitRequested) {
+        await this.abortPendingReplacement(opened, operationId)
+      } else if (this.opened === opened) {
+        await this.abortPendingReplacement(opened, operationId)
+        await this.closeOpenedSession(opened)
+      }
+      throw error
     } finally {
       opened.pendingReplacement = undefined
     }
@@ -811,6 +870,7 @@ export class PiAgentRuntime {
     if (!pending) return
     const piSessionPath = opened.session.getSessionFile()
     if (!piSessionPath) throw new Error('Pi Session replacement did not provide a JSONL file')
+    pending.commitRequested = true
     const accepted = await this.requestReplacement({
       type: 'session.replacement.requested',
       operationId: pending.operationId,
@@ -822,14 +882,17 @@ export class PiAgentRuntime {
       piSessionId: opened.session.getSessionId(),
       piSessionPath: resolve(piSessionPath),
       cwd: opened.session.getCwd?.() ?? opened.config.projectRoot,
+      sourcePiSessionPath: opened.config.piSessionPath ?? null,
     })
     if (!accepted.accepted) throw new Error(accepted.message ?? 'Session replacement was rejected')
     const sourceSessionId = opened.sessionId
+    const cwd = opened.session.getCwd?.() ?? opened.config.projectRoot
     opened.sessionId = pending.targetSessionId
     opened.config = {
       ...opened.config,
       sessionId: pending.targetSessionId,
       piSessionPath: resolve(piSessionPath),
+      projectRoot: cwd,
     }
     if (this.current?.session === opened.session) this.current.cancelled = true
     this.emitSessionPayload(opened, {
@@ -838,8 +901,29 @@ export class PiAgentRuntime {
       targetSessionId: pending.targetSessionId,
       piSessionId: opened.session.getSessionId(),
       piSessionPath: resolve(piSessionPath),
-      cwd: opened.session.getCwd?.() ?? opened.config.projectRoot,
+      cwd,
       activeLeafId: opened.session.getActiveLeafId(),
+    })
+  }
+
+  private async abortPendingReplacement(
+    opened: OpenRuntimeSession,
+    operationId: string,
+  ): Promise<void> {
+    const pending = opened.pendingReplacement
+    if (!pending || pending.operationId !== operationId) return
+    await this.requestReplacement({
+      type: 'session.replacement.requested',
+      operationId,
+      phase: 'abort',
+      kind: pending.kind,
+      sourceSessionId: pending.sourceSessionId,
+      targetSessionId: pending.targetSessionId,
+      targetSessionPath: null,
+      piSessionId: null,
+      piSessionPath: null,
+      cwd: null,
+      sourcePiSessionPath: opened.config.piSessionPath ?? null,
     })
   }
 
@@ -1358,9 +1442,12 @@ export class PiAgentRuntime {
     this.opened.extensionUi.updateEditorText(text)
   }
 
-  async reloadResources(): Promise<void> {
+  async reloadResources(sessionId: string): Promise<void> {
     if (this.current) throw new Error('Cannot reload Pi resources during an active Run')
-    await this.opened?.session.reload?.()
+    if (!this.opened || this.opened.sessionId !== sessionId) {
+      throw new Error('Requested Pi Session is not open')
+    }
+    await this.opened.session.reload?.()
   }
 
   getRuntimeControls(sessionId: string) {
@@ -1381,7 +1468,7 @@ export class PiAgentRuntime {
     }
   }
 
-  setRuntimeControls(
+  async setRuntimeControls(
     sessionId: string,
     controls: {
       modelId: string | null
@@ -1390,9 +1477,28 @@ export class PiAgentRuntime {
       steeringMode: 'all' | 'one-at-a-time'
       followUpMode: 'all' | 'one-at-a-time'
     },
-  ): void {
+  ): Promise<void> {
     const opened = this.opened
     if (!opened || opened.sessionId !== sessionId) return
+    if (controls.modelId && controls.modelId !== opened.session.getModelId?.()) {
+      const modelRuntime = opened.session.getModelRuntime?.()
+      if (!modelRuntime || !opened.session.setModel) {
+        throw new Error('Pi Session model switching is unavailable')
+      }
+      const model = this.getModelProvider().register(
+        modelRuntime,
+        { ...opened.config.settings, modelId: controls.modelId },
+        opened.config.apiKey,
+      )
+      await opened.session.setModel(model)
+      opened.config.settings = { ...opened.config.settings, modelId: controls.modelId }
+      if (opened.config.runtimePreferences) {
+        opened.config.runtimePreferences = {
+          ...opened.config.runtimePreferences,
+          modelId: controls.modelId,
+        }
+      }
+    }
     opened.session.setActiveToolNames?.(controls.activeTools)
     opened.session.setThinkingLevel?.(controls.thinkingLevel)
     opened.session.setSteeringMode?.(controls.steeringMode)

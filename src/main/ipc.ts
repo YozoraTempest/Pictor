@@ -258,7 +258,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = selectContextRequestSchema.parse(input)
-      await repository.selectContext(request.projectId, request.sessionId)
+      await runtimeCoordinator.selectContext(request.projectId, request.sessionId)
       return null
     })
   })
