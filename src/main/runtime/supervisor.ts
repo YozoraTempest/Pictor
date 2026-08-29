@@ -49,21 +49,28 @@ export class RuntimeSupervisor {
   } | null = null
   private pendingExport: {
     operationId: string
+    previousSessionId: string | null
     resolve: (result: RuntimeExportResult) => void
     reject: (error: Error) => void
   } | null = null
   private pendingNavigate: {
     operationId: string
+    sessionId: string
+    previousSessionId: string | null
     resolve: (result: RuntimeNavigateResult) => void
     reject: (error: Error) => void
   } | null = null
   private pendingCompact: {
     operationId: string
+    sessionId: string
+    previousSessionId: string | null
     resolve: (result: RuntimeCompactResult) => void
     reject: (error: Error) => void
   } | null = null
   private pendingLabel: {
     operationId: string
+    sessionId: string
+    previousSessionId: string | null
     resolve: (result: RuntimeLabelResult) => void
     reject: (error: Error) => void
   } | null = null
@@ -201,16 +208,22 @@ export class RuntimeSupervisor {
   async exportSession(config: RuntimeExportConfig): Promise<RuntimeExportResult> {
     if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
     await this.ensureChild()
+    const previousSessionId = this.activeSessionId
     this.activeRunId = config.operationId
     this.activeSessionId = config.sourceSessionId
     return new Promise<RuntimeExportResult>((resolve, reject) => {
-      this.pendingExport = { operationId: config.operationId, resolve, reject }
+      this.pendingExport = {
+        operationId: config.operationId,
+        previousSessionId,
+        resolve,
+        reject,
+      }
       try {
         this.post(config)
       } catch (error) {
         this.pendingExport = null
         this.activeRunId = null
-        this.activeSessionId = null
+        this.activeSessionId = previousSessionId
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
@@ -219,16 +232,23 @@ export class RuntimeSupervisor {
   async navigateSession(config: RuntimeNavigateConfig): Promise<RuntimeNavigateResult> {
     if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
     await this.ensureChild()
+    const previousSessionId = this.activeSessionId
     this.activeRunId = config.operationId
     this.activeSessionId = config.sourceSessionId
     return new Promise<RuntimeNavigateResult>((resolve, reject) => {
-      this.pendingNavigate = { operationId: config.operationId, resolve, reject }
+      this.pendingNavigate = {
+        operationId: config.operationId,
+        sessionId: config.sourceSessionId,
+        previousSessionId,
+        resolve,
+        reject,
+      }
       try {
         this.post(config)
       } catch (error) {
         this.pendingNavigate = null
         this.activeRunId = null
-        this.activeSessionId = null
+        this.activeSessionId = previousSessionId
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
@@ -237,16 +257,23 @@ export class RuntimeSupervisor {
   async compactSession(config: RuntimeCompactConfig): Promise<RuntimeCompactResult> {
     if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
     await this.ensureChild()
+    const previousSessionId = this.activeSessionId
     this.activeRunId = config.operationId
     this.activeSessionId = config.sourceSessionId
     return new Promise<RuntimeCompactResult>((resolve, reject) => {
-      this.pendingCompact = { operationId: config.operationId, resolve, reject }
+      this.pendingCompact = {
+        operationId: config.operationId,
+        sessionId: config.sourceSessionId,
+        previousSessionId,
+        resolve,
+        reject,
+      }
       try {
         this.post(config)
       } catch (error) {
         this.pendingCompact = null
         this.activeRunId = null
-        this.activeSessionId = null
+        this.activeSessionId = previousSessionId
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
@@ -255,16 +282,23 @@ export class RuntimeSupervisor {
   async labelSessionEntry(config: RuntimeLabelConfig): Promise<RuntimeLabelResult> {
     if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
     await this.ensureChild()
+    const previousSessionId = this.activeSessionId
     this.activeRunId = config.operationId
     this.activeSessionId = config.sourceSessionId
     return new Promise<RuntimeLabelResult>((resolve, reject) => {
-      this.pendingLabel = { operationId: config.operationId, resolve, reject }
+      this.pendingLabel = {
+        operationId: config.operationId,
+        sessionId: config.sourceSessionId,
+        previousSessionId,
+        resolve,
+        reject,
+      }
       try {
         this.post(config)
       } catch (error) {
         this.pendingLabel = null
         this.activeRunId = null
-        this.activeSessionId = null
+        this.activeSessionId = previousSessionId
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
@@ -596,7 +630,7 @@ export class RuntimeSupervisor {
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingExport = null
       this.activeRunId = null
-      this.activeSessionId = null
+      this.activeSessionId = pending.previousSessionId
       pending.resolve(parsed.data)
       return
     }
@@ -605,7 +639,8 @@ export class RuntimeSupervisor {
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingNavigate = null
       this.activeRunId = null
-      this.activeSessionId = null
+      this.activeSessionId =
+        parsed.data.outcome === 'failed' ? pending.previousSessionId : pending.sessionId
       pending.resolve(parsed.data)
       return
     }
@@ -614,7 +649,8 @@ export class RuntimeSupervisor {
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingCompact = null
       this.activeRunId = null
-      this.activeSessionId = null
+      this.activeSessionId =
+        parsed.data.outcome === 'failed' ? pending.previousSessionId : pending.sessionId
       pending.resolve(parsed.data)
       return
     }
@@ -623,7 +659,8 @@ export class RuntimeSupervisor {
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingLabel = null
       this.activeRunId = null
-      this.activeSessionId = null
+      this.activeSessionId =
+        parsed.data.outcome === 'failed' ? pending.previousSessionId : pending.sessionId
       pending.resolve(parsed.data)
       return
     }

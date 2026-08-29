@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { cp, copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
-import { basename, extname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 
 import { z } from 'zod'
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent'
@@ -293,12 +293,17 @@ export class PluginStore {
     await packageManager.install(spec)
     const installedPath = packageManager.getInstalledPath(spec, 'user')
     if (!installedPath) throw new Error(`Pi Package did not provide an installed path: ${spec}`)
-    return this.installPiPackageDirectory(installedPath, spec)
+    return this.installPiPackageDirectory(
+      installedPath,
+      spec,
+      this.packageNodeModulesDirectory(installedPath),
+    )
   }
 
   private async installPiPackageDirectory(
     sourcePath: string,
     registrySource: string,
+    nodeModulesPath?: string | null,
   ): Promise<StoredNativeExtension> {
     const source = resolve(sourcePath)
     const packageJson = await readJsonFile(join(source, 'package.json'), pluginPackageJsonSchema)
@@ -307,6 +312,9 @@ export class PluginStore {
     const target = join(this.piPackagesDirectory, id)
     await rm(target, { recursive: true, force: true })
     await cp(source, target, { recursive: true })
+    if (nodeModulesPath && resolve(nodeModulesPath) !== resolve(join(source, 'node_modules'))) {
+      await cp(nodeModulesPath, join(target, 'node_modules'), { recursive: true })
+    }
     const entry = {
       kind: 'pi-package' as const,
       id,
@@ -317,6 +325,16 @@ export class PluginStore {
     this.replaceExtensionEntry(entry)
     await this.persistRegistry()
     return { entry, runtimePath: target }
+  }
+
+  private packageNodeModulesDirectory(packagePath: string): string | null {
+    let current = dirname(resolve(packagePath))
+    while (true) {
+      if (basename(current) === 'node_modules') return current
+      const parent = dirname(current)
+      if (parent === current) return null
+      current = parent
+    }
   }
 
   async setNativeExtensionEnabled(

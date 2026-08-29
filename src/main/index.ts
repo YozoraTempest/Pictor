@@ -218,6 +218,17 @@ void app.whenReady().then(() => {
       }
     })
     coordinatorReference.current = runtimeCoordinator
+    const persistedSnapshot = await repository.getSnapshot()
+    if (persistedSnapshot.selectedProjectId && persistedSnapshot.selectedSessionId) {
+      try {
+        await runtimeCoordinator.selectContext(
+          persistedSnapshot.selectedProjectId,
+          persistedSnapshot.selectedSessionId,
+        )
+      } catch (error) {
+        console.error('Failed to restore the selected Pi Session', error)
+      }
+    }
     const appInfo = appInfoSchema.parse({
       name: app.getName(),
       version: currentVersion,

@@ -230,6 +230,14 @@ export class AppRepository {
     await this.persistState()
   }
 
+  getSelectedContext(): { projectId: string | null; sessionId: string | null } {
+    this.ensureInitialized()
+    return {
+      projectId: this.state.selectedProjectId,
+      sessionId: this.state.selectedSessionId,
+    }
+  }
+
   async prepareSessionReplacement(entry: {
     operationId: string
     sourceSessionId: string

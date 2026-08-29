@@ -724,6 +724,26 @@ export default function (pi) {
     await expect
       .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
       .toContain('Project Extension loaded')
+    await expect
+      .poll(
+        () =>
+          window.evaluate(() => {
+            const events = (
+              globalThis as typeof globalThis & {
+                __pictorNavigationEvents?: Array<Record<string, unknown>>
+              }
+            ).__pictorNavigationEvents
+            return (
+              events?.filter(
+                (event) =>
+                  event.type === 'run.stateChanged' &&
+                  ['completed', 'failed', 'stopped', 'interrupted'].includes(String(event.status)),
+              ).length ?? 0
+            )
+          }),
+        { timeout: 30_000 },
+      )
+      .toBe(2)
   } finally {
     await electronApp.close()
     await new Promise<void>((resolve, reject) =>

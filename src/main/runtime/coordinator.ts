@@ -40,6 +40,9 @@ const defaultRuntimeTools = ['read', 'write', 'edit', 'bash', 'grep', 'find', 'l
 
 export interface RuntimePersistence {
   selectContext?(projectId: string | null, sessionId: string | null): Promise<void>
+  getSelectedContext(): { projectId: string | null; sessionId: string | null }
+  removeProject(projectId: string): Promise<void>
+  deleteSession(sessionId: string): Promise<void>
   getSession(sessionId: string): Promise<SessionRecord>
   getSessionHistory(sessionId: string): SessionHistoryState
   inspectSessionHistory(
@@ -211,6 +214,44 @@ export class RuntimeCoordinator {
       await this.supervisor.closeSession?.()
     }
     await this.repository.selectContext?.(projectId, sessionId)
+  }
+
+  async removeProject(projectId: string): Promise<void> {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
+      throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
+    }
+    await this.persistenceQueue
+    const previous = this.repository.getSelectedContext()
+    const affectsOpenedSession = previous.projectId === projectId
+    if (affectsOpenedSession) await this.supervisor.closeSession?.()
+    try {
+      await this.repository.removeProject(projectId)
+    } catch (error) {
+      if (affectsOpenedSession && previous.projectId) {
+        await this.selectContext(previous.projectId, previous.sessionId).catch(() => undefined)
+      }
+      throw error
+    }
+    if (affectsOpenedSession) await this.openSelectedContext()
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    if (this.active || this.sessionOperationId || this.supervisor.isActive()) {
+      throw new PictorError('invalid-input', '已有 Runtime 操作正在执行，请等待其完成')
+    }
+    await this.persistenceQueue
+    const previous = this.repository.getSelectedContext()
+    const affectsOpenedSession = previous.sessionId === sessionId
+    if (affectsOpenedSession) await this.supervisor.closeSession?.()
+    try {
+      await this.repository.deleteSession(sessionId)
+    } catch (error) {
+      if (affectsOpenedSession && previous.projectId) {
+        await this.selectContext(previous.projectId, previous.sessionId).catch(() => undefined)
+      }
+      throw error
+    }
+    if (affectsOpenedSession) await this.openSelectedContext()
   }
 
   async start(
@@ -557,6 +598,7 @@ export class RuntimeCoordinator {
       throw new PictorError('invalid-input', '当前 Session 没有可重载的 Pi Runtime 资源')
     }
     await this.supervisor.reloadResources(sessionId)
+    await this.persistenceQueue
   }
 
   async getSessionRuntimeControls(sessionId: string): Promise<{
@@ -597,6 +639,7 @@ export class RuntimeCoordinator {
       throw new PictorError('persistence-failed', 'Session Controls 持久化接口不可用')
     }
     await this.supervisor.setRuntimeControls?.(sessionId, controls)
+    await this.persistenceQueue
     await this.repository.setSessionRuntimePreferences(sessionId, controls)
   }
 
@@ -636,6 +679,12 @@ export class RuntimeCoordinator {
       },
       apiKey,
     }
+  }
+
+  private async openSelectedContext(): Promise<void> {
+    const selected = this.repository.getSelectedContext()
+    if (!selected.projectId) return
+    await this.selectContext(selected.projectId, selected.sessionId)
   }
 
   private async deriveSession(

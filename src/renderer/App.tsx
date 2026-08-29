@@ -56,6 +56,10 @@ export function App({
   const [extensionUiRequest, setExtensionUiRequest] = useState<ExtensionUiRequest | null>(null)
   const [extensionUiValue, setExtensionUiValue] = useState('')
   const [extensionNotice, setExtensionNotice] = useState<string | null>(null)
+  const [extensionStatuses, setExtensionStatuses] = useState<
+    Record<string, Record<string, string>>
+  >({})
+  const [extensionTitles, setExtensionTitles] = useState<Record<string, string>>({})
   const [extensionWidgets, setExtensionWidgets] = useState<
     Record<string, Record<string, ExtensionWidget>>
   >({})
@@ -82,13 +86,64 @@ export function App({
 
   useEffect(() => {
     const unsubscribe = window.pictor.onRuntimeEvent((event) => {
-      if (event.type === 'session.replaced') {
+      if (event.type === 'session.bound') {
         setExtensionWidgets((current) => {
-          if (!(event.sourceSessionId in current)) return current
+          if (!(event.sessionId in current)) return current
           const next = { ...current }
-          delete next[event.sourceSessionId]
+          delete next[event.sessionId]
           return next
         })
+        setExtensionStatuses((current) => {
+          if (!(event.sessionId in current)) return current
+          const next = { ...current }
+          delete next[event.sessionId]
+          return next
+        })
+        setExtensionTitles((current) => {
+          if (!(event.sessionId in current)) return current
+          const next = { ...current }
+          delete next[event.sessionId]
+          return next
+        })
+        setExtensionUiRequest((current) =>
+          current?.sessionId === event.sessionId ? null : current,
+        )
+        setExtensionNotice(null)
+      } else if (event.type === 'session.replaced') {
+        setExtensionWidgets((current) => {
+          if (!(event.sourceSessionId in current) && !(event.targetSessionId in current))
+            return current
+          const next = { ...current }
+          delete next[event.sourceSessionId]
+          delete next[event.targetSessionId]
+          return next
+        })
+        setExtensionStatuses((current) => {
+          if (!(event.sourceSessionId in current) && !(event.targetSessionId in current)) {
+            return current
+          }
+          const next = { ...current }
+          delete next[event.sourceSessionId]
+          delete next[event.targetSessionId]
+          return next
+        })
+        setExtensionTitles((current) => {
+          if (!(event.sourceSessionId in current) && !(event.targetSessionId in current)) {
+            return current
+          }
+          const next = { ...current }
+          delete next[event.sourceSessionId]
+          delete next[event.targetSessionId]
+          return next
+        })
+        setExtensionUiRequest((current) =>
+          current &&
+          (current.sessionId === event.sourceSessionId ||
+            current.sessionId === event.targetSessionId)
+            ? null
+            : current,
+        )
+        setExtensionNotice(null)
       } else if (event.type === 'extension.ui.widget') {
         setExtensionWidgets((current) => {
           const sessionWidgets = { ...(current[event.sessionId] ?? {}) }
@@ -103,7 +158,7 @@ export function App({
           return { ...current, [event.sessionId]: sessionWidgets }
         })
       } else if (event.type === 'extension.ui.title') {
-        document.title = event.title || 'Pictor'
+        setExtensionTitles((current) => ({ ...current, [event.sessionId]: event.title }))
       } else if (event.type === 'extension.ui.requested') {
         setExtensionUiRequest(event)
         setExtensionUiValue(event.value ?? event.options[0] ?? '')
@@ -113,15 +168,28 @@ export function App({
         setExtensionNotice(event.message)
       } else if (event.type === 'retry.stateChanged' && event.status === 'scheduled') {
         setExtensionNotice(`模型请求重试 ${event.attempt}/${event.maxAttempts ?? '?'}`)
-      } else if (event.type === 'extension.ui.status' && event.text) {
-        setExtensionNotice(event.text)
+      } else if (event.type === 'extension.ui.status') {
+        setExtensionStatuses((current) => {
+          const sessionStatuses = { ...(current[event.sessionId] ?? {}) }
+          if (event.text === null) delete sessionStatuses[event.key]
+          else sessionStatuses[event.key] = event.text
+          const next = { ...current }
+          if (Object.keys(sessionStatuses).length === 0) delete next[event.sessionId]
+          else next[event.sessionId] = sessionStatuses
+          return next
+        })
       }
     })
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    const selectedSessionId = workspace.selectedSessionId
+    document.title = selectedSessionId ? extensionTitles[selectedSessionId] || 'Pictor' : 'Pictor'
     return () => {
-      unsubscribe()
       document.title = 'Pictor'
     }
-  }, [])
+  }, [extensionTitles, workspace.selectedSessionId])
 
   const pickProject = async (relinkProjectId: string | null = null) => {
     const request = await workspace.pickProject(relinkProjectId)
@@ -288,6 +356,12 @@ export function App({
     )
   }
 
+  const currentExtensionStatuses = workspace.selectedSessionId
+    ? (extensionStatuses[workspace.selectedSessionId] ?? {})
+    : {}
+  const currentExtensionUiRequest =
+    extensionUiRequest?.sessionId === workspace.selectedSessionId ? extensionUiRequest : null
+
   return (
     <main className="app-shell">
       <Sidebar
@@ -375,6 +449,13 @@ export function App({
         </button>
       ) : null}
 
+      {Object.entries(currentExtensionStatuses).map(([key, text]) => (
+        <div className="extension-notice" key={key}>
+          <span>{key}</span>
+          {text}
+        </div>
+      ))}
+
       {settingsOpen ? (
         <SettingsDialog
           initial={workspace.snapshot.settings}
@@ -385,41 +466,41 @@ export function App({
         />
       ) : null}
 
-      {extensionUiRequest ? (
+      {currentExtensionUiRequest ? (
         <Modal
-          title={extensionUiRequest.title}
-          description={extensionUiRequest.message ?? ''}
+          title={currentExtensionUiRequest.title}
+          description={currentExtensionUiRequest.message ?? ''}
           onClose={() =>
-            void respondToExtensionUi(extensionUiRequest.kind === 'confirm' ? false : null)
+            void respondToExtensionUi(currentExtensionUiRequest.kind === 'confirm' ? false : null)
           }
         >
           <div className="extension-ui-dialog">
-            {extensionUiRequest.kind === 'select' ? (
+            {currentExtensionUiRequest.kind === 'select' ? (
               <label className="field field--full">
                 <span>选择</span>
                 <select
-                  aria-label={extensionUiRequest.title}
+                  aria-label={currentExtensionUiRequest.title}
                   value={extensionUiValue}
                   onChange={(event) => setExtensionUiValue(event.target.value)}
                 >
-                  {extensionUiRequest.options.map((option) => (
+                  {currentExtensionUiRequest.options.map((option) => (
                     <option value={option} key={option}>
                       {option}
                     </option>
                   ))}
                 </select>
               </label>
-            ) : extensionUiRequest.kind === 'input' ? (
+            ) : currentExtensionUiRequest.kind === 'input' ? (
               <label className="field field--full">
                 <span>输入</span>
                 <input
                   autoFocus
                   value={extensionUiValue}
-                  placeholder={extensionUiRequest.value ?? ''}
+                  placeholder={currentExtensionUiRequest.value ?? ''}
                   onChange={(event) => setExtensionUiValue(event.target.value)}
                 />
               </label>
-            ) : extensionUiRequest.kind === 'editor' ? (
+            ) : currentExtensionUiRequest.kind === 'editor' ? (
               <label className="field field--full">
                 <span>内容</span>
                 <textarea
@@ -429,7 +510,7 @@ export function App({
                 />
               </label>
             ) : (
-              <p>{extensionUiRequest.message}</p>
+              <p>{currentExtensionUiRequest.message}</p>
             )}
           </div>
           <footer className="modal-actions">
@@ -438,7 +519,9 @@ export function App({
               type="button"
               disabled={modalBusy}
               onClick={() =>
-                void respondToExtensionUi(extensionUiRequest.kind === 'confirm' ? false : null)
+                void respondToExtensionUi(
+                  currentExtensionUiRequest.kind === 'confirm' ? false : null,
+                )
               }
             >
               取消
@@ -449,7 +532,7 @@ export function App({
               disabled={modalBusy}
               onClick={() =>
                 void respondToExtensionUi(
-                  extensionUiRequest.kind === 'confirm' ? true : extensionUiValue,
+                  currentExtensionUiRequest.kind === 'confirm' ? true : extensionUiValue,
                 )
               }
             >

@@ -3,6 +3,7 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -253,5 +254,67 @@ describe('PluginStore', () => {
       version: '2.0.0',
     })
     expect(installed.runtimePath).toBe(join(fixture.userData, 'pi-packages', 'spec-pi-package'))
+  })
+
+  it('keeps npm package dependencies and all native Pi resources in the runtime copy', async () => {
+    const fixture = await createStoreFixture()
+    const installRoot = join(fixture.root, 'npm-install')
+    const packagePath = join(installRoot, 'node_modules', 'spec-pi-package')
+    const dependencyPath = join(installRoot, 'node_modules', 'fixture-dependency')
+    await mkdir(join(packagePath, 'extensions'), { recursive: true })
+    await mkdir(join(packagePath, 'skills', 'review'), { recursive: true })
+    await mkdir(join(packagePath, 'prompts'), { recursive: true })
+    await mkdir(dependencyPath, { recursive: true })
+    await writeFile(
+      join(packagePath, 'package.json'),
+      `${JSON.stringify({
+        name: 'spec-pi-package',
+        version: '2.0.0',
+        type: 'module',
+        dependencies: { 'fixture-dependency': '1.0.0' },
+        pi: {
+          extensions: ['./extensions'],
+          skills: ['./skills'],
+          prompts: ['./prompts'],
+        },
+      })}\n`,
+    )
+    await writeFile(
+      join(packagePath, 'extensions', 'spec.js'),
+      `import dependency from 'fixture-dependency'\nexport default () => dependency\n`,
+    )
+    await writeFile(join(packagePath, 'skills', 'review', 'SKILL.md'), '# Review\n')
+    await writeFile(join(packagePath, 'prompts', 'review.md'), 'Review this change.\n')
+    await writeFile(
+      join(dependencyPath, 'package.json'),
+      `${JSON.stringify({ name: 'fixture-dependency', version: '1.0.0', type: 'module' })}\n`,
+    )
+    await writeFile(join(dependencyPath, 'index.js'), 'export default "dependency"\n')
+
+    const store = new PluginStore({
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    })
+    await store.initialize()
+
+    const installed = await store.installPiPackageFromSpec(packagePath)
+    const runtimePath = installed.runtimePath
+
+    const extension = await import(
+      pathToFileURL(join(runtimePath, 'extensions', 'spec.js')).toString()
+    )
+    expect(extension.default()).toBe('dependency')
+    await expect(readFile(join(runtimePath, 'extensions', 'spec.js'), 'utf8')).resolves.toContain(
+      'fixture-dependency',
+    )
+    await expect(
+      readFile(join(runtimePath, 'node_modules', 'fixture-dependency', 'package.json'), 'utf8'),
+    ).resolves.toContain('fixture-dependency')
+    await expect(readFile(join(runtimePath, 'skills', 'review', 'SKILL.md'), 'utf8')).resolves.toBe(
+      '# Review\n',
+    )
+    await expect(readFile(join(runtimePath, 'prompts', 'review.md'), 'utf8')).resolves.toBe(
+      'Review this change.\n',
+    )
   })
 })

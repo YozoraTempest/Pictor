@@ -249,7 +249,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = projectIdRequestSchema.parse(input)
-      await repository.removeProject(request.projectId)
+      await runtimeCoordinator.removeProject(request.projectId)
       return null
     })
   })
@@ -421,7 +421,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = sessionIdRequestSchema.parse(input)
-      await repository.deleteSession(request.sessionId)
+      await runtimeCoordinator.deleteSession(request.sessionId)
       return null
     })
   })

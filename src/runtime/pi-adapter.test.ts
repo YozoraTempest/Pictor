@@ -980,6 +980,19 @@ describe('PiAgentRuntime cleanup', () => {
       apiKey: 'test-key',
     } satisfies RuntimeNavigateConfig
 
+    await runtime.openSession({
+      type: 'session.open',
+      operationId: '41234567-89ab-4def-8123-456789abcdef',
+      sessionId: config.sourceSessionId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: sourceSessionDirectory,
+      resumeSession: true,
+      piSessionPath: sourceFile,
+      activeLeafId: config.activeLeafId,
+      settings: config.settings,
+      apiKey: config.apiKey,
+    })
     await expect(runtime.navigateSession(config)).resolves.toEqual({
       outcome: 'completed',
       activeLeafId: 'historical-answer',
@@ -987,17 +1000,9 @@ describe('PiAgentRuntime cleanup', () => {
       summaryCreated: false,
     })
     expect(navigateTree).toHaveBeenCalledWith('historical-answer', { summarize: false })
-    expect(factory).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionFile: sourceFile,
-        extensionPaths: ['/trusted/extensions'],
-        skillPaths: ['/trusted/skills'],
-        promptPaths: ['/trusted/prompts'],
-        config: expect.objectContaining({ activeLeafId: 'active-answer' }),
-      }),
-    )
+    expect(factory).toHaveBeenCalledOnce()
     expect(bindExtensionUi).toHaveBeenCalledOnce()
-    expect(dispose).toHaveBeenCalledOnce()
+    expect(dispose).not.toHaveBeenCalled()
 
     navigateTree.mockResolvedValueOnce({ cancelled: true })
     await expect(
@@ -1030,6 +1035,8 @@ describe('PiAgentRuntime cleanup', () => {
       summarize: true,
       customInstructions: 'Preserve decisions',
     })
+    await runtime.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 
   it('compacts the active branch and emits the native Compaction lifecycle', async () => {
@@ -1057,6 +1064,7 @@ describe('PiAgentRuntime cleanup', () => {
       expect(customInstructions).toBe('Keep decisions')
       return result
     })
+    const dispose = vi.fn(async () => undefined)
     const factory = vi.fn(async () => ({
       ...(await sessionFactory()),
       subscribe: (next: typeof listener) => {
@@ -1068,6 +1076,7 @@ describe('PiAgentRuntime cleanup', () => {
       compact,
       getSessionFile: () => sourceFile,
       getActiveLeafId: () => 'compaction-entry',
+      dispose,
     }))
     const runtime = new PiAgentRuntime((event) => events.push(event), factory)
     runtime.configure({
@@ -1103,13 +1112,26 @@ describe('PiAgentRuntime cleanup', () => {
       apiKey: 'test-key',
     } satisfies RuntimeCompactConfig
 
+    await runtime.openSession({
+      type: 'session.open',
+      operationId: '41234567-89ab-4def-8123-456789abcdef',
+      sessionId: config.sourceSessionId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: sourceSessionDirectory,
+      resumeSession: true,
+      piSessionPath: sourceFile,
+      activeLeafId: config.activeLeafId,
+      settings: config.settings,
+      apiKey: config.apiKey,
+    })
     await expect(runtime.compactSession(config)).resolves.toEqual({
       outcome: 'completed',
       activeLeafId: 'compaction-entry',
       tokensBefore: 120,
       estimatedTokensAfter: 30,
     })
-    expect(events).toEqual([
+    expect(events.filter((event) => event.type === 'compaction.stateChanged')).toEqual([
       expect.objectContaining({
         type: 'compaction.stateChanged',
         status: 'running',
@@ -1122,6 +1144,10 @@ describe('PiAgentRuntime cleanup', () => {
         estimatedTokensAfter: 30,
       }),
     ])
+    expect(factory).toHaveBeenCalledOnce()
+    expect(dispose).not.toHaveBeenCalled()
+    await runtime.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 
   it('appends native Pi label entries and returns the resulting leaf', async () => {
@@ -1130,11 +1156,13 @@ describe('PiAgentRuntime cleanup', () => {
     await mkdir(sourceSessionDirectory)
     await writeFile(sourceFile, '{"type":"session","version":3,"id":"pi-session"}\n')
     const labelEntry = vi.fn()
+    const dispose = vi.fn(async () => undefined)
     const factory = vi.fn(async () => ({
       ...(await sessionFactory()),
       labelEntry,
       getSessionFile: () => sourceFile,
       getActiveLeafId: () => 'label-entry',
+      dispose,
     }))
     const runtime = new PiAgentRuntime(() => undefined, factory)
     runtime.configure({
@@ -1171,10 +1199,27 @@ describe('PiAgentRuntime cleanup', () => {
       apiKey: 'test-key',
     } satisfies RuntimeLabelConfig
 
+    await runtime.openSession({
+      type: 'session.open',
+      operationId: '41234567-89ab-4def-8123-456789abcdef',
+      sessionId: config.sourceSessionId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: sourceSessionDirectory,
+      resumeSession: true,
+      piSessionPath: sourceFile,
+      activeLeafId: config.activeLeafId,
+      settings: config.settings,
+      apiKey: config.apiKey,
+    })
     await expect(runtime.labelSessionEntry(config)).resolves.toEqual({
       outcome: 'completed',
       activeLeafId: 'label-entry',
     })
     expect(labelEntry).toHaveBeenCalledWith('target-entry', 'checkpoint')
+    expect(factory).toHaveBeenCalledOnce()
+    expect(dispose).not.toHaveBeenCalled()
+    await runtime.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 })

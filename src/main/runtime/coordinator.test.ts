@@ -57,6 +57,9 @@ it.each(['a', 'id', 'running'])(
       return { id: sessionId }
     })
     const repository: RuntimePersistence = {
+      getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+      removeProject: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
       getSession: vi.fn(async () => session),
       getSessionHistory: vi.fn(() => history),
       inspectSessionHistory: vi.fn(async () => historyView(session, null)),
@@ -304,6 +307,9 @@ it('persists a terminal failure when Pi Session identity was never bound', async
   const saveSession = vi.fn(async () => undefined)
   const rebuildSessionProjection = vi.fn(async () => session)
   const repository: RuntimePersistence = {
+    getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
     getSession: vi.fn(async () => session),
     getSessionHistory: vi.fn(
       () =>
@@ -421,6 +427,9 @@ it('keeps a pending Legacy Session Import read-only', async () => {
   }
   const start = vi.fn(async () => undefined)
   const repository: RuntimePersistence = {
+    getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
     getSession: vi.fn(async () => session),
     getSessionHistory: vi.fn(
       () =>
@@ -581,6 +590,9 @@ it('commits native Pi Session derivation and Import operations', async () => {
     activeLeafId = entryId
   })
   const repository: RuntimePersistence = {
+    getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
     getSession: vi.fn(async () => session),
     getSessionHistory: vi.fn(
       () =>
@@ -902,6 +914,9 @@ it('keeps the selected GUI context aligned with the opened Pi Session', async ()
   }
   const repository: RuntimePersistence = {
     selectContext: vi.fn(async () => undefined),
+    getSelectedContext: vi.fn(() => ({ projectId: projectB.id, sessionId: sessionB.id })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
     getSession: vi.fn(async () => sessionB),
     getSessionHistory: vi.fn(
       () =>
@@ -997,6 +1012,156 @@ it('keeps the selected GUI context aligned with the opened Pi Session', async ()
   expect(repository.selectContext).toHaveBeenLastCalledWith(projectB.id, null)
 })
 
+it('closes and reopens the long-lived Pi Session around current Session and Project deletion', async () => {
+  const now = new Date().toISOString()
+  const projectA: Project = {
+    id: '21234567-89ab-4def-8123-456789abcdef',
+    name: 'project-a',
+    rootPath: '/project-a',
+    trustedAt: now,
+    availability: 'available',
+    createdAt: now,
+    updatedAt: now,
+  }
+  const projectB: Project = {
+    ...projectA,
+    id: '31234567-89ab-4def-8123-456789abcdef',
+    name: 'project-b',
+    rootPath: '/project-b',
+  }
+  const sessionA1: SessionRecord = {
+    schemaVersion: 1,
+    id: '41234567-89ab-4def-8123-456789abcdef',
+    projectId: projectA.id,
+    title: 'Session A1',
+    messages: [],
+    runs: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+  const sessionA2: SessionRecord = { ...sessionA1, id: '51234567-89ab-4def-8123-456789abcdef' }
+  const sessionB: SessionRecord = {
+    ...sessionA1,
+    id: '61234567-89ab-4def-8123-456789abcdef',
+    projectId: projectB.id,
+    title: 'Session B',
+  }
+  const sessions = new Map([sessionA1, sessionA2, sessionB].map((session) => [session.id, session]))
+  let selected = { projectId: projectA.id, sessionId: sessionA1.id }
+  const steps: string[] = []
+  const repository: RuntimePersistence = {
+    selectContext: vi.fn(async (projectId, sessionId) => {
+      selected = { projectId: projectId!, sessionId: sessionId! }
+      steps.push(`select:${projectId}:${sessionId}`)
+    }),
+    getSelectedContext: vi.fn(() => selected),
+    removeProject: vi.fn(async (projectId) => {
+      expect(projectId).toBe(projectA.id)
+      selected = { projectId: projectB.id, sessionId: sessionB.id }
+      steps.push(`remove-project:${projectId}`)
+    }),
+    deleteSession: vi.fn(async (sessionId) => {
+      expect(sessionId).toBe(sessionA1.id)
+      selected = { projectId: projectA.id, sessionId: sessionA2.id }
+      steps.push(`delete-session:${sessionId}`)
+    }),
+    getSession: vi.fn(async (sessionId) => sessions.get(sessionId)!),
+    getSessionHistory: vi.fn((sessionId): SessionHistoryState => ({
+      authority: 'pi-jsonl',
+      piSessionId: `pi-${sessionId}`,
+      piSessionPath: `/sessions/${sessionId}.jsonl`,
+      legacyImport: { status: 'not-required', sourceFile: null },
+    })),
+    inspectSessionHistory: vi.fn(async (sessionId) => historyView(sessions.get(sessionId)!, null)),
+    bindPiSession: vi.fn(async () => undefined),
+    rebuildSessionProjection: vi.fn(async (sessionId) => sessions.get(sessionId)!),
+    setPiSessionActiveLeaf: vi.fn(async () => undefined),
+    createDerivedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    createImportedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    getProject: vi.fn((projectId) => (projectId === projectA.id ? projectA : projectB)),
+    getSettings: vi.fn(
+      async () =>
+        ({
+          apiProtocol: 'responses',
+          baseUrl: 'https://example.test/v1',
+          modelId: 'test-model',
+          reasoningEffort: null,
+          temperature: null,
+          maxOutputTokens: null,
+          hasApiKey: true,
+        }) satisfies ModelSettings,
+    ),
+    getApiKey: vi.fn(async () => 'test-key'),
+    getRuntimePaths: vi.fn((_projectId, sessionId) => ({
+      agentDirectory: '/agent',
+      sessionDirectory: '/sessions',
+      resumeSession: true,
+      piSessionPath: `/sessions/${sessionId}.jsonl`,
+    })),
+    saveSession: vi.fn(async () => undefined),
+  }
+  const openSession = vi.fn(async (config) => {
+    steps.push(`open:${config.sessionId}`)
+  })
+  const closeSession = vi.fn(async () => {
+    steps.push('close')
+  })
+  const supervisor: RuntimeHost = {
+    openSession,
+    closeSession,
+    isActive: vi.fn(() => false),
+    start: vi.fn(async () => undefined),
+    fork: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    importSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    exportSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    navigateSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    compactSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    labelSessionEntry: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    abortSessionOperation: vi.fn(),
+    reloadResources: vi.fn(async () => undefined),
+    stop: vi.fn(),
+    respondToExtensionUi: vi.fn(),
+    queueMessage: vi.fn(),
+    clearQueue: vi.fn(),
+  }
+  const coordinator = new RuntimeCoordinator(repository, supervisor, vi.fn())
+
+  await coordinator.deleteSession(sessionA1.id)
+  expect(steps).toEqual([
+    'close',
+    `delete-session:${sessionA1.id}`,
+    `open:${sessionA2.id}`,
+    `select:${projectA.id}:${sessionA2.id}`,
+  ])
+
+  steps.length = 0
+  await coordinator.removeProject(projectA.id)
+  expect(steps).toEqual([
+    'close',
+    `remove-project:${projectA.id}`,
+    `open:${sessionB.id}`,
+    `select:${projectB.id}:${sessionB.id}`,
+  ])
+  expect(closeSession).toHaveBeenCalledTimes(2)
+  expect(openSession).toHaveBeenCalledTimes(2)
+})
+
 it('creates the replacement target Project from Pi cwd instead of reusing the source Project', async () => {
   const now = new Date().toISOString()
   const sourceProject: Project = {
@@ -1039,6 +1204,9 @@ it('creates the replacement target Project from Pi cwd instead of reusing the so
     NonNullable<RuntimePersistence['commitSessionReplacement']>
   >(async () => targetSummary)
   const repository: RuntimePersistence = {
+    getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
     getSession: vi.fn(async () => source),
     getSessionHistory: vi.fn(
       () =>

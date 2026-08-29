@@ -747,6 +747,20 @@ export class PiAgentRuntime {
     }
   }
 
+  private requireOpenedSession(sessionId: string, sessionPath: string): OpenRuntimeSession {
+    const opened = this.opened
+    const openedPath = opened?.session.getSessionFile()
+    if (
+      !opened ||
+      opened.sessionId !== sessionId ||
+      !openedPath ||
+      resolve(openedPath) !== resolve(sessionPath)
+    ) {
+      throw new Error('Requested Pi Session is not open')
+    }
+    return opened
+  }
+
   private async closeOpenedSession(opened: OpenRuntimeSession): Promise<void> {
     if (this.opened === opened) this.opened = null
     opened.unsubscribe()
@@ -1098,7 +1112,6 @@ export class PiAgentRuntime {
   async exportSession(config: RuntimeExportConfig): Promise<AgentRuntimeExportResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
-    if (this.opened) await this.closeOpenedSession(this.opened)
     const sourcePath = configuredSessionPath({
       sourcePiSessionPath: config.sourcePiSessionPath,
     })
@@ -1177,69 +1190,37 @@ export class PiAgentRuntime {
   async navigateSession(config: RuntimeNavigateConfig): Promise<AgentRuntimeNavigateResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
-    if (this.opened) await this.closeOpenedSession(this.opened)
     const sourcePiSessionPath = configuredSessionPath({
       sourcePiSessionPath: config.sourcePiSessionPath,
     })
+    const opened = this.requireOpenedSession(config.sourceSessionId, sourcePiSessionPath)
     const redactor = createSecretRedactor([config.apiKey])
-    const eventConfig: RuntimeStartConfig = {
-      type: 'start',
-      runId: config.operationId,
-      sessionId: config.sourceSessionId,
-      messageId: config.operationId,
-      projectRoot: config.projectRoot,
-      agentDirectory: config.agentDirectory,
-      sessionDirectory: dirname(sourcePiSessionPath),
-      piSessionPath: sourcePiSessionPath,
-      resumeSession: true,
-      activeLeafId: config.activeLeafId,
-      settings: config.settings,
-      apiKey: config.apiKey,
-      prompt: 'Navigate Pi Session Tree',
-    }
-    const broker = new ExtensionUiBroker((event) =>
-      this.emitOperationPayload(config.sourceSessionId, redactor, event),
-    )
     this.sessionOperation = {
       operationId: config.operationId,
       kind: 'navigate',
-      broker,
-      session: null,
+      broker: opened.extensionUi,
+      session: opened.session,
       cancelRequested: false,
     }
-    let session: PiSessionLike | null = null
 
     try {
-      session = await this.sessionFactory({
-        config: eventConfig,
-        sessionFile: sourcePiSessionPath,
-        extensionPaths: this.extensionPaths,
-        skillPaths: this.skillPaths,
-        promptPaths: this.promptPaths,
-        modelProvider: this.getModelProvider(),
-      })
-      if (this.sessionOperation?.operationId === config.operationId) {
-        this.sessionOperation.session = session
-      }
-      await session.bindExtensionUi?.(broker.createContext())
-      const result = await session.navigateTree(config.entryId, {
+      const result = await opened.session.navigateTree(config.entryId, {
         summarize: config.summarize,
         ...(config.customInstructions ? { customInstructions: config.customInstructions } : {}),
       })
       if (result.cancelled) return { outcome: 'cancelled' }
-      await sanitizePiTranscript(sourcePiSessionPath, redactor)
+      await sanitizePiTranscript(opened.session.getSessionFile() ?? sourcePiSessionPath, redactor)
       return {
         outcome: 'completed',
-        activeLeafId: session.getActiveLeafId(),
+        activeLeafId: opened.session.getActiveLeafId(),
         editorText: result.editorText ?? null,
         summaryCreated: result.summaryEntry !== undefined,
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Pi Session Tree Navigation failed'
+      opened.extensionUi.cancelAll()
       throw new Error(redactor.redactText(detail), { cause: error })
     } finally {
-      broker.cancelAll()
-      if (session) await Promise.resolve(session.dispose()).catch(() => undefined)
       if (this.sessionOperation?.operationId === config.operationId) {
         this.sessionOperation = null
       }
@@ -1249,58 +1230,25 @@ export class PiAgentRuntime {
   async compactSession(config: RuntimeCompactConfig): Promise<AgentRuntimeCompactResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
-    if (this.opened) await this.closeOpenedSession(this.opened)
     const sourcePiSessionPath = configuredSessionPath({
       sourcePiSessionPath: config.sourcePiSessionPath,
     })
+    const opened = this.requireOpenedSession(config.sourceSessionId, sourcePiSessionPath)
     const redactor = createSecretRedactor([config.apiKey])
-    const eventConfig: RuntimeStartConfig = {
-      type: 'start',
-      runId: config.operationId,
-      sessionId: config.sourceSessionId,
-      messageId: config.operationId,
-      projectRoot: config.projectRoot,
-      agentDirectory: config.agentDirectory,
-      sessionDirectory: dirname(sourcePiSessionPath),
-      piSessionPath: sourcePiSessionPath,
-      resumeSession: true,
-      activeLeafId: config.activeLeafId,
-      settings: config.settings,
-      apiKey: config.apiKey,
-      prompt: 'Compact Pi Session',
-    }
-    const broker = new ExtensionUiBroker((event) =>
-      this.emitOperationPayload(config.sourceSessionId, redactor, event),
-    )
     this.sessionOperation = {
       operationId: config.operationId,
       kind: 'compact',
-      broker,
-      session: null,
+      broker: opened.extensionUi,
+      session: opened.session,
       cancelRequested: false,
     }
-    let session: PiSessionLike | null = null
-    let unsubscribe: (() => void) | null = null
 
     try {
-      session = await this.sessionFactory({
-        config: eventConfig,
-        sessionFile: sourcePiSessionPath,
-        extensionPaths: this.extensionPaths,
-        skillPaths: this.skillPaths,
-        promptPaths: this.promptPaths,
-        modelProvider: this.getModelProvider(),
-      })
-      if (this.sessionOperation?.operationId === config.operationId) {
-        this.sessionOperation.session = session
-        if (this.sessionOperation.cancelRequested) return { outcome: 'cancelled' }
-      }
-      await session.bindExtensionUi?.(broker.createContext())
-      unsubscribe = session.subscribe((event) => this.handleCompactionEvent(eventConfig, event))
-      const result = await session.compact(config.customInstructions ?? undefined)
-      const activeLeafId = session.getActiveLeafId()
+      if (this.sessionOperation.cancelRequested) return { outcome: 'cancelled' }
+      const result = await opened.session.compact(config.customInstructions ?? undefined)
+      const activeLeafId = opened.session.getActiveLeafId()
       if (!activeLeafId) throw new Error('Pi Compaction did not provide an active leaf')
-      await sanitizePiTranscript(sourcePiSessionPath, redactor)
+      await sanitizePiTranscript(opened.session.getSessionFile() ?? sourcePiSessionPath, redactor)
       return {
         outcome: 'completed',
         activeLeafId,
@@ -1312,11 +1260,9 @@ export class PiAgentRuntime {
       if (detail === 'Compaction cancelled' || detail.includes('aborted')) {
         return { outcome: 'cancelled' }
       }
+      opened.extensionUi.cancelAll()
       throw new Error(redactor.redactText(detail), { cause: error })
     } finally {
-      unsubscribe?.()
-      broker.cancelAll()
-      if (session) await Promise.resolve(session.dispose()).catch(() => undefined)
       if (this.sessionOperation?.operationId === config.operationId) {
         this.sessionOperation = null
       }
@@ -1326,61 +1272,32 @@ export class PiAgentRuntime {
   async labelSessionEntry(config: RuntimeLabelConfig): Promise<AgentRuntimeLabelResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
-    if (this.opened) await this.closeOpenedSession(this.opened)
     const sourcePiSessionPath = configuredSessionPath({
       sourcePiSessionPath: config.sourcePiSessionPath,
     })
-    const eventConfig: RuntimeStartConfig = {
-      type: 'start',
-      runId: config.operationId,
-      sessionId: config.sourceSessionId,
-      messageId: config.operationId,
-      projectRoot: config.projectRoot,
-      agentDirectory: config.agentDirectory,
-      sessionDirectory: dirname(sourcePiSessionPath),
-      piSessionPath: sourcePiSessionPath,
-      resumeSession: true,
-      activeLeafId: config.activeLeafId,
-      settings: config.settings,
-      apiKey: config.apiKey,
-      prompt: 'Label Pi Session Entry',
-    }
-    const broker = new ExtensionUiBroker((event) =>
-      this.emitOperationPayload(
-        config.sourceSessionId,
-        createSecretRedactor([config.apiKey]),
-        event,
-      ),
-    )
+    const opened = this.requireOpenedSession(config.sourceSessionId, sourcePiSessionPath)
     this.sessionOperation = {
       operationId: config.operationId,
       kind: 'label',
-      broker,
-      session: null,
+      broker: opened.extensionUi,
+      session: opened.session,
       cancelRequested: false,
     }
-    let session: PiSessionLike | null = null
+    const redactor = createSecretRedactor([config.apiKey])
     try {
-      session = await this.sessionFactory({
-        config: eventConfig,
-        sessionFile: sourcePiSessionPath,
-        extensionPaths: this.extensionPaths,
-        skillPaths: this.skillPaths,
-        promptPaths: this.promptPaths,
-        modelProvider: this.getModelProvider(),
-      })
-      if (this.sessionOperation?.operationId === config.operationId) {
-        this.sessionOperation.session = session
-      }
-      session.labelEntry(config.entryId, config.label ?? undefined)
-      const activeLeafId = session.getActiveLeafId()
+      opened.session.labelEntry(config.entryId, config.label ?? undefined)
+      const activeLeafId = opened.session.getActiveLeafId()
       if (!activeLeafId) throw new Error('Pi Label did not provide an active leaf')
-      await sanitizePiTranscript(sourcePiSessionPath, createSecretRedactor([config.apiKey]))
+      await sanitizePiTranscript(opened.session.getSessionFile() ?? sourcePiSessionPath, redactor)
       return { outcome: 'completed', activeLeafId }
+    } catch (error) {
+      opened.extensionUi.cancelAll()
+      const detail = error instanceof Error ? error.message : 'Pi Session Label failed'
+      throw new Error(redactor.redactText(detail), { cause: error })
     } finally {
-      broker.cancelAll()
-      if (session) await Promise.resolve(session.dispose()).catch(() => undefined)
-      if (this.sessionOperation?.operationId === config.operationId) this.sessionOperation = null
+      if (this.sessionOperation?.operationId === config.operationId) {
+        this.sessionOperation = null
+      }
     }
   }
 
@@ -1503,6 +1420,10 @@ export class PiAgentRuntime {
     opened.session.setThinkingLevel?.(controls.thinkingLevel)
     opened.session.setSteeringMode?.(controls.steeringMode)
     opened.session.setFollowUpMode?.(controls.followUpMode)
+    this.emitSessionPayload(opened, {
+      type: 'session.activeLeafChanged',
+      activeLeafId: opened.session.getActiveLeafId(),
+    })
   }
 
   private getModelProvider(): ModelRuntimeProvider {
@@ -1552,12 +1473,27 @@ export class PiAgentRuntime {
         type: 'session.infoChanged',
         name: event.name ?? null,
       })
+      this.emitSessionPayload(opened, {
+        type: 'session.activeLeafChanged',
+        activeLeafId: opened.session.getActiveLeafId(),
+      })
       return
     }
     if (event.type === 'thinking_level_changed') {
       this.emitSessionPayload(opened, {
         type: 'session.thinkingLevelChanged',
         level: event.level,
+      })
+      this.emitSessionPayload(opened, {
+        type: 'session.activeLeafChanged',
+        activeLeafId: opened.session.getActiveLeafId(),
+      })
+      return
+    }
+    if (event.type === 'entry_appended') {
+      this.emitSessionPayload(opened, {
+        type: 'session.activeLeafChanged',
+        activeLeafId: opened.session.getActiveLeafId(),
       })
       return
     }

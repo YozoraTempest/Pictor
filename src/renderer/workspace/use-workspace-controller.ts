@@ -644,7 +644,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
         setActionError(response.error.message)
         return false
       }
-      void loadSession(null).then(refreshAfterRemoval)
+      await loadSession(null)
+      await refreshAfterRemoval()
       return true
     },
     [bridge, loadSession, refreshAfterRemoval],
@@ -657,7 +658,8 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
         setActionError(response.error.message)
         return false
       }
-      void loadSession(null).then(refreshAfterRemoval)
+      await loadSession(null)
+      await refreshAfterRemoval()
       return true
     },
     [bridge, loadSession, refreshAfterRemoval],

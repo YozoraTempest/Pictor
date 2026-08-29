@@ -174,6 +174,164 @@ it('renders the empty delegate workspace from a persisted snapshot', async () =>
   expect(screen.getByText('v0.1.0')).toBeInTheDocument()
 })
 
+it('keeps Extension status, dialog, and title state scoped to the active Session', async () => {
+  const otherSessionId = '77777777-7777-4777-8777-777777777777'
+  const snapshot: AppSnapshot = {
+    projects: [
+      {
+        id: projectId,
+        name: 'Pictor',
+        rootPath: 'C:\\Pictor',
+        trustedAt: now,
+        availability: 'available',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    sessions: [
+      {
+        id: sessionId,
+        projectId,
+        title: 'Current session',
+        lastRunStatus: null,
+        historyAuthority: 'pi-jsonl',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    selectedProjectId: projectId,
+    selectedSessionId: sessionId,
+    settings: {
+      apiProtocol: 'responses',
+      baseUrl: 'https://example.test/v1',
+      modelId: 'test-model',
+      reasoningEffort: null,
+      temperature: null,
+      maxOutputTokens: null,
+      hasApiKey: true,
+    },
+    issues: [],
+  }
+  const session: SessionRecord = {
+    schemaVersion: 1,
+    id: sessionId,
+    projectId,
+    title: 'Current session',
+    messages: [],
+    runs: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+  const listeners: Array<(event: RuntimeEvent) => void> = []
+  const bridge = createBridge(snapshot, session)
+  bridge.onRuntimeEvent = (listener) => {
+    listeners.push(listener)
+    return () => undefined
+  }
+  renderApp(bridge)
+  await screen.findByRole('heading', { name: 'Current session' })
+  await waitFor(() => expect(listeners).toHaveLength(2))
+
+  const emit = (event: RuntimeEvent) => {
+    act(() => {
+      for (const listener of listeners) listener(event)
+    })
+  }
+  const sessionEvent = (event: RuntimeEvent): RuntimeEvent => event
+
+  emit(
+    sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId,
+      at: now,
+      key: 'first',
+      text: 'First status',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId,
+      at: now,
+      key: 'second',
+      text: 'Second status',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      key: 'other',
+      text: 'Other status',
+    }),
+  )
+  expect(await screen.findByText('First status')).toBeInTheDocument()
+  expect(screen.getByText('Second status')).toBeInTheDocument()
+  expect(screen.queryByText('Other status')).not.toBeInTheDocument()
+
+  emit(
+    sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId,
+      at: now,
+      key: 'first',
+      text: null,
+    }),
+  )
+  await waitFor(() => expect(screen.queryByText('First status')).not.toBeInTheDocument())
+  expect(screen.getByText('Second status')).toBeInTheDocument()
+
+  emit(
+    sessionEvent({
+      type: 'extension.ui.title',
+      runId: null,
+      sessionId,
+      at: now,
+      title: 'Current · Working',
+    }),
+  )
+  await waitFor(() => expect(document.title).toBe('Current · Working'))
+
+  emit(
+    sessionEvent({
+      type: 'extension.ui.requested',
+      runId: null,
+      sessionId,
+      at: now,
+      requestId: '88888888-8888-4888-8888-888888888888',
+      kind: 'confirm',
+      title: 'Confirm current Session',
+      message: 'Continue?',
+      options: [],
+      value: null,
+    }),
+  )
+  expect(await screen.findByRole('dialog', { name: 'Confirm current Session' })).toBeInTheDocument()
+
+  emit(
+    sessionEvent({
+      type: 'session.replaced',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      sourceSessionId: sessionId,
+      targetSessionId: otherSessionId,
+      piSessionId: 'other-pi-session',
+      piSessionPath: 'C:\\other.jsonl',
+      cwd: 'C:\\other',
+      activeLeafId: null,
+    }),
+  )
+  await waitFor(() => expect(document.title).toBe('Pictor'))
+  expect(screen.queryByRole('dialog', { name: 'Confirm current Session' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Second status')).not.toBeInTheDocument()
+})
+
 it('keeps manually expanded tool output open across runtime updates', async () => {
   const snapshot: AppSnapshot = {
     projects: [
