@@ -92,7 +92,6 @@ export const sessionRuntimeControlsSchema = z.object({
   availableTools: z.array(z.string().min(1)),
   steeringMode: z.enum(['all', 'one-at-a-time']),
   followUpMode: z.enum(['all', 'one-at-a-time']),
-  projectExtensionsEnabled: z.boolean(),
 })
 export const saveSessionRuntimeControlsRequestSchema = sessionIdRequestSchema.extend({
   controls: sessionRuntimeControlsSchema.omit({ availableTools: true }),
@@ -120,14 +119,14 @@ export const startRunRequestSchema = z.object({
   images: z.array(imageAttachmentSchema).optional(),
 })
 export const runIdRequestSchema = z.object({ runId: idSchema })
-export const approvalResolutionRequestSchema = z.object({
-  runId: idSchema,
-  callId: z.string().min(1),
-})
 export const extensionUiResponseRequestSchema = z.object({
-  runId: idSchema,
+  sessionId: idSchema,
   requestId: z.uuid(),
   value: z.union([z.string(), z.boolean(), z.null()]),
+})
+export const composerTextRequestSchema = z.object({
+  sessionId: idSchema,
+  text: z.string().max(200_000),
 })
 export const queueRuntimeMessageRequestSchema = z.object({
   runId: idSchema,
@@ -174,6 +173,7 @@ export type SessionRuntimeControls = z.infer<typeof sessionRuntimeControlsSchema
 
 export interface PictorBridge {
   getSnapshot: () => Promise<IpcResult<AppSnapshot>>
+  notifyRendererReady: () => Promise<IpcResult<null>>
   getAppInfo: () => Promise<IpcResult<AppInfo>>
   getPluginBootstrap: () => Promise<IpcResult<PluginBootstrap>>
   getPluginManagerSnapshot: () => Promise<IpcResult<PluginManagerSnapshot>>
@@ -254,16 +254,11 @@ export interface PictorBridge {
     request: z.infer<typeof startRunRequestSchema>,
   ) => Promise<IpcResult<{ runId: string }>>
   pickMessageImages: () => Promise<IpcResult<z.infer<typeof imageAttachmentSchema>[]>>
-  approveCommand: (
-    request: z.infer<typeof approvalResolutionRequestSchema>,
-  ) => Promise<IpcResult<null>>
-  rejectCommand: (
-    request: z.infer<typeof approvalResolutionRequestSchema>,
-  ) => Promise<IpcResult<null>>
   stopRun: (request: z.infer<typeof runIdRequestSchema>) => Promise<IpcResult<null>>
   respondToExtensionUi: (
     request: z.infer<typeof extensionUiResponseRequestSchema>,
   ) => Promise<IpcResult<null>>
+  syncComposerText: (request: z.infer<typeof composerTextRequestSchema>) => Promise<IpcResult<null>>
   queueRuntimeMessage: (
     request: z.infer<typeof queueRuntimeMessageRequestSchema>,
   ) => Promise<IpcResult<null>>

@@ -6,13 +6,13 @@ import {
   type ModuleTransport,
 } from '../kernel/contract.js'
 import {
-  approvalResolutionRequestSchema,
   appInfoResultSchema,
   appSnapshotResultSchema,
   connectionTestIpcResultSchema,
   cloneSessionRequestSchema,
   cloneSessionResultSchema,
   compactSessionRequestSchema,
+  composerTextRequestSchema,
   compactSessionResultSchema,
   cancelSessionOperationResultSchema,
   createSessionRequestSchema,
@@ -65,6 +65,8 @@ import {
 const bridge = Object.freeze({
   getSnapshot: async () =>
     appSnapshotResultSchema.parse(await ipcRenderer.invoke('app:get-snapshot')),
+  notifyRendererReady: async () =>
+    voidResultSchema.parse(await ipcRenderer.invoke('app:renderer-ready')),
   getAppInfo: async () => appInfoResultSchema.parse(await ipcRenderer.invoke('app:get-info')),
   getPluginBootstrap: async () =>
     pluginBootstrapResultSchema.parse(await ipcRenderer.invoke('plugin:get-bootstrap')),
@@ -207,14 +209,6 @@ const bridge = Object.freeze({
     ),
   pickMessageImages: async () =>
     imageAttachmentsResultSchema.parse(await ipcRenderer.invoke('message:pick-images')),
-  approveCommand: async (input) =>
-    voidResultSchema.parse(
-      await ipcRenderer.invoke('runtime:approve', approvalResolutionRequestSchema.parse(input)),
-    ),
-  rejectCommand: async (input) =>
-    voidResultSchema.parse(
-      await ipcRenderer.invoke('runtime:reject', approvalResolutionRequestSchema.parse(input)),
-    ),
   stopRun: async (input) =>
     voidResultSchema.parse(
       await ipcRenderer.invoke('runtime:stop', runIdRequestSchema.parse(input)),
@@ -225,6 +219,10 @@ const bridge = Object.freeze({
         'runtime:extension-ui-response',
         extensionUiResponseRequestSchema.parse(input),
       ),
+    ),
+  syncComposerText: async (input) =>
+    voidResultSchema.parse(
+      await ipcRenderer.invoke('runtime:composer-update', composerTextRequestSchema.parse(input)),
     ),
   queueRuntimeMessage: async (input) =>
     voidResultSchema.parse(

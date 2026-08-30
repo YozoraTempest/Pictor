@@ -8,7 +8,7 @@ import type { PluginStatus } from '../plugin/host'
 import type { RuntimeEvent, SessionRuntimeControls } from '../shared/desktop-bridge'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { Modal } from './ui/Modal'
-import { Conversation } from './workspace/Conversation'
+import { Conversation, type ExtensionWidget } from './workspace/Conversation'
 import { Sidebar } from './workspace/Sidebar'
 import {
   useWorkspaceController,
@@ -56,6 +56,13 @@ export function App({
   const [extensionUiRequest, setExtensionUiRequest] = useState<ExtensionUiRequest | null>(null)
   const [extensionUiValue, setExtensionUiValue] = useState('')
   const [extensionNotice, setExtensionNotice] = useState<string | null>(null)
+  const [extensionStatuses, setExtensionStatuses] = useState<
+    Record<string, Record<string, string>>
+  >({})
+  const [extensionTitles, setExtensionTitles] = useState<Record<string, string>>({})
+  const [extensionWidgets, setExtensionWidgets] = useState<
+    Record<string, Record<string, ExtensionWidget>>
+  >({})
 
   useEffect(() => {
     let active = true
@@ -77,24 +84,106 @@ export function App({
     }
   }, [])
 
-  useEffect(
-    () =>
-      window.pictor.onRuntimeEvent((event) => {
-        if (event.type === 'extension.ui.requested') {
-          setExtensionUiRequest(event)
-          setExtensionUiValue(event.value ?? event.options[0] ?? '')
-        } else if (event.type === 'extension.ui.notification') {
-          setExtensionNotice(event.message)
-        } else if (event.type === 'runtime.diagnostic') {
-          setExtensionNotice(event.message)
-        } else if (event.type === 'retry.stateChanged' && event.status === 'scheduled') {
-          setExtensionNotice(`模型请求重试 ${event.attempt}/${event.maxAttempts ?? '?'}`)
-        } else if (event.type === 'extension.ui.status' && event.text) {
-          setExtensionNotice(event.text)
-        }
-      }),
-    [],
-  )
+  useEffect(() => {
+    const unsubscribe = window.pictor.onRuntimeEvent((event) => {
+      if (event.type === 'session.bound') {
+        setExtensionWidgets((current) => {
+          if (!(event.sessionId in current)) return current
+          const next = { ...current }
+          delete next[event.sessionId]
+          return next
+        })
+        setExtensionStatuses((current) => {
+          if (!(event.sessionId in current)) return current
+          const next = { ...current }
+          delete next[event.sessionId]
+          return next
+        })
+        setExtensionTitles((current) => {
+          if (!(event.sessionId in current)) return current
+          const next = { ...current }
+          delete next[event.sessionId]
+          return next
+        })
+        setExtensionUiRequest((current) =>
+          current?.sessionId === event.sessionId ? null : current,
+        )
+        setExtensionNotice(null)
+      } else if (event.type === 'session.replaced') {
+        setExtensionWidgets((current) => {
+          if (!(event.sourceSessionId in current)) return current
+          const next = { ...current }
+          delete next[event.sourceSessionId]
+          return next
+        })
+        setExtensionStatuses((current) => {
+          if (!(event.sourceSessionId in current)) return current
+          const next = { ...current }
+          delete next[event.sourceSessionId]
+          return next
+        })
+        setExtensionTitles((current) => {
+          if (!(event.sourceSessionId in current)) return current
+          const next = { ...current }
+          delete next[event.sourceSessionId]
+          return next
+        })
+        setExtensionUiRequest((current) =>
+          current?.sessionId === event.sourceSessionId ? null : current,
+        )
+        setExtensionNotice(null)
+      } else if (event.type === 'extension.ui.widget') {
+        setExtensionWidgets((current) => {
+          const sessionWidgets = { ...(current[event.sessionId] ?? {}) }
+          if (event.lines === null) delete sessionWidgets[event.key]
+          else {
+            sessionWidgets[event.key] = {
+              key: event.key,
+              lines: event.lines,
+              placement: event.placement,
+            }
+          }
+          return { ...current, [event.sessionId]: sessionWidgets }
+        })
+      } else if (event.type === 'extension.ui.title') {
+        setExtensionTitles((current) => ({ ...current, [event.sessionId]: event.title }))
+      } else if (event.type === 'extension.ui.requested') {
+        setExtensionUiRequest(event)
+        setExtensionUiValue(event.value ?? event.options[0] ?? '')
+      } else if (event.type === 'extension.ui.notification') {
+        setExtensionNotice(event.message)
+      } else if (event.type === 'runtime.diagnostic') {
+        setExtensionNotice(event.message)
+      } else if (event.type === 'retry.stateChanged' && event.status === 'scheduled') {
+        setExtensionNotice(`模型请求重试 ${event.attempt}/${event.maxAttempts ?? '?'}`)
+      } else if (event.type === 'extension.ui.status') {
+        setExtensionStatuses((current) => {
+          const sessionStatuses = { ...(current[event.sessionId] ?? {}) }
+          if (event.text === null) delete sessionStatuses[event.key]
+          else sessionStatuses[event.key] = event.text
+          const next = { ...current }
+          if (Object.keys(sessionStatuses).length === 0) delete next[event.sessionId]
+          else next[event.sessionId] = sessionStatuses
+          return next
+        })
+      }
+    })
+    void window.pictor
+      .notifyRendererReady()
+      .then((result) => {
+        if (!result.ok) setExtensionNotice(result.error.message)
+      })
+      .catch((error: unknown) => setExtensionNotice(errorMessage(error)))
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    const selectedSessionId = workspace.selectedSessionId
+    document.title = selectedSessionId ? extensionTitles[selectedSessionId] || 'Pictor' : 'Pictor'
+    return () => {
+      document.title = 'Pictor'
+    }
+  }, [extensionTitles, workspace.selectedSessionId])
 
   const pickProject = async (relinkProjectId: string | null = null) => {
     const request = await workspace.pickProject(relinkProjectId)
@@ -194,7 +283,6 @@ export function App({
         activeTools: sessionControls.activeTools,
         steeringMode: sessionControls.steeringMode,
         followUpMode: sessionControls.followUpMode,
-        projectExtensionsEnabled: sessionControls.projectExtensionsEnabled,
       },
     })
     setModalBusy(false)
@@ -230,7 +318,7 @@ export function App({
     if (!extensionUiRequest) return
     setModalBusy(true)
     const response = await window.pictor.respondToExtensionUi({
-      runId: extensionUiRequest.runId,
+      sessionId: extensionUiRequest.sessionId,
       requestId: extensionUiRequest.requestId,
       value,
     })
@@ -261,6 +349,15 @@ export function App({
       </main>
     )
   }
+
+  const currentExtensionStatuses = workspace.selectedSessionId
+    ? (extensionStatuses[workspace.selectedSessionId] ?? {})
+    : {}
+  const currentExtensionStatusEntries = Object.entries(currentExtensionStatuses).sort(
+    ([firstKey], [secondKey]) => firstKey.localeCompare(secondKey),
+  )
+  const currentExtensionUiRequest =
+    extensionUiRequest?.sessionId === workspace.selectedSessionId ? extensionUiRequest : null
 
   return (
     <main className="app-shell">
@@ -298,14 +395,16 @@ export function App({
         loading={workspace.sessionLoading}
         draft={workspace.draft}
         draftImages={workspace.draftImages}
+        extensionWidgets={
+          workspace.selectedSessionId
+            ? Object.values(extensionWidgets[workspace.selectedSessionId] ?? {})
+            : []
+        }
         appVersion={appInfo?.version ?? null}
-        platform={appInfo?.platform ?? null}
-        commandInterpreter={appInfo?.commandInterpreter ?? null}
         disabledReason={workspace.disabledReason}
         activeRun={workspace.activeRun}
         anotherSessionRunning={workspace.anotherSessionRunning}
         actionError={workspace.actionError ?? workspace.snapshot.issues[0]?.message ?? null}
-        approvalBusyCallId={workspace.approvalBusyCallId}
         queuedMessages={workspace.queuedMessages}
         runtimeUsage={workspace.runtimeUsage}
         sessionTree={workspace.sessionTree}
@@ -335,18 +434,34 @@ export function App({
         onForkSession={(entryId) => void workspace.forkSession(entryId)}
         onCloneSession={() => void workspace.cloneSession()}
         onStop={(runId) => void workspace.stopRun(runId)}
-        onApprove={(runId, callId) => void workspace.resolveApproval(runId, callId, true)}
-        onReject={(runId, callId) => void workspace.resolveApproval(runId, callId, false)}
         onAddProject={() => void pickProject()}
         onCreateSession={(id) => void workspace.createSession(id)}
         onOpenSettings={() => setSettingsOpen(true)}
         onRelinkProject={(project) => void pickProject(project.id)}
       />
 
-      {extensionNotice ? (
-        <button className="extension-notice" type="button" onClick={() => setExtensionNotice(null)}>
-          {extensionNotice}
-        </button>
+      {extensionNotice || currentExtensionStatusEntries.length > 0 ? (
+        <div className="extension-notices">
+          {extensionNotice ? (
+            <button
+              className="extension-notice"
+              type="button"
+              onClick={() => setExtensionNotice(null)}
+            >
+              {extensionNotice}
+            </button>
+          ) : null}
+
+          {currentExtensionStatusEntries.length > 0 ? (
+            <div className="extension-statuses" aria-label="Extension statuses" aria-live="polite">
+              {currentExtensionStatusEntries.map(([key, text]) => (
+                <div className="extension-status" data-status-key={key} key={key}>
+                  {text}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {settingsOpen ? (
@@ -359,41 +474,41 @@ export function App({
         />
       ) : null}
 
-      {extensionUiRequest ? (
+      {currentExtensionUiRequest ? (
         <Modal
-          title={extensionUiRequest.title}
-          description={extensionUiRequest.message ?? ''}
+          title={currentExtensionUiRequest.title}
+          description={currentExtensionUiRequest.message ?? ''}
           onClose={() =>
-            void respondToExtensionUi(extensionUiRequest.kind === 'confirm' ? false : null)
+            void respondToExtensionUi(currentExtensionUiRequest.kind === 'confirm' ? false : null)
           }
         >
           <div className="extension-ui-dialog">
-            {extensionUiRequest.kind === 'select' ? (
+            {currentExtensionUiRequest.kind === 'select' ? (
               <label className="field field--full">
                 <span>选择</span>
                 <select
-                  aria-label={extensionUiRequest.title}
+                  aria-label={currentExtensionUiRequest.title}
                   value={extensionUiValue}
                   onChange={(event) => setExtensionUiValue(event.target.value)}
                 >
-                  {extensionUiRequest.options.map((option) => (
+                  {currentExtensionUiRequest.options.map((option) => (
                     <option value={option} key={option}>
                       {option}
                     </option>
                   ))}
                 </select>
               </label>
-            ) : extensionUiRequest.kind === 'input' ? (
+            ) : currentExtensionUiRequest.kind === 'input' ? (
               <label className="field field--full">
                 <span>输入</span>
                 <input
                   autoFocus
                   value={extensionUiValue}
-                  placeholder={extensionUiRequest.value ?? ''}
+                  placeholder={currentExtensionUiRequest.value ?? ''}
                   onChange={(event) => setExtensionUiValue(event.target.value)}
                 />
               </label>
-            ) : extensionUiRequest.kind === 'editor' ? (
+            ) : currentExtensionUiRequest.kind === 'editor' ? (
               <label className="field field--full">
                 <span>内容</span>
                 <textarea
@@ -403,7 +518,7 @@ export function App({
                 />
               </label>
             ) : (
-              <p>{extensionUiRequest.message}</p>
+              <p>{currentExtensionUiRequest.message}</p>
             )}
           </div>
           <footer className="modal-actions">
@@ -412,7 +527,9 @@ export function App({
               type="button"
               disabled={modalBusy}
               onClick={() =>
-                void respondToExtensionUi(extensionUiRequest.kind === 'confirm' ? false : null)
+                void respondToExtensionUi(
+                  currentExtensionUiRequest.kind === 'confirm' ? false : null,
+                )
               }
             >
               取消
@@ -423,7 +540,7 @@ export function App({
               disabled={modalBusy}
               onClick={() =>
                 void respondToExtensionUi(
-                  extensionUiRequest.kind === 'confirm' ? true : extensionUiValue,
+                  currentExtensionUiRequest.kind === 'confirm' ? true : extensionUiValue,
                 )
               }
             >
@@ -445,7 +562,9 @@ export function App({
             <p>
               Agent 可以读取和修改此目录中的文件，并会把完成任务所需的上下文发送到你配置的模型 API。
             </p>
-            <p>任何命令仍会逐条显示完整内容，得到你的批准后才会执行。</p>
+            <p>
+              Pi 原生工具和项目 Extension 会以当前用户权限运行；请只信任你了解的项目和代码来源。
+            </p>
           </div>
           <footer className="modal-actions">
             <button
@@ -728,20 +847,6 @@ export function App({
               ))}
             </div>
           </fieldset>
-          <label className="plugin-toggle">
-            <input
-              type="checkbox"
-              checked={sessionControls.projectExtensionsEnabled}
-              onChange={(event) =>
-                setSessionControls((current) =>
-                  current
-                    ? { ...current, projectExtensionsEnabled: event.target.checked }
-                    : current,
-                )
-              }
-            />
-            <span>启用项目 .pi/extensions</span>
-          </label>
           <footer className="modal-actions">
             <button
               className="secondary-button"

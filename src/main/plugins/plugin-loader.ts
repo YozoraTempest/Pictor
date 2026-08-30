@@ -47,9 +47,13 @@ export function createRuntimePluginBootstrap(
         ? resolve(rootPath, manifest.modules.runtime)
         : null,
     })),
-    extensions: snapshot.nativeExtensions.flatMap(({ entry, runtimePaths }) =>
-      runtimePaths.map((path) => ({ kind: entry.kind, id: entry.id, path })),
-    ),
+    extensions: snapshot.nativeExtensions.map(({ entry, runtimePath }) => ({
+      kind: entry.kind,
+      id: entry.id,
+      // Let Pi resolve the package manifest/extension directory instead of
+      // expanding a second Pictor-specific glob here.
+      path: runtimePath,
+    })),
     skills: snapshot.plugins.flatMap(({ manifest, rootPath }) =>
       (manifest.pi?.skills ?? []).map((path) => resolve(rootPath, path)),
     ),

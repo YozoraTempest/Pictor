@@ -55,24 +55,22 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     runtimeRequestCount += 1
     firstRuntimeRequest ??= parsed
     if (runtimeRequestCount === 1) {
-      writeResponsesToolCall(response, 'resp_write', 'call_write', 'pictor_write', {
+      writeResponsesToolCall(response, 'resp_write', 'call_write', 'write', {
         path: 'responses-created.txt',
         content: 'created through Responses',
       })
       return
     }
     if (runtimeRequestCount === 2) {
-      writeResponsesToolCall(response, 'resp_command', 'call_command', 'pictor_command', {
+      writeResponsesToolCall(response, 'resp_command', 'call_command', 'bash', {
         command: 'printf responses-approved > responses-command.txt',
-        cwd: '.',
-        purpose: 'Verify Responses command approval',
       })
       return
     }
     writeResponsesText(
       response,
       'resp_final',
-      'Responses task completed.\n\nChanged files:\n- `responses-created.txt`\n- `responses-command.txt`\n\nVerification:\n- Approved command exited with code 0.\n\nRemaining work: none.',
+      'Responses task completed.\n\nChanged files:\n- `responses-created.txt`\n- `responses-command.txt`\n\nVerification:\n- Native Pi tools completed.\n\nRemaining work: none.',
     )
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -124,13 +122,12 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     await expect(window.getByText('responses-created.txt').first()).toBeVisible({
       timeout: 40_000,
     })
-    await expect(window.getByText('printf responses-approved > responses-command.txt')).toBeVisible(
-      { timeout: 20_000 },
-    )
     expect(await readFile(join(projectRoot, 'responses-created.txt'), 'utf8')).toBe(
       'created through Responses',
     )
-    await window.getByRole('button', { name: '允许一次' }).click()
+    await expect
+      .poll(() => readFile(join(projectRoot, 'responses-command.txt'), 'utf8'))
+      .toBe('responses-approved')
     await expect(window.getByText('Responses task completed.')).toBeVisible({ timeout: 20_000 })
     await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
     expect(await readSelectedRunStatus(window)).toBe('completed')

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 
 import { utilityProcess, type UtilityProcess } from 'electron'
@@ -19,7 +20,10 @@ import {
   type RuntimeLabelResult,
   type RuntimeNavigateConfig,
   type RuntimeNavigateResult,
+  type RuntimeSessionOpenConfig,
   type RuntimeStartConfig,
+  type RuntimeSessionReplacementRequest,
+  type RuntimeControlsSnapshot,
 } from '../../shared/runtime-protocol.js'
 import type { RuntimePluginBootstrap } from '../../shared/plugins.js'
 
@@ -45,32 +49,120 @@ export class RuntimeSupervisor {
   } | null = null
   private pendingExport: {
     operationId: string
+    previousSessionId: string | null
     resolve: (result: RuntimeExportResult) => void
     reject: (error: Error) => void
   } | null = null
   private pendingNavigate: {
     operationId: string
+    sessionId: string
+    previousSessionId: string | null
     resolve: (result: RuntimeNavigateResult) => void
     reject: (error: Error) => void
   } | null = null
   private pendingCompact: {
     operationId: string
+    sessionId: string
+    previousSessionId: string | null
     resolve: (result: RuntimeCompactResult) => void
     reject: (error: Error) => void
   } | null = null
   private pendingLabel: {
     operationId: string
+    sessionId: string
+    previousSessionId: string | null
     resolve: (result: RuntimeLabelResult) => void
+    reject: (error: Error) => void
+  } | null = null
+  private pendingReload: {
+    sessionId: string
+    resolve: () => void
+    reject: (error: Error) => void
+  } | null = null
+  private pendingControls: {
+    sessionId: string
+    resolve: (result: RuntimeControlsSnapshot) => void
+    reject: (error: Error) => void
+  } | null = null
+  private pendingControlsSet: {
+    requestId: string
+    sessionId: string
+    resolve: () => void
+    reject: (error: Error) => void
+  } | null = null
+  private pendingSession: {
+    operationId: string
+    sessionId: string
+    kind: 'open' | 'close'
+    previousSessionId: string | null
+    resolve: () => void
     reject: (error: Error) => void
   } | null = null
 
   constructor(
     private readonly onEvent: (event: RuntimeEvent) => void,
     private readonly pluginBootstrap: RuntimePluginBootstrap,
+    private readonly onSessionReplacementRequest?: (
+      request: RuntimeSessionReplacementRequest,
+    ) => Promise<{ accepted: boolean; targetSessionId?: string; message?: string }>,
   ) {}
+
+  async openSession(config: RuntimeSessionOpenConfig): Promise<void> {
+    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
+    await this.ensureChild()
+    if (this.pendingSession) throw new Error('已有 Session 打开操作正在执行')
+    this.activeRunId = config.operationId
+    return new Promise<void>((resolve, reject) => {
+      this.pendingSession = {
+        operationId: config.operationId,
+        sessionId: config.sessionId,
+        kind: 'open',
+        previousSessionId: this.activeSessionId,
+        resolve,
+        reject,
+      }
+      try {
+        this.post(config)
+      } catch (error) {
+        this.pendingSession = null
+        this.activeRunId = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
+
+  async closeSession(): Promise<void> {
+    if (!this.child || !this.activeSessionId) return
+    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
+    const sessionId = this.activeSessionId
+    const operationId = randomUUID()
+    await this.ensureChild()
+    if (this.pendingSession) throw new Error('已有 Session 关闭操作正在执行')
+    this.activeRunId = operationId
+    return new Promise<void>((resolve, reject) => {
+      this.pendingSession = {
+        operationId,
+        sessionId,
+        kind: 'close',
+        previousSessionId: this.activeSessionId,
+        resolve,
+        reject,
+      }
+      try {
+        this.post({ type: 'session.close', operationId, sessionId })
+      } catch (error) {
+        this.pendingSession = null
+        this.activeRunId = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
 
   async start(config: RuntimeStartConfig): Promise<void> {
     if (this.activeRunId) throw new Error('已有 Agent 运行正在执行')
+    if (this.activeSessionId && this.activeSessionId !== config.sessionId) {
+      throw new Error('Requested Pi Session is not open')
+    }
     await this.ensureChild()
     this.activeRunId = config.runId
     this.activeSessionId = config.sessionId
@@ -116,16 +208,22 @@ export class RuntimeSupervisor {
   async exportSession(config: RuntimeExportConfig): Promise<RuntimeExportResult> {
     if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
     await this.ensureChild()
+    const previousSessionId = this.activeSessionId
     this.activeRunId = config.operationId
     this.activeSessionId = config.sourceSessionId
     return new Promise<RuntimeExportResult>((resolve, reject) => {
-      this.pendingExport = { operationId: config.operationId, resolve, reject }
+      this.pendingExport = {
+        operationId: config.operationId,
+        previousSessionId,
+        resolve,
+        reject,
+      }
       try {
         this.post(config)
       } catch (error) {
         this.pendingExport = null
         this.activeRunId = null
-        this.activeSessionId = null
+        this.activeSessionId = previousSessionId
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
@@ -134,16 +232,23 @@ export class RuntimeSupervisor {
   async navigateSession(config: RuntimeNavigateConfig): Promise<RuntimeNavigateResult> {
     if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
     await this.ensureChild()
+    const previousSessionId = this.activeSessionId
     this.activeRunId = config.operationId
     this.activeSessionId = config.sourceSessionId
     return new Promise<RuntimeNavigateResult>((resolve, reject) => {
-      this.pendingNavigate = { operationId: config.operationId, resolve, reject }
+      this.pendingNavigate = {
+        operationId: config.operationId,
+        sessionId: config.sourceSessionId,
+        previousSessionId,
+        resolve,
+        reject,
+      }
       try {
         this.post(config)
       } catch (error) {
         this.pendingNavigate = null
         this.activeRunId = null
-        this.activeSessionId = null
+        this.activeSessionId = previousSessionId
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
@@ -152,16 +257,23 @@ export class RuntimeSupervisor {
   async compactSession(config: RuntimeCompactConfig): Promise<RuntimeCompactResult> {
     if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
     await this.ensureChild()
+    const previousSessionId = this.activeSessionId
     this.activeRunId = config.operationId
     this.activeSessionId = config.sourceSessionId
     return new Promise<RuntimeCompactResult>((resolve, reject) => {
-      this.pendingCompact = { operationId: config.operationId, resolve, reject }
+      this.pendingCompact = {
+        operationId: config.operationId,
+        sessionId: config.sourceSessionId,
+        previousSessionId,
+        resolve,
+        reject,
+      }
       try {
         this.post(config)
       } catch (error) {
         this.pendingCompact = null
         this.activeRunId = null
-        this.activeSessionId = null
+        this.activeSessionId = previousSessionId
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
@@ -170,16 +282,23 @@ export class RuntimeSupervisor {
   async labelSessionEntry(config: RuntimeLabelConfig): Promise<RuntimeLabelResult> {
     if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
     await this.ensureChild()
+    const previousSessionId = this.activeSessionId
     this.activeRunId = config.operationId
     this.activeSessionId = config.sourceSessionId
     return new Promise<RuntimeLabelResult>((resolve, reject) => {
-      this.pendingLabel = { operationId: config.operationId, resolve, reject }
+      this.pendingLabel = {
+        operationId: config.operationId,
+        sessionId: config.sourceSessionId,
+        previousSessionId,
+        resolve,
+        reject,
+      }
       try {
         this.post(config)
       } catch (error) {
         this.pendingLabel = null
         this.activeRunId = null
-        this.activeSessionId = null
+        this.activeSessionId = previousSessionId
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
@@ -190,24 +309,54 @@ export class RuntimeSupervisor {
     this.post({ type: 'abort-session-operation', operationId })
   }
 
-  approve(runId: string, callId: string): void {
-    this.assertActive(runId)
-    this.post({ type: 'approve', runId, callId })
-  }
-
-  reject(runId: string, callId: string): void {
-    this.assertActive(runId)
-    this.post({ type: 'reject', runId, callId })
-  }
-
   stop(runId: string): void {
     this.assertActive(runId)
     this.post({ type: 'abort', runId })
   }
 
-  respondToExtensionUi(runId: string, requestId: string, value: string | boolean | null): void {
-    this.assertActive(runId)
-    this.post({ type: 'extension.ui.respond', runId, requestId, value })
+  respondToExtensionUi(sessionId: string, requestId: string, value: string | boolean | null): void {
+    this.assertActiveSession(sessionId)
+    this.post({ type: 'extension.ui.respond', sessionId, requestId, value })
+  }
+
+  updateComposerText(sessionId: string, text: string): void {
+    this.assertActiveSession(sessionId)
+    this.post({ type: 'extension.composer.update', sessionId, text })
+  }
+
+  async getRuntimeControls(sessionId: string): Promise<RuntimeControlsSnapshot | null> {
+    if (!this.child || this.activeSessionId !== sessionId) return null
+    if (this.pendingControls) throw new Error('已有 Session Controls 查询正在执行')
+    return new Promise<RuntimeControlsSnapshot>((resolve, reject) => {
+      this.pendingControls = { sessionId, resolve, reject }
+      try {
+        this.post({ type: 'controls.get', sessionId })
+      } catch (error) {
+        this.pendingControls = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
+
+  setRuntimeControls(
+    sessionId: string,
+    controls: Omit<RuntimeControlsSnapshot, 'type' | 'sessionId' | 'availableTools'>,
+  ): Promise<void> {
+    if (!this.child) return Promise.resolve()
+    if (this.activeSessionId !== sessionId) {
+      throw new Error('Requested Pi Session is not open')
+    }
+    if (this.pendingControlsSet) throw new Error('已有 Session Controls 更新正在执行')
+    const requestId = randomUUID()
+    return new Promise<void>((resolve, reject) => {
+      this.pendingControlsSet = { requestId, sessionId, resolve, reject }
+      try {
+        this.post({ type: 'controls.set', requestId, sessionId, ...controls })
+      } catch (error) {
+        this.pendingControlsSet = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
   }
 
   queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): void {
@@ -224,8 +373,20 @@ export class RuntimeSupervisor {
     return this.activeRunId !== null
   }
 
-  async reloadResources(): Promise<void> {
-    await this.dispose()
+  async reloadResources(sessionId: string): Promise<void> {
+    if (!this.child || this.activeSessionId !== sessionId) {
+      throw new Error('Requested Pi Session is not open')
+    }
+    if (this.activeRunId) throw new Error('已有 Agent 运行正在执行')
+    return new Promise<void>((resolve, reject) => {
+      this.pendingReload = { sessionId, resolve, reject }
+      try {
+        this.post({ type: 'reload-resources', sessionId })
+      } catch (error) {
+        this.pendingReload = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
   }
 
   async dispose(): Promise<void> {
@@ -255,6 +416,14 @@ export class RuntimeSupervisor {
     this.pendingCompact = null
     this.pendingLabel?.reject(new Error('Agent Runtime 已关闭'))
     this.pendingLabel = null
+    this.pendingReload?.reject(new Error('Agent Runtime 已关闭'))
+    this.pendingReload = null
+    this.pendingControls?.reject(new Error('Agent Runtime 已关闭'))
+    this.pendingControls = null
+    this.pendingControlsSet?.reject(new Error('Agent Runtime 已关闭'))
+    this.pendingControlsSet = null
+    this.pendingSession?.reject(new Error('Agent Runtime 已关闭'))
+    this.pendingSession = null
     this.activeRunId = null
     this.activeSessionId = null
   }
@@ -343,7 +512,99 @@ export class RuntimeSupervisor {
         this.activeRunId = null
         this.activeSessionId = null
       }
+      if (this.pendingControlsSet) {
+        this.pendingControlsSet.reject(new Error(parsed.data.message))
+        this.pendingControlsSet = null
+      }
+      if (this.pendingSession) {
+        this.pendingSession.reject(new Error(parsed.data.message))
+        this.pendingSession = null
+        this.activeRunId = null
+        this.activeSessionId = null
+      }
       this.emitSyntheticFailure(parsed.data.message)
+      return
+    }
+    if (parsed.data.type === 'session.replacement.requested') {
+      const request = parsed.data as RuntimeSessionReplacementRequest
+      const replacement: Promise<{
+        accepted: boolean
+        targetSessionId?: string
+        message?: string
+      }> = this.onSessionReplacementRequest
+        ? this.onSessionReplacementRequest(request)
+        : Promise.resolve({ accepted: true })
+      void replacement.then(
+        (result) =>
+          this.post({
+            type: 'session.replacement.ack',
+            operationId: request.operationId,
+            phase: request.phase,
+            accepted: result?.accepted ?? true,
+            ...(result?.targetSessionId ? { targetSessionId: result.targetSessionId } : {}),
+            ...(result?.message ? { message: result.message } : {}),
+          }),
+        (error) =>
+          this.post({
+            type: 'session.replacement.ack',
+            operationId: request.operationId,
+            phase: request.phase,
+            accepted: false,
+            message: error instanceof Error ? error.message : 'Session replacement failed',
+          }),
+      )
+      return
+    }
+    if (parsed.data.type === 'host.reloadResult') {
+      const pending = this.pendingReload
+      if (!pending || pending.sessionId !== parsed.data.sessionId) return
+      this.pendingReload = null
+      if (parsed.data.outcome === 'completed') pending.resolve()
+      else pending.reject(new Error(parsed.data.message ?? 'Pi resource reload failed'))
+      return
+    }
+    if (parsed.data.type === 'host.sessionResult') {
+      const pending = this.pendingSession
+      if (
+        !pending ||
+        pending.operationId !== parsed.data.operationId ||
+        pending.sessionId !== parsed.data.sessionId
+      ) {
+        return
+      }
+      this.pendingSession = null
+      this.activeRunId = null
+      if (parsed.data.outcome === 'failed') {
+        this.activeSessionId = pending.previousSessionId
+        pending.reject(new Error(parsed.data.message ?? 'Pi Session operation failed'))
+      } else {
+        this.activeSessionId = parsed.data.outcome === 'opened' ? pending.sessionId : null
+        pending.resolve()
+      }
+      return
+    }
+    if (parsed.data.type === 'host.controlsSetResult') {
+      const pending = this.pendingControlsSet
+      if (
+        !pending ||
+        pending.requestId !== parsed.data.requestId ||
+        pending.sessionId !== parsed.data.sessionId
+      ) {
+        return
+      }
+      this.pendingControlsSet = null
+      if (parsed.data.outcome === 'failed') {
+        pending.reject(new Error(parsed.data.message ?? 'Session Controls update failed'))
+      } else {
+        pending.resolve()
+      }
+      return
+    }
+    if (parsed.data.type === 'host.controlsResult') {
+      const pending = this.pendingControls
+      if (!pending || pending.sessionId !== parsed.data.sessionId) return
+      this.pendingControls = null
+      pending.resolve(parsed.data)
       return
     }
     if (parsed.data.type === 'host.forkResult') {
@@ -369,7 +630,7 @@ export class RuntimeSupervisor {
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingExport = null
       this.activeRunId = null
-      this.activeSessionId = null
+      this.activeSessionId = pending.previousSessionId
       pending.resolve(parsed.data)
       return
     }
@@ -378,7 +639,8 @@ export class RuntimeSupervisor {
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingNavigate = null
       this.activeRunId = null
-      this.activeSessionId = null
+      this.activeSessionId =
+        parsed.data.outcome === 'failed' ? pending.previousSessionId : pending.sessionId
       pending.resolve(parsed.data)
       return
     }
@@ -387,7 +649,8 @@ export class RuntimeSupervisor {
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingCompact = null
       this.activeRunId = null
-      this.activeSessionId = null
+      this.activeSessionId =
+        parsed.data.outcome === 'failed' ? pending.previousSessionId : pending.sessionId
       pending.resolve(parsed.data)
       return
     }
@@ -396,15 +659,17 @@ export class RuntimeSupervisor {
       if (!pending || pending.operationId !== parsed.data.operationId) return
       this.pendingLabel = null
       this.activeRunId = null
-      this.activeSessionId = null
+      this.activeSessionId =
+        parsed.data.outcome === 'failed' ? pending.previousSessionId : pending.sessionId
       pending.resolve(parsed.data)
       return
     }
     const event = runtimeEventSchema.parse(parsed.data)
+    if (event.type === 'session.replaced') this.activeSessionId = event.targetSessionId
+    else if (event.type === 'session.bound') this.activeSessionId = event.sessionId
     this.onEvent(event)
     if (event.type === 'run.stateChanged' && TERMINAL_STATUSES.has(event.status)) {
       this.activeRunId = null
-      this.activeSessionId = null
     }
   }
 
@@ -451,6 +716,24 @@ export class RuntimeSupervisor {
       this.activeRunId = null
       this.activeSessionId = null
     }
+    if (this.pendingReload) {
+      this.pendingReload.reject(new Error('Agent Runtime 在资源重载完成前退出'))
+      this.pendingReload = null
+    }
+    if (this.pendingControls) {
+      this.pendingControls.reject(new Error('Agent Runtime 在 Controls 查询完成前退出'))
+      this.pendingControls = null
+    }
+    if (this.pendingControlsSet) {
+      this.pendingControlsSet.reject(new Error('Agent Runtime 在 Controls 更新完成前退出'))
+      this.pendingControlsSet = null
+    }
+    if (this.pendingSession) {
+      this.pendingSession.reject(new Error('Agent Runtime 在 Session 操作完成前退出'))
+      this.pendingSession = null
+      this.activeRunId = null
+      this.activeSessionId = null
+    }
     if (this.activeRunId) this.emitSyntheticFailure('Agent Runtime 进程意外退出')
   }
 
@@ -485,6 +768,12 @@ export class RuntimeSupervisor {
 
   private assertActive(runId: string): void {
     if (this.activeRunId !== runId) throw new Error('运行不存在或已经结束')
+  }
+
+  private assertActiveSession(sessionId: string): void {
+    if (!this.child || this.activeSessionId !== sessionId) {
+      throw new Error('Pi Session 不存在或已经切换')
+    }
   }
 
   private post(command: RuntimeCommand): void {

@@ -16,7 +16,7 @@ src/
 ├── main/       Electron Main、Plugin Store、既有 IPC、持久化和 Runtime 监管
 ├── preload/    Desktop bridge 的 Electron adapter
 ├── renderer/   React 界面
-├── runtime/    独立 Agent Runtime Host、Pi adapter 和项目工具
+├── runtime/    独立 Agent Runtime Host 和 Pi adapter
 └── shared/     跨进程可序列化模型与协议
 ```
 
@@ -91,20 +91,19 @@ bundle 一同进入 Store，Node 内置模块保持外部导入，npm 实现依�
 
 `pictor.pi-extension-host` 依赖 `pictor.pi-agent-runtime`，但不包装 Pi Extension。Plugin Store
 把原生 Extension 与 Pi Package 作为独立 Registry entry 保存，Runtime 入口只贡献原生资源路径；
-明确安装的本地 Extension 优先使用 live source path，使修改在下一次 Run 的 ResourceLoader 重建时
+明确安装的本地 Extension 优先使用 live source path，使修改在下一次资源 reload 或 Session 重建时
 生效；source 不可用时回退到 Store 副本。
-Pi `DefaultResourceLoader`、Jiti virtual modules 和 ExtensionRunner 负责加载原文件、注册 Tool、
-Command 与事件。未知 Tool 映射为通用 `custom` Tool event。`ExtensionUiBroker` 以 RPC mode 把
-select/confirm/input/editor 映射到 Renderer modal，把 notify/status/文本 widget 映射到会话 UI；
-raw terminal input、TUI Component、theme、header/footer/editor 等能力明确返回 unavailable。
-Pi Package 的 `package.json#pi.extensions` 和约定 `extensions/` 由 Store 使用结构化 glob 展开为
-原生入口；禁用条目不会进入 Runtime bootstrap。跨进程 Module contract ID 使用完整 Plugin ID，
-避免不同 Plugin 的短名在 Router 中碰撞。
+Pi `DefaultResourceLoader`、`DefaultPackageManager`、Jiti virtual modules 和 ExtensionRunner 负责
+解析原文件、Package Manifest、`extensions/`、项目 `.pi` 资源，注册 Tool、Command 与事件。未知
+Tool 映射为通用 `custom` Tool event。`ExtensionUiBroker` 以 RPC mode 把 select/confirm/input/editor
+映射到 Renderer modal，把 notify/status/widget/title/composer 映射到会话 UI；raw terminal input、
+TUI Component、theme、header/footer/editor 等能力明确返回 unavailable。跨进程 Module contract ID
+使用完整 Plugin ID，避免不同 Plugin 的短名在 Router 中碰撞。
 
 用户明确提交 npm/git/local spec 时，Plugin Store 调用 Pi `DefaultPackageManager` 解析和安装，再把
 解析出的原生 package 复制进现有 `pi-packages/<id>` 生命周期目录；不自行实现第二套 spec parser，
-也不进行后台安装。受信任 Project 的 `.pi/extensions` 仍需 Session Controls 显式启用，Runtime 用
-结构化 glob 展开文件和子目录 index 后交给 ResourceLoader。Local Development Plugin 的 Registry
+也不进行后台安装。受信任 Project 的 `.pi/extensions`、Skills、Prompts 和 Context files 由 Pi
+ResourceLoader 自动发现，不再由 Pictor 维护显式项目 Extension 开关或 glob。Local Development Plugin 的 Registry
 source 使用 `development`，启动时直接读取 live Manifest/入口；它需要重启应用生效，但无需复制
 或重新打包 Pictor。`PICTOR_PLUGIN_PROFILE=developer` 选择独立 Developer Profile identity，Profile
 仍只推荐 Bundled roots，不覆盖用户删除选择。
@@ -123,8 +122,8 @@ Workspace 后 Git Changes 保持安装但进入 `blocked`，不做级联删除�
 没有 Provider 或同时出现多个 Provider 时明确拒绝启动 Run。Workspace 不 import 模型实现。
 
 Manifest 的 `pi.skills` 与 `pi.prompts` 直接展开为 Runtime resource path；
-`pictor.agent-resources` 是首个纯资源 Plugin，不需要空 Module。Pi ResourceLoader 在每个新 Run
-重新加载这些路径。运行中的 Composer 通过 Runtime protocol 调用 Pi `steer()` 或 `followUp()`，
+`pictor.agent-resources` 是首个纯资源 Plugin，不需要空 Module。打开的 Pi Session 持有这些资源，
+用户请求 reload 时调用 Pi 原生 `reload()`。运行中的 Composer 通过 Runtime protocol 调用 Pi `steer()` 或 `followUp()`，
 `queue_update` 与 Session stats 作为事件回到 Renderer；Pictor 不自行实现第二套队列。
 
 `AppRepository` 是 Main 进程的工作区状态入口，只协调 Project、Settings、导航选择和持久化
@@ -132,9 +131,13 @@ Manifest 的 `pi.skills` 与 `pi.prompts` 直接展开为 Runtime resource path�
 元数据、Pi Session identity、active leaf cursor 和可重建的 Session Projection。Pi 原生同文件导航
 只改变内存 leaf，不追加 JSONL entry，因此 cursor 负责让该选择跨 utility process 生命周期保持；
 它不复制消息或取代 JSONL authority。Runtime 首次创建 Pi Session 时通过 `session.bound` 绑定
-identity，Run 通过 `session.activeLeafChanged` 更新实际 leaf，终态事件到达后由 Main 从 JSONL
+identity，多个 Pictor Run 复用同一个打开的 Pi Session；Run 通过 `session.activeLeafChanged` 更新实际 leaf，终态事件到达后由 Main 从 JSONL
 重建投影；流式事件只服务当前交互，不成为第二份历史。旧 schema v1 若无法发现对应 Pi JSONL，
 会被脱敏归档为只读 Legacy Session Import，不允许在缺失上下文时启动新 Run。
+
+GUI 的 `app:select-context` 由 Runtime Coordinator 先同步 Pi Session 生命周期，再提交 Pictor
+导航选择：选择 Session 会打开目标 JSONL，选择项目或清空 Session 会关闭驻留 Session。reload
+和 Session Controls 都携带并校验目标 `sessionId`，不会把空闲操作应用到另一个 Session。
 
 `inspectSessionHistory` 是 Session Tree View 的只读 Interface。它由 `SessionPersistence` 在一次
 JSONL 解析中生成完整树、active leaf、selected entry 和对应 Session Projection；Renderer 只消费
@@ -162,9 +165,10 @@ Steering/Follow-up delivery mode 和可选 Model ID override；endpoint 与凭�
 Settings 管理。每次
 精确恢复 Pi Session 时，Runtime 把偏好注入 in-memory SettingsManager 和 AgentSession，Pi 负责
 Thinking clamp、Tool registry 过滤和 queue delivery。Model/Thinking 的当前值从 active JSONL branch
-的 change entry 或 assistant message 重建并显示，不把偏好误当作运行结果。Pictor title 在下一次
-Runtime restore 时通过 Pi `setSessionName()` 同步；“重新加载资源”释放空闲 Runtime Host，使下一次
-Run 重新装配 Plugin Host、ResourceLoader、Extensions、Skills、Prompts 和 context files。
+的 change entry 或 assistant message 重建并显示，不把偏好误当作运行结果。已打开 Session 的 Model
+Controls 通过 Pi `setModel()` 即时切换，失败会沿 Runtime protocol 返回 UI；Pictor title 通过 Pi
+`setSessionName()` 同步；“重新加载资源”调用当前打开 Session 的原生 `reload()`，不销毁 utility
+process 或另起一套资源解析器。
 
 Pi 自动 Retry 保持启用并把 start/end 映射为脱敏状态事件；Thinking delta 与 Text delta 进入同一
 assistant stream，终态仍由 JSONL thinking/text block 重建。Session Tree Label 是独立的原生 Runtime
@@ -182,16 +186,21 @@ Tree 中保留状态。Pi Runtime diagnostics 经脱敏事件进入桌面通知�
 Pi Session Fork 是独立的 Runtime operation，不伪装成 Run。Main 先生成 operation/target Session
 identity，但不写 Pictor metadata；utility host 精确打开已绑定的源 JSONL，绑定 Extension RPC UI，
 调用 Pi `AgentSessionRuntime.fork(position: "at")`，完整执行 `session_before_fork`、源
-`session_shutdown(reason: "fork")` 和目标 `session_start(reason: "fork")`。新 Runtime dispose 后，
-只有新 JSONL 被脱敏并移动到目标 Session 目录；源 JSONL 不重写。Runtime 返回 completed 后，
+`session_shutdown(reason: "fork")` 和目标 `session_start(reason: "fork")`。Pi 在其 Session 目录
+创建新 JSONL；Pictor 只持久化 Pi 返回的绝对路径，不移动或重写源/目标文件。Runtime 返回 completed 后，
 `AppRepository` 才绑定新 Pi identity、重建 Projection、提交新 Session 并更新导航；cancelled 不
 创建 Pictor Session。Fork operation 复用现有 active-operation 与 Extension UI response 通道，不能
 和 Run 并发。
 
+Extension 触发 `newSession`、`fork` 或 `switchSession` 时，Main 在 utility process 收到 Pi
+replacement 的 prepare 前写入 `session-replacement.json` journal；commit 会记录目标 JSONL
+identity，完成 Session、Project 和选择状态持久化后清理 journal。取消、Pi replacement 失败或
+进程退出会清理未提交的目标文件；重启时会恢复已进入 commit 阶段的事务。
+
 Pi Session Clone 复用同一个 Runtime operation 与 Pi 原生 Fork lifecycle，但表达不同的产品意图：
 Renderer 只提交源 Pictor Session identity，Main 通过 `inspectSessionHistory` 从权威 JSONL 推导
 active leaf，并以 `fork(position: "at")` 复制当前完整分支。历史节点只允许 Fork，活跃叶节点只允许
-Clone；两者共享并发锁、取消语义、目标 JSONL 移动和 Repository 提交事务，目标标题分别使用
+Clone；两者共享并发锁、取消语义、Pi JSONL identity 和 Repository 提交事务，目标标题分别使用
 `(Fork)` 与 `(Clone)` 区分。
 
 Pi Session Import 是独立的 Project 级 Runtime operation。Renderer 只提交目标 Project identity，
@@ -213,19 +222,16 @@ Session 文件路径、schema 读写、凭据脱敏、损坏隔离、异常退�
 文件系统和现有凭据迁移函数，不增加通用 Repository、DAO 或存储 provider。相关测试通过真实
 临时目录验证可观察行为。
 
-`command-interpreter.ts` 在 Main 进程识别当前平台可用的 Bash，并把解析后的绝对路径作为
-Runtime 启动配置传入 utility process。Runtime 不重新猜测用户环境；`BashCommandExecutor`
-只负责固定参数执行、输出和进程生命周期。Windows 使用 Git for Windows 的 Bash 并终止进程
-树；Linux 将每条命令放入独立 POSIX 进程组，在停止或超时时终止整个组。这个窄配置边界保留
-了以后更换 Command Interpreter 的变化点，而不把通用 Shell 抽象扩散到工具协议。
+Pi Runtime 直接使用 Pi SDK 提供的 `read`、`write`、`edit`、`bash`、`grep`、`find` 和 `ls`，不再
+注册 Pictor 自定义工具、Bash 解释器、命令审批 Broker 或项目路径守卫。项目根目录作为 Pi 的
+Session cwd，Shell、工具参数、进程生命周期和错误语义由 Pi SDK 与当前操作系统负责。
 
 `linux-distribution.ts` 只在 Main 进程读取本机 `/etc/os-release`，把原生 Arch 或不受支持
 Linux 映射为共享平台信息。Updater 在 Arch 选择原生 Pacman 资产，在其他 Linux 选择便携
 AppImage；原始 os-release 内容不进入 IPC、持久化或日志。
 
-Runtime 的 `ProjectPathGuard` 按宿主文件系统的大小写语义做真实路径边界检查。共享的项目路径
-身份仅用于持久化去重：Windows 忽略大小写，Linux 保留大小写。符号链接解析和越界拒绝仍只
-位于 Runtime 文件系统边界，不能用字符串路径身份函数替代。
+共享的项目路径身份仅用于持久化去重：Windows 忽略大小写，Linux 保留大小写。Runtime 不把
+项目路径身份误用为 Pi 文件工具的第二套访问边界。
 
 Renderer 的 `App` 只负责页面布局、Settings 和界面级 modal 编排，并从 Renderer Kernel 接收
 Updater Interface 与设置页 Contribution。内部
@@ -243,7 +249,7 @@ Updater Interface 与设置页 Contribution。内部
 - Electron 生命周期、窗口、安全或 IPC adapter：`src/main/`。
 - 本地状态、凭据和数据迁移：`src/main/persistence/`。
 - Agent Run 的监管、持久化和广播编排：`src/main/runtime/`。
-- Pi SDK、命令审批、项目路径守卫和 Agent 工具：`src/runtime/`。
+- Pi SDK adapter、Runtime Host 和 Extension RPC UI：`src/runtime/`。
 - 工作区与 Session 视图：`src/renderer/workspace/`。
 - 仍未迁移的设置视图：`src/renderer/settings/`。
 - 无业务语义且可复用的视图元素：`src/renderer/ui/`。

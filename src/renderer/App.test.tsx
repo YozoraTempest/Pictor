@@ -37,13 +37,10 @@ function emptySnapshot(): AppSnapshot {
   }
 }
 
-function createBridge(
-  snapshot: AppSnapshot,
-  session: SessionRecord | null = null,
-): PictorBridge & { approveCommand: ReturnType<typeof vi.fn> } {
-  const approveCommand = vi.fn(async () => ok(null))
+function createBridge(snapshot: AppSnapshot, session: SessionRecord | null = null): PictorBridge {
   return {
     getSnapshot: async () => ok(snapshot),
+    notifyRendererReady: async () => ok(null),
     getAppInfo: async () =>
       ok({
         name: 'Pictor',
@@ -51,7 +48,6 @@ function createBridge(
         platform: 'win32',
         arch: 'x64',
         distribution: 'windows',
-        commandInterpreter: { kind: 'bash', available: true, message: null },
       }),
     getPluginBootstrap: async () => ok({ safeMode: false, plugins: [] }),
     getPluginManagerSnapshot: async () =>
@@ -97,15 +93,14 @@ function createBridge(
       ok({
         modelId: 'test-model',
         thinkingLevel: 'off',
-        activeTools: ['pictor_read'],
-        availableTools: ['pictor_read', 'pictor_write'],
+        activeTools: ['read'],
+        availableTools: ['read', 'write'],
         steeringMode: 'one-at-a-time',
         followUpMode: 'one-at-a-time',
-        projectExtensionsEnabled: false,
       }),
     saveSessionRuntimeControls: async (request) =>
       ok({
-        availableTools: ['pictor_read', 'pictor_write'],
+        availableTools: ['read', 'write'],
         ...request.controls,
       }),
     reloadSessionResources: async () => ok(null),
@@ -120,12 +115,11 @@ function createBridge(
       ok({ outcome: 'success', message: '已获取 1 个可用模型', models: ['gpt-5.6-sol'] }),
     startRun: async () => ok({ runId }),
     pickMessageImages: async () => ok([]),
-    approveCommand,
-    rejectCommand: async () => ok(null),
     stopRun: async () => ok(null),
     respondToExtensionUi: async () => ok(null),
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
+    syncComposerText: async () => ok(null),
     onRuntimeEvent: (_listener: (event: RuntimeEvent) => void) => () => undefined,
   }
 }
@@ -142,7 +136,6 @@ function createUpdater(overrides: Partial<UpdaterClient> = {}): UpdaterClient {
       platform: 'win32',
       arch: 'x64',
       distribution: 'windows',
-      commandInterpreter: { kind: 'bash', available: true, message: null },
     }),
     checkForUpdates: async () =>
       ok({
@@ -180,6 +173,235 @@ it('renders the empty delegate workspace from a persisted snapshot', async () =>
   expect(await screen.findByRole('heading', { name: '选择一个项目开始' })).toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: '新建项目' })).toHaveLength(3)
   expect(screen.getByText('v0.1.0')).toBeInTheDocument()
+})
+
+it('keeps Extension status, dialog, and title state scoped to the active Session', async () => {
+  const otherSessionId = '77777777-7777-4777-8777-777777777777'
+  const snapshot: AppSnapshot = {
+    projects: [
+      {
+        id: projectId,
+        name: 'Pictor',
+        rootPath: 'C:\\Pictor',
+        trustedAt: now,
+        availability: 'available',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    sessions: [
+      {
+        id: sessionId,
+        projectId,
+        title: 'Current session',
+        lastRunStatus: null,
+        historyAuthority: 'pi-jsonl',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    selectedProjectId: projectId,
+    selectedSessionId: sessionId,
+    settings: {
+      apiProtocol: 'responses',
+      baseUrl: 'https://example.test/v1',
+      modelId: 'test-model',
+      reasoningEffort: null,
+      temperature: null,
+      maxOutputTokens: null,
+      hasApiKey: true,
+    },
+    issues: [],
+  }
+  const session: SessionRecord = {
+    schemaVersion: 1,
+    id: sessionId,
+    projectId,
+    title: 'Current session',
+    messages: [],
+    runs: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+  const listeners: Array<(event: RuntimeEvent) => void> = []
+  const bridge = createBridge(snapshot, session)
+  let currentSnapshot = snapshot
+  bridge.getSnapshot = vi.fn(async () => ok(currentSnapshot))
+  bridge.onRuntimeEvent = (listener) => {
+    listeners.push(listener)
+    return () => undefined
+  }
+  renderApp(bridge)
+  await screen.findByRole('heading', { name: 'Current session' })
+  await waitFor(() => expect(listeners).toHaveLength(2))
+
+  const emit = (event: RuntimeEvent) => {
+    act(() => {
+      for (const listener of listeners) listener(event)
+    })
+  }
+  const sessionEvent = (event: RuntimeEvent): RuntimeEvent => event
+
+  emit(
+    sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId,
+      at: now,
+      key: 'first',
+      text: 'First status',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId,
+      at: now,
+      key: 'second',
+      text: 'Second status',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      key: 'other',
+      text: 'Other status',
+    }),
+  )
+  expect(await screen.findByText('First status')).toBeInTheDocument()
+  expect(screen.getByText('Second status')).toBeInTheDocument()
+  expect(screen.queryByText('Other status')).not.toBeInTheDocument()
+  const statusPanel = document.querySelector('.extension-statuses')
+  expect(statusPanel).toBeInTheDocument()
+  expect(statusPanel?.querySelectorAll('.extension-status')).toHaveLength(2)
+  expect(statusPanel?.textContent).not.toContain('first')
+  expect(statusPanel?.textContent).not.toContain('second')
+
+  emit(
+    sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId,
+      at: now,
+      key: 'first',
+      text: null,
+    }),
+  )
+  await waitFor(() => expect(screen.queryByText('First status')).not.toBeInTheDocument())
+  expect(screen.getByText('Second status')).toBeInTheDocument()
+
+  emit(
+    sessionEvent({
+      type: 'extension.ui.title',
+      runId: null,
+      sessionId,
+      at: now,
+      title: 'Current · Working',
+    }),
+  )
+  await waitFor(() => expect(document.title).toBe('Current · Working'))
+
+  emit(
+    sessionEvent({
+      type: 'extension.ui.requested',
+      runId: null,
+      sessionId,
+      at: now,
+      requestId: '88888888-8888-4888-8888-888888888888',
+      kind: 'confirm',
+      title: 'Confirm current Session',
+      message: 'Continue?',
+      options: [],
+      value: null,
+    }),
+  )
+  expect(await screen.findByRole('dialog', { name: 'Confirm current Session' })).toBeInTheDocument()
+
+  emit(
+    sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      key: 'target-status',
+      text: 'Target status',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.widget',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      key: 'target-widget',
+      lines: ['Target widget'],
+      placement: 'aboveEditor',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.title',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      title: 'Target · Working',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.requested',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      requestId: '99999999-9999-4999-8999-999999999999',
+      kind: 'confirm',
+      title: 'Confirm target Session',
+      message: 'Continue in target?',
+      options: [],
+      value: null,
+    }),
+  )
+  currentSnapshot = {
+    ...snapshot,
+    sessions: [
+      ...snapshot.sessions,
+      {
+        id: otherSessionId,
+        projectId,
+        title: 'Target session',
+        lastRunStatus: null,
+        historyAuthority: 'pi-jsonl',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    selectedSessionId: otherSessionId,
+  }
+
+  emit(
+    sessionEvent({
+      type: 'session.replaced',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      sourceSessionId: sessionId,
+      targetSessionId: otherSessionId,
+      piSessionId: 'other-pi-session',
+      piSessionPath: 'C:\\other.jsonl',
+      cwd: 'C:\\other',
+      activeLeafId: null,
+    }),
+  )
+  await waitFor(() => expect(document.title).toBe('Target · Working'))
+  expect(screen.queryByRole('dialog', { name: 'Confirm current Session' })).not.toBeInTheDocument()
+  expect(await screen.findByRole('dialog', { name: 'Confirm target Session' })).toBeInTheDocument()
+  expect(screen.getByText('Target status')).toBeInTheDocument()
+  expect(screen.getByText('Target widget')).toBeInTheDocument()
+  expect(screen.queryByText('Second status')).not.toBeInTheDocument()
 })
 
 it('keeps manually expanded tool output open across runtime updates', async () => {
@@ -382,16 +604,15 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
     ok({
       modelId: 'test-model',
       thinkingLevel: 'off',
-      activeTools: ['pictor_read'],
-      availableTools: ['pictor_read', 'pictor_write'],
+      activeTools: ['read'],
+      availableTools: ['read', 'write'],
       steeringMode: 'one-at-a-time',
       followUpMode: 'one-at-a-time',
-      projectExtensionsEnabled: false,
     } satisfies SessionRuntimeControls),
   )
   bridge.saveSessionRuntimeControls = vi.fn(async (request) =>
     ok({
-      availableTools: ['pictor_read', 'pictor_write'],
+      availableTools: ['read', 'write'],
       ...request.controls,
     } satisfies SessionRuntimeControls),
   )
@@ -465,7 +686,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   expect(await screen.findByRole('dialog', { name: 'Session Controls' })).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('Thinking Level'), { target: { value: 'high' } })
   fireEvent.change(screen.getByLabelText('Steering'), { target: { value: 'all' } })
-  fireEvent.click(screen.getByLabelText('pictor_write'))
+  fireEvent.click(screen.getByLabelText('write'))
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() =>
     expect(bridge.saveSessionRuntimeControls).toHaveBeenCalledWith({
@@ -473,10 +694,9 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
       controls: {
         modelId: 'test-model',
         thinkingLevel: 'high',
-        activeTools: ['pictor_read', 'pictor_write'],
+        activeTools: ['read', 'write'],
         steeringMode: 'all',
         followUpMode: 'one-at-a-time',
-        projectExtensionsEnabled: false,
       },
     }),
   )
@@ -587,11 +807,6 @@ it('shows the Linux platform in app information', async () => {
         platform: 'linux',
         arch: 'x64',
         distribution: 'arch',
-        commandInterpreter: {
-          kind: 'bash',
-          available: false,
-          message: '未找到 Bash；命令工具不可用。',
-        },
       }),
   }
   renderApp(
@@ -603,11 +818,6 @@ it('shows the Linux platform in app information', async () => {
         platform: 'linux',
         arch: 'x64',
         distribution: 'arch',
-        commandInterpreter: {
-          kind: 'bash',
-          available: false,
-          message: '未找到 Bash；命令工具不可用。',
-        },
       }),
     }),
   )
@@ -617,7 +827,6 @@ it('shows the Linux platform in app information', async () => {
   fireEvent.click(screen.getByRole('button', { name: '关于' }))
 
   expect(await screen.findByText('Linux x64')).toBeInTheDocument()
-  expect(screen.getByText('未找到 Bash；命令工具不可用。')).toBeInTheDocument()
 })
 
 it('saves the selected Responses compatibility mode', async () => {
@@ -779,10 +988,5 @@ it('renders an exact command approval and allows it once', async () => {
 
   expect(await screen.findByRole('heading', { name: '运行验证' })).toBeInTheDocument()
   expect(screen.getByText('npm test')).toBeInTheDocument()
-  expect(screen.getByText('此命令将以当前 Windows 用户权限运行')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '允许一次' }))
-
-  await waitFor(() =>
-    expect(bridge.approveCommand).toHaveBeenCalledWith({ runId, callId: 'call-1' }),
-  )
+  expect(screen.queryByRole('button', { name: '允许一次' })).not.toBeInTheDocument()
 })

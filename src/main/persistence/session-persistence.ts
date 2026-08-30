@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, rename, unlink } from 'node:fs/promises'
-import { basename, isAbsolute, join, relative } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import { z } from 'zod'
 
@@ -30,6 +30,25 @@ const sessionProjectionSchema = sessionRecordSchema.pick({
   usage: true,
   runtimeState: true,
 })
+const legacyRuntimePreferencesSchema = z.object({
+  modelId: z.string().min(1).nullable().default(null),
+  thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullable(),
+  activeTools: z.array(z.string().min(1)).nullable(),
+  steeringMode: z.enum(['all', 'one-at-a-time']),
+  followUpMode: z.enum(['all', 'one-at-a-time']),
+  projectExtensionsEnabled: z.boolean().optional(),
+})
+const legacySessionHistoryStateSchema = z.object({
+  authority: z.enum(['pi-jsonl', 'legacy-import']),
+  piSessionId: z.string().min(1).nullable(),
+  piSessionFile: z.string().min(1).nullable(),
+  activeLeafId: z.string().min(1).nullable().optional(),
+  runtimePreferences: legacyRuntimePreferencesSchema.optional(),
+  legacyImport: z.object({
+    status: z.enum(['not-required', 'pending', 'imported']),
+    sourceFile: z.string().min(1).nullable(),
+  }),
+})
 const persistedSessionV2Schema = z.object({
   schemaVersion: z.literal(2),
   id: sessionRecordSchema.shape.id,
@@ -40,13 +59,53 @@ const persistedSessionV2Schema = z.object({
   createdAt: sessionRecordSchema.shape.createdAt,
   updatedAt: sessionRecordSchema.shape.updatedAt,
 })
-const persistedSessionSchema = z.union([persistedSessionV2Schema, sessionRecordSchema])
+const legacyPersistedSessionV2Schema = z.object({
+  schemaVersion: z.literal(2),
+  id: sessionRecordSchema.shape.id,
+  projectId: sessionRecordSchema.shape.projectId,
+  title: sessionRecordSchema.shape.title,
+  history: legacySessionHistoryStateSchema,
+  projection: sessionProjectionSchema.extend({ generatedAt: z.iso.datetime() }),
+  createdAt: sessionRecordSchema.shape.createdAt,
+  updatedAt: sessionRecordSchema.shape.updatedAt,
+})
+const persistedSessionSchema = z.union([
+  persistedSessionV2Schema,
+  legacyPersistedSessionV2Schema,
+  sessionRecordSchema,
+])
 const piSessionHeaderSchema = z.object({
   type: z.literal('session'),
   id: z.string().min(1),
 })
 
 type PersistedSessionV2 = z.infer<typeof persistedSessionV2Schema>
+type PersistedSession = PersistedSessionV2 | z.infer<typeof legacyPersistedSessionV2Schema>
+
+const activeToolNameMigration: Readonly<Record<string, string | undefined>> = {
+  pictor_list: 'ls',
+  pictor_search: 'grep',
+  pictor_read: 'read',
+  pictor_write: 'write',
+  pictor_edit: 'edit',
+  pictor_command: 'bash',
+  pictor_move: undefined,
+  pictor_delete: undefined,
+}
+
+export function normalizeActiveToolNames(
+  activeTools: readonly string[] | null | undefined,
+): string[] | null | undefined {
+  if (activeTools === null || activeTools === undefined) return activeTools
+  const names = new Set<string>()
+  for (const name of activeTools) {
+    const migrated = Object.prototype.hasOwnProperty.call(activeToolNameMigration, name)
+      ? activeToolNameMigration[name]
+      : name
+    if (migrated) names.add(migrated)
+  }
+  return [...names]
+}
 
 export type CredentialMigration = (
   dataDirectory: string,
@@ -175,18 +234,26 @@ export class SessionPersistence {
     if (!persisted) throw new Error('Session file is missing')
     if (persisted.schemaVersion === 1) return this.migrateV1(persisted)
 
-    this.histories.set(persisted.id, persisted.history)
+    const history = this.normalizeHistory(persisted.id, persisted.projectId, persisted.history)
+    this.histories.set(persisted.id, history)
     const session = this.toProjection(persisted)
     const sanitized = await this.sanitize(session)
-    if (JSON.stringify(sanitized) !== JSON.stringify(session)) {
-      await this.writeV2(sanitized, persisted.history)
+    if (
+      JSON.stringify(sanitized) !== JSON.stringify(session) ||
+      JSON.stringify(history) !== JSON.stringify(persisted.history)
+    ) {
+      await this.writeV2(sanitized, history)
     }
     return sanitized
   }
 
   async save(session: SessionRecord): Promise<SessionSummary> {
     const sanitized = await this.sanitize(sessionRecordSchema.parse(session))
-    const history = this.histories.get(sanitized.id) ?? this.createUnboundHistory()
+    const history = this.normalizeHistory(
+      sanitized.id,
+      sanitized.projectId,
+      this.histories.get(sanitized.id) ?? this.createUnboundHistory(),
+    )
     this.histories.set(sanitized.id, history)
     await this.writeV2(sanitized, history)
     return summarizeSession(sanitized, history.authority)
@@ -198,16 +265,15 @@ export class SessionPersistence {
 
   async bindPiSession(
     session: SessionRecord,
-    identity: { id: string; file: string },
+    identity: { id: string; path?: string; file?: string },
   ): Promise<void> {
-    if (identity.file !== basename(identity.file))
-      throw new Error('Pi Session file must be a basename')
+    const piSessionPath = this.resolvePiSessionPath(session.projectId, session.id, identity)
     const sanitized = await this.sanitize(sessionRecordSchema.parse(session))
     const existing = this.histories.get(session.id)
     const history = sessionHistoryStateSchema.parse({
       authority: 'pi-jsonl',
       piSessionId: identity.id,
-      piSessionFile: identity.file,
+      piSessionPath,
       ...(existing?.activeLeafId !== undefined ? { activeLeafId: existing.activeLeafId } : {}),
       ...(existing?.runtimePreferences ? { runtimePreferences: existing.runtimePreferences } : {}),
       legacyImport: { status: 'not-required', sourceFile: null },
@@ -302,21 +368,23 @@ export class SessionPersistence {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
-    piSessionFile: string | null
+    piSessionPath: string | null
     activeLeafId?: string | null
     runtimePreferences?: SessionHistoryState['runtimePreferences']
   } {
-    const sessionDirectory = join(this.dataDirectory, 'pi', projectId, sessionId)
     const history = this.getHistory(sessionId)
+    const sessionDirectory = history.piSessionPath
+      ? dirname(history.piSessionPath)
+      : join(this.dataDirectory, 'pi', 'sessions', projectId)
     return {
       agentDirectory: join(this.dataDirectory, 'pi', 'agent'),
       sessionDirectory,
-      piSessionFile: history.piSessionFile,
+      piSessionPath: history.piSessionPath,
       ...(history.activeLeafId !== undefined ? { activeLeafId: history.activeLeafId } : {}),
       ...(history.runtimePreferences ? { runtimePreferences: history.runtimePreferences } : {}),
       resumeSession:
         history.authority === 'pi-jsonl' &&
-        history.piSessionFile !== null &&
+        history.piSessionPath !== null &&
         !this.blockAllPiResume &&
         !this.unsafePiPaths.some(
           (unsafePath) =>
@@ -329,7 +397,7 @@ export class SessionPersistence {
   async setActiveLeaf(sessionId: string, activeLeafId: string | null): Promise<void> {
     const session = await this.read(sessionId)
     const history = this.getHistory(sessionId)
-    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+    if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       throw new Error('Pi Session identity is not bound')
     }
     const updated = sessionHistoryStateSchema.parse({ ...history, activeLeafId })
@@ -343,10 +411,16 @@ export class SessionPersistence {
   ): Promise<void> {
     const session = await this.read(sessionId)
     const history = this.getHistory(sessionId)
-    if (history.authority !== 'pi-jsonl' || !history.piSessionFile) {
+    if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       throw new Error('Pi Session identity is not bound')
     }
-    const updated = sessionHistoryStateSchema.parse({ ...history, runtimePreferences })
+    const updated = sessionHistoryStateSchema.parse({
+      ...history,
+      runtimePreferences: {
+        ...runtimePreferences,
+        activeTools: normalizeActiveToolNames(runtimePreferences.activeTools),
+      },
+    })
     this.histories.set(sessionId, updated)
     await this.writeV2(session, updated)
   }
@@ -363,14 +437,14 @@ export class SessionPersistence {
       history = sessionHistoryStateSchema.parse({
         authority: 'legacy-import',
         piSessionId: null,
-        piSessionFile: null,
+        piSessionPath: null,
         legacyImport: { status: 'pending', sourceFile },
       })
     } else {
       history = sessionHistoryStateSchema.parse({
         authority: 'pi-jsonl',
         piSessionId: piIdentity?.id ?? null,
-        piSessionFile: piIdentity?.file ?? null,
+        piSessionPath: piIdentity?.path ?? null,
         legacyImport: { status: 'not-required', sourceFile: null },
       })
     }
@@ -383,7 +457,7 @@ export class SessionPersistence {
   private async discoverPiIdentity(
     projectId: string,
     sessionId: string,
-  ): Promise<{ id: string; file: string } | null> {
+  ): Promise<{ id: string; path: string } | null> {
     const directory = join(this.dataDirectory, 'pi', projectId, sessionId)
     let files: string[]
     try {
@@ -402,7 +476,7 @@ export class SessionPersistence {
         const firstLine = (await readFile(join(directory, file), 'utf8')).split('\n', 1)[0]
         if (!firstLine) continue
         const header = piSessionHeaderSchema.safeParse(JSON.parse(firstLine))
-        if (header.success) return { id: header.data.id, file }
+        if (header.success) return { id: header.data.id, path: resolve(directory, file) }
       } catch {
         continue
       }
@@ -430,7 +504,53 @@ export class SessionPersistence {
     await writeJsonFile(this.sessionPath(session.id), persisted)
   }
 
-  private toProjection(session: PersistedSessionV2): SessionRecord {
+  private normalizeHistory(
+    sessionId: string,
+    projectId: string,
+    history: SessionHistoryState | z.infer<typeof legacySessionHistoryStateSchema>,
+  ): SessionHistoryState {
+    const piSessionPath =
+      'piSessionPath' in history
+        ? history.piSessionPath
+        : history.piSessionFile
+          ? resolve(this.dataDirectory, 'pi', projectId, sessionId, history.piSessionFile)
+          : null
+    if (piSessionPath !== null && !isAbsolute(piSessionPath)) {
+      throw new Error('Pi Session path must be absolute')
+    }
+    const runtimePreferences = history.runtimePreferences
+      ? {
+          ...history.runtimePreferences,
+          activeTools: normalizeActiveToolNames(history.runtimePreferences.activeTools) ?? null,
+        }
+      : undefined
+    return sessionHistoryStateSchema.parse({
+      authority: history.authority,
+      piSessionId: history.piSessionId,
+      piSessionPath: piSessionPath === null ? null : resolve(piSessionPath),
+      ...(history.activeLeafId !== undefined ? { activeLeafId: history.activeLeafId } : {}),
+      ...(runtimePreferences ? { runtimePreferences } : {}),
+      legacyImport: history.legacyImport,
+    })
+  }
+
+  private resolvePiSessionPath(
+    projectId: string,
+    sessionId: string,
+    identity: { id: string; path?: string; file?: string },
+  ): string {
+    if (identity.path) {
+      if (!isAbsolute(identity.path)) throw new Error('Pi Session path must be absolute')
+      return resolve(identity.path)
+    }
+    if (!identity.file || identity.file !== basename(identity.file)) {
+      throw new Error('Pi Session identity requires an absolute path')
+    }
+    // This branch only reads the pre-path schema and converts it immediately.
+    return resolve(this.dataDirectory, 'pi', projectId, sessionId, identity.file)
+  }
+
+  private toProjection(session: PersistedSession): SessionRecord {
     return sessionRecordSchema.parse({
       schemaVersion: 1,
       id: session.id,
@@ -449,20 +569,16 @@ export class SessionPersistence {
     return {
       authority: 'pi-jsonl',
       piSessionId: null,
-      piSessionFile: null,
+      piSessionPath: null,
       legacyImport: { status: 'not-required', sourceFile: null },
     }
   }
 
   private transcriptPath(session: SessionRecord, history: SessionHistoryState): string | null {
-    if (
-      history.authority !== 'pi-jsonl' ||
-      !history.piSessionFile ||
-      history.piSessionFile !== basename(history.piSessionFile)
-    ) {
+    if (history.authority !== 'pi-jsonl' || !history.piSessionPath) {
       return null
     }
-    return join(this.dataDirectory, 'pi', session.projectId, session.id, history.piSessionFile)
+    return isAbsolute(history.piSessionPath) ? history.piSessionPath : null
   }
 
   private sessionPath(sessionId: string): string {

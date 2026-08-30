@@ -71,6 +71,8 @@ export const runtimePluginBootstrapSchema = z.object({
     z.object({
       kind: z.enum(['pi-extension', 'pi-package']),
       id: z.string().min(1),
+      // A file/directory/package root is resolved by Pi's own
+      // DefaultPackageManager and ResourceLoader.
       path: z.string().min(1),
     }),
   ),

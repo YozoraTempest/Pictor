@@ -43,7 +43,7 @@ it.each(['a', 'id', 'running'])(
     let history: SessionHistoryState = {
       authority: 'pi-jsonl',
       piSessionId: null,
-      piSessionFile: null,
+      piSessionPath: null,
       legacyImport: { status: 'not-required', sourceFile: null },
     }
     let releasePersistence!: () => void
@@ -57,6 +57,9 @@ it.each(['a', 'id', 'running'])(
       return { id: sessionId }
     })
     const repository: RuntimePersistence = {
+      getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+      removeProject: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
       getSession: vi.fn(async () => session),
       getSessionHistory: vi.fn(() => history),
       inspectSessionHistory: vi.fn(async () => historyView(session, null)),
@@ -64,7 +67,7 @@ it.each(['a', 'id', 'running'])(
         history = {
           authority: 'pi-jsonl',
           piSessionId: identity.id,
-          piSessionFile: identity.file,
+          piSessionPath: identity.path ?? null,
           legacyImport: { status: 'not-required', sourceFile: null },
         }
       }),
@@ -105,15 +108,14 @@ it.each(['a', 'id', 'running'])(
         agentDirectory: 'C:\\fixture-agent',
         sessionDirectory: 'C:\\fixture-session',
         resumeSession: true,
-        piSessionFile: 'session.jsonl',
+        piSessionPath: 'C:\\fixture-session\\session.jsonl',
         activeLeafId: 'persisted-active-leaf',
         runtimePreferences: {
           modelId: 'session-model',
           thinkingLevel: 'high',
-          activeTools: ['pictor_read'],
+          activeTools: ['read'],
           steeringMode: 'all',
           followUpMode: 'one-at-a-time',
-          projectExtensionsEnabled: true,
         } satisfies NonNullable<SessionHistoryState['runtimePreferences']>,
       })),
       saveSession,
@@ -142,8 +144,6 @@ it.each(['a', 'id', 'running'])(
       }),
       abortSessionOperation: vi.fn(),
       reloadResources: vi.fn(async () => undefined),
-      approve: vi.fn(),
-      reject: vi.fn(),
       stop: vi.fn(),
       respondToExtensionUi: vi.fn(),
       queueMessage: vi.fn(),
@@ -158,7 +158,7 @@ it.each(['a', 'id', 'running'])(
         apiKey: secret,
         prompt: expect.stringContaining('[REDACTED]'),
         sessionName: expect.stringContaining('prompt'),
-        piSessionFile: 'session.jsonl',
+        piSessionPath: 'C:\\fixture-session\\session.jsonl',
         activeLeafId: 'persisted-active-leaf',
         runtimePreferences: expect.objectContaining({ thinkingLevel: 'high' }),
       }),
@@ -166,11 +166,11 @@ it.each(['a', 'id', 'running'])(
 
     coordinator.handleEvent({
       type: 'session.bound',
-      runId: started.runId,
+      runId: null,
       sessionId,
       at: new Date().toISOString(),
       piSessionId: 'pi-session-id',
-      piSessionFile: 'session.jsonl',
+      piSessionPath: 'C:\\fixture-session\\session.jsonl',
     })
 
     coordinator.handleEvent({
@@ -251,7 +251,7 @@ it.each(['a', 'id', 'running'])(
     await vi.waitFor(() =>
       expect(repository.bindPiSession).toHaveBeenCalledWith(sessionId, {
         id: 'pi-session-id',
-        file: 'session.jsonl',
+        path: 'C:\\fixture-session\\session.jsonl',
       }),
     )
     await vi.waitFor(() =>
@@ -307,13 +307,16 @@ it('persists a terminal failure when Pi Session identity was never bound', async
   const saveSession = vi.fn(async () => undefined)
   const rebuildSessionProjection = vi.fn(async () => session)
   const repository: RuntimePersistence = {
+    getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
     getSession: vi.fn(async () => session),
     getSessionHistory: vi.fn(
       () =>
         ({
           authority: 'pi-jsonl',
           piSessionId: null,
-          piSessionFile: null,
+          piSessionPath: null,
           legacyImport: { status: 'not-required', sourceFile: null },
         }) satisfies SessionHistoryState,
     ),
@@ -382,8 +385,6 @@ it('persists a terminal failure when Pi Session identity was never bound', async
     }),
     abortSessionOperation: vi.fn(),
     reloadResources: vi.fn(async () => undefined),
-    approve: vi.fn(),
-    reject: vi.fn(),
     stop: vi.fn(),
     respondToExtensionUi: vi.fn(),
     queueMessage: vi.fn(),
@@ -426,13 +427,16 @@ it('keeps a pending Legacy Session Import read-only', async () => {
   }
   const start = vi.fn(async () => undefined)
   const repository: RuntimePersistence = {
+    getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
     getSession: vi.fn(async () => session),
     getSessionHistory: vi.fn(
       () =>
         ({
           authority: 'legacy-import',
           piSessionId: null,
-          piSessionFile: null,
+          piSessionPath: null,
           legacyImport: { status: 'pending', sourceFile: 'legacy-imports/session.json' },
         }) satisfies SessionHistoryState,
     ),
@@ -481,8 +485,6 @@ it('keeps a pending Legacy Session Import read-only', async () => {
     }),
     abortSessionOperation: vi.fn(),
     reloadResources: vi.fn(async () => undefined),
-    approve: vi.fn(),
-    reject: vi.fn(),
     stop: vi.fn(),
     respondToExtensionUi: vi.fn(),
     queueMessage: vi.fn(),
@@ -588,13 +590,16 @@ it('commits native Pi Session derivation and Import operations', async () => {
     activeLeafId = entryId
   })
   const repository: RuntimePersistence = {
+    getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
     getSession: vi.fn(async () => session),
     getSessionHistory: vi.fn(
       () =>
         ({
           authority: 'pi-jsonl',
           piSessionId: 'source-pi-session',
-          piSessionFile: 'source.jsonl',
+          piSessionPath: '/sessions/session-id/source.jsonl',
           activeLeafId,
           legacyImport: { status: 'not-required', sourceFile: null },
         }) satisfies SessionHistoryState,
@@ -644,7 +649,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     targetSessionId: config.targetSessionId,
     outcome: 'completed',
     piSessionId: 'forked-pi-session',
-    piSessionFile: 'forked.jsonl',
+    piSessionPath: '/sessions/forked-session.jsonl',
   }))
   const importSession = vi.fn<RuntimeHost['importSession']>(async (config) => ({
     type: 'host.importResult',
@@ -652,7 +657,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     targetSessionId: config.targetSessionId,
     outcome: 'completed',
     piSessionId: 'imported-pi-session',
-    piSessionFile: 'source-history.jsonl',
+    piSessionPath: '/sessions/imported-session/source-history.jsonl',
   }))
   const exportSession = vi.fn<RuntimeHost['exportSession']>(async (config) => ({
     type: 'host.exportResult',
@@ -698,8 +703,6 @@ it('commits native Pi Session derivation and Import operations', async () => {
     labelSessionEntry,
     abortSessionOperation,
     reloadResources,
-    approve: vi.fn(),
-    reject: vi.fn(),
     stop: vi.fn(),
     respondToExtensionUi: vi.fn(),
     queueMessage: vi.fn(),
@@ -718,15 +721,13 @@ it('commits native Pi Session derivation and Import operations', async () => {
       type: 'fork',
       sourceSessionId: sessionId,
       entryId: 'selected-entry',
-      sourceSessionDirectory: `/sessions/${sessionId}`,
-      sourcePiSessionFile: 'source.jsonl',
-      targetSessionDirectory: expect.stringMatching(/^\/sessions\//),
+      sourcePiSessionPath: '/sessions/session-id/source.jsonl',
     }),
   )
   const forkConfig = fork.mock.calls[0]![0]
   expect(createDerivedSession).toHaveBeenCalledWith(sessionId, forkConfig.targetSessionId, 'fork', {
     id: 'forked-pi-session',
-    file: 'forked.jsonl',
+    path: '/sessions/forked-session.jsonl',
   })
 
   fork.mockResolvedValueOnce({
@@ -748,7 +749,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     'clone',
     {
       id: 'forked-pi-session',
-      file: 'forked.jsonl',
+      path: '/sessions/forked-session.jsonl',
     },
   )
 
@@ -771,7 +772,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
     projectId,
     importConfig.targetSessionId,
     'source-history (Import)',
-    { id: 'imported-pi-session', file: 'source-history.jsonl' },
+    { id: 'imported-pi-session', path: '/sessions/imported-session/source-history.jsonl' },
   )
 
   importSession.mockResolvedValueOnce({
@@ -791,8 +792,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
       type: 'export',
       sourceSessionId: sessionId,
       format: 'jsonl',
-      sourceSessionDirectory: `/sessions/${sessionId}`,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: '/sessions/session-id/source.jsonl',
       activeLeafId: 'active-entry',
       destinationPath: '/exports/source.jsonl',
     }),
@@ -813,8 +813,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
       summarize: false,
       customInstructions: null,
       activeLeafId: 'active-entry',
-      sourceSessionDirectory: `/sessions/${sessionId}`,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: '/sessions/session-id/source.jsonl',
     }),
   )
   expect(setPiSessionActiveLeaf).toHaveBeenCalledWith(sessionId, 'historical-entry')
@@ -840,7 +839,7 @@ it('commits native Pi Session derivation and Import operations', async () => {
       sourceSessionId: sessionId,
       customInstructions: 'Keep decisions and unresolved work.',
       activeLeafId: 'historical-entry',
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: '/sessions/session-id/source.jsonl',
     }),
   )
   expect(setPiSessionActiveLeaf).toHaveBeenLastCalledWith(sessionId, 'compaction-entry')
@@ -890,4 +889,425 @@ it('commits native Pi Session derivation and Import operations', async () => {
     }),
   )
   expect(setPiSessionActiveLeaf).toHaveBeenLastCalledWith(sessionId, 'label-entry')
+})
+
+it('keeps the selected GUI context aligned with the opened Pi Session', async () => {
+  const now = new Date().toISOString()
+  const projectB: Project = {
+    id: '21234567-89ab-4def-8123-456789abcdef',
+    name: 'project-b',
+    rootPath: '/project-b',
+    trustedAt: now,
+    availability: 'available',
+    createdAt: now,
+    updatedAt: now,
+  }
+  const sessionB: SessionRecord = {
+    schemaVersion: 1,
+    id: '31234567-89ab-4def-8123-456789abcdef',
+    projectId: projectB.id,
+    title: 'Session B',
+    messages: [],
+    runs: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+  const repository: RuntimePersistence = {
+    selectContext: vi.fn(async () => undefined),
+    getSelectedContext: vi.fn(() => ({ projectId: projectB.id, sessionId: sessionB.id })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
+    getSession: vi.fn(async () => sessionB),
+    getSessionHistory: vi.fn(
+      () =>
+        ({
+          authority: 'pi-jsonl',
+          piSessionId: 'pi-session-b',
+          piSessionPath: '/sessions/project-b.jsonl',
+          legacyImport: { status: 'not-required', sourceFile: null },
+        }) satisfies SessionHistoryState,
+    ),
+    inspectSessionHistory: vi.fn(async () => historyView(sessionB, null)),
+    bindPiSession: vi.fn(async () => undefined),
+    rebuildSessionProjection: vi.fn(async () => sessionB),
+    setPiSessionActiveLeaf: vi.fn(async () => undefined),
+    createDerivedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    createImportedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    getProject: vi.fn(() => projectB),
+    getSettings: vi.fn(
+      async () =>
+        ({
+          apiProtocol: 'responses',
+          baseUrl: 'https://example.test/v1',
+          modelId: 'test-model',
+          reasoningEffort: null,
+          temperature: null,
+          maxOutputTokens: 64,
+          hasApiKey: true,
+        }) satisfies ModelSettings,
+    ),
+    getApiKey: vi.fn(async () => 'test-key'),
+    getRuntimePaths: vi.fn(() => ({
+      agentDirectory: '/agent',
+      sessionDirectory: '/sessions',
+      resumeSession: true,
+      piSessionPath: '/sessions/project-b.jsonl',
+    })),
+    saveSession: vi.fn(async () => undefined),
+  }
+  const openSession = vi.fn(async () => undefined)
+  const closeSession = vi.fn(async () => undefined)
+  const reloadResources = vi.fn(async () => undefined)
+  const supervisor: RuntimeHost = {
+    openSession,
+    closeSession,
+    start: vi.fn(async () => undefined),
+    fork: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    importSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    exportSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    navigateSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    compactSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    labelSessionEntry: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    abortSessionOperation: vi.fn(),
+    reloadResources,
+    stop: vi.fn(),
+    respondToExtensionUi: vi.fn(),
+    queueMessage: vi.fn(),
+    clearQueue: vi.fn(),
+    isActive: vi.fn(() => false),
+  }
+  const coordinator = new RuntimeCoordinator(repository, supervisor, vi.fn())
+
+  await coordinator.selectContext(projectB.id, sessionB.id)
+  expect(openSession).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'session.open',
+      sessionId: sessionB.id,
+      projectRoot: projectB.rootPath,
+    }),
+  )
+  expect(repository.selectContext).toHaveBeenCalledWith(projectB.id, sessionB.id)
+
+  await coordinator.reloadSessionResources(sessionB.id)
+  expect(reloadResources).toHaveBeenCalledWith(sessionB.id)
+
+  await coordinator.selectContext(projectB.id, null)
+  expect(closeSession).toHaveBeenCalledOnce()
+  expect(repository.selectContext).toHaveBeenLastCalledWith(projectB.id, null)
+})
+
+it('closes and reopens the long-lived Pi Session around current Session and Project deletion', async () => {
+  const now = new Date().toISOString()
+  const projectA: Project = {
+    id: '21234567-89ab-4def-8123-456789abcdef',
+    name: 'project-a',
+    rootPath: '/project-a',
+    trustedAt: now,
+    availability: 'available',
+    createdAt: now,
+    updatedAt: now,
+  }
+  const projectB: Project = {
+    ...projectA,
+    id: '31234567-89ab-4def-8123-456789abcdef',
+    name: 'project-b',
+    rootPath: '/project-b',
+  }
+  const sessionA1: SessionRecord = {
+    schemaVersion: 1,
+    id: '41234567-89ab-4def-8123-456789abcdef',
+    projectId: projectA.id,
+    title: 'Session A1',
+    messages: [],
+    runs: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+  const sessionA2: SessionRecord = { ...sessionA1, id: '51234567-89ab-4def-8123-456789abcdef' }
+  const sessionB: SessionRecord = {
+    ...sessionA1,
+    id: '61234567-89ab-4def-8123-456789abcdef',
+    projectId: projectB.id,
+    title: 'Session B',
+  }
+  const sessions = new Map([sessionA1, sessionA2, sessionB].map((session) => [session.id, session]))
+  let selected = { projectId: projectA.id, sessionId: sessionA1.id }
+  const steps: string[] = []
+  const repository: RuntimePersistence = {
+    selectContext: vi.fn(async (projectId, sessionId) => {
+      selected = { projectId: projectId!, sessionId: sessionId! }
+      steps.push(`select:${projectId}:${sessionId}`)
+    }),
+    getSelectedContext: vi.fn(() => selected),
+    removeProject: vi.fn(async (projectId) => {
+      expect(projectId).toBe(projectA.id)
+      selected = { projectId: projectB.id, sessionId: sessionB.id }
+      steps.push(`remove-project:${projectId}`)
+    }),
+    deleteSession: vi.fn(async (sessionId) => {
+      expect(sessionId).toBe(sessionA1.id)
+      selected = { projectId: projectA.id, sessionId: sessionA2.id }
+      steps.push(`delete-session:${sessionId}`)
+    }),
+    getSession: vi.fn(async (sessionId) => sessions.get(sessionId)!),
+    getSessionHistory: vi.fn((sessionId): SessionHistoryState => ({
+      authority: 'pi-jsonl',
+      piSessionId: `pi-${sessionId}`,
+      piSessionPath: `/sessions/${sessionId}.jsonl`,
+      legacyImport: { status: 'not-required', sourceFile: null },
+    })),
+    inspectSessionHistory: vi.fn(async (sessionId) => historyView(sessions.get(sessionId)!, null)),
+    bindPiSession: vi.fn(async () => undefined),
+    rebuildSessionProjection: vi.fn(async (sessionId) => sessions.get(sessionId)!),
+    setPiSessionActiveLeaf: vi.fn(async () => undefined),
+    createDerivedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    createImportedSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    getProject: vi.fn((projectId) => (projectId === projectA.id ? projectA : projectB)),
+    getSettings: vi.fn(
+      async () =>
+        ({
+          apiProtocol: 'responses',
+          baseUrl: 'https://example.test/v1',
+          modelId: 'test-model',
+          reasoningEffort: null,
+          temperature: null,
+          maxOutputTokens: null,
+          hasApiKey: true,
+        }) satisfies ModelSettings,
+    ),
+    getApiKey: vi.fn(async () => 'test-key'),
+    getRuntimePaths: vi.fn((_projectId, sessionId) => ({
+      agentDirectory: '/agent',
+      sessionDirectory: '/sessions',
+      resumeSession: true,
+      piSessionPath: `/sessions/${sessionId}.jsonl`,
+    })),
+    saveSession: vi.fn(async () => undefined),
+  }
+  const openSession = vi.fn(async (config) => {
+    steps.push(`open:${config.sessionId}`)
+  })
+  const closeSession = vi.fn(async () => {
+    steps.push('close')
+  })
+  const supervisor: RuntimeHost = {
+    openSession,
+    closeSession,
+    isActive: vi.fn(() => false),
+    start: vi.fn(async () => undefined),
+    fork: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    importSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    exportSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    navigateSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    compactSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    labelSessionEntry: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    abortSessionOperation: vi.fn(),
+    reloadResources: vi.fn(async () => undefined),
+    stop: vi.fn(),
+    respondToExtensionUi: vi.fn(),
+    queueMessage: vi.fn(),
+    clearQueue: vi.fn(),
+  }
+  const coordinator = new RuntimeCoordinator(repository, supervisor, vi.fn())
+
+  await coordinator.deleteSession(sessionA1.id)
+  expect(steps).toEqual([
+    'close',
+    `delete-session:${sessionA1.id}`,
+    `open:${sessionA2.id}`,
+    `select:${projectA.id}:${sessionA2.id}`,
+  ])
+
+  steps.length = 0
+  await coordinator.removeProject(projectA.id)
+  expect(steps).toEqual([
+    'close',
+    `remove-project:${projectA.id}`,
+    `open:${sessionB.id}`,
+    `select:${projectB.id}:${sessionB.id}`,
+  ])
+  expect(closeSession).toHaveBeenCalledTimes(2)
+  expect(openSession).toHaveBeenCalledTimes(2)
+})
+
+it('creates the replacement target Project from Pi cwd instead of reusing the source Project', async () => {
+  const now = new Date().toISOString()
+  const sourceProject: Project = {
+    id: projectId,
+    name: 'source',
+    rootPath: '/source',
+    trustedAt: now,
+    availability: 'available',
+    createdAt: now,
+    updatedAt: now,
+  }
+  const targetProject: Project = {
+    ...sourceProject,
+    id: '21234567-89ab-4def-8123-456789abcdef',
+    name: 'target',
+    rootPath: '/target',
+  }
+  const source: SessionRecord = {
+    schemaVersion: 1,
+    id: sessionId,
+    projectId: sourceProject.id,
+    title: 'Source',
+    messages: [],
+    runs: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+  const targetSummary: SessionSummary = {
+    id: '31234567-89ab-4def-8123-456789abcdef',
+    projectId: targetProject.id,
+    title: 'Target (Session)',
+    lastRunStatus: null,
+    historyAuthority: 'pi-jsonl',
+    createdAt: now,
+    updatedAt: now,
+  }
+  const prepareSessionReplacement = vi.fn(async () => undefined)
+  const ensureProjectByPath = vi.fn(async () => targetProject)
+  const commitSessionReplacement = vi.fn<
+    NonNullable<RuntimePersistence['commitSessionReplacement']>
+  >(async () => targetSummary)
+  const repository: RuntimePersistence = {
+    getSelectedContext: vi.fn(() => ({ projectId, sessionId })),
+    removeProject: vi.fn(async () => undefined),
+    deleteSession: vi.fn(async () => undefined),
+    getSession: vi.fn(async () => source),
+    getSessionHistory: vi.fn(
+      () =>
+        ({
+          authority: 'pi-jsonl',
+          piSessionId: 'source-pi-session',
+          piSessionPath: '/source/source.jsonl',
+          legacyImport: { status: 'not-required', sourceFile: null },
+        }) satisfies SessionHistoryState,
+    ),
+    inspectSessionHistory: vi.fn(async () => historyView(source, null)),
+    bindPiSession: vi.fn(async () => undefined),
+    rebuildSessionProjection: vi.fn(async () => source),
+    setPiSessionActiveLeaf: vi.fn(async () => undefined),
+    createDerivedSession: vi.fn(async () => targetSummary),
+    createImportedSession: vi.fn(async () => targetSummary),
+    commitSessionReplacement,
+    prepareSessionReplacement,
+    ensureProjectByPath,
+    findSessionByPiSessionPath: vi.fn(async () => null),
+    getProject: vi.fn(() => sourceProject),
+    getSettings: vi.fn(async () => null),
+    getApiKey: vi.fn(async () => null),
+    getRuntimePaths: vi.fn(() => ({
+      agentDirectory: '/agent',
+      sessionDirectory: '/sessions',
+      resumeSession: false,
+    })),
+    saveSession: vi.fn(async () => undefined),
+  }
+  const supervisor: RuntimeHost = {
+    start: vi.fn(async () => undefined),
+    fork: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    importSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    exportSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    navigateSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    compactSession: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    labelSessionEntry: vi.fn(async () => {
+      throw new Error('not used')
+    }),
+    abortSessionOperation: vi.fn(),
+    reloadResources: vi.fn(async () => undefined),
+    stop: vi.fn(),
+    respondToExtensionUi: vi.fn(),
+    queueMessage: vi.fn(),
+    clearQueue: vi.fn(),
+    isActive: vi.fn(() => false),
+  }
+  const coordinator = new RuntimeCoordinator(repository, supervisor, vi.fn())
+  const operationId = '41234567-89ab-4def-8123-456789abcdef'
+  const requestedTargetSessionId = '51234567-89ab-4def-8123-456789abcdef'
+
+  const prepared = await coordinator.handleSessionReplacementRequest({
+    type: 'session.replacement.requested',
+    operationId,
+    phase: 'prepare',
+    kind: 'switch',
+    sourceSessionId: source.id,
+    targetSessionId: requestedTargetSessionId,
+    targetSessionPath: '/target/external.jsonl',
+    piSessionId: null,
+    piSessionPath: null,
+    cwd: null,
+    sourcePiSessionPath: '/source/source.jsonl',
+  })
+  expect(prepared).toEqual({ accepted: true, targetSessionId: requestedTargetSessionId })
+  expect(prepareSessionReplacement).toHaveBeenCalledOnce()
+
+  await expect(
+    coordinator.handleSessionReplacementRequest({
+      type: 'session.replacement.requested',
+      operationId,
+      phase: 'commit',
+      kind: 'switch',
+      sourceSessionId: source.id,
+      targetSessionId: requestedTargetSessionId,
+      targetSessionPath: null,
+      piSessionId: 'target-pi-session',
+      piSessionPath: '/target/external.jsonl',
+      cwd: targetProject.rootPath,
+      sourcePiSessionPath: '/source/source.jsonl',
+    }),
+  ).resolves.toEqual({ accepted: true })
+  expect(ensureProjectByPath).toHaveBeenCalledWith(targetProject.rootPath)
+  expect(commitSessionReplacement).toHaveBeenCalledWith(
+    operationId,
+    source.id,
+    requestedTargetSessionId,
+    'switch',
+    { id: 'target-pi-session', path: '/target/external.jsonl' },
+    targetProject.id,
+    targetProject.rootPath,
+  )
 })

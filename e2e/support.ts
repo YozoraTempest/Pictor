@@ -12,7 +12,6 @@ export const credentialFixtures = {
 }
 
 export const bridgeKeys = [
-  'approveCommand',
   'cloneSession',
   'compactSession',
   'cancelSessionOperation',
@@ -26,6 +25,7 @@ export const bridgeKeys = [
   'getSessionRuntimeControls',
   'getSettings',
   'getSnapshot',
+  'notifyRendererReady',
   'forkSession',
   'installLocalPlugin',
   'installDevelopmentPlugin',
@@ -50,13 +50,13 @@ export const bridgeKeys = [
   'clearRuntimeQueue',
   'renameSession',
   'restoreBundledPlugin',
-  'rejectCommand',
   'saveSettings',
   'saveSessionRuntimeControls',
   'selectContext',
   'setPluginEnabled',
   'startRun',
   'stopRun',
+  'syncComposerText',
   'testSettings',
 ]
 

@@ -1,16 +1,7 @@
-import {
-  copyFile,
-  glob,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  unlink,
-  writeFile,
-} from 'node:fs/promises'
-import { basename, isAbsolute, join, relative, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
+
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 
 import {
   createAgentSessionFromServices,
@@ -22,9 +13,10 @@ import {
   type AgentSessionRuntime,
   type AgentSessionEvent,
   type CompactionResult,
+  type ExtensionCommandContextActions,
+  type ExtensionError,
   type ExtensionUIContext,
   type SessionStats,
-  type ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
 
 import {
@@ -36,6 +28,9 @@ import {
   type RuntimeImportConfig,
   type RuntimeLabelConfig,
   type RuntimeNavigateConfig,
+  type RuntimeSessionConfig,
+  type RuntimeSessionOpenConfig,
+  type RuntimeSessionReplacementRequest,
   type RuntimeStartConfig,
 } from '../shared/runtime-protocol.js'
 import { classifyRuntimeFailure, type RuntimeFailure } from '../shared/runtime-failure.js'
@@ -50,21 +45,23 @@ import type {
   AgentRuntimeResources,
   ModelRuntimeProvider,
 } from './plugin-interface.js'
-import { ApprovalBroker } from './approval-broker.js'
-import { BashCommandExecutor, type CommandExecutor } from './command-executor.js'
 import { ExtensionUiBroker } from './extension-ui.js'
-import { ProjectPathGuard } from './path-guard.js'
-import { createPictorTools } from './tools.js'
+
+type ReplacementContext =
+  NonNullable<
+    NonNullable<Parameters<ExtensionCommandContextActions['newSession']>[0]>['withSession']
+  > extends (context: infer Context) => unknown
+    ? Context
+    : never
 
 const toolKinds = {
-  pictor_list: 'list',
-  pictor_search: 'search',
-  pictor_read: 'read',
-  pictor_write: 'write',
-  pictor_edit: 'edit',
-  pictor_move: 'move',
-  pictor_delete: 'delete',
-  pictor_command: 'command',
+  ls: 'list',
+  grep: 'search',
+  read: 'read',
+  write: 'write',
+  edit: 'edit',
+  bash: 'command',
+  find: 'list',
 } as const
 
 interface PiSessionLike {
@@ -81,7 +78,21 @@ interface PiSessionLike {
   steer(text: string): Promise<void>
   followUp(text: string): Promise<void>
   clearQueue(): { steering: string[]; followUp: string[] }
-  fork(entryId: string): Promise<{ cancelled: boolean }>
+  fork(
+    entryId: string,
+    options?: {
+      position?: 'before' | 'at'
+      withSession?: (context: ReplacementContext) => Promise<void>
+    },
+  ): Promise<{ cancelled: boolean; selectedText?: string }>
+  newSession?(options?: Parameters<ExtensionCommandContextActions['newSession']>[0]): Promise<{
+    cancelled: boolean
+  }>
+  switchSession?(
+    sessionPath: string,
+    options?: Parameters<ExtensionCommandContextActions['switchSession']>[1],
+  ): Promise<{ cancelled: boolean }>
+  reload?(): Promise<void>
   importFromJsonl(inputPath: string, cwdOverride: string): Promise<{ cancelled: boolean }>
   navigateTree(
     entryId: string,
@@ -99,13 +110,34 @@ interface PiSessionLike {
   getActiveLeafId(): string | null
   getDiagnostics?(): ReadonlyArray<{ type: 'info' | 'warning' | 'error'; message: string }>
   dispose(): void | Promise<void>
-  bindExtensionUi?(context: ExtensionUIContext): Promise<void>
+  bindExtensionUi?(
+    context: ExtensionUIContext,
+    options?: {
+      commandContextActions?: ExtensionCommandContextActions
+      beforeRebind?: () => Promise<void>
+      beforeSessionInvalidate?: () => void
+      afterRebind?: () => Promise<void> | void
+      onError?: (error: ExtensionError) => void
+    },
+  ): Promise<void>
+  getActiveToolNames?(): string[]
+  getAllTools?(): ReadonlyArray<{ name: string }>
+  getModelId?(): string | null
+  getThinkingLevel?(): 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  getSteeringMode?(): 'all' | 'one-at-a-time'
+  getFollowUpMode?(): 'all' | 'one-at-a-time'
+  getModelRuntime?(): ModelRuntime
+  setModel?(model: Parameters<AgentSessionRuntime['session']['setModel']>[0]): Promise<void>
+  setActiveToolNames?(names: string[]): void
+  setThinkingLevel?(level: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'): void
+  setSteeringMode?(mode: 'all' | 'one-at-a-time'): void
+  setFollowUpMode?(mode: 'all' | 'one-at-a-time'): void
+  getCwd?(): string
 }
 
 interface SessionFactoryInput {
-  config: RuntimeStartConfig
+  config: RuntimeSessionConfig
   sessionFile?: string
-  tools: ToolDefinition[]
   extensionPaths: readonly string[]
   skillPaths: readonly string[]
   promptPaths: readonly string[]
@@ -116,10 +148,8 @@ type SessionFactory = (input: SessionFactoryInput) => Promise<PiSessionLike>
 
 interface ActiveRuntime {
   config: RuntimeStartConfig
-  approvals: ApprovalBroker
   abortController: AbortController
   session: PiSessionLike | null
-  unsubscribe: (() => void) | null
   cancelled: boolean
   text: string
   thinkingStarted: boolean
@@ -127,6 +157,25 @@ interface ActiveRuntime {
   failure: RuntimeFailure | null
   redactor: SecretRedactor
   extensionUi: ExtensionUiBroker
+}
+
+interface OpenRuntimeSession {
+  sessionId: string
+  eventSessionId: string
+  config: RuntimeSessionConfig
+  session: PiSessionLike
+  extensionUi: ExtensionUiBroker
+  unsubscribe: () => void
+  redactor: SecretRedactor
+  pendingReplacement:
+    | {
+        operationId: string
+        kind: 'new' | 'fork' | 'switch'
+        sourceSessionId: string
+        targetSessionId: string
+        commitRequested: boolean
+      }
+    | undefined
 }
 
 type RuntimeEventPayload = RuntimeEvent extends infer Event
@@ -171,10 +220,16 @@ function toolPath(projectRoot: string, args: unknown): string | null {
   return source && destination ? `${source} -> ${destination}` : (source ?? destination)
 }
 
+function configuredSessionPath(config: { sourcePiSessionPath: string | undefined }): string {
+  if (!config.sourcePiSessionPath || !isAbsolute(config.sourcePiSessionPath)) {
+    throw new Error('Pi Session operation requires an absolute source path')
+  }
+  return resolve(config.sourcePiSessionPath)
+}
+
 async function createProductionSession({
   config,
   sessionFile,
-  tools,
   extensionPaths,
   skillPaths,
   promptPaths,
@@ -182,42 +237,33 @@ async function createProductionSession({
 }: SessionFactoryInput): Promise<PiSessionLike> {
   await mkdir(config.agentDirectory, { recursive: true })
   await mkdir(config.sessionDirectory, { recursive: true })
-  const sessionManager = sessionFile
-    ? SessionManager.open(
-        resolve(config.sessionDirectory, sessionFile),
-        config.sessionDirectory,
-        config.projectRoot,
-      )
-    : config.resumeSession
-      ? SessionManager.continueRecent(config.projectRoot, config.sessionDirectory)
-      : SessionManager.create(config.projectRoot, config.sessionDirectory)
+  const requestedSessionPath = sessionFile
+    ? isAbsolute(sessionFile)
+      ? resolve(sessionFile)
+      : resolve(config.sessionDirectory, sessionFile)
+    : config.piSessionPath
+      ? resolve(config.piSessionPath)
+      : null
+  const sessionManager = requestedSessionPath
+    ? SessionManager.open(requestedSessionPath, dirname(requestedSessionPath), config.projectRoot)
+    : SessionManager.create(config.projectRoot, config.sessionDirectory)
   if (config.activeLeafId) sessionManager.branch(config.activeLeafId)
   else if (config.activeLeafId === null && 'activeLeafId' in config) sessionManager.resetLeaf()
-  const effectiveExtensionPaths = [...extensionPaths]
-  if (config.runtimePreferences?.projectExtensionsEnabled) {
-    const projectExtensionDirectory = join(config.projectRoot, '.pi', 'extensions')
-    for (const pattern of ['*.ts', '*.js', '*/index.ts', '*/index.js']) {
-      for await (const path of glob(join(projectExtensionDirectory, pattern))) {
-        effectiveExtensionPaths.push(path)
-      }
-    }
-  }
   const createRuntime = async ({
     cwd,
     agentDir,
     sessionManager: targetSessionManager,
     sessionStartEvent,
   }: Parameters<Parameters<typeof createAgentSessionRuntime>[0]>[0]) => {
-    const settingsManager = SettingsManager.inMemory(
-      {
-        retry: { enabled: true, maxRetries: 3, baseDelayMs: 500 },
-        enableAnalytics: false,
-        compaction: { enabled: true },
-        steeringMode: config.runtimePreferences?.steeringMode ?? 'one-at-a-time',
-        followUpMode: config.runtimePreferences?.followUpMode ?? 'one-at-a-time',
-      },
-      { projectTrusted: true },
-    )
+    const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: true })
+    settingsManager.applyOverrides({
+      ...(config.runtimePreferences?.steeringMode
+        ? { steeringMode: config.runtimePreferences.steeringMode }
+        : {}),
+      ...(config.runtimePreferences?.followUpMode
+        ? { followUpMode: config.runtimePreferences.followUpMode }
+        : {}),
+    })
     const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false })
     const model = modelProvider.register(
       modelRuntime,
@@ -233,28 +279,9 @@ async function createProductionSession({
       settingsManager,
       modelRuntime,
       resourceLoaderOptions: {
-        noExtensions: effectiveExtensionPaths.length === 0,
-        ...(effectiveExtensionPaths.length > 0
-          ? { additionalExtensionPaths: effectiveExtensionPaths }
-          : {}),
-        extensionsOverride: (base) => ({
-          ...base,
-          extensions: base.extensions.filter((extension) =>
-            effectiveExtensionPaths.some((allowedPath) =>
-              isPathWithin(allowedPath, extension.resolvedPath),
-            ),
-          ),
-          errors: base.errors.filter((error) =>
-            effectiveExtensionPaths.some((allowedPath) => isPathWithin(allowedPath, error.path)),
-          ),
-        }),
-        ...(skillPaths.length > 0 ? { additionalSkillPaths: [...skillPaths] } : {}),
-        noSkills: skillPaths.length === 0,
-        ...(promptPaths.length > 0 ? { additionalPromptTemplatePaths: [...promptPaths] } : {}),
-        noPromptTemplates: promptPaths.length === 0,
-        noThemes: true,
-        systemPrompt:
-          'You are Pictor, a delegate coding agent. Work only through the provided Pictor tools. Keep changes scoped to the selected project, explain progress briefly, and finish with results, changed files, verification, and remaining work.',
+        additionalExtensionPaths: [...extensionPaths],
+        additionalSkillPaths: [...skillPaths],
+        additionalPromptTemplatePaths: [...promptPaths],
       },
     })
     const result = await createAgentSessionFromServices({
@@ -264,9 +291,11 @@ async function createProductionSession({
       model,
       thinkingLevel:
         config.runtimePreferences?.thinkingLevel ?? config.settings.reasoningEffort ?? 'off',
-      noTools: 'builtin',
-      customTools: tools,
     })
+    const activeTools = config.runtimePreferences?.activeTools ?? [
+      ...new Set([...result.session.getActiveToolNames(), ...Object.keys(toolKinds)]),
+    ]
+    result.session.setActiveToolsByName(activeTools)
     return { ...result, services, diagnostics: services.diagnostics }
   }
   const runtime = await createAgentSessionRuntime(createRuntime, {
@@ -327,9 +356,29 @@ class PiSessionRuntime implements PiSessionLike {
     return this.runtime.session.clearQueue()
   }
 
-  async fork(entryId: string): Promise<{ cancelled: boolean }> {
-    const result = await this.runtime.fork(entryId, { position: 'at' })
-    return { cancelled: result.cancelled }
+  async fork(
+    entryId: string,
+    options?: {
+      position?: 'before' | 'at'
+      withSession?: (context: ReplacementContext) => Promise<void>
+    },
+  ): Promise<{ cancelled: boolean; selectedText?: string }> {
+    return this.runtime.fork(entryId, options)
+  }
+
+  newSession(options?: Parameters<ExtensionCommandContextActions['newSession']>[0]) {
+    return this.runtime.newSession(options)
+  }
+
+  switchSession(
+    sessionPath: string,
+    options?: Parameters<ExtensionCommandContextActions['switchSession']>[1],
+  ) {
+    return this.runtime.switchSession(sessionPath, options)
+  }
+
+  reload(): Promise<void> {
+    return this.runtime.session.reload()
   }
 
   async importFromJsonl(inputPath: string, cwdOverride: string): Promise<{ cancelled: boolean }> {
@@ -394,32 +443,94 @@ class PiSessionRuntime implements PiSessionLike {
     return this.runtime.dispose()
   }
 
-  bindExtensionUi(context: ExtensionUIContext): Promise<void> {
-    const bind = () => this.runtime.session.bindExtensions({ uiContext: context, mode: 'rpc' })
+  getActiveToolNames(): string[] {
+    return this.runtime.session.getActiveToolNames()
+  }
+
+  getAllTools(): ReadonlyArray<{ name: string }> {
+    return this.runtime.session.getAllTools()
+  }
+
+  getModelId(): string | null {
+    return this.runtime.session.model?.id ?? null
+  }
+
+  getThinkingLevel() {
+    return this.runtime.session.thinkingLevel
+  }
+
+  getSteeringMode() {
+    return this.runtime.session.steeringMode
+  }
+
+  getFollowUpMode() {
+    return this.runtime.session.followUpMode
+  }
+
+  getModelRuntime(): ModelRuntime {
+    return this.runtime.session.modelRuntime
+  }
+
+  setModel(model: Parameters<AgentSessionRuntime['session']['setModel']>[0]): Promise<void> {
+    return this.runtime.session.setModel(model)
+  }
+
+  setActiveToolNames(names: string[]): void {
+    this.runtime.session.setActiveToolsByName(names)
+  }
+
+  setThinkingLevel(level: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'): void {
+    this.runtime.session.setThinkingLevel(level)
+  }
+
+  setSteeringMode(mode: 'all' | 'one-at-a-time'): void {
+    this.runtime.session.setSteeringMode(mode)
+  }
+
+  setFollowUpMode(mode: 'all' | 'one-at-a-time'): void {
+    this.runtime.session.setFollowUpMode(mode)
+  }
+
+  getCwd(): string {
+    return this.runtime.cwd
+  }
+
+  bindExtensionUi(
+    context: ExtensionUIContext,
+    options?: {
+      commandContextActions?: ExtensionCommandContextActions
+      beforeRebind?: () => Promise<void>
+      beforeSessionInvalidate?: () => void
+      afterRebind?: () => Promise<void> | void
+      onError?: (error: ExtensionError) => void
+    },
+  ): Promise<void> {
+    const bind = async () => {
+      await options?.beforeRebind?.()
+      this.runtime.setBeforeSessionInvalidate(options?.beforeSessionInvalidate)
+      await this.runtime.session.bindExtensions({
+        uiContext: context,
+        mode: 'rpc',
+        ...(options?.commandContextActions
+          ? { commandContextActions: options.commandContextActions }
+          : {}),
+        ...(options?.onError ? { onError: options.onError } : {}),
+      })
+      await options?.afterRebind?.()
+    }
     this.runtime.setRebindSession(bind)
     return bind()
   }
 }
 
-async function sanitizePiTranscripts(
-  sessionDirectory: string,
-  redactor: SecretRedactor,
-): Promise<void> {
-  let files: string[]
+async function sanitizePiTranscript(path: string, redactor: SecretRedactor): Promise<void> {
+  let content: string
   try {
-    files = await readdir(sessionDirectory)
+    content = await readFile(path, 'utf8')
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return
     throw error
   }
-  for (const file of files) {
-    if (!file.endsWith('.jsonl')) continue
-    await sanitizePiTranscript(resolve(sessionDirectory, file), redactor)
-  }
-}
-
-async function sanitizePiTranscript(path: string, redactor: SecretRedactor): Promise<void> {
-  const content = await readFile(path, 'utf8')
   const entries = content
     .trim()
     .split('\n')
@@ -433,6 +544,7 @@ async function sanitizePiTranscript(path: string, redactor: SecretRedactor): Pro
 export class PiAgentRuntime {
   readonly id = 'pictor.pi-agent-runtime'
   private current: ActiveRuntime | undefined
+  private opened: OpenRuntimeSession | null = null
   private extensionPaths: readonly string[] = []
   private skillPaths: readonly string[] = []
   private promptPaths: readonly string[] = []
@@ -444,11 +556,12 @@ export class PiAgentRuntime {
     session: PiSessionLike | null
     cancelRequested: boolean
   } | null = null
+  private requestSessionReplacement:
+    NonNullable<AgentRuntimeResources['requestSessionReplacement']> | undefined
 
   constructor(
     private readonly emit: (event: RuntimeEvent) => void,
     private readonly sessionFactory: SessionFactory = createProductionSession,
-    private readonly commandExecutor?: CommandExecutor,
   ) {}
 
   configure(resources: AgentRuntimeResources): void {
@@ -456,81 +569,52 @@ export class PiAgentRuntime {
     this.skillPaths = [...resources.skillPaths]
     this.promptPaths = [...resources.promptPaths]
     this.modelProviders = [...resources.modelProviders]
+    this.requestSessionReplacement = resources.requestSessionReplacement
+  }
+
+  async openSession(config: RuntimeSessionOpenConfig): Promise<void> {
+    if (this.current || this.sessionOperation) {
+      throw new Error('Only one Runtime operation can be active')
+    }
+    await this.ensureOpenSession(config)
+  }
+
+  async closeSession(): Promise<void> {
+    if (this.current || this.sessionOperation) {
+      throw new Error('Only one Runtime operation can be active')
+    }
+    if (this.opened) await this.closeOpenedSession(this.opened)
   }
 
   async start(config: RuntimeStartConfig): Promise<void> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
     const abortController = new AbortController()
-    const approvals = new ApprovalBroker((request) => {
-      this.emitEvent(config, {
-        type: 'approval.requested',
-        callId: request.callId,
-        command: request.command,
-        cwd: request.cwd,
-        purpose: request.purpose,
-      })
-    })
     const current: ActiveRuntime = {
       config,
-      approvals,
       abortController,
       session: null,
-      unsubscribe: null,
       cancelled: false,
       text: '',
       thinkingStarted: false,
       textStarted: false,
       failure: null,
       redactor: createSecretRedactor([config.apiKey]),
-      extensionUi: new ExtensionUiBroker((event) => this.emitEvent(config, event)),
+      extensionUi: new ExtensionUiBroker((event) => this.emitSessionPayload(this.opened, event)),
     }
     this.current = current
 
     try {
       this.emitEvent(config, { type: 'run.stateChanged', status: 'running', error: null })
       this.emitEvent(config, { type: 'message.started', messageId: config.messageId })
-      const guard = await ProjectPathGuard.create(config.projectRoot)
-      const commandExecutor =
-        this.commandExecutor ?? new BashCommandExecutor(config.commandInterpreterPath ?? null)
-      const tools = createPictorTools({
-        guard,
-        approvals,
-        commandExecutor,
-        isCancelled: () => current.cancelled,
-        onApprovalResolved: (request, allowed) => {
-          this.emitEvent(config, {
-            type: 'approval.resolved',
-            callId: request.callId,
-            allowed,
-          })
-        },
-      })
-      const session = await this.sessionFactory({
-        config,
-        ...(config.piSessionFile ? { sessionFile: config.piSessionFile } : {}),
-        tools,
-        extensionPaths: this.extensionPaths,
-        skillPaths: this.skillPaths,
-        promptPaths: this.promptPaths,
-        modelProvider: this.getModelProvider(),
-      })
-      current.session = session
-      this.emitDiagnostics(config, session)
-      const piSessionFile = session.getSessionFile()
-      if (!piSessionFile) throw new Error('Pi Session did not provide a persistent JSONL file')
-      this.emitEvent(config, {
-        type: 'session.bound',
-        piSessionId: session.getSessionId(),
-        piSessionFile: basename(piSessionFile),
-      })
+      const opened = await this.ensureOpenSession(config)
+      current.session = opened.session
+      current.extensionUi = opened.extensionUi
       if (current.cancelled) {
-        await session.abort()
+        await opened.session.abort()
         return
       }
-      current.unsubscribe = session.subscribe((event) => this.handlePiEvent(current, event))
-      await session.bindExtensionUi?.(current.extensionUi.createContext())
-      await session.prompt(current.redactor.redactText(config.prompt), {
+      await opened.session.prompt(opened.redactor.redactText(config.prompt), {
         expandPromptTemplates: true,
         ...(config.images && config.images.length > 0
           ? {
@@ -542,18 +626,19 @@ export class PiAgentRuntime {
             }
           : {}),
       })
-      await session.waitForIdle()
-      await sanitizePiTranscripts(config.sessionDirectory, current.redactor)
-      const stats = session.getSessionStats()
-      this.emitEvent(config, {
+      await opened.session.waitForIdle()
+      const piSessionPath = opened.session.getSessionFile()
+      if (piSessionPath) await sanitizePiTranscript(piSessionPath, current.redactor)
+      const stats = opened.session.getSessionStats()
+      this.emitSessionPayload(opened, {
         type: 'usage.updated',
         tokens: stats.tokens,
         cost: stats.cost,
         context: stats.contextUsage ?? null,
       })
-      this.emitEvent(config, {
+      this.emitSessionPayload(opened, {
         type: 'session.activeLeafChanged',
-        activeLeafId: session.getActiveLeafId(),
+        activeLeafId: opened.session.getActiveLeafId(),
       })
 
       if (current.cancelled) {
@@ -575,7 +660,7 @@ export class PiAgentRuntime {
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Pi runtime failed'
       if (current.session) {
-        this.emitEvent(config, {
+        this.emitSessionPayload(this.opened, {
           type: 'session.activeLeafChanged',
           activeLeafId: current.session.getActiveLeafId(),
         })
@@ -595,20 +680,299 @@ export class PiAgentRuntime {
         })
       }
     } finally {
-      current.approvals.cancelAll()
       current.extensionUi.cancelAll()
-      current.unsubscribe?.()
-      await current.session?.dispose()
       if (this.current === current) this.current = undefined
     }
+  }
+
+  private async ensureOpenSession(config: RuntimeSessionConfig): Promise<OpenRuntimeSession> {
+    const requestedPath = config.piSessionPath ? resolve(config.piSessionPath) : null
+    const openedPath = this.opened?.session.getSessionFile()
+    if (
+      this.opened &&
+      this.opened.sessionId === config.sessionId &&
+      (!requestedPath || openedPath === requestedPath)
+    ) {
+      return this.opened
+    }
+
+    if (this.opened) await this.closeOpenedSession(this.opened)
+
+    const session = await this.sessionFactory({
+      config,
+      ...(requestedPath ? { sessionFile: requestedPath } : {}),
+      extensionPaths: this.extensionPaths,
+      skillPaths: this.skillPaths,
+      promptPaths: this.promptPaths,
+      modelProvider: this.getModelProvider(),
+    })
+    const piSessionPath = session.getSessionFile()
+    if (!piSessionPath) throw new Error('Pi Session did not provide a persistent JSONL file')
+    config.piSessionPath = resolve(piSessionPath)
+    const redactor = createSecretRedactor([config.apiKey])
+    const opened: OpenRuntimeSession = {
+      sessionId: config.sessionId,
+      eventSessionId: config.sessionId,
+      config,
+      session,
+      extensionUi: new ExtensionUiBroker((event) => this.emitSessionPayload(opened, event)),
+      unsubscribe: () => undefined,
+      redactor,
+      pendingReplacement: undefined,
+    }
+    this.opened = opened
+
+    try {
+      this.emitDiagnostics(opened)
+      this.emitSessionPayload(opened, {
+        type: 'session.bound',
+        piSessionId: session.getSessionId(),
+        piSessionPath: resolve(piSessionPath),
+      })
+      if (session.bindExtensionUi) {
+        await session.bindExtensionUi(opened.extensionUi.createContext(), {
+          commandContextActions: this.createCommandContextActions(opened),
+          beforeSessionInvalidate: () => {
+            opened.unsubscribe()
+            const pending = opened.pendingReplacement
+            if (pending) opened.eventSessionId = pending.targetSessionId
+          },
+          afterRebind: () => {
+            this.rebindOpenedSession(opened, opened.session)
+            return this.commitPendingReplacement(opened)
+          },
+          onError: (error) => this.handleExtensionError(opened, error),
+        })
+      } else {
+        this.rebindOpenedSession(opened, session)
+      }
+      return opened
+    } catch (error) {
+      await this.closeOpenedSession(opened)
+      throw error
+    }
+  }
+
+  private requireOpenedSession(sessionId: string, sessionPath: string): OpenRuntimeSession {
+    const opened = this.opened
+    const openedPath = opened?.session.getSessionFile()
+    if (
+      !opened ||
+      opened.sessionId !== sessionId ||
+      !openedPath ||
+      resolve(openedPath) !== resolve(sessionPath)
+    ) {
+      throw new Error('Requested Pi Session is not open')
+    }
+    return opened
+  }
+
+  private async closeOpenedSession(opened: OpenRuntimeSession): Promise<void> {
+    if (this.opened === opened) this.opened = null
+    opened.unsubscribe()
+    opened.extensionUi.cancelAll()
+    await Promise.resolve(opened.session.dispose())
+  }
+
+  private rebindOpenedSession(opened: OpenRuntimeSession, session: PiSessionLike): void {
+    if (this.opened !== opened) return
+    opened.unsubscribe()
+    opened.session = session
+    opened.unsubscribe = session.subscribe((event) => this.handlePiEvent(opened, event))
+  }
+
+  private createCommandContextActions(opened: OpenRuntimeSession): ExtensionCommandContextActions {
+    return {
+      waitForIdle: () => opened.session.waitForIdle(),
+      newSession: (options) =>
+        this.replaceSession(
+          opened,
+          'new',
+          async (withSession) => {
+            if (!opened.session.newSession) throw new Error('Pi Session replacement is unavailable')
+            return opened.session.newSession({ ...options, withSession })
+          },
+          undefined,
+          options?.withSession,
+        ),
+      fork: (entryId, options) =>
+        this.replaceSession(
+          opened,
+          'fork',
+          (withSession) => opened.session.fork(entryId, { ...options, withSession }),
+          undefined,
+          options?.withSession,
+        ),
+      navigateTree: async (targetId, options) => {
+        const result = await opened.session.navigateTree(targetId, {
+          summarize: options?.summarize ?? false,
+          ...(options?.customInstructions
+            ? { customInstructions: options.customInstructions }
+            : {}),
+        })
+        if (!result.cancelled) {
+          this.emitSessionPayload(opened, {
+            type: 'session.activeLeafChanged',
+            activeLeafId: opened.session.getActiveLeafId(),
+          })
+        }
+        return { cancelled: result.cancelled }
+      },
+      switchSession: (sessionPath, options) =>
+        this.replaceSession(
+          opened,
+          'switch',
+          async (withSession) => {
+            if (!opened.session.switchSession)
+              throw new Error('Pi Session replacement is unavailable')
+            return opened.session.switchSession(sessionPath, { ...options, withSession })
+          },
+          sessionPath,
+          options?.withSession,
+        ),
+      reload: async () => {
+        await opened.session.reload?.()
+      },
+    }
+  }
+
+  private async replaceSession<T extends { cancelled: boolean }>(
+    opened: OpenRuntimeSession,
+    kind: 'new' | 'fork' | 'switch',
+    invoke: (withSession: (context: ReplacementContext) => Promise<void>) => Promise<T | undefined>,
+    targetSessionPath?: string,
+    withSession: (context: ReplacementContext) => Promise<void> = async () => undefined,
+  ): Promise<T> {
+    const operationId = randomUUID()
+    const targetSessionId = randomUUID()
+    const prepared = await this.requestReplacement({
+      type: 'session.replacement.requested',
+      operationId,
+      phase: 'prepare',
+      kind,
+      sourceSessionId: opened.sessionId,
+      targetSessionId,
+      targetSessionPath: targetSessionPath ? resolve(targetSessionPath) : null,
+      piSessionId: null,
+      piSessionPath: null,
+      cwd: null,
+      sourcePiSessionPath: opened.config.piSessionPath ?? null,
+    })
+    if (!prepared.accepted) return { cancelled: true } as T
+    const resolvedTargetSessionId = prepared.targetSessionId ?? targetSessionId
+
+    opened.pendingReplacement = {
+      operationId,
+      kind,
+      sourceSessionId: opened.sessionId,
+      targetSessionId: resolvedTargetSessionId,
+      commitRequested: false,
+    }
+    try {
+      const result = await invoke(withSession)
+      if (result?.cancelled) await this.abortPendingReplacement(opened, operationId)
+      return result ?? ({ cancelled: false } as T)
+    } catch (error) {
+      if (!opened.pendingReplacement?.commitRequested) {
+        await this.abortPendingReplacement(opened, operationId)
+      } else if (this.opened === opened) {
+        await this.abortPendingReplacement(opened, operationId)
+        await this.closeOpenedSession(opened)
+      }
+      throw error
+    } finally {
+      opened.pendingReplacement = undefined
+    }
+  }
+
+  private async commitPendingReplacement(opened: OpenRuntimeSession): Promise<void> {
+    const pending = opened.pendingReplacement
+    if (!pending) return
+    const piSessionPath = opened.session.getSessionFile()
+    if (!piSessionPath) throw new Error('Pi Session replacement did not provide a JSONL file')
+    pending.commitRequested = true
+    const accepted = await this.requestReplacement({
+      type: 'session.replacement.requested',
+      operationId: pending.operationId,
+      phase: 'commit',
+      kind: pending.kind,
+      sourceSessionId: pending.sourceSessionId,
+      targetSessionId: pending.targetSessionId,
+      targetSessionPath: null,
+      piSessionId: opened.session.getSessionId(),
+      piSessionPath: resolve(piSessionPath),
+      cwd: opened.session.getCwd?.() ?? opened.config.projectRoot,
+      sourcePiSessionPath: opened.config.piSessionPath ?? null,
+    })
+    if (!accepted.accepted) throw new Error(accepted.message ?? 'Session replacement was rejected')
+    const sourceSessionId = pending.sourceSessionId
+    const cwd = opened.session.getCwd?.() ?? opened.config.projectRoot
+    opened.eventSessionId = pending.targetSessionId
+    opened.sessionId = pending.targetSessionId
+    opened.config = {
+      ...opened.config,
+      sessionId: pending.targetSessionId,
+      piSessionPath: resolve(piSessionPath),
+      projectRoot: cwd,
+    }
+    if (this.current?.session === opened.session) this.current.cancelled = true
+    this.emitSessionPayload(opened, {
+      type: 'session.replaced',
+      sourceSessionId,
+      targetSessionId: pending.targetSessionId,
+      piSessionId: opened.session.getSessionId(),
+      piSessionPath: resolve(piSessionPath),
+      cwd,
+      activeLeafId: opened.session.getActiveLeafId(),
+    })
+  }
+
+  private async abortPendingReplacement(
+    opened: OpenRuntimeSession,
+    operationId: string,
+  ): Promise<void> {
+    const pending = opened.pendingReplacement
+    if (!pending || pending.operationId !== operationId) return
+    try {
+      await this.requestReplacement({
+        type: 'session.replacement.requested',
+        operationId,
+        phase: 'abort',
+        kind: pending.kind,
+        sourceSessionId: pending.sourceSessionId,
+        targetSessionId: pending.targetSessionId,
+        targetSessionPath: null,
+        piSessionId: null,
+        piSessionPath: null,
+        cwd: null,
+        sourcePiSessionPath: opened.config.piSessionPath ?? null,
+      })
+    } finally {
+      if (this.opened === opened) opened.eventSessionId = pending.sourceSessionId
+    }
+  }
+
+  private async requestReplacement(
+    request: RuntimeSessionReplacementRequest,
+  ): Promise<{ accepted: boolean; targetSessionId?: string; message?: string }> {
+    return this.requestSessionReplacement?.(request) ?? { accepted: true }
+  }
+
+  private handleExtensionError(opened: OpenRuntimeSession, error: ExtensionError): void {
+    this.emitSessionPayload(opened, {
+      type: 'runtime.diagnostic',
+      severity: 'error',
+      message: `${error.event}: ${error.error}`,
+    })
   }
 
   async fork(config: RuntimeForkConfig): Promise<AgentRuntimeForkResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
-    if (config.sourcePiSessionFile !== basename(config.sourcePiSessionFile)) {
-      throw new Error('Source Pi Session file must be a basename')
-    }
+    if (this.opened) await this.closeOpenedSession(this.opened)
+    const sourcePiSessionPath = configuredSessionPath({
+      sourcePiSessionPath: config.sourcePiSessionPath,
+    })
     const redactor = createSecretRedactor([config.apiKey])
     const eventConfig: RuntimeStartConfig = {
       type: 'start',
@@ -617,13 +981,16 @@ export class PiAgentRuntime {
       messageId: config.operationId,
       projectRoot: config.projectRoot,
       agentDirectory: config.agentDirectory,
-      sessionDirectory: config.sourceSessionDirectory,
+      sessionDirectory: dirname(sourcePiSessionPath),
+      piSessionPath: sourcePiSessionPath,
       resumeSession: true,
       settings: config.settings,
       apiKey: config.apiKey,
       prompt: 'Fork Pi Session',
     }
-    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
+    const broker = new ExtensionUiBroker((event) =>
+      this.emitOperationPayload(config.sourceSessionId, redactor, event),
+    )
     this.sessionOperation = {
       operationId: config.operationId,
       kind: 'fork',
@@ -637,8 +1004,7 @@ export class PiAgentRuntime {
     try {
       session = await this.sessionFactory({
         config: eventConfig,
-        sessionFile: config.sourcePiSessionFile,
-        tools: [],
+        sessionFile: sourcePiSessionPath,
         extensionPaths: this.extensionPaths,
         skillPaths: this.skillPaths,
         promptPaths: this.promptPaths,
@@ -648,28 +1014,19 @@ export class PiAgentRuntime {
         this.sessionOperation.session = session
       }
       await session.bindExtensionUi?.(broker.createContext())
-      const result = await session.fork(config.entryId)
+      const result = await session.fork(config.entryId, { position: 'at' })
       if (result.cancelled) return { outcome: 'cancelled' }
 
-      const piSessionFile = session.getSessionFile()
-      if (!piSessionFile) throw new Error('Forked Pi Session did not provide a JSONL file')
-      const piSessionFileName = basename(piSessionFile)
-      if (piSessionFileName === config.sourcePiSessionFile) {
+      const piSessionPath = session.getSessionFile()
+      if (!piSessionPath) throw new Error('Forked Pi Session did not provide a JSONL file')
+      if (resolve(piSessionPath) === sourcePiSessionPath) {
         throw new Error('Pi Fork did not create an independent Session file')
       }
       const piSessionId = session.getSessionId()
-      await sanitizePiTranscript(
-        resolve(config.sourceSessionDirectory, piSessionFileName),
-        redactor,
-      )
+      await sanitizePiTranscript(resolve(piSessionPath), redactor)
       await session.dispose()
       disposed = true
-      await mkdir(config.targetSessionDirectory, { recursive: true })
-      await rename(
-        resolve(config.sourceSessionDirectory, piSessionFileName),
-        resolve(config.targetSessionDirectory, piSessionFileName),
-      )
-      return { outcome: 'completed', piSessionId, piSessionFile: piSessionFileName }
+      return { outcome: 'completed', piSessionId, piSessionPath: resolve(piSessionPath) }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Pi Session Fork failed'
       throw new Error(redactor.redactText(detail), { cause: error })
@@ -685,6 +1042,7 @@ export class PiAgentRuntime {
   async importSession(config: RuntimeImportConfig): Promise<AgentRuntimeImportResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
+    if (this.opened) await this.closeOpenedSession(this.opened)
     if (!isAbsolute(config.sourceJsonlPath)) {
       throw new Error('Imported Pi Session path must be absolute')
     }
@@ -702,7 +1060,9 @@ export class PiAgentRuntime {
       apiKey: config.apiKey,
       prompt: 'Import Pi Session',
     }
-    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
+    const broker = new ExtensionUiBroker((event) =>
+      this.emitOperationPayload(config.targetSessionId, redactor, event),
+    )
     this.sessionOperation = {
       operationId: config.operationId,
       kind: 'import',
@@ -717,7 +1077,6 @@ export class PiAgentRuntime {
     try {
       session = await this.sessionFactory({
         config: eventConfig,
-        tools: [],
         extensionPaths: this.extensionPaths,
         skillPaths: this.skillPaths,
         promptPaths: this.promptPaths,
@@ -739,7 +1098,6 @@ export class PiAgentRuntime {
       if (resolve(importedSessionFile) === resolve(config.sourceJsonlPath)) {
         throw new Error('Pi Import did not create an independent Session copy')
       }
-      const piSessionFile = basename(importedSessionFile)
       const piSessionId = session.getSessionId()
       await sanitizePiTranscript(importedSessionFile, redactor)
       await session.dispose()
@@ -748,7 +1106,7 @@ export class PiAgentRuntime {
         await unlink(initialSessionFile).catch(() => undefined)
       }
       completed = true
-      return { outcome: 'completed', piSessionId, piSessionFile }
+      return { outcome: 'completed', piSessionId, piSessionPath: resolve(importedSessionFile) }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Pi Session Import failed'
       throw new Error(redactor.redactText(detail), { cause: error })
@@ -765,13 +1123,12 @@ export class PiAgentRuntime {
   async exportSession(config: RuntimeExportConfig): Promise<AgentRuntimeExportResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
-    if (config.sourcePiSessionFile !== basename(config.sourcePiSessionFile)) {
-      throw new Error('Source Pi Session file must be a basename')
-    }
+    const sourcePath = configuredSessionPath({
+      sourcePiSessionPath: config.sourcePiSessionPath,
+    })
     if (!isAbsolute(config.destinationPath)) {
       throw new Error('Pi Session export destination must be absolute')
     }
-    const sourcePath = resolve(config.sourceSessionDirectory, config.sourcePiSessionFile)
     if (resolve(config.destinationPath) === sourcePath) {
       throw new Error('Pi Session export cannot overwrite its source history')
     }
@@ -783,9 +1140,7 @@ export class PiAgentRuntime {
     }
 
     const redactor = createSecretRedactor([config.apiKey])
-    const temporarySessionDirectory = await mkdtemp(
-      resolve(config.sourceSessionDirectory, '.pictor-export-'),
-    )
+    const temporarySessionDirectory = await mkdtemp(resolve(dirname(sourcePath), '.pictor-export-'))
     const eventConfig: RuntimeStartConfig = {
       type: 'start',
       runId: config.operationId,
@@ -795,12 +1150,15 @@ export class PiAgentRuntime {
       agentDirectory: config.agentDirectory,
       sessionDirectory: temporarySessionDirectory,
       resumeSession: true,
+      piSessionPath: sourcePath,
       activeLeafId: config.activeLeafId,
       settings: config.settings,
       apiKey: config.apiKey,
       prompt: 'Export Pi Session',
     }
-    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
+    const broker = new ExtensionUiBroker((event) =>
+      this.emitOperationPayload(config.sourceSessionId, redactor, event),
+    )
     this.sessionOperation = {
       operationId: config.operationId,
       kind: 'export',
@@ -811,11 +1169,11 @@ export class PiAgentRuntime {
     let session: PiSessionLike | null = null
 
     try {
-      await copyFile(sourcePath, resolve(temporarySessionDirectory, config.sourcePiSessionFile))
+      const temporarySessionPath = resolve(temporarySessionDirectory, basename(sourcePath))
+      await copyFile(sourcePath, temporarySessionPath)
       session = await this.sessionFactory({
         config: eventConfig,
-        sessionFile: config.sourcePiSessionFile,
-        tools: [],
+        sessionFile: temporarySessionPath,
         extensionPaths: [],
         skillPaths: [],
         promptPaths: [],
@@ -843,69 +1201,37 @@ export class PiAgentRuntime {
   async navigateSession(config: RuntimeNavigateConfig): Promise<AgentRuntimeNavigateResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
-    if (config.sourcePiSessionFile !== basename(config.sourcePiSessionFile)) {
-      throw new Error('Source Pi Session file must be a basename')
-    }
+    const sourcePiSessionPath = configuredSessionPath({
+      sourcePiSessionPath: config.sourcePiSessionPath,
+    })
+    const opened = this.requireOpenedSession(config.sourceSessionId, sourcePiSessionPath)
     const redactor = createSecretRedactor([config.apiKey])
-    const eventConfig: RuntimeStartConfig = {
-      type: 'start',
-      runId: config.operationId,
-      sessionId: config.sourceSessionId,
-      messageId: config.operationId,
-      projectRoot: config.projectRoot,
-      agentDirectory: config.agentDirectory,
-      sessionDirectory: config.sourceSessionDirectory,
-      resumeSession: true,
-      activeLeafId: config.activeLeafId,
-      settings: config.settings,
-      apiKey: config.apiKey,
-      prompt: 'Navigate Pi Session Tree',
-    }
-    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
     this.sessionOperation = {
       operationId: config.operationId,
       kind: 'navigate',
-      broker,
-      session: null,
+      broker: opened.extensionUi,
+      session: opened.session,
       cancelRequested: false,
     }
-    let session: PiSessionLike | null = null
 
     try {
-      session = await this.sessionFactory({
-        config: eventConfig,
-        sessionFile: config.sourcePiSessionFile,
-        tools: [],
-        extensionPaths: this.extensionPaths,
-        skillPaths: this.skillPaths,
-        promptPaths: this.promptPaths,
-        modelProvider: this.getModelProvider(),
-      })
-      if (this.sessionOperation?.operationId === config.operationId) {
-        this.sessionOperation.session = session
-      }
-      await session.bindExtensionUi?.(broker.createContext())
-      const result = await session.navigateTree(config.entryId, {
+      const result = await opened.session.navigateTree(config.entryId, {
         summarize: config.summarize,
         ...(config.customInstructions ? { customInstructions: config.customInstructions } : {}),
       })
       if (result.cancelled) return { outcome: 'cancelled' }
-      await sanitizePiTranscript(
-        resolve(config.sourceSessionDirectory, config.sourcePiSessionFile),
-        redactor,
-      )
+      await sanitizePiTranscript(opened.session.getSessionFile() ?? sourcePiSessionPath, redactor)
       return {
         outcome: 'completed',
-        activeLeafId: session.getActiveLeafId(),
+        activeLeafId: opened.session.getActiveLeafId(),
         editorText: result.editorText ?? null,
         summaryCreated: result.summaryEntry !== undefined,
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Pi Session Tree Navigation failed'
+      opened.extensionUi.cancelAll()
       throw new Error(redactor.redactText(detail), { cause: error })
     } finally {
-      broker.cancelAll()
-      if (session) await Promise.resolve(session.dispose()).catch(() => undefined)
       if (this.sessionOperation?.operationId === config.operationId) {
         this.sessionOperation = null
       }
@@ -915,58 +1241,25 @@ export class PiAgentRuntime {
   async compactSession(config: RuntimeCompactConfig): Promise<AgentRuntimeCompactResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
-    if (config.sourcePiSessionFile !== basename(config.sourcePiSessionFile)) {
-      throw new Error('Source Pi Session file must be a basename')
-    }
+    const sourcePiSessionPath = configuredSessionPath({
+      sourcePiSessionPath: config.sourcePiSessionPath,
+    })
+    const opened = this.requireOpenedSession(config.sourceSessionId, sourcePiSessionPath)
     const redactor = createSecretRedactor([config.apiKey])
-    const eventConfig: RuntimeStartConfig = {
-      type: 'start',
-      runId: config.operationId,
-      sessionId: config.sourceSessionId,
-      messageId: config.operationId,
-      projectRoot: config.projectRoot,
-      agentDirectory: config.agentDirectory,
-      sessionDirectory: config.sourceSessionDirectory,
-      resumeSession: true,
-      activeLeafId: config.activeLeafId,
-      settings: config.settings,
-      apiKey: config.apiKey,
-      prompt: 'Compact Pi Session',
-    }
-    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
     this.sessionOperation = {
       operationId: config.operationId,
       kind: 'compact',
-      broker,
-      session: null,
+      broker: opened.extensionUi,
+      session: opened.session,
       cancelRequested: false,
     }
-    let session: PiSessionLike | null = null
-    let unsubscribe: (() => void) | null = null
 
     try {
-      session = await this.sessionFactory({
-        config: eventConfig,
-        sessionFile: config.sourcePiSessionFile,
-        tools: [],
-        extensionPaths: this.extensionPaths,
-        skillPaths: this.skillPaths,
-        promptPaths: this.promptPaths,
-        modelProvider: this.getModelProvider(),
-      })
-      if (this.sessionOperation?.operationId === config.operationId) {
-        this.sessionOperation.session = session
-        if (this.sessionOperation.cancelRequested) return { outcome: 'cancelled' }
-      }
-      await session.bindExtensionUi?.(broker.createContext())
-      unsubscribe = session.subscribe((event) => this.handleCompactionEvent(eventConfig, event))
-      const result = await session.compact(config.customInstructions ?? undefined)
-      const activeLeafId = session.getActiveLeafId()
+      if (this.sessionOperation.cancelRequested) return { outcome: 'cancelled' }
+      const result = await opened.session.compact(config.customInstructions ?? undefined)
+      const activeLeafId = opened.session.getActiveLeafId()
       if (!activeLeafId) throw new Error('Pi Compaction did not provide an active leaf')
-      await sanitizePiTranscript(
-        resolve(config.sourceSessionDirectory, config.sourcePiSessionFile),
-        redactor,
-      )
+      await sanitizePiTranscript(opened.session.getSessionFile() ?? sourcePiSessionPath, redactor)
       return {
         outcome: 'completed',
         activeLeafId,
@@ -978,11 +1271,9 @@ export class PiAgentRuntime {
       if (detail === 'Compaction cancelled' || detail.includes('aborted')) {
         return { outcome: 'cancelled' }
       }
+      opened.extensionUi.cancelAll()
       throw new Error(redactor.redactText(detail), { cause: error })
     } finally {
-      unsubscribe?.()
-      broker.cancelAll()
-      if (session) await Promise.resolve(session.dispose()).catch(() => undefined)
       if (this.sessionOperation?.operationId === config.operationId) {
         this.sessionOperation = null
       }
@@ -992,54 +1283,32 @@ export class PiAgentRuntime {
   async labelSessionEntry(config: RuntimeLabelConfig): Promise<AgentRuntimeLabelResult> {
     if (this.current || this.sessionOperation)
       throw new Error('Only one Runtime operation can be active')
-    const eventConfig: RuntimeStartConfig = {
-      type: 'start',
-      runId: config.operationId,
-      sessionId: config.sourceSessionId,
-      messageId: config.operationId,
-      projectRoot: config.projectRoot,
-      agentDirectory: config.agentDirectory,
-      sessionDirectory: config.sourceSessionDirectory,
-      resumeSession: true,
-      activeLeafId: config.activeLeafId,
-      settings: config.settings,
-      apiKey: config.apiKey,
-      prompt: 'Label Pi Session Entry',
-    }
-    const broker = new ExtensionUiBroker((event) => this.emitEvent(eventConfig, event))
+    const sourcePiSessionPath = configuredSessionPath({
+      sourcePiSessionPath: config.sourcePiSessionPath,
+    })
+    const opened = this.requireOpenedSession(config.sourceSessionId, sourcePiSessionPath)
     this.sessionOperation = {
       operationId: config.operationId,
       kind: 'label',
-      broker,
-      session: null,
+      broker: opened.extensionUi,
+      session: opened.session,
       cancelRequested: false,
     }
-    let session: PiSessionLike | null = null
+    const redactor = createSecretRedactor([config.apiKey])
     try {
-      session = await this.sessionFactory({
-        config: eventConfig,
-        sessionFile: config.sourcePiSessionFile,
-        tools: [],
-        extensionPaths: this.extensionPaths,
-        skillPaths: this.skillPaths,
-        promptPaths: this.promptPaths,
-        modelProvider: this.getModelProvider(),
-      })
-      if (this.sessionOperation?.operationId === config.operationId) {
-        this.sessionOperation.session = session
-      }
-      session.labelEntry(config.entryId, config.label ?? undefined)
-      const activeLeafId = session.getActiveLeafId()
+      opened.session.labelEntry(config.entryId, config.label ?? undefined)
+      const activeLeafId = opened.session.getActiveLeafId()
       if (!activeLeafId) throw new Error('Pi Label did not provide an active leaf')
-      await sanitizePiTranscript(
-        resolve(config.sourceSessionDirectory, config.sourcePiSessionFile),
-        createSecretRedactor([config.apiKey]),
-      )
+      await sanitizePiTranscript(opened.session.getSessionFile() ?? sourcePiSessionPath, redactor)
       return { outcome: 'completed', activeLeafId }
+    } catch (error) {
+      opened.extensionUi.cancelAll()
+      const detail = error instanceof Error ? error.message : 'Pi Session Label failed'
+      throw new Error(redactor.redactText(detail), { cause: error })
     } finally {
-      broker.cancelAll()
-      if (session) await Promise.resolve(session.dispose()).catch(() => undefined)
-      if (this.sessionOperation?.operationId === config.operationId) this.sessionOperation = null
+      if (this.sessionOperation?.operationId === config.operationId) {
+        this.sessionOperation = null
+      }
     }
   }
 
@@ -1052,17 +1321,11 @@ export class PiAgentRuntime {
     if (operation.kind === 'navigate') operation.session?.abortBranchSummary()
   }
 
-  resolveApproval(runId: string, callId: string, allowed: boolean): boolean {
-    if (this.current?.config.runId !== runId) return false
-    return this.current.approvals.resolve(callId, allowed)
-  }
-
   async abort(runId: string): Promise<boolean> {
     const current = this.current
     if (!current || current.config.runId !== runId) return false
     current.cancelled = true
     current.abortController.abort(new Error('Run stopped'))
-    current.approvals.cancelAll()
     current.extensionUi.cancelAll()
     this.emitEvent(current.config, { type: 'run.stateChanged', status: 'stopping', error: null })
     await current.session?.abort()
@@ -1078,6 +1341,7 @@ export class PiAgentRuntime {
       this.sessionOperation.session?.abortBranchSummary()
     }
     this.sessionOperation?.broker.cancelAll()
+    if (this.opened) await this.closeOpenedSession(this.opened)
   }
 
   async queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void> {
@@ -1097,8 +1361,80 @@ export class PiAgentRuntime {
   }
 
   respondToExtensionUi(requestId: string, value: string | boolean | null): void {
-    if (this.current) this.current.extensionUi.respond(requestId, value)
-    else this.sessionOperation?.broker.respond(requestId, value)
+    if (this.opened?.extensionUi.respond(requestId, value)) return
+    this.sessionOperation?.broker.respond(requestId, value)
+  }
+
+  updateComposerText(sessionId: string, text: string): void {
+    if (this.opened?.sessionId !== sessionId) return
+    this.opened.extensionUi.updateEditorText(text)
+  }
+
+  async reloadResources(sessionId: string): Promise<void> {
+    if (this.current) throw new Error('Cannot reload Pi resources during an active Run')
+    if (!this.opened || this.opened.sessionId !== sessionId) {
+      throw new Error('Requested Pi Session is not open')
+    }
+    await this.opened.session.reload?.()
+  }
+
+  getRuntimeControls(sessionId: string) {
+    const opened = this.opened
+    if (!opened || opened.sessionId !== sessionId) return null
+    const availableTools = [
+      ...new Set((opened.session.getAllTools?.() ?? []).map((tool) => tool.name)),
+    ]
+    return {
+      type: 'host.controlsResult' as const,
+      sessionId,
+      modelId: opened.session.getModelId?.() ?? null,
+      thinkingLevel: opened.session.getThinkingLevel?.() ?? 'off',
+      activeTools: opened.session.getActiveToolNames?.() ?? [],
+      availableTools,
+      steeringMode: opened.session.getSteeringMode?.() ?? 'one-at-a-time',
+      followUpMode: opened.session.getFollowUpMode?.() ?? 'one-at-a-time',
+    }
+  }
+
+  async setRuntimeControls(
+    sessionId: string,
+    controls: {
+      modelId: string | null
+      thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+      activeTools: string[]
+      steeringMode: 'all' | 'one-at-a-time'
+      followUpMode: 'all' | 'one-at-a-time'
+    },
+  ): Promise<void> {
+    const opened = this.opened
+    if (!opened || opened.sessionId !== sessionId) return
+    if (controls.modelId && controls.modelId !== opened.session.getModelId?.()) {
+      const modelRuntime = opened.session.getModelRuntime?.()
+      if (!modelRuntime || !opened.session.setModel) {
+        throw new Error('Pi Session model switching is unavailable')
+      }
+      const model = this.getModelProvider().register(
+        modelRuntime,
+        { ...opened.config.settings, modelId: controls.modelId },
+        opened.config.apiKey,
+      )
+      await opened.session.setModel(model)
+      opened.config.settings = { ...opened.config.settings, modelId: controls.modelId }
+      if (opened.config.runtimePreferences) {
+        opened.config.runtimePreferences = {
+          ...opened.config.runtimePreferences,
+          modelId: controls.modelId,
+        }
+      }
+    }
+    opened.session.setActiveToolNames?.(controls.activeTools)
+    opened.session.setThinkingLevel?.(controls.thinkingLevel)
+    opened.session.setSteeringMode?.(controls.steeringMode)
+    opened.session.setFollowUpMode?.(controls.followUpMode)
+    this.emitSessionPayload(opened, {
+      type: 'session.activeLeafChanged',
+      activeLeafId: opened.session.getActiveLeafId(),
+    })
   }
 
   private getModelProvider(): ModelRuntimeProvider {
@@ -1108,9 +1444,9 @@ export class PiAgentRuntime {
     return this.modelProviders[0]!
   }
 
-  private emitDiagnostics(config: RuntimeStartConfig, session: PiSessionLike): void {
-    for (const diagnostic of session.getDiagnostics?.() ?? []) {
-      this.emitEvent(config, {
+  private emitDiagnostics(opened: OpenRuntimeSession): void {
+    for (const diagnostic of opened.session.getDiagnostics?.() ?? []) {
+      this.emitSessionPayload(opened, {
         type: 'runtime.diagnostic',
         severity: diagnostic.type,
         message: diagnostic.message,
@@ -1118,10 +1454,11 @@ export class PiAgentRuntime {
     }
   }
 
-  private handlePiEvent(current: ActiveRuntime, event: AgentSessionEvent): void {
-    const { config } = current
+  private handlePiEvent(opened: OpenRuntimeSession, event: AgentSessionEvent): void {
+    const current =
+      this.current?.session === opened.session && !this.current.cancelled ? this.current : undefined
     if (event.type === 'auto_retry_start') {
-      this.emitEvent(config, {
+      this.emitRunOrSessionEvent(current, opened, {
         type: 'retry.stateChanged',
         status: 'scheduled',
         attempt: event.attempt,
@@ -1132,7 +1469,7 @@ export class PiAgentRuntime {
       return
     }
     if (event.type === 'auto_retry_end') {
-      this.emitEvent(config, {
+      this.emitRunOrSessionEvent(current, opened, {
         type: 'retry.stateChanged',
         status: event.success ? 'completed' : 'failed',
         attempt: event.attempt,
@@ -1142,17 +1479,48 @@ export class PiAgentRuntime {
       })
       return
     }
-    if (event.type === 'compaction_start' || event.type === 'compaction_end') {
-      this.handleCompactionEvent(config, event)
+    if (event.type === 'session_info_changed') {
+      this.emitSessionPayload(opened, {
+        type: 'session.infoChanged',
+        name: event.name ?? null,
+      })
+      this.emitSessionPayload(opened, {
+        type: 'session.activeLeafChanged',
+        activeLeafId: opened.session.getActiveLeafId(),
+      })
       return
     }
+    if (event.type === 'thinking_level_changed') {
+      this.emitSessionPayload(opened, {
+        type: 'session.thinkingLevelChanged',
+        level: event.level,
+      })
+      this.emitSessionPayload(opened, {
+        type: 'session.activeLeafChanged',
+        activeLeafId: opened.session.getActiveLeafId(),
+      })
+      return
+    }
+    if (event.type === 'entry_appended') {
+      this.emitSessionPayload(opened, {
+        type: 'session.activeLeafChanged',
+        activeLeafId: opened.session.getActiveLeafId(),
+      })
+      return
+    }
+    if (event.type === 'compaction_start' || event.type === 'compaction_end') {
+      if (current) this.handleCompactionEvent(current.config, event)
+      else this.handleSessionCompactionEvent(opened, event)
+      return
+    }
+    if (!current) return
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
       const prefix = current.thinkingStarted && !current.textStarted ? '\n\n' : ''
       current.textStarted = true
       current.text += prefix + event.assistantMessageEvent.delta
-      this.emitEvent(config, {
+      this.emitEvent(current.config, {
         type: 'message.delta',
-        messageId: config.messageId,
+        messageId: current.config.messageId,
         delta: prefix + event.assistantMessageEvent.delta,
       })
       return
@@ -1161,15 +1529,15 @@ export class PiAgentRuntime {
       const prefix = current.thinkingStarted ? '' : 'Thinking\n\n'
       current.thinkingStarted = true
       current.text += prefix + event.assistantMessageEvent.delta
-      this.emitEvent(config, {
+      this.emitEvent(current.config, {
         type: 'message.delta',
-        messageId: config.messageId,
+        messageId: current.config.messageId,
         delta: prefix + event.assistantMessageEvent.delta,
       })
       return
     }
     if (event.type === 'queue_update') {
-      this.emitEvent(config, {
+      this.emitEvent(current.config, {
         type: 'queue.updated',
         steering: [...event.steering],
         followUp: [...event.followUp],
@@ -1178,8 +1546,8 @@ export class PiAgentRuntime {
     }
     if (event.type === 'tool_execution_start') {
       const kind = toolKinds[event.toolName as keyof typeof toolKinds] ?? 'custom'
-      const path = toolPath(config.projectRoot, event.args)
-      this.emitEvent(config, {
+      const path = toolPath(current.config.projectRoot, event.args)
+      this.emitEvent(current.config, {
         type: 'tool.started',
         callId: event.toolCallId,
         kind,
@@ -1189,7 +1557,7 @@ export class PiAgentRuntime {
       return
     }
     if (event.type === 'tool_execution_update') {
-      this.emitEvent(config, {
+      this.emitEvent(current.config, {
         type: 'tool.updated',
         callId: event.toolCallId,
         output: outputText(event.partialResult),
@@ -1197,7 +1565,7 @@ export class PiAgentRuntime {
       return
     }
     if (event.type === 'tool_execution_end') {
-      this.emitEvent(config, {
+      this.emitEvent(current.config, {
         type: 'tool.completed',
         callId: event.toolCallId,
         output: outputText(event.result),
@@ -1210,7 +1578,7 @@ export class PiAgentRuntime {
       if (typeof detail === 'string' && detail && !current.failure) {
         const failure = classifyRuntimeFailure(detail)
         current.failure = failure
-        this.emitEvent(config, {
+        this.emitEvent(current.config, {
           type: 'runtime.error',
           ...failure,
         })
@@ -1241,6 +1609,38 @@ export class PiAgentRuntime {
     })
   }
 
+  private handleSessionCompactionEvent(opened: OpenRuntimeSession, event: AgentSessionEvent): void {
+    if (event.type === 'compaction_start') {
+      this.emitSessionPayload(opened, {
+        type: 'compaction.stateChanged',
+        status: 'running',
+        reason: event.reason,
+        tokensBefore: null,
+        estimatedTokensAfter: null,
+        error: null,
+      })
+      return
+    }
+    if (event.type !== 'compaction_end') return
+    this.emitSessionPayload(opened, {
+      type: 'compaction.stateChanged',
+      status: event.aborted ? 'cancelled' : event.errorMessage ? 'failed' : 'completed',
+      reason: event.reason,
+      tokensBefore: event.result?.tokensBefore ?? null,
+      estimatedTokensAfter: event.result?.estimatedTokensAfter ?? null,
+      error: event.errorMessage ?? null,
+    })
+  }
+
+  private emitRunOrSessionEvent(
+    current: ActiveRuntime | undefined,
+    opened: OpenRuntimeSession,
+    event: RuntimeEventPayload,
+  ): void {
+    if (current) this.emitEvent(current.config, event)
+    else this.emitSessionPayload(opened, event)
+  }
+
   private emitEvent(config: RuntimeStartConfig, event: RuntimeEventPayload): void {
     const redactor =
       this.current?.config === config
@@ -1250,6 +1650,31 @@ export class PiAgentRuntime {
       ...event,
       runId: config.runId,
       sessionId: config.sessionId,
+      at: new Date().toISOString(),
+    })
+    this.emit(redactor.redactRuntimeEvent(completeEvent))
+  }
+
+  private emitSessionPayload(opened: OpenRuntimeSession | null, event: RuntimeEventPayload): void {
+    if (!opened) return
+    const completeEvent = runtimeEventSchema.parse({
+      ...event,
+      runId: null,
+      sessionId: opened.eventSessionId,
+      at: new Date().toISOString(),
+    })
+    this.emit(opened.redactor.redactRuntimeEvent(completeEvent))
+  }
+
+  private emitOperationPayload(
+    sessionId: string,
+    redactor: SecretRedactor,
+    event: RuntimeEventPayload,
+  ): void {
+    const completeEvent = runtimeEventSchema.parse({
+      ...event,
+      runId: null,
+      sessionId,
       at: new Date().toISOString(),
     })
     this.emit(redactor.redactRuntimeEvent(completeEvent))

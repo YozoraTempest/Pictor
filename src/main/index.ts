@@ -17,7 +17,6 @@ import { ModuleRouter, moduleHandlerContributions } from '../kernel/contract.js'
 import { PluginHost } from '../plugin/host.js'
 import { appInfoSchema } from '../shared/app-info.js'
 import { pluginBootstrapSchema, type PluginBootstrap } from '../shared/plugins.js'
-import { discoverCommandInterpreter } from './command-interpreter.js'
 import { developmentUserDataPath } from './development-profile.js'
 import { detectDesktopDistribution } from './linux-distribution.js'
 import { registerIpc } from './ipc.js'
@@ -201,34 +200,45 @@ void app.whenReady().then(() => {
   return Promise.all([
     repository.initialize(),
     pluginStore.initialize(),
-    discoverCommandInterpreter(),
     detectDesktopDistribution(),
-  ]).then(async ([, , commandInterpreter, distribution]) => {
+  ]).then(async ([, , distribution]) => {
     const safeMode = process.argv.includes('--safe-mode')
     const pluginStoreSnapshot = await pluginStore.getSnapshot()
     const coordinatorReference: { current?: RuntimeCoordinator } = {}
     const runtimeSupervisor = new RuntimeSupervisor(
       (event) => coordinatorReference.current?.handleEvent(event),
       createRuntimePluginBootstrap(pluginStoreSnapshot, currentVersion, safeMode),
+      (request) =>
+        coordinatorReference.current?.handleSessionReplacementRequest(request) ??
+        Promise.resolve({ accepted: false, message: 'Runtime Coordinator is unavailable' }),
     )
-    const runtimeCoordinator = new RuntimeCoordinator(
-      repository,
-      runtimeSupervisor,
-      (event) => {
-        for (const window of BrowserWindow.getAllWindows()) {
-          window.webContents.send('runtime:event', event)
-        }
-      },
-      commandInterpreter.executablePath,
-    )
+    const runtimeCoordinator = new RuntimeCoordinator(repository, runtimeSupervisor, (event) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send('runtime:event', event)
+      }
+    })
     coordinatorReference.current = runtimeCoordinator
+    const persistedSnapshot = await repository.getSnapshot()
+    let restoreSelectedContextPromise: Promise<void> | null = null
+    const restoreSelectedContext = (): Promise<void> => {
+      if (restoreSelectedContextPromise) return restoreSelectedContextPromise
+      restoreSelectedContextPromise = (async () => {
+        if (!persistedSnapshot.selectedProjectId || !persistedSnapshot.selectedSessionId) return
+        await runtimeCoordinator.selectContext(
+          persistedSnapshot.selectedProjectId,
+          persistedSnapshot.selectedSessionId,
+        )
+      })().catch((error: unknown) => {
+        console.error('Failed to restore the selected Pi Session', error)
+      })
+      return restoreSelectedContextPromise
+    }
     const appInfo = appInfoSchema.parse({
       name: app.getName(),
       version: currentVersion,
       platform: process.platform,
       arch: process.arch,
       distribution,
-      commandInterpreter: commandInterpreter.status,
     })
     const mainPluginHost = new PluginHost({ pictorVersion: currentVersion, safeMode })
     await mainPluginHost.start(createMainPluginDefinitions(pluginStoreSnapshot, appInfo))
@@ -260,6 +270,7 @@ void app.whenReady().then(() => {
       connectionTester: new ModelConnectionTester(),
       validateSender,
       runtimeCoordinator,
+      onRendererReady: restoreSelectedContext,
       appInfo,
       getPluginBootstrap,
       pluginManager,

@@ -38,7 +38,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
                     id: 'call-write-e2e',
                     type: 'function',
                     function: {
-                      name: 'pictor_write',
+                      name: 'write',
                       arguments: JSON.stringify({
                         path: 'agent-created.txt',
                         content: 'created by Pictor',
@@ -82,11 +82,9 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
                     id: 'call-command-e2e',
                     type: 'function',
                     function: {
-                      name: 'pictor_command',
+                      name: 'bash',
                       arguments: JSON.stringify({
                         command: 'printf approved > command-approved.txt',
-                        cwd: '.',
-                        purpose: 'Verify command approval',
                       }),
                     },
                   },
@@ -139,7 +137,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
             delta: {
               role: 'assistant',
               content:
-                'Task completed.\n\nChanged files:\n- `agent-created.txt`\n- `command-approved.txt`\n\nVerification:\n- Approved command exited with code 0.\n\nRemaining work: none.',
+                'Task completed.\n\nChanged files:\n- `agent-created.txt`\n- `command-approved.txt`\n\nVerification:\n- Native Pi tools completed.\n\nRemaining work: none.',
             },
             finish_reason: null,
           },
@@ -223,21 +221,19 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await window.waitForLoadState('domcontentloaded')
 
     await window.getByRole('button', { name: '新建 Session' }).first().click()
-    await expect(window.getByRole('heading', { name: '新建会话' })).toBeVisible()
+    await expect(window.getByRole('heading', { name: '新建会话' })).toBeVisible({ timeout: 30_000 })
     await window.getByRole('textbox', { name: '任务描述' }).fill('Say hello.')
     await window.getByRole('button', { name: '发送任务' }).click()
 
-    await expect(window.getByText('printf approved > command-approved.txt')).toBeVisible({
-      timeout: 20_000,
-    })
     await expect(window.getByText('agent-created.txt').first()).toBeVisible()
     expect(await readFile(join(projectRoot, 'agent-created.txt'), 'utf8')).toBe('created by Pictor')
-    await expect(readFile(join(projectRoot, 'command-approved.txt'), 'utf8')).rejects.toThrow()
-    await window.screenshot({ path: testInfo.outputPath('delegate-approval.png') })
-    await window.getByRole('button', { name: '允许一次' }).click()
+    await expect
+      .poll(() => readFile(join(projectRoot, 'command-approved.txt'), 'utf8'))
+      .toBe('approved')
+    await window.screenshot({ path: testInfo.outputPath('delegate-native-tools.png') })
     await expect
       .poll(() => modelRequestCount, {
-        message: 'the Agent should continue with a model request after command approval',
+        message: 'the Agent should continue with a model request after native bash execution',
         timeout: 30_000,
       })
       .toBeGreaterThanOrEqual(3)
@@ -295,8 +291,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
       expect.objectContaining({
         kind: 'command',
         status: 'completed',
-        command: expect.objectContaining({ approval: 'allowed' }),
-        output: expect.stringContaining('exit: 0'),
+        output: '(no output)',
       }),
     )
     expect(evidence.value.runs).toContainEqual(expect.objectContaining({ status: 'stopped' }))
@@ -311,7 +306,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
       history: {
         authority: 'pi-jsonl',
         piSessionId: expect.any(String),
-        piSessionFile: expect.stringMatching(/\.jsonl$/),
+        piSessionPath: expect.stringMatching(/\.jsonl$/),
       },
       projection: {
         usage: {
@@ -331,14 +326,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
       },
     })
 
-    const transcriptPath = join(
-      userDataDirectory,
-      'data-v1',
-      'pi',
-      evidence.value.projectId,
-      evidence.value.id,
-      persistedSession.history.piSessionFile,
-    )
+    const transcriptPath = resolve(persistedSession.history.piSessionPath)
     const transcriptEntries = (await readFile(transcriptPath, 'utf8'))
       .split('\n')
       .filter(Boolean)

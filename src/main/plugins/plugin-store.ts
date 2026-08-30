@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { cp, copyFile, glob, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
-import { basename, extname, join, resolve } from 'node:path'
+import { cp, copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 
 import { z } from 'zod'
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent'
@@ -24,11 +24,6 @@ const MANIFEST_FILE = 'manifest.json'
 const pluginPackageJsonSchema = z.object({
   name: z.string().min(1),
   version: pluginVersionSchema.optional(),
-  pi: z
-    .object({
-      extensions: z.array(z.string().min(1)).optional(),
-    })
-    .optional(),
 })
 
 export interface PluginStoreOptions {
@@ -59,7 +54,6 @@ export interface PluginStoreSnapshot {
 export interface StoredNativeExtension {
   entry: Exclude<InstalledExtension, { kind: 'pictor-plugin' }>
   runtimePath: string
-  runtimePaths: readonly string[]
 }
 
 interface BundledPluginPackage {
@@ -162,10 +156,6 @@ export class PluginStore {
           nativeExtensions.push({
             entry: { ...entry },
             runtimePath,
-            runtimePaths:
-              entry.kind === 'pi-package'
-                ? await this.discoverPiPackageExtensionPaths(runtimePath)
-                : [runtimePath],
           })
         } else {
           issues.push({ source: runtimePath, message: `Installed ${entry.kind} is missing` })
@@ -279,7 +269,7 @@ export class PluginStore {
     }
     this.replaceExtensionEntry(entry)
     await this.persistRegistry()
-    return { entry, runtimePath: target, runtimePaths: [target] }
+    return { entry, runtimePath: target }
   }
 
   async installPiPackage(sourcePath: string): Promise<StoredNativeExtension> {
@@ -303,12 +293,17 @@ export class PluginStore {
     await packageManager.install(spec)
     const installedPath = packageManager.getInstalledPath(spec, 'user')
     if (!installedPath) throw new Error(`Pi Package did not provide an installed path: ${spec}`)
-    return this.installPiPackageDirectory(installedPath, spec)
+    return this.installPiPackageDirectory(
+      installedPath,
+      spec,
+      this.packageNodeModulesDirectory(installedPath),
+    )
   }
 
   private async installPiPackageDirectory(
     sourcePath: string,
     registrySource: string,
+    nodeModulesPath?: string | null,
   ): Promise<StoredNativeExtension> {
     const source = resolve(sourcePath)
     const packageJson = await readJsonFile(join(source, 'package.json'), pluginPackageJsonSchema)
@@ -317,6 +312,9 @@ export class PluginStore {
     const target = join(this.piPackagesDirectory, id)
     await rm(target, { recursive: true, force: true })
     await cp(source, target, { recursive: true })
+    if (nodeModulesPath && resolve(nodeModulesPath) !== resolve(join(source, 'node_modules'))) {
+      await cp(nodeModulesPath, join(target, 'node_modules'), { recursive: true })
+    }
     const entry = {
       kind: 'pi-package' as const,
       id,
@@ -326,10 +324,16 @@ export class PluginStore {
     }
     this.replaceExtensionEntry(entry)
     await this.persistRegistry()
-    return {
-      entry,
-      runtimePath: target,
-      runtimePaths: await this.discoverPiPackageExtensionPaths(target),
+    return { entry, runtimePath: target }
+  }
+
+  private packageNodeModulesDirectory(packagePath: string): string | null {
+    let current = dirname(resolve(packagePath))
+    while (true) {
+      if (basename(current) === 'node_modules') return current
+      const parent = dirname(current)
+      if (parent === current) return null
+      current = parent
     }
   }
 
@@ -469,25 +473,6 @@ export class PluginStore {
       .replace(/^-+|-+$/g, '')
     if (!name) throw new Error('Cannot derive an extension ID from the source')
     return name
-  }
-
-  private async discoverPiPackageExtensionPaths(rootPath: string): Promise<string[]> {
-    const packageJson = await readJsonFile(join(rootPath, 'package.json'), pluginPackageJsonSchema)
-    if (!packageJson) return []
-    const patterns = packageJson.pi?.extensions ?? [
-      'extensions/*.{ts,js}',
-      'extensions/*/index.{ts,js}',
-    ]
-    const paths = new Set<string>()
-    for (const pattern of patterns) {
-      for await (const match of glob(pattern, { cwd: rootPath })) {
-        const path = resolve(rootPath, match)
-        const relativePath = path.slice(resolve(rootPath).length + 1)
-        if (!relativePath.startsWith('..') && ['.ts', '.js'].includes(extname(path)))
-          paths.add(path)
-      }
-    }
-    return [...paths].toSorted()
   }
 
   private findPluginEntry(id: string): InstalledPictorPlugin {

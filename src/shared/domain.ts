@@ -155,7 +155,9 @@ export const sessionSummarySchema = sessionRecordSchema
 export const sessionHistoryStateSchema = z.object({
   authority: z.enum(['pi-jsonl', 'legacy-import']),
   piSessionId: z.string().min(1).nullable(),
-  piSessionFile: z.string().min(1).nullable(),
+  // Pi owns the location of the JSONL file.  Pictor stores the exact path so
+  // session replacement can bind a new Pi session without moving its file.
+  piSessionPath: z.string().min(1).nullable(),
   activeLeafId: z.string().min(1).nullable().optional(),
   runtimePreferences: z
     .object({
@@ -164,7 +166,6 @@ export const sessionHistoryStateSchema = z.object({
       activeTools: z.array(z.string().min(1)).nullable(),
       steeringMode: z.enum(['all', 'one-at-a-time']),
       followUpMode: z.enum(['all', 'one-at-a-time']),
-      projectExtensionsEnabled: z.boolean().default(false),
     })
     .optional(),
   legacyImport: z.object({

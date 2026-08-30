@@ -12,7 +12,8 @@ Agent 会话现在直接使用 Pi `AgentSessionRuntime`，Pi JSONL 是 Session T
 Compaction 和 Extension entry 的唯一权威历史。桌面支持 Tree 查看与原生分支导航、Fork、Clone、
 Import、JSONL/HTML Export、Branch Summary、手动与自动 Compaction、Active Leaf、Session Label、
 Thinking、Model override、Tool 与消息队列控制、Token/Cost 状态、图片消息、资源重载和自动 Retry。
-Pictor 投影只负责 GUI 展示，Runtime 重启时从绑定的 Pi Session 重建，不重放历史 Tool。
+Pictor 投影只负责 GUI 展示；同一 utility process 会复用打开的 Pi Session，Runtime 重启时从
+持久化的绝对 Pi JSONL 路径重建，不重放历史 Tool，也不移动 Pi 管理的 Session 文件。
 
 原生 `.ts/.js` Pi Extension、Extension 目录和 Pi Package 无需 Pictor wrapper 即可安装并交给 Pi
 ResourceLoader/ExtensionRunner 执行。Extension 可以注册 Tool、Command、Provider、事件和消息；
