@@ -65,6 +65,8 @@ import {
 const bridge = Object.freeze({
   getSnapshot: async () =>
     appSnapshotResultSchema.parse(await ipcRenderer.invoke('app:get-snapshot')),
+  notifyRendererReady: async () =>
+    voidResultSchema.parse(await ipcRenderer.invoke('app:renderer-ready')),
   getAppInfo: async () => appInfoResultSchema.parse(await ipcRenderer.invoke('app:get-info')),
   getPluginBootstrap: async () =>
     pluginBootstrapResultSchema.parse(await ipcRenderer.invoke('plugin:get-bootstrap')),

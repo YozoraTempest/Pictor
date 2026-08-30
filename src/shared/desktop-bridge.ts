@@ -173,6 +173,7 @@ export type SessionRuntimeControls = z.infer<typeof sessionRuntimeControlsSchema
 
 export interface PictorBridge {
   getSnapshot: () => Promise<IpcResult<AppSnapshot>>
+  notifyRendererReady: () => Promise<IpcResult<null>>
   getAppInfo: () => Promise<IpcResult<AppInfo>>
   getPluginBootstrap: () => Promise<IpcResult<PluginBootstrap>>
   getPluginManagerSnapshot: () => Promise<IpcResult<PluginManagerSnapshot>>

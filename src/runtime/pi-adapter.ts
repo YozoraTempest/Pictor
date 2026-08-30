@@ -161,6 +161,7 @@ interface ActiveRuntime {
 
 interface OpenRuntimeSession {
   sessionId: string
+  eventSessionId: string
   config: RuntimeSessionConfig
   session: PiSessionLike
   extensionUi: ExtensionUiBroker
@@ -711,6 +712,7 @@ export class PiAgentRuntime {
     const redactor = createSecretRedactor([config.apiKey])
     const opened: OpenRuntimeSession = {
       sessionId: config.sessionId,
+      eventSessionId: config.sessionId,
       config,
       session,
       extensionUi: new ExtensionUiBroker((event) => this.emitSessionPayload(opened, event)),
@@ -730,7 +732,11 @@ export class PiAgentRuntime {
       if (session.bindExtensionUi) {
         await session.bindExtensionUi(opened.extensionUi.createContext(), {
           commandContextActions: this.createCommandContextActions(opened),
-          beforeSessionInvalidate: () => opened.unsubscribe(),
+          beforeSessionInvalidate: () => {
+            opened.unsubscribe()
+            const pending = opened.pendingReplacement
+            if (pending) opened.eventSessionId = pending.targetSessionId
+          },
           afterRebind: () => {
             this.rebindOpenedSession(opened, opened.session)
             return this.commitPendingReplacement(opened)
@@ -899,8 +905,9 @@ export class PiAgentRuntime {
       sourcePiSessionPath: opened.config.piSessionPath ?? null,
     })
     if (!accepted.accepted) throw new Error(accepted.message ?? 'Session replacement was rejected')
-    const sourceSessionId = opened.sessionId
+    const sourceSessionId = pending.sourceSessionId
     const cwd = opened.session.getCwd?.() ?? opened.config.projectRoot
+    opened.eventSessionId = pending.targetSessionId
     opened.sessionId = pending.targetSessionId
     opened.config = {
       ...opened.config,
@@ -926,19 +933,23 @@ export class PiAgentRuntime {
   ): Promise<void> {
     const pending = opened.pendingReplacement
     if (!pending || pending.operationId !== operationId) return
-    await this.requestReplacement({
-      type: 'session.replacement.requested',
-      operationId,
-      phase: 'abort',
-      kind: pending.kind,
-      sourceSessionId: pending.sourceSessionId,
-      targetSessionId: pending.targetSessionId,
-      targetSessionPath: null,
-      piSessionId: null,
-      piSessionPath: null,
-      cwd: null,
-      sourcePiSessionPath: opened.config.piSessionPath ?? null,
-    })
+    try {
+      await this.requestReplacement({
+        type: 'session.replacement.requested',
+        operationId,
+        phase: 'abort',
+        kind: pending.kind,
+        sourceSessionId: pending.sourceSessionId,
+        targetSessionId: pending.targetSessionId,
+        targetSessionPath: null,
+        piSessionId: null,
+        piSessionPath: null,
+        cwd: null,
+        sourcePiSessionPath: opened.config.piSessionPath ?? null,
+      })
+    } finally {
+      if (this.opened === opened) opened.eventSessionId = pending.sourceSessionId
+    }
   }
 
   private async requestReplacement(
@@ -1649,7 +1660,7 @@ export class PiAgentRuntime {
     const completeEvent = runtimeEventSchema.parse({
       ...event,
       runId: null,
-      sessionId: opened.sessionId,
+      sessionId: opened.eventSessionId,
       at: new Date().toISOString(),
     })
     this.emit(opened.redactor.redactRuntimeEvent(completeEvent))

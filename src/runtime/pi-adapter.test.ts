@@ -276,7 +276,7 @@ describe('PiAgentRuntime cleanup', () => {
     const targetPath = join(root, 'session-replacement', 'target.jsonl')
     let currentPath = sourcePath
     let currentId = 'source-pi-session'
-    let beforeRebind: (() => Promise<void>) | undefined
+    let beforeSessionInvalidate: (() => void) | undefined
     let afterRebind: (() => Promise<void>) | undefined
     let listener: ((event: AgentSessionEvent) => void) | undefined
     const unsubscribe = vi.fn(() => {
@@ -287,12 +287,16 @@ describe('PiAgentRuntime cleanup', () => {
       return unsubscribe
     })
     let commandActions: ExtensionCommandContextActions | undefined
+    let extensionUiContext: ExtensionUIContext | undefined
     const withSession = vi.fn(async () => undefined)
     const nativeNewSession = vi.fn(
       async (options?: Parameters<ExtensionCommandContextActions['newSession']>[0]) => {
         currentPath = targetPath
         currentId = 'target-pi-session'
-        await beforeRebind?.()
+        beforeSessionInvalidate?.()
+        extensionUiContext?.setStatus('target-status', 'Target session status')
+        extensionUiContext?.setWidget('target-widget', ['Target session widget'])
+        extensionUiContext?.setTitle('Target session')
         await afterRebind?.()
         await options?.withSession?.({} as never)
         return { cancelled: false }
@@ -311,11 +315,13 @@ describe('PiAgentRuntime cleanup', () => {
           options?: {
             commandContextActions?: ExtensionCommandContextActions
             beforeRebind?: () => Promise<void>
+            beforeSessionInvalidate?: () => void
             afterRebind?: () => Promise<void>
           },
         ) => {
+          extensionUiContext = _context
           commandActions = options?.commandContextActions
-          beforeRebind = options?.beforeRebind
+          beforeSessionInvalidate = options?.beforeSessionInvalidate
           afterRebind = options?.afterRebind
           await options?.afterRebind?.()
         },
@@ -378,6 +384,29 @@ describe('PiAgentRuntime cleanup', () => {
     expect(replacementRequests.map(({ phase }) => phase)).toEqual(['prepare', 'commit'])
     expect(subscribe).toHaveBeenCalledTimes(2)
     expect(unsubscribe).toHaveBeenCalled()
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'extension.ui.status',
+        sessionId: '21234567-89ab-4def-8123-456789abcdef',
+        key: 'target-status',
+        text: 'Target session status',
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'extension.ui.widget',
+        sessionId: '21234567-89ab-4def-8123-456789abcdef',
+        key: 'target-widget',
+        lines: ['Target session widget'],
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'extension.ui.title',
+        sessionId: '21234567-89ab-4def-8123-456789abcdef',
+        title: 'Target session',
+      }),
+    )
     listener?.({ type: 'session_info_changed', name: 'Replaced session' })
     expect(events).toContainEqual(
       expect.objectContaining({

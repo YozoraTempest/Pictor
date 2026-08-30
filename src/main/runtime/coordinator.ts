@@ -1054,6 +1054,7 @@ export class RuntimeCoordinator {
       sanitizedEvent.type === 'run.stateChanged' &&
       ['completed', 'failed', 'stopped', 'interrupted'].includes(sanitizedEvent.status)
     if (sanitizedEvent.type === 'session.bound') {
+      this.broadcast(sanitizedEvent)
       this.persistenceQueue = this.persistenceQueue
         .then(() =>
           this.repository.bindPiSession(sanitizedEvent.sessionId, {
@@ -1061,7 +1062,6 @@ export class RuntimeCoordinator {
             path: sanitizedEvent.piSessionPath,
           }),
         )
-        .then(() => this.broadcast(sanitizedEvent))
         .catch(() =>
           this.broadcast({
             type: 'runtime.error',
@@ -1131,6 +1131,7 @@ export class RuntimeCoordinator {
   private handleSessionEvent(event: RuntimeEvent): void {
     if (event.runId !== null) return
     if (event.type === 'session.bound') {
+      this.broadcast(event)
       this.persistenceQueue = this.persistenceQueue
         .then(() =>
           this.repository.bindPiSession(event.sessionId, {
@@ -1138,7 +1139,6 @@ export class RuntimeCoordinator {
             path: event.piSessionPath,
           }),
         )
-        .then(() => this.broadcast(event))
         .catch(() =>
           this.broadcast({
             type: 'runtime.error',

@@ -6,11 +6,12 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { SessionManager } from '@earendil-works/pi-coding-agent'
 
 import type { RuntimeEvent } from '../shared/runtime-protocol.js'
+import type { RuntimeSessionOpenConfig } from '../shared/runtime-protocol.js'
 import { openAiCompatibleModelProvider } from './openai-model-provider.js'
 import { PiAgentRuntime } from './pi-adapter.js'
 
@@ -433,6 +434,73 @@ it('auto-loads trusted project Pi Extensions through the native ResourceLoader',
       isError: false,
     }),
   )
+}, 20_000)
+
+it('routes Session start RPC UI events through the configured ExtensionUiBroker', async () => {
+  const extensionPath = join(testRoot, 'project', 'startup-ui.ts')
+  await writeFile(
+    extensionPath,
+    `export default function (pi) {
+  pi.on('session_start', async (_event, ctx) => {
+    ctx.ui.setStatus('startup', 'Startup status')
+    await ctx.ui.input('Startup input', 'type a value')
+  })
+}
+`,
+  )
+  const events: RuntimeEvent[] = []
+  const runtime = createRuntime((event) => events.push(event))
+  runtime.configure({
+    extensionPaths: [extensionPath],
+    skillPaths: [],
+    promptPaths: [],
+    modelProviders: [openAiCompatibleModelProvider],
+  })
+  const config: RuntimeSessionOpenConfig = {
+    type: 'session.open',
+    operationId: randomUUID(),
+    sessionId: randomUUID(),
+    projectRoot: join(testRoot, 'project'),
+    agentDirectory: join(testRoot, 'startup-agent'),
+    sessionDirectory: join(testRoot, 'startup-session'),
+    resumeSession: false,
+    settings: {
+      apiProtocol: 'chat-completions',
+      baseUrl,
+      modelId: 'pictor-test-model',
+      reasoningEffort: null,
+      temperature: null,
+      maxOutputTokens: 64,
+    },
+    apiKey: localApiKey,
+  }
+
+  try {
+    const opening = runtime.openSession(config)
+    await vi.waitFor(() =>
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: 'extension.ui.requested', sessionId: config.sessionId }),
+      ),
+    )
+    const request = events.find(
+      (event): event is Extract<RuntimeEvent, { type: 'extension.ui.requested' }> =>
+        event.type === 'extension.ui.requested',
+    )
+    if (!request) throw new Error('Startup UI request was not emitted')
+    runtime.respondToExtensionUi(request.requestId, 'accepted')
+    await opening
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'extension.ui.status',
+        sessionId: config.sessionId,
+        key: 'startup',
+        text: 'Startup status',
+      }),
+    )
+  } finally {
+    await runtime.dispose()
+  }
 }, 20_000)
 
 it.each(['a', 'id', 'running', ['pi', 'transcript', 'credential'].join('-')])(

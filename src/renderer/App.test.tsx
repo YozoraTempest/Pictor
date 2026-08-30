@@ -40,6 +40,7 @@ function emptySnapshot(): AppSnapshot {
 function createBridge(snapshot: AppSnapshot, session: SessionRecord | null = null): PictorBridge {
   return {
     getSnapshot: async () => ok(snapshot),
+    notifyRendererReady: async () => ok(null),
     getAppInfo: async () =>
       ok({
         name: 'Pictor',
@@ -224,6 +225,8 @@ it('keeps Extension status, dialog, and title state scoped to the active Session
   }
   const listeners: Array<(event: RuntimeEvent) => void> = []
   const bridge = createBridge(snapshot, session)
+  let currentSnapshot = snapshot
+  bridge.getSnapshot = vi.fn(async () => ok(currentSnapshot))
   bridge.onRuntimeEvent = (listener) => {
     listeners.push(listener)
     return () => undefined
@@ -272,6 +275,11 @@ it('keeps Extension status, dialog, and title state scoped to the active Session
   expect(await screen.findByText('First status')).toBeInTheDocument()
   expect(screen.getByText('Second status')).toBeInTheDocument()
   expect(screen.queryByText('Other status')).not.toBeInTheDocument()
+  const statusPanel = document.querySelector('.extension-statuses')
+  expect(statusPanel).toBeInTheDocument()
+  expect(statusPanel?.querySelectorAll('.extension-status')).toHaveLength(2)
+  expect(statusPanel?.textContent).not.toContain('first')
+  expect(statusPanel?.textContent).not.toContain('second')
 
   emit(
     sessionEvent({
@@ -315,6 +323,67 @@ it('keeps Extension status, dialog, and title state scoped to the active Session
 
   emit(
     sessionEvent({
+      type: 'extension.ui.status',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      key: 'target-status',
+      text: 'Target status',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.widget',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      key: 'target-widget',
+      lines: ['Target widget'],
+      placement: 'aboveEditor',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.title',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      title: 'Target · Working',
+    }),
+  )
+  emit(
+    sessionEvent({
+      type: 'extension.ui.requested',
+      runId: null,
+      sessionId: otherSessionId,
+      at: now,
+      requestId: '99999999-9999-4999-8999-999999999999',
+      kind: 'confirm',
+      title: 'Confirm target Session',
+      message: 'Continue in target?',
+      options: [],
+      value: null,
+    }),
+  )
+  currentSnapshot = {
+    ...snapshot,
+    sessions: [
+      ...snapshot.sessions,
+      {
+        id: otherSessionId,
+        projectId,
+        title: 'Target session',
+        lastRunStatus: null,
+        historyAuthority: 'pi-jsonl',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    selectedSessionId: otherSessionId,
+  }
+
+  emit(
+    sessionEvent({
       type: 'session.replaced',
       runId: null,
       sessionId: otherSessionId,
@@ -327,8 +396,11 @@ it('keeps Extension status, dialog, and title state scoped to the active Session
       activeLeafId: null,
     }),
   )
-  await waitFor(() => expect(document.title).toBe('Pictor'))
+  await waitFor(() => expect(document.title).toBe('Target · Working'))
   expect(screen.queryByRole('dialog', { name: 'Confirm current Session' })).not.toBeInTheDocument()
+  expect(await screen.findByRole('dialog', { name: 'Confirm target Session' })).toBeInTheDocument()
+  expect(screen.getByText('Target status')).toBeInTheDocument()
+  expect(screen.getByText('Target widget')).toBeInTheDocument()
   expect(screen.queryByText('Second status')).not.toBeInTheDocument()
 })
 

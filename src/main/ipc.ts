@@ -48,6 +48,7 @@ interface IpcDependencies {
   connectionTester: ModelConnectionTester
   validateSender: (frame: WebFrameMain | null) => void
   runtimeCoordinator: RuntimeCoordinator
+  onRendererReady: () => Promise<void>
   appInfo: AppInfo
   getPluginBootstrap: () => Promise<PluginBootstrap>
   pluginManager: PluginManager
@@ -78,6 +79,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
     connectionTester,
     validateSender,
     runtimeCoordinator,
+    onRendererReady,
     appInfo,
     getPluginBootstrap,
     pluginManager,
@@ -86,6 +88,14 @@ export function registerIpc(dependencies: IpcDependencies): void {
   ipcMain.handle('app:get-snapshot', (event) => {
     validateSender(event.senderFrame)
     return ipcResult(() => repository.getSnapshot())
+  })
+
+  ipcMain.handle('app:renderer-ready', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      await onRendererReady()
+      return null
+    })
   })
 
   ipcMain.handle('app:get-info', (event) => {

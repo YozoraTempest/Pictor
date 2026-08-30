@@ -219,15 +219,19 @@ void app.whenReady().then(() => {
     })
     coordinatorReference.current = runtimeCoordinator
     const persistedSnapshot = await repository.getSnapshot()
-    if (persistedSnapshot.selectedProjectId && persistedSnapshot.selectedSessionId) {
-      try {
+    let restoreSelectedContextPromise: Promise<void> | null = null
+    const restoreSelectedContext = (): Promise<void> => {
+      if (restoreSelectedContextPromise) return restoreSelectedContextPromise
+      restoreSelectedContextPromise = (async () => {
+        if (!persistedSnapshot.selectedProjectId || !persistedSnapshot.selectedSessionId) return
         await runtimeCoordinator.selectContext(
           persistedSnapshot.selectedProjectId,
           persistedSnapshot.selectedSessionId,
         )
-      } catch (error) {
+      })().catch((error: unknown) => {
         console.error('Failed to restore the selected Pi Session', error)
-      }
+      })
+      return restoreSelectedContextPromise
     }
     const appInfo = appInfoSchema.parse({
       name: app.getName(),
@@ -266,6 +270,7 @@ void app.whenReady().then(() => {
       connectionTester: new ModelConnectionTester(),
       validateSender,
       runtimeCoordinator,
+      onRendererReady: restoreSelectedContext,
       appInfo,
       getPluginBootstrap,
       pluginManager,

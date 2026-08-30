@@ -111,37 +111,25 @@ export function App({
         setExtensionNotice(null)
       } else if (event.type === 'session.replaced') {
         setExtensionWidgets((current) => {
-          if (!(event.sourceSessionId in current) && !(event.targetSessionId in current))
-            return current
+          if (!(event.sourceSessionId in current)) return current
           const next = { ...current }
           delete next[event.sourceSessionId]
-          delete next[event.targetSessionId]
           return next
         })
         setExtensionStatuses((current) => {
-          if (!(event.sourceSessionId in current) && !(event.targetSessionId in current)) {
-            return current
-          }
+          if (!(event.sourceSessionId in current)) return current
           const next = { ...current }
           delete next[event.sourceSessionId]
-          delete next[event.targetSessionId]
           return next
         })
         setExtensionTitles((current) => {
-          if (!(event.sourceSessionId in current) && !(event.targetSessionId in current)) {
-            return current
-          }
+          if (!(event.sourceSessionId in current)) return current
           const next = { ...current }
           delete next[event.sourceSessionId]
-          delete next[event.targetSessionId]
           return next
         })
         setExtensionUiRequest((current) =>
-          current &&
-          (current.sessionId === event.sourceSessionId ||
-            current.sessionId === event.targetSessionId)
-            ? null
-            : current,
+          current?.sessionId === event.sourceSessionId ? null : current,
         )
         setExtensionNotice(null)
       } else if (event.type === 'extension.ui.widget') {
@@ -180,6 +168,12 @@ export function App({
         })
       }
     })
+    void window.pictor
+      .notifyRendererReady()
+      .then((result) => {
+        if (!result.ok) setExtensionNotice(result.error.message)
+      })
+      .catch((error: unknown) => setExtensionNotice(errorMessage(error)))
     return unsubscribe
   }, [])
 
@@ -359,6 +353,9 @@ export function App({
   const currentExtensionStatuses = workspace.selectedSessionId
     ? (extensionStatuses[workspace.selectedSessionId] ?? {})
     : {}
+  const currentExtensionStatusEntries = Object.entries(currentExtensionStatuses).sort(
+    ([firstKey], [secondKey]) => firstKey.localeCompare(secondKey),
+  )
   const currentExtensionUiRequest =
     extensionUiRequest?.sessionId === workspace.selectedSessionId ? extensionUiRequest : null
 
@@ -443,18 +440,29 @@ export function App({
         onRelinkProject={(project) => void pickProject(project.id)}
       />
 
-      {extensionNotice ? (
-        <button className="extension-notice" type="button" onClick={() => setExtensionNotice(null)}>
-          {extensionNotice}
-        </button>
-      ) : null}
+      {extensionNotice || currentExtensionStatusEntries.length > 0 ? (
+        <div className="extension-notices">
+          {extensionNotice ? (
+            <button
+              className="extension-notice"
+              type="button"
+              onClick={() => setExtensionNotice(null)}
+            >
+              {extensionNotice}
+            </button>
+          ) : null}
 
-      {Object.entries(currentExtensionStatuses).map(([key, text]) => (
-        <div className="extension-notice" key={key}>
-          <span>{key}</span>
-          {text}
+          {currentExtensionStatusEntries.length > 0 ? (
+            <div className="extension-statuses" aria-label="Extension statuses" aria-live="polite">
+              {currentExtensionStatusEntries.map(([key, text]) => (
+                <div className="extension-status" data-status-key={key} key={key}>
+                  {text}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
-      ))}
+      ) : null}
 
       {settingsOpen ? (
         <SettingsDialog

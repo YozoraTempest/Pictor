@@ -25,6 +25,7 @@ export const bridgeKeys = [
   'getSessionRuntimeControls',
   'getSettings',
   'getSnapshot',
+  'notifyRendererReady',
   'forkSession',
   'installLocalPlugin',
   'installDevelopmentPlugin',
