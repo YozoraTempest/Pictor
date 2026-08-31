@@ -24,7 +24,7 @@
     "src/modules/**/shared.ts",
     "src/modules/**/renderer.ts",
     "src/modules/**/*.tsx",
-    "src/modules/agent-workspace/**/*.ts",
+    "src/modules/agent-workspace/use-workspace-controller.ts",
     "src/modules/shell/**/*.ts",
     "src/shared/**/*.ts",
     "tests/**/*.ts",

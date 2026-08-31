@@ -3,9 +3,9 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/desktop-bridge.js'
 import {
   credentialFixtures,
+  invokeAgentWorkspace,
   readSelectedRunStatus,
   writeResponsesText,
   writeResponsesToolCall,
@@ -104,14 +104,10 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     await window.getByRole('button', { name: '保存设置' }).click()
     await expect(window.getByRole('dialog')).toBeHidden()
 
-    const project = await window.evaluate(
-      async (rootPath) =>
-        (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.registerProject({
-          rootPath,
-          trusted: true,
-        }),
-      projectRoot,
-    )
+    const project = await invokeAgentWorkspace(window, 'registerProject', {
+      rootPath: projectRoot,
+      trusted: true,
+    })
     expect(project.ok).toBe(true)
     await window.reload()
     await window.waitForLoadState('domcontentloaded')

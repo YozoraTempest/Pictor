@@ -3,13 +3,13 @@ import { useEffect, useState } from 'react'
 
 import type { PluginStatus } from '../../plugin/host'
 import type { AppInfo } from '../../shared/app-info'
-import type { RuntimeEvent, SessionRuntimeControls } from '../../shared/desktop-bridge'
 import type { Project, SessionSummary } from '../../shared/domain'
 import { Modal } from '../../renderer/ui/Modal'
 import type { SettingsSection } from '../shell/settings'
 import { Conversation, type ExtensionWidget } from './Conversation'
 import { SettingsDialog } from './SettingsDialog'
 import { Sidebar } from './Sidebar'
+import type { AgentWorkspaceClient, RuntimeEvent, SessionRuntimeControls } from './shared'
 import { useWorkspaceController, type WorkspaceTrustRequest } from './use-workspace-controller'
 
 type Confirmation =
@@ -25,15 +25,17 @@ function errorMessage(error: unknown): string {
 }
 
 interface AgentWorkspaceProps {
+  client: AgentWorkspaceClient
   settingsSections: readonly SettingsSection[]
   rendererPluginStatuses?: readonly PluginStatus[]
 }
 
 export function AgentWorkspace({
+  client,
   settingsSections,
   rendererPluginStatuses = [],
 }: AgentWorkspaceProps): React.JSX.Element {
-  const workspace = useWorkspaceController(window.pictor)
+  const workspace = useWorkspaceController(client)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [appInfoLoading, setAppInfoLoading] = useState(true)
   const [appInfoError, setAppInfoError] = useState<string | null>(null)
@@ -82,7 +84,7 @@ export function AgentWorkspace({
   }, [])
 
   useEffect(() => {
-    const unsubscribe = window.pictor.onRuntimeEvent((event) => {
+    const unsubscribe = client.onRuntimeEvent((event) => {
       if (event.type === 'session.bound') {
         setExtensionWidgets((current) => {
           if (!(event.sessionId in current)) return current
@@ -172,7 +174,7 @@ export function AgentWorkspace({
       })
       .catch((error: unknown) => setExtensionNotice(errorMessage(error)))
     return unsubscribe
-  }, [])
+  }, [client])
 
   useEffect(() => {
     const selectedSessionId = workspace.selectedSessionId
@@ -262,7 +264,7 @@ export function AgentWorkspace({
 
   const openSessionControls = async () => {
     if (!workspace.selectedSessionId) return
-    const response = await window.pictor.getSessionRuntimeControls({
+    const response = await client.getSessionRuntimeControls({
       sessionId: workspace.selectedSessionId,
     })
     if (response.ok) setSessionControls(response.value)
@@ -272,7 +274,7 @@ export function AgentWorkspace({
   const saveSessionControls = async () => {
     if (!workspace.selectedSessionId || !sessionControls) return
     setModalBusy(true)
-    const response = await window.pictor.saveSessionRuntimeControls({
+    const response = await client.saveSessionRuntimeControls({
       sessionId: workspace.selectedSessionId,
       controls: {
         modelId: sessionControls.modelId,
@@ -290,7 +292,7 @@ export function AgentWorkspace({
   const reloadSessionResources = async () => {
     if (!workspace.selectedSessionId) return
     setModalBusy(true)
-    const response = await window.pictor.reloadSessionResources({
+    const response = await client.reloadSessionResources({
       sessionId: workspace.selectedSessionId,
     })
     setModalBusy(false)
@@ -314,7 +316,7 @@ export function AgentWorkspace({
   const respondToExtensionUi = async (value: string | boolean | null) => {
     if (!extensionUiRequest) return
     setModalBusy(true)
-    const response = await window.pictor.respondToExtensionUi({
+    const response = await client.respondToExtensionUi({
       sessionId: extensionUiRequest.sessionId,
       requestId: extensionUiRequest.requestId,
       value,
@@ -463,6 +465,7 @@ export function AgentWorkspace({
 
       {settingsOpen ? (
         <SettingsDialog
+          client={client}
           initial={workspace.snapshot.settings}
           sections={settingsSections}
           rendererPluginStatuses={rendererPluginStatuses}

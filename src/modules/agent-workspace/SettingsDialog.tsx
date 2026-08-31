@@ -20,8 +20,10 @@ import type { PluginStatus } from '../../plugin/host.js'
 import { PluginManager } from '../../renderer/settings/PluginManager.js'
 import { Modal } from '../../renderer/ui/Modal.js'
 import type { SettingsSection } from '../shell/settings.js'
+import type { AgentWorkspaceClient } from './shared.js'
 
 interface SettingsDialogProps {
+  client: AgentWorkspaceClient
   initial: ModelSettings | null
   sections: readonly SettingsSection[]
   rendererPluginStatuses: readonly PluginStatus[]
@@ -54,6 +56,7 @@ function createFormState(settings: ModelSettings | null): FormState {
 }
 
 export function SettingsDialog({
+  client,
   initial,
   sections,
   rendererPluginStatuses,
@@ -108,7 +111,7 @@ export function SettingsDialog({
     }
     setBusy('test')
     setFormError(null)
-    const response = await window.pictor.testSettings({
+    const response = await client.testSettings({
       ...settings,
       ...(form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
     })
@@ -133,7 +136,7 @@ export function SettingsDialog({
 
     setBusy('models')
     setFormError(null)
-    const response = await window.pictor.listModels({
+    const response = await client.listModels({
       baseUrl: baseUrl.data,
       ...(form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
     })
@@ -159,7 +162,7 @@ export function SettingsDialog({
       : form.apiKey.trim()
         ? ({ action: 'replace', value: form.apiKey.trim() } as const)
         : ({ action: 'keep' } as const)
-    const response = await window.pictor.saveSettings({ ...settings, apiKey })
+    const response = await client.saveSettings({ ...settings, apiKey })
     setBusy(null)
     if (!response.ok) {
       setFormError(response.error.message)

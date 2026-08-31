@@ -3,6 +3,13 @@ import { shellApplicationContributions } from '../shell/application.js'
 import { agentWorkspaceRendererModule } from './renderer.js'
 
 it('contributes the Agent Workspace application through its Renderer Module', async () => {
+  Object.defineProperty(window, 'pictorModules', {
+    configurable: true,
+    value: {
+      invoke: vi.fn(),
+      onEvent: vi.fn(() => () => undefined),
+    },
+  })
   const kernel = new ModuleKernel()
 
   await kernel.start([agentWorkspaceRendererModule])

@@ -2,8 +2,7 @@ import { _electron as electron, expect, test } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/desktop-bridge.js'
-import { credentialFixtures } from './support.js'
+import { credentialFixtures, invokeAgentWorkspace } from './support.js'
 
 test('isolates model credentials and restores non-secret settings', async ({
   browserName: _browserName,
@@ -18,19 +17,15 @@ test('isolates model credentials and restores non-secret settings', async ({
   const firstApp = await launch()
   const firstWindow = await firstApp.firstWindow()
   await firstWindow.waitForLoadState('domcontentloaded')
-  const saved = await firstWindow.evaluate(
-    (apiKey) =>
-      (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.saveSettings({
-        apiProtocol: 'responses',
-        baseUrl: 'https://api.example.test/v1',
-        modelId: 'model-e2e',
-        reasoningEffort: 'xhigh',
-        temperature: 0.3,
-        maxOutputTokens: 4096,
-        apiKey: { action: 'replace', value: apiKey },
-      }),
-    credentialFixtures.storedSettings,
-  )
+  const saved = await invokeAgentWorkspace(firstWindow, 'saveSettings', {
+    apiProtocol: 'responses',
+    baseUrl: 'https://api.example.test/v1',
+    modelId: 'model-e2e',
+    reasoningEffort: 'xhigh',
+    temperature: 0.3,
+    maxOutputTokens: 4096,
+    apiKey: { action: 'replace', value: credentialFixtures.storedSettings },
+  })
   expect(saved).toEqual({
     ok: true,
     value: {
@@ -122,9 +117,7 @@ test('isolates model credentials and restores non-secret settings', async ({
   try {
     const restoredWindow = await restoredApp.firstWindow()
     await restoredWindow.waitForLoadState('domcontentloaded')
-    const snapshot = await restoredWindow.evaluate(() =>
-      (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.getSnapshot(),
-    )
+    const snapshot = await invokeAgentWorkspace(restoredWindow, 'getSnapshot', null)
     expect(snapshot).toEqual(
       expect.objectContaining({
         ok: true,

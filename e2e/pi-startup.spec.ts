@@ -2,8 +2,7 @@ import { _electron as electron, expect, test } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/desktop-bridge.js'
-import { credentialFixtures } from './support.js'
+import { credentialFixtures, invokeAgentWorkspace } from './support.js'
 
 test('restores the selected Pi Session after the Renderer subscribes to runtime events', async ({
   browserName: _browserName,
@@ -36,25 +35,25 @@ test('restores the selected Pi Session after the Renderer subscribes to runtime 
     const firstWindow = await firstApp.firstWindow()
     try {
       await firstWindow.waitForLoadState('domcontentloaded')
-      const setup = await firstWindow.evaluate(
-        async ({ apiKey, rootPath }) => {
-          const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-          const settings = await bridge.saveSettings({
-            apiProtocol: 'chat-completions',
-            baseUrl: 'https://example.test/v1',
-            modelId: 'pictor-startup-model',
-            reasoningEffort: null,
-            temperature: null,
-            maxOutputTokens: 64,
-            apiKey: { action: 'replace', value: apiKey },
+      const settings = await invokeAgentWorkspace(firstWindow, 'saveSettings', {
+        apiProtocol: 'chat-completions',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'pictor-startup-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+        apiKey: { action: 'replace', value: credentialFixtures.localRuntime },
+      })
+      const project = await invokeAgentWorkspace(firstWindow, 'registerProject', {
+        rootPath: projectRoot,
+        trusted: true,
+      })
+      const session = project.ok
+        ? await invokeAgentWorkspace(firstWindow, 'createSession', {
+            projectId: project.value.id,
           })
-          const project = await bridge.registerProject({ rootPath, trusted: true })
-          if (!project.ok) return { settings, project, session: null }
-          const session = await bridge.createSession({ projectId: project.value.id })
-          return { settings, project, session }
-        },
-        { apiKey: credentialFixtures.localRuntime, rootPath: projectRoot },
-      )
+        : null
+      const setup = { settings, project, session }
       expect(setup).toMatchObject({
         settings: { ok: true },
         project: { ok: true },
@@ -64,13 +63,10 @@ test('restores the selected Pi Session after the Renderer subscribes to runtime 
 
       await firstWindow.reload()
       await expect(firstWindow.getByRole('heading', { name: '新建会话' })).toBeVisible()
-      const selecting = firstWindow.evaluate(
-        async ({ projectId, sessionId }) => {
-          const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-          return bridge.selectContext({ projectId, sessionId })
-        },
-        { projectId: setup.project.value.id, sessionId: setup.session.value.id },
-      )
+      const selecting = invokeAgentWorkspace(firstWindow, 'selectContext', {
+        projectId: setup.project.value.id,
+        sessionId: setup.session.value.id,
+      })
       await expect(firstWindow.getByRole('heading', { name: 'Startup input' })).toBeVisible({
         timeout: 30_000,
       })
@@ -95,10 +91,9 @@ test('restores the selected Pi Session after the Renderer subscribes to runtime 
     await expect(restoredWindow.getByText('Startup status')).toBeVisible()
     await expect(restoredWindow.getByText('Startup widget')).toBeVisible()
     await expect(restoredWindow).toHaveTitle('Pictor · Startup')
-    const controls = await restoredWindow.evaluate(async (sessionId) => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      return bridge.getSessionRuntimeControls({ sessionId })
-    }, sessionId)
+    const controls = await invokeAgentWorkspace(restoredWindow, 'getSessionRuntimeControls', {
+      sessionId,
+    })
     expect(controls.ok).toBe(true)
 
     await restoredWindow.getByLabel('输入').fill('restored start')

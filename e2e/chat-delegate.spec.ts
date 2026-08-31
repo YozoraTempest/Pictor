@@ -3,10 +3,10 @@ import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/desktop-bridge.js'
 import {
   bridgeKeys,
   credentialFixtures,
+  invokeAgentWorkspace,
   moduleBridgeKeys,
   readSelectedRunStatus,
 } from './support.js'
@@ -208,14 +208,10 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await window.getByRole('button', { name: '保存设置' }).click()
     await expect(window.getByRole('dialog')).toBeHidden()
 
-    const project = await window.evaluate(
-      async (rootPath) =>
-        (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor.registerProject({
-          rootPath,
-          trusted: true,
-        }),
-      projectRoot,
-    )
+    const project = await invokeAgentWorkspace(window, 'registerProject', {
+      rootPath: projectRoot,
+      trusted: true,
+    })
     expect(project.ok).toBe(true)
     await window.reload()
     await window.waitForLoadState('domcontentloaded')
@@ -264,12 +260,13 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
     await window.getByRole('button', { name: '停止', exact: true }).click()
     await expect(window.getByText('已停止').last()).toBeVisible({ timeout: 20_000 })
 
-    const evidence = await window.evaluate(async () => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      const snapshot = await bridge.getSnapshot()
-      if (!snapshot.ok || !snapshot.value.sessions[0]) return null
-      return bridge.getSession({ sessionId: snapshot.value.sessions[0].id })
-    })
+    const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
+    const evidence =
+      snapshot.ok && snapshot.value.sessions[0]
+        ? await invokeAgentWorkspace(window, 'getSession', {
+            sessionId: snapshot.value.sessions[0].id,
+          })
+        : null
 
     expect(await readFile(join(projectRoot, 'command-approved.txt'), 'utf8')).toBe('approved')
     if (!evidence?.ok) throw new Error('Session evidence is unavailable')

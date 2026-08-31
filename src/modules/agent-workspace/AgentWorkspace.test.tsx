@@ -2,17 +2,18 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Info } from 'lucide-react'
 import { vi } from 'vitest'
 
-import type {
-  AppSnapshot,
-  IpcResult,
-  PictorBridge,
-  RuntimeEvent,
-  SessionRuntimeControls,
-} from '../../shared/desktop-bridge'
+import type { PictorBridge } from '../../shared/desktop-bridge'
 import type { ImageAttachment, SessionHistoryView, SessionRecord } from '../../shared/domain'
 import { AboutSettings } from '../updater/AboutSettings'
 import type { UpdaterClient } from '../updater/shared'
 import { AgentWorkspace } from './AgentWorkspace'
+import type {
+  AgentWorkspaceClient,
+  AppSnapshot,
+  IpcResult,
+  RuntimeEvent,
+  SessionRuntimeControls,
+} from './shared'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
 const sessionId = '22222222-2222-4222-8222-222222222222'
@@ -37,37 +38,12 @@ function emptySnapshot(): AppSnapshot {
   }
 }
 
-function createBridge(snapshot: AppSnapshot, session: SessionRecord | null = null): PictorBridge {
+function createBridge(
+  snapshot: AppSnapshot,
+  session: SessionRecord | null = null,
+): AgentWorkspaceClient {
   return {
     getSnapshot: async () => ok(snapshot),
-    notifyRendererReady: async () => ok(null),
-    getAppInfo: async () =>
-      ok({
-        name: 'Pictor',
-        version: '0.1.0',
-        platform: 'win32',
-        arch: 'x64',
-        distribution: 'windows',
-      }),
-    getPluginBootstrap: async () => ok({ safeMode: false, plugins: [] }),
-    getPluginManagerSnapshot: async () =>
-      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
-    installLocalPlugin: async () =>
-      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
-    installDevelopmentPlugin: async () =>
-      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
-    installPiExtension: async () =>
-      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
-    installPiPackage: async () =>
-      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
-    installPiPackageSpec: async () =>
-      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
-    setPluginEnabled: async () =>
-      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
-    removePlugin: async () =>
-      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
-    restoreBundledPlugin: async () =>
-      ok({ safeMode: false, restartRequired: false, items: [], issues: [] }),
     pickProjectDirectory: async () => ok(null),
     registerProject: async () => ok(snapshot.projects[0]!),
     relinkProject: async () => ok(snapshot.projects[0]!),
@@ -128,6 +104,32 @@ function installBridge(bridge: PictorBridge): void {
   Object.defineProperty(window, 'pictor', { configurable: true, value: bridge })
 }
 
+function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
+  const manager = { safeMode: false, restartRequired: false, items: [], issues: [] }
+  return {
+    notifyRendererReady: async () => ok(null),
+    getAppInfo: async () =>
+      ok({
+        name: 'Pictor',
+        version: '0.1.0',
+        platform: 'win32',
+        arch: 'x64',
+        distribution: 'windows',
+      }),
+    getPluginBootstrap: async () => ok({ safeMode: false, plugins: [] }),
+    getPluginManagerSnapshot: async () => ok(manager),
+    installLocalPlugin: async () => ok(manager),
+    installDevelopmentPlugin: async () => ok(manager),
+    installPiExtension: async () => ok(manager),
+    installPiPackage: async () => ok(manager),
+    installPiPackageSpec: async () => ok(manager),
+    setPluginEnabled: async () => ok(manager),
+    removePlugin: async () => ok(manager),
+    restoreBundledPlugin: async () => ok(manager),
+    ...overrides,
+  }
+}
+
 function createUpdater(overrides: Partial<UpdaterClient> = {}): UpdaterClient {
   return {
     getAppInfo: async () => ({
@@ -151,10 +153,15 @@ function createUpdater(overrides: Partial<UpdaterClient> = {}): UpdaterClient {
   }
 }
 
-function renderApp(bridge: PictorBridge, updater: UpdaterClient = createUpdater()) {
-  installBridge(bridge)
+function renderApp(
+  client: AgentWorkspaceClient,
+  updater: UpdaterClient = createUpdater(),
+  coreBridgeOverrides: Partial<PictorBridge> = {},
+) {
+  installBridge(createCoreBridge(coreBridgeOverrides))
   return render(
     <AgentWorkspace
+      client={client}
       settingsSections={[
         {
           id: 'about',
@@ -798,19 +805,8 @@ it('shows app information and downloads an available update from settings', asyn
 })
 
 it('shows the Linux platform in app information', async () => {
-  const bridge: PictorBridge = {
-    ...createBridge(emptySnapshot()),
-    getAppInfo: async () =>
-      ok({
-        name: 'Pictor',
-        version: '0.1.0',
-        platform: 'linux',
-        arch: 'x64',
-        distribution: 'arch',
-      }),
-  }
   renderApp(
-    bridge,
+    createBridge(emptySnapshot()),
     createUpdater({
       getAppInfo: async () => ({
         name: 'Pictor',
@@ -820,6 +816,16 @@ it('shows the Linux platform in app information', async () => {
         distribution: 'arch',
       }),
     }),
+    {
+      getAppInfo: async () =>
+        ok({
+          name: 'Pictor',
+          version: '0.1.0',
+          platform: 'linux',
+          arch: 'x64',
+          distribution: 'arch',
+        }),
+    },
   )
 
   await screen.findByRole('heading', { name: '选择一个项目开始' })

@@ -15,8 +15,8 @@ import {
   Trash2,
 } from 'lucide-react'
 
-import type { SessionExportFormat } from '../../shared/desktop-bridge.js'
 import type { Project, SessionSummary } from '../../shared/domain.js'
+import type { SessionExportFormat } from './shared.js'
 
 interface SidebarProps {
   projects: Project[]
