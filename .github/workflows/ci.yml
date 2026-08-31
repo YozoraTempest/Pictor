@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -32,21 +34,47 @@ jobs:
           npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
           echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
       - run: npm ci
-      - name: Validate release branch
+      - name: Classify pull request to main
         if: github.base_ref == 'main'
-        shell: pwsh
+        id: main_pr
         env:
-          RELEASE_HEAD: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD: ${{ github.head_ref }}
         run: |
-          if ($env:RELEASE_HEAD -ne 'develop' -and -not $env:RELEASE_HEAD.StartsWith('hotfix/')) {
-            throw "Pull requests to main must come from develop or hotfix/*"
-          }
+          set -euo pipefail
+
+          if [ "$PR_HEAD" = 'develop' ] || [[ "$PR_HEAD" == hotfix/* ]]; then
+            echo 'is_release=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$PR_HEAD" != ci/* ]]; then
+            echo 'Pull requests to main must come from develop, hotfix/*, or a path-restricted ci/* branch.' >&2
+            exit 1
+          fi
+
+          invalid_paths=''
+          while IFS= read -r path; do
+            case "$path" in
+              .github/workflows/*.yml | README.md | CONTRIBUTING.md | docs/PROJECT_MANAGEMENT.md | docs/TESTING.md) ;;
+              *) invalid_paths+="$path"$'\n' ;;
+            esac
+          done < <(git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA")
+
+          if [ -n "$invalid_paths" ]; then
+            echo 'Non-release ci/* pull requests to main contain disallowed paths:' >&2
+            printf '%s' "$invalid_paths" >&2
+            exit 1
+          fi
+
+          echo 'is_release=false' >> "$GITHUB_OUTPUT"
       - name: Validate release metadata
-        if: github.base_ref == 'main'
+        if: github.base_ref == 'main' && steps.main_pr.outputs.is_release == 'true'
         id: release-metadata
         run: node scripts/prepare-release.mjs
       - name: Validate release version is unused
-        if: github.base_ref == 'main'
+        if: github.base_ref == 'main' && steps.main_pr.outputs.is_release == 'true'
         shell: pwsh
         env:
           RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
