@@ -9,11 +9,13 @@ import {
   type RuntimeCommand,
   type RuntimeCompactConfig,
   type RuntimeCompactResult,
+  type RuntimeControlsSnapshot,
   type RuntimeEvent,
   type RuntimeExportConfig,
   type RuntimeExportResult,
   type RuntimeForkConfig,
   type RuntimeForkResult,
+  type RuntimeHostMessage,
   type RuntimeImportConfig,
   type RuntimeImportResult,
   type RuntimeLabelConfig,
@@ -21,83 +23,136 @@ import {
   type RuntimeNavigateConfig,
   type RuntimeNavigateResult,
   type RuntimeSessionOpenConfig,
-  type RuntimeStartConfig,
   type RuntimeSessionReplacementRequest,
-  type RuntimeControlsSnapshot,
+  type RuntimeStartConfig,
 } from '../../shared/runtime-protocol.js'
 import type { RuntimePluginBootstrap } from '../../shared/plugins.js'
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'stopped', 'interrupted'])
 const RUNTIME_READY_TIMEOUT_MS = 30_000
 
+type RuntimeProcessState =
+  | { status: 'stopped' }
+  | {
+      status: 'starting'
+      child: UtilityProcess
+      ready: Promise<void>
+      resolveReady: () => void
+      rejectReady: (error: Error) => void
+    }
+  | { status: 'ready'; child: UtilityProcess }
+  | { status: 'stopping'; child: UtilityProcess }
+
+type RuntimeActivityState =
+  | { status: 'idle'; sessionId: string | null }
+  | { status: 'busy'; id: string; sessionId: string | null }
+
+type RuntimeRequestKey =
+  | 'session'
+  | 'fork'
+  | 'import'
+  | 'export'
+  | 'navigate'
+  | 'compact'
+  | 'label'
+  | 'reload'
+  | 'controls-get'
+  | 'controls-set'
+
+type RuntimeRequestRejection = 'post' | 'fatal' | 'exit' | 'dispose'
+
+interface PendingRuntimeRequest {
+  readonly key: RuntimeRequestKey
+  readonly exitMessage: string
+  matches(message: RuntimeHostMessage): boolean
+  settle(message: RuntimeHostMessage): void
+  reject(error: Error, reason: RuntimeRequestRejection): void
+}
+
+interface RuntimeRequestOptions<Message extends RuntimeHostMessage, Result> {
+  readonly key: RuntimeRequestKey
+  readonly command: RuntimeCommand
+  readonly duplicateMessage: string
+  readonly exitMessage: string
+  readonly matches: (message: RuntimeHostMessage) => message is Message
+  readonly transform: (message: Message) => Result
+  readonly onReject?: (reason: RuntimeRequestRejection) => void
+}
+
+type RuntimeOperationCompletion<Result> =
+  { sessionId: string | null; result: Result } | { sessionId: string | null; error: Error }
+
+type RuntimeHostMessageOf<Type extends RuntimeHostMessage['type']> = Extract<
+  RuntimeHostMessage,
+  { type: Type }
+>
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+class RuntimeRequestBroker {
+  private readonly pending = new Map<RuntimeRequestKey, PendingRuntimeRequest>()
+
+  request<Message extends RuntimeHostMessage, Result>(
+    options: RuntimeRequestOptions<Message, Result>,
+    post: (command: RuntimeCommand) => void,
+  ): Promise<Result> {
+    if (this.pending.has(options.key)) throw new Error(options.duplicateMessage)
+
+    return new Promise<Result>((resolve, reject) => {
+      const pending: PendingRuntimeRequest = {
+        key: options.key,
+        exitMessage: options.exitMessage,
+        matches: options.matches,
+        settle: (message) => {
+          try {
+            resolve(options.transform(message as Message))
+          } catch (error) {
+            reject(toError(error))
+          }
+        },
+        reject: (error, reason) => {
+          options.onReject?.(reason)
+          reject(error)
+        },
+      }
+      this.pending.set(options.key, pending)
+
+      try {
+        post(options.command)
+      } catch (error) {
+        this.pending.delete(options.key)
+        pending.reject(toError(error), 'post')
+      }
+    })
+  }
+
+  settle(message: RuntimeHostMessage): boolean {
+    for (const [key, pending] of this.pending) {
+      if (!pending.matches(message)) continue
+      this.pending.delete(key)
+      pending.settle(message)
+      return true
+    }
+    return false
+  }
+
+  rejectAll(
+    createError: (pending: PendingRuntimeRequest) => Error,
+    reason: RuntimeRequestRejection,
+  ): void {
+    for (const [key, pending] of this.pending) {
+      this.pending.delete(key)
+      pending.reject(createError(pending), reason)
+    }
+  }
+}
+
 export class RuntimeSupervisor {
-  private child: UtilityProcess | null = null
-  private activeRunId: string | null = null
-  private activeSessionId: string | null = null
-  private readyPromise: Promise<void> | null = null
-  private resolveReady: (() => void) | null = null
-  private rejectReady: ((error: Error) => void) | null = null
-  private pendingFork: {
-    operationId: string
-    resolve: (result: RuntimeForkResult) => void
-    reject: (error: Error) => void
-  } | null = null
-  private pendingImport: {
-    operationId: string
-    resolve: (result: RuntimeImportResult) => void
-    reject: (error: Error) => void
-  } | null = null
-  private pendingExport: {
-    operationId: string
-    previousSessionId: string | null
-    resolve: (result: RuntimeExportResult) => void
-    reject: (error: Error) => void
-  } | null = null
-  private pendingNavigate: {
-    operationId: string
-    sessionId: string
-    previousSessionId: string | null
-    resolve: (result: RuntimeNavigateResult) => void
-    reject: (error: Error) => void
-  } | null = null
-  private pendingCompact: {
-    operationId: string
-    sessionId: string
-    previousSessionId: string | null
-    resolve: (result: RuntimeCompactResult) => void
-    reject: (error: Error) => void
-  } | null = null
-  private pendingLabel: {
-    operationId: string
-    sessionId: string
-    previousSessionId: string | null
-    resolve: (result: RuntimeLabelResult) => void
-    reject: (error: Error) => void
-  } | null = null
-  private pendingReload: {
-    sessionId: string
-    resolve: () => void
-    reject: (error: Error) => void
-  } | null = null
-  private pendingControls: {
-    sessionId: string
-    resolve: (result: RuntimeControlsSnapshot) => void
-    reject: (error: Error) => void
-  } | null = null
-  private pendingControlsSet: {
-    requestId: string
-    sessionId: string
-    resolve: () => void
-    reject: (error: Error) => void
-  } | null = null
-  private pendingSession: {
-    operationId: string
-    sessionId: string
-    kind: 'open' | 'close'
-    previousSessionId: string | null
-    resolve: () => void
-    reject: (error: Error) => void
-  } | null = null
+  private processState: RuntimeProcessState = { status: 'stopped' }
+  private activity: RuntimeActivityState = { status: 'idle', sessionId: null }
+  private readonly requests = new RuntimeRequestBroker()
 
   constructor(
     private readonly onEvent: (event: RuntimeEvent) => void,
@@ -107,200 +162,178 @@ export class RuntimeSupervisor {
     ) => Promise<{ accepted: boolean; targetSessionId?: string; message?: string }>,
   ) {}
 
-  async openSession(config: RuntimeSessionOpenConfig): Promise<void> {
-    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
-    await this.ensureChild()
-    if (this.pendingSession) throw new Error('已有 Session 打开操作正在执行')
-    this.activeRunId = config.operationId
-    return new Promise<void>((resolve, reject) => {
-      this.pendingSession = {
-        operationId: config.operationId,
-        sessionId: config.sessionId,
-        kind: 'open',
-        previousSessionId: this.activeSessionId,
-        resolve,
-        reject,
-      }
-      try {
-        this.post(config)
-      } catch (error) {
-        this.pendingSession = null
-        this.activeRunId = null
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
+  openSession(config: RuntimeSessionOpenConfig): Promise<void> {
+    return this.requestRuntimeOperation({
+      key: 'session',
+      command: config,
+      operationId: config.operationId,
+      sessionIdDuring: (previousSessionId) => previousSessionId,
+      busyMessage: '已有 Runtime 操作正在执行',
+      duplicateMessage: '已有 Session 打开操作正在执行',
+      exitMessage: 'Agent Runtime 在 Session 操作完成前退出',
+      matches: (message): message is RuntimeHostMessageOf<'host.sessionResult'> =>
+        message.type === 'host.sessionResult' &&
+        message.operationId === config.operationId &&
+        message.sessionId === config.sessionId,
+      complete: (message, previousSessionId) => {
+        if (message.outcome === 'failed') {
+          return {
+            sessionId: previousSessionId,
+            error: new Error(message.message ?? 'Pi Session operation failed'),
+          }
+        }
+        return {
+          sessionId: message.outcome === 'opened' ? config.sessionId : null,
+          result: undefined,
+        }
+      },
     })
   }
 
-  async closeSession(): Promise<void> {
-    if (!this.child || !this.activeSessionId) return
-    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
-    const sessionId = this.activeSessionId
+  closeSession(): Promise<void> {
+    const sessionId = this.activity.sessionId
+    if (this.processState.status === 'stopped' || !sessionId) return Promise.resolve()
     const operationId = randomUUID()
-    await this.ensureChild()
-    if (this.pendingSession) throw new Error('已有 Session 关闭操作正在执行')
-    this.activeRunId = operationId
-    return new Promise<void>((resolve, reject) => {
-      this.pendingSession = {
-        operationId,
-        sessionId,
-        kind: 'close',
-        previousSessionId: this.activeSessionId,
-        resolve,
-        reject,
-      }
-      try {
-        this.post({ type: 'session.close', operationId, sessionId })
-      } catch (error) {
-        this.pendingSession = null
-        this.activeRunId = null
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
+    return this.requestRuntimeOperation({
+      key: 'session',
+      command: { type: 'session.close', operationId, sessionId },
+      operationId,
+      sessionIdDuring: sessionId,
+      busyMessage: '已有 Runtime 操作正在执行',
+      duplicateMessage: '已有 Session 关闭操作正在执行',
+      exitMessage: 'Agent Runtime 在 Session 操作完成前退出',
+      matches: (message): message is RuntimeHostMessageOf<'host.sessionResult'> =>
+        message.type === 'host.sessionResult' &&
+        message.operationId === operationId &&
+        message.sessionId === sessionId,
+      complete: (message, previousSessionId) => {
+        if (message.outcome === 'failed') {
+          return {
+            sessionId: previousSessionId,
+            error: new Error(message.message ?? 'Pi Session operation failed'),
+          }
+        }
+        return { sessionId: message.outcome === 'opened' ? sessionId : null, result: undefined }
+      },
     })
   }
 
   async start(config: RuntimeStartConfig): Promise<void> {
-    if (this.activeRunId) throw new Error('已有 Agent 运行正在执行')
-    if (this.activeSessionId && this.activeSessionId !== config.sessionId) {
-      throw new Error('Requested Pi Session is not open')
+    this.assertIdle('已有 Agent 运行正在执行')
+    this.assertSessionAvailable(config.sessionId)
+    await this.ensureChild()
+    this.assertIdle('已有 Agent 运行正在执行')
+    this.assertSessionAvailable(config.sessionId)
+
+    const previousSessionId = this.activity.sessionId
+    this.activity = { status: 'busy', id: config.runId, sessionId: config.sessionId }
+    try {
+      this.post(config)
+    } catch (error) {
+      this.activity = { status: 'idle', sessionId: previousSessionId }
+      throw toError(error)
     }
-    await this.ensureChild()
-    this.activeRunId = config.runId
-    this.activeSessionId = config.sessionId
-    this.post(config)
   }
 
-  async fork(config: RuntimeForkConfig): Promise<RuntimeForkResult> {
-    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
-    await this.ensureChild()
-    this.activeRunId = config.operationId
-    this.activeSessionId = config.sourceSessionId
-    return new Promise<RuntimeForkResult>((resolve, reject) => {
-      this.pendingFork = { operationId: config.operationId, resolve, reject }
-      try {
-        this.post(config)
-      } catch (error) {
-        this.pendingFork = null
-        this.activeRunId = null
-        this.activeSessionId = null
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
+  fork(config: RuntimeForkConfig): Promise<RuntimeForkResult> {
+    return this.requestRuntimeOperation({
+      key: 'fork',
+      command: config,
+      operationId: config.operationId,
+      sessionIdDuring: config.sourceSessionId,
+      busyMessage: '已有 Runtime 操作正在执行',
+      duplicateMessage: '已有 Pi Session Fork 正在执行',
+      exitMessage: 'Agent Runtime 在 Fork 完成前退出',
+      matches: (message): message is RuntimeHostMessageOf<'host.forkResult'> =>
+        message.type === 'host.forkResult' && message.operationId === config.operationId,
+      complete: (message) => ({ sessionId: null, result: message }),
     })
   }
 
-  async importSession(config: RuntimeImportConfig): Promise<RuntimeImportResult> {
-    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
-    await this.ensureChild()
-    this.activeRunId = config.operationId
-    this.activeSessionId = config.targetSessionId
-    return new Promise<RuntimeImportResult>((resolve, reject) => {
-      this.pendingImport = { operationId: config.operationId, resolve, reject }
-      try {
-        this.post(config)
-      } catch (error) {
-        this.pendingImport = null
-        this.activeRunId = null
-        this.activeSessionId = null
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
+  importSession(config: RuntimeImportConfig): Promise<RuntimeImportResult> {
+    return this.requestRuntimeOperation({
+      key: 'import',
+      command: config,
+      operationId: config.operationId,
+      sessionIdDuring: config.targetSessionId,
+      busyMessage: '已有 Runtime 操作正在执行',
+      duplicateMessage: '已有 Pi Session Import 正在执行',
+      exitMessage: 'Agent Runtime 在 Import 完成前退出',
+      matches: (message): message is RuntimeHostMessageOf<'host.importResult'> =>
+        message.type === 'host.importResult' && message.operationId === config.operationId,
+      complete: (message) => ({ sessionId: null, result: message }),
     })
   }
 
-  async exportSession(config: RuntimeExportConfig): Promise<RuntimeExportResult> {
-    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
-    await this.ensureChild()
-    const previousSessionId = this.activeSessionId
-    this.activeRunId = config.operationId
-    this.activeSessionId = config.sourceSessionId
-    return new Promise<RuntimeExportResult>((resolve, reject) => {
-      this.pendingExport = {
-        operationId: config.operationId,
-        previousSessionId,
-        resolve,
-        reject,
-      }
-      try {
-        this.post(config)
-      } catch (error) {
-        this.pendingExport = null
-        this.activeRunId = null
-        this.activeSessionId = previousSessionId
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
+  exportSession(config: RuntimeExportConfig): Promise<RuntimeExportResult> {
+    return this.requestRuntimeOperation({
+      key: 'export',
+      command: config,
+      operationId: config.operationId,
+      sessionIdDuring: config.sourceSessionId,
+      busyMessage: '已有 Runtime 操作正在执行',
+      duplicateMessage: '已有 Pi Session Export 正在执行',
+      exitMessage: 'Agent Runtime 在 Export 完成前退出',
+      matches: (message): message is RuntimeHostMessageOf<'host.exportResult'> =>
+        message.type === 'host.exportResult' && message.operationId === config.operationId,
+      complete: (message, previousSessionId) => ({
+        sessionId: previousSessionId,
+        result: message,
+      }),
     })
   }
 
-  async navigateSession(config: RuntimeNavigateConfig): Promise<RuntimeNavigateResult> {
-    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
-    await this.ensureChild()
-    const previousSessionId = this.activeSessionId
-    this.activeRunId = config.operationId
-    this.activeSessionId = config.sourceSessionId
-    return new Promise<RuntimeNavigateResult>((resolve, reject) => {
-      this.pendingNavigate = {
-        operationId: config.operationId,
-        sessionId: config.sourceSessionId,
-        previousSessionId,
-        resolve,
-        reject,
-      }
-      try {
-        this.post(config)
-      } catch (error) {
-        this.pendingNavigate = null
-        this.activeRunId = null
-        this.activeSessionId = previousSessionId
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
+  navigateSession(config: RuntimeNavigateConfig): Promise<RuntimeNavigateResult> {
+    return this.requestRuntimeOperation({
+      key: 'navigate',
+      command: config,
+      operationId: config.operationId,
+      sessionIdDuring: config.sourceSessionId,
+      busyMessage: '已有 Runtime 操作正在执行',
+      duplicateMessage: '已有 Pi Session Tree Navigation 正在执行',
+      exitMessage: 'Agent Runtime 在 Tree Navigation 完成前退出',
+      matches: (message): message is RuntimeHostMessageOf<'host.navigateResult'> =>
+        message.type === 'host.navigateResult' && message.operationId === config.operationId,
+      complete: (message, previousSessionId) => ({
+        sessionId: message.outcome === 'failed' ? previousSessionId : config.sourceSessionId,
+        result: message,
+      }),
     })
   }
 
-  async compactSession(config: RuntimeCompactConfig): Promise<RuntimeCompactResult> {
-    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
-    await this.ensureChild()
-    const previousSessionId = this.activeSessionId
-    this.activeRunId = config.operationId
-    this.activeSessionId = config.sourceSessionId
-    return new Promise<RuntimeCompactResult>((resolve, reject) => {
-      this.pendingCompact = {
-        operationId: config.operationId,
-        sessionId: config.sourceSessionId,
-        previousSessionId,
-        resolve,
-        reject,
-      }
-      try {
-        this.post(config)
-      } catch (error) {
-        this.pendingCompact = null
-        this.activeRunId = null
-        this.activeSessionId = previousSessionId
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
+  compactSession(config: RuntimeCompactConfig): Promise<RuntimeCompactResult> {
+    return this.requestRuntimeOperation({
+      key: 'compact',
+      command: config,
+      operationId: config.operationId,
+      sessionIdDuring: config.sourceSessionId,
+      busyMessage: '已有 Runtime 操作正在执行',
+      duplicateMessage: '已有 Pi Session Compaction 正在执行',
+      exitMessage: 'Agent Runtime 在 Compaction 完成前退出',
+      matches: (message): message is RuntimeHostMessageOf<'host.compactResult'> =>
+        message.type === 'host.compactResult' && message.operationId === config.operationId,
+      complete: (message, previousSessionId) => ({
+        sessionId: message.outcome === 'failed' ? previousSessionId : config.sourceSessionId,
+        result: message,
+      }),
     })
   }
 
-  async labelSessionEntry(config: RuntimeLabelConfig): Promise<RuntimeLabelResult> {
-    if (this.activeRunId) throw new Error('已有 Runtime 操作正在执行')
-    await this.ensureChild()
-    const previousSessionId = this.activeSessionId
-    this.activeRunId = config.operationId
-    this.activeSessionId = config.sourceSessionId
-    return new Promise<RuntimeLabelResult>((resolve, reject) => {
-      this.pendingLabel = {
-        operationId: config.operationId,
-        sessionId: config.sourceSessionId,
-        previousSessionId,
-        resolve,
-        reject,
-      }
-      try {
-        this.post(config)
-      } catch (error) {
-        this.pendingLabel = null
-        this.activeRunId = null
-        this.activeSessionId = previousSessionId
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
+  labelSessionEntry(config: RuntimeLabelConfig): Promise<RuntimeLabelResult> {
+    return this.requestRuntimeOperation({
+      key: 'label',
+      command: config,
+      operationId: config.operationId,
+      sessionIdDuring: config.sourceSessionId,
+      busyMessage: '已有 Runtime 操作正在执行',
+      duplicateMessage: '已有 Pi Session Label 正在执行',
+      exitMessage: 'Agent Runtime 在 Label 完成前退出',
+      matches: (message): message is RuntimeHostMessageOf<'host.labelResult'> =>
+        message.type === 'host.labelResult' && message.operationId === config.operationId,
+      complete: (message, previousSessionId) => ({
+        sessionId: message.outcome === 'failed' ? previousSessionId : config.sourceSessionId,
+        result: message,
+      }),
     })
   }
 
@@ -325,38 +358,50 @@ export class RuntimeSupervisor {
   }
 
   async getRuntimeControls(sessionId: string): Promise<RuntimeControlsSnapshot | null> {
-    if (!this.child || this.activeSessionId !== sessionId) return null
-    if (this.pendingControls) throw new Error('已有 Session Controls 查询正在执行')
-    return new Promise<RuntimeControlsSnapshot>((resolve, reject) => {
-      this.pendingControls = { sessionId, resolve, reject }
-      try {
-        this.post({ type: 'controls.get', sessionId })
-      } catch (error) {
-        this.pendingControls = null
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
-    })
+    if (this.processState.status !== 'ready' || this.activity.sessionId !== sessionId) {
+      return Promise.resolve(null)
+    }
+    return this.requests.request(
+      {
+        key: 'controls-get',
+        command: { type: 'controls.get', sessionId },
+        duplicateMessage: '已有 Session Controls 查询正在执行',
+        exitMessage: 'Agent Runtime 在 Controls 查询完成前退出',
+        matches: (message): message is RuntimeHostMessageOf<'host.controlsResult'> =>
+          message.type === 'host.controlsResult' && message.sessionId === sessionId,
+        transform: (message) => message,
+      },
+      (command) => this.post(command),
+    )
   }
 
   setRuntimeControls(
     sessionId: string,
     controls: Omit<RuntimeControlsSnapshot, 'type' | 'sessionId' | 'availableTools'>,
   ): Promise<void> {
-    if (!this.child) return Promise.resolve()
-    if (this.activeSessionId !== sessionId) {
+    if (this.processState.status === 'stopped') return Promise.resolve()
+    if (this.activity.sessionId !== sessionId) {
       throw new Error('Requested Pi Session is not open')
     }
-    if (this.pendingControlsSet) throw new Error('已有 Session Controls 更新正在执行')
     const requestId = randomUUID()
-    return new Promise<void>((resolve, reject) => {
-      this.pendingControlsSet = { requestId, sessionId, resolve, reject }
-      try {
-        this.post({ type: 'controls.set', requestId, sessionId, ...controls })
-      } catch (error) {
-        this.pendingControlsSet = null
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
-    })
+    return this.requests.request(
+      {
+        key: 'controls-set',
+        command: { type: 'controls.set', requestId, sessionId, ...controls },
+        duplicateMessage: '已有 Session Controls 更新正在执行',
+        exitMessage: 'Agent Runtime 在 Controls 更新完成前退出',
+        matches: (message): message is RuntimeHostMessageOf<'host.controlsSetResult'> =>
+          message.type === 'host.controlsSetResult' &&
+          message.requestId === requestId &&
+          message.sessionId === sessionId,
+        transform: (message) => {
+          if (message.outcome === 'failed') {
+            throw new Error(message.message ?? 'Session Controls update failed')
+          }
+        },
+      },
+      (command) => this.post(command),
+    )
   }
 
   queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): void {
@@ -370,29 +415,48 @@ export class RuntimeSupervisor {
   }
 
   isActive(): boolean {
-    return this.activeRunId !== null
+    return this.activity.status === 'busy'
   }
 
   async reloadResources(sessionId: string): Promise<void> {
-    if (!this.child || this.activeSessionId !== sessionId) {
+    if (this.processState.status !== 'ready' || this.activity.sessionId !== sessionId) {
       throw new Error('Requested Pi Session is not open')
     }
-    if (this.activeRunId) throw new Error('已有 Agent 运行正在执行')
-    return new Promise<void>((resolve, reject) => {
-      this.pendingReload = { sessionId, resolve, reject }
-      try {
-        this.post({ type: 'reload-resources', sessionId })
-      } catch (error) {
-        this.pendingReload = null
-        reject(error instanceof Error ? error : new Error(String(error)))
-      }
-    })
+    this.assertIdle('已有 Agent 运行正在执行')
+    return this.requests.request(
+      {
+        key: 'reload',
+        command: { type: 'reload-resources', sessionId },
+        duplicateMessage: '已有 Pi resource reload 正在执行',
+        exitMessage: 'Agent Runtime 在资源重载完成前退出',
+        matches: (message): message is RuntimeHostMessageOf<'host.reloadResult'> =>
+          message.type === 'host.reloadResult' && message.sessionId === sessionId,
+        transform: (message) => {
+          if (message.outcome === 'failed') {
+            throw new Error(message.message ?? 'Pi resource reload failed')
+          }
+        },
+      },
+      (command) => this.post(command),
+    )
   }
 
   async dispose(): Promise<void> {
-    const child = this.child
-    if (!child) return
-    this.post({ type: 'dispose' })
+    const state = this.processState
+    if (state.status === 'stopped') {
+      this.resetRuntimeState('Agent Runtime 已关闭')
+      return
+    }
+
+    const child = state.child
+    if (state.status === 'starting') state.rejectReady(new Error('Agent Runtime 已关闭'))
+    this.processState = { status: 'stopping', child }
+    try {
+      child.postMessage({ type: 'dispose' } satisfies RuntimeCommand)
+    } catch {
+      child.kill()
+    }
+
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
         child.kill()
@@ -403,53 +467,78 @@ export class RuntimeSupervisor {
         resolve()
       })
     })
-    this.child = null
-    this.pendingFork?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingFork = null
-    this.pendingImport?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingImport = null
-    this.pendingExport?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingExport = null
-    this.pendingNavigate?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingNavigate = null
-    this.pendingCompact?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingCompact = null
-    this.pendingLabel?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingLabel = null
-    this.pendingReload?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingReload = null
-    this.pendingControls?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingControls = null
-    this.pendingControlsSet?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingControlsSet = null
-    this.pendingSession?.reject(new Error('Agent Runtime 已关闭'))
-    this.pendingSession = null
-    this.activeRunId = null
-    this.activeSessionId = null
+
+    if (this.isCurrentChild(child)) {
+      this.processState = { status: 'stopped' }
+    }
+    this.resetRuntimeState('Agent Runtime 已关闭')
+  }
+
+  private async requestRuntimeOperation<Message extends RuntimeHostMessage, Result>(options: {
+    key: RuntimeRequestKey
+    command: RuntimeCommand
+    operationId: string
+    sessionIdDuring: string | null | ((previousSessionId: string | null) => string | null)
+    busyMessage: string
+    duplicateMessage: string
+    exitMessage: string
+    matches: (message: RuntimeHostMessage) => message is Message
+    complete: (
+      message: Message,
+      previousSessionId: string | null,
+    ) => RuntimeOperationCompletion<Result>
+  }): Promise<Result> {
+    this.assertIdle(options.busyMessage)
+    await this.ensureChild()
+    this.assertIdle(options.busyMessage)
+
+    const previousSessionId = this.activity.sessionId
+    const sessionIdDuring =
+      typeof options.sessionIdDuring === 'function'
+        ? options.sessionIdDuring(previousSessionId)
+        : options.sessionIdDuring
+    this.activity = { status: 'busy', id: options.operationId, sessionId: sessionIdDuring }
+
+    try {
+      return this.requests.request(
+        {
+          key: options.key,
+          command: options.command,
+          duplicateMessage: options.duplicateMessage,
+          exitMessage: options.exitMessage,
+          matches: options.matches,
+          transform: (message) => {
+            const completion = options.complete(message, previousSessionId)
+            this.activity = { status: 'idle', sessionId: completion.sessionId }
+            if ('error' in completion) throw completion.error
+            return completion.result
+          },
+          onReject: (reason) => {
+            this.activity = {
+              status: 'idle',
+              sessionId: reason === 'post' ? previousSessionId : null,
+            }
+          },
+        },
+        (command) => this.post(command),
+      )
+    } catch (error) {
+      this.activity = { status: 'idle', sessionId: previousSessionId }
+      throw error
+    }
   }
 
   private async ensureChild(): Promise<void> {
-    if (!this.child) {
-      const child = utilityProcess.fork(join(__dirname, 'runtime/host.js'), [], {
-        serviceName: 'Pictor Agent Runtime',
-        env: {
-          ...process.env,
-          PICTOR_RUNTIME_PLUGIN_BOOTSTRAP: JSON.stringify(this.pluginBootstrap),
-        },
-      })
-      this.child = child
-      this.readyPromise = new Promise<void>((resolve, reject) => {
-        this.resolveReady = resolve
-        this.rejectReady = reject
-      })
-      child.on('message', (message) => this.handleMessage(message))
-      child.on('exit', (_code) => this.handleExit(child))
-    }
-    const readyPromise = this.readyPromise
+    if (this.processState.status === 'stopped') this.spawnChild()
+    const state = this.processState
+    if (state.status === 'stopped') throw new Error('Agent Runtime 尚未启动')
+    if (state.status === 'stopping') throw new Error('Agent Runtime 正在关闭')
+    if (state.status === 'ready') return
+
     let timeout: ReturnType<typeof setTimeout> | undefined
     try {
       await Promise.race([
-        readyPromise,
+        state.ready,
         new Promise<never>((_resolve, reject) => {
           timeout = setTimeout(
             () => reject(new Error('Agent Runtime 启动超时')),
@@ -458,289 +547,119 @@ export class RuntimeSupervisor {
         }),
       ])
     } catch (error) {
-      this.child?.kill()
+      if (this.processState.status !== 'stopped' && this.processState.child === state.child) {
+        state.child.kill()
+      }
       throw error
     } finally {
       if (timeout) clearTimeout(timeout)
     }
   }
 
-  private handleMessage(message: unknown): void {
+  private spawnChild(): void {
+    const child = utilityProcess.fork(join(__dirname, 'runtime/host.js'), [], {
+      serviceName: 'Pictor Agent Runtime',
+      env: {
+        ...process.env,
+        PICTOR_RUNTIME_PLUGIN_BOOTSTRAP: JSON.stringify(this.pluginBootstrap),
+      },
+    })
+    let resolveReady!: () => void
+    let rejectReady!: (error: Error) => void
+    const ready = new Promise<void>((resolve, reject) => {
+      resolveReady = resolve
+      rejectReady = reject
+    })
+    this.processState = { status: 'starting', child, ready, resolveReady, rejectReady }
+    child.on('message', (message) => this.handleMessage(child, message))
+    child.on('exit', () => this.handleExit(child))
+  }
+
+  private handleMessage(child: UtilityProcess, message: unknown): void {
+    const processState = this.processState
+    if (processState.status === 'stopped' || processState.child !== child) return
+
     const parsed = runtimeHostMessageSchema.safeParse(message)
     if (!parsed.success) return
     if (parsed.data.type === 'host.ready') {
-      this.resolveReady?.()
-      this.resolveReady = null
-      this.rejectReady = null
+      if (processState.status !== 'starting') return
+      this.processState = { status: 'ready', child }
+      processState.resolveReady()
       return
     }
     if (parsed.data.type === 'host.fatal') {
-      this.rejectReady?.(new Error(parsed.data.message))
-      if (this.pendingFork) {
-        this.pendingFork.reject(new Error(parsed.data.message))
-        this.pendingFork = null
-        this.activeRunId = null
-        this.activeSessionId = null
-      }
-      if (this.pendingImport) {
-        this.pendingImport.reject(new Error(parsed.data.message))
-        this.pendingImport = null
-        this.activeRunId = null
-        this.activeSessionId = null
-      }
-      if (this.pendingExport) {
-        this.pendingExport.reject(new Error(parsed.data.message))
-        this.pendingExport = null
-        this.activeRunId = null
-        this.activeSessionId = null
-      }
-      if (this.pendingNavigate) {
-        this.pendingNavigate.reject(new Error(parsed.data.message))
-        this.pendingNavigate = null
-        this.activeRunId = null
-        this.activeSessionId = null
-      }
-      if (this.pendingCompact) {
-        this.pendingCompact.reject(new Error(parsed.data.message))
-        this.pendingCompact = null
-        this.activeRunId = null
-        this.activeSessionId = null
-      }
-      if (this.pendingLabel) {
-        this.pendingLabel.reject(new Error(parsed.data.message))
-        this.pendingLabel = null
-        this.activeRunId = null
-        this.activeSessionId = null
-      }
-      if (this.pendingControlsSet) {
-        this.pendingControlsSet.reject(new Error(parsed.data.message))
-        this.pendingControlsSet = null
-      }
-      if (this.pendingSession) {
-        this.pendingSession.reject(new Error(parsed.data.message))
-        this.pendingSession = null
-        this.activeRunId = null
-        this.activeSessionId = null
-      }
-      this.emitSyntheticFailure(parsed.data.message)
+      const message = parsed.data.message
+      if (processState.status === 'starting') processState.rejectReady(new Error(message))
+      this.requests.rejectAll(() => new Error(message), 'fatal')
+      this.emitSyntheticFailure(message)
       return
     }
     if (parsed.data.type === 'session.replacement.requested') {
-      const request = parsed.data as RuntimeSessionReplacementRequest
-      const replacement: Promise<{
-        accepted: boolean
-        targetSessionId?: string
-        message?: string
-      }> = this.onSessionReplacementRequest
-        ? this.onSessionReplacementRequest(request)
-        : Promise.resolve({ accepted: true })
-      void replacement.then(
-        (result) =>
-          this.post({
-            type: 'session.replacement.ack',
-            operationId: request.operationId,
-            phase: request.phase,
-            accepted: result?.accepted ?? true,
-            ...(result?.targetSessionId ? { targetSessionId: result.targetSessionId } : {}),
-            ...(result?.message ? { message: result.message } : {}),
-          }),
-        (error) =>
-          this.post({
-            type: 'session.replacement.ack',
-            operationId: request.operationId,
-            phase: request.phase,
-            accepted: false,
-            message: error instanceof Error ? error.message : 'Session replacement failed',
-          }),
-      )
+      void this.handleSessionReplacementRequest(child, parsed.data)
       return
     }
-    if (parsed.data.type === 'host.reloadResult') {
-      const pending = this.pendingReload
-      if (!pending || pending.sessionId !== parsed.data.sessionId) return
-      this.pendingReload = null
-      if (parsed.data.outcome === 'completed') pending.resolve()
-      else pending.reject(new Error(parsed.data.message ?? 'Pi resource reload failed'))
-      return
+    if (this.requests.settle(parsed.data)) return
+
+    const event = runtimeEventSchema.safeParse(parsed.data)
+    if (!event.success) return
+    if (event.data.type === 'session.replaced') this.setActiveSession(event.data.targetSessionId)
+    else if (event.data.type === 'session.bound') this.setActiveSession(event.data.sessionId)
+    this.onEvent(event.data)
+    if (event.data.type === 'run.stateChanged' && TERMINAL_STATUSES.has(event.data.status)) {
+      this.activity = { status: 'idle', sessionId: this.activity.sessionId }
     }
-    if (parsed.data.type === 'host.sessionResult') {
-      const pending = this.pendingSession
-      if (
-        !pending ||
-        pending.operationId !== parsed.data.operationId ||
-        pending.sessionId !== parsed.data.sessionId
-      ) {
-        return
+  }
+
+  private async handleSessionReplacementRequest(
+    child: UtilityProcess,
+    request: RuntimeSessionReplacementRequest,
+  ): Promise<void> {
+    let result: { accepted: boolean; targetSessionId?: string; message?: string }
+    try {
+      result = this.onSessionReplacementRequest
+        ? await this.onSessionReplacementRequest(request)
+        : { accepted: true }
+    } catch (error) {
+      result = {
+        accepted: false,
+        message: error instanceof Error ? error.message : 'Session replacement failed',
       }
-      this.pendingSession = null
-      this.activeRunId = null
-      if (parsed.data.outcome === 'failed') {
-        this.activeSessionId = pending.previousSessionId
-        pending.reject(new Error(parsed.data.message ?? 'Pi Session operation failed'))
-      } else {
-        this.activeSessionId = parsed.data.outcome === 'opened' ? pending.sessionId : null
-        pending.resolve()
-      }
-      return
     }
-    if (parsed.data.type === 'host.controlsSetResult') {
-      const pending = this.pendingControlsSet
-      if (
-        !pending ||
-        pending.requestId !== parsed.data.requestId ||
-        pending.sessionId !== parsed.data.sessionId
-      ) {
-        return
-      }
-      this.pendingControlsSet = null
-      if (parsed.data.outcome === 'failed') {
-        pending.reject(new Error(parsed.data.message ?? 'Session Controls update failed'))
-      } else {
-        pending.resolve()
-      }
-      return
-    }
-    if (parsed.data.type === 'host.controlsResult') {
-      const pending = this.pendingControls
-      if (!pending || pending.sessionId !== parsed.data.sessionId) return
-      this.pendingControls = null
-      pending.resolve(parsed.data)
-      return
-    }
-    if (parsed.data.type === 'host.forkResult') {
-      const pending = this.pendingFork
-      if (!pending || pending.operationId !== parsed.data.operationId) return
-      this.pendingFork = null
-      this.activeRunId = null
-      this.activeSessionId = null
-      pending.resolve(parsed.data)
-      return
-    }
-    if (parsed.data.type === 'host.importResult') {
-      const pending = this.pendingImport
-      if (!pending || pending.operationId !== parsed.data.operationId) return
-      this.pendingImport = null
-      this.activeRunId = null
-      this.activeSessionId = null
-      pending.resolve(parsed.data)
-      return
-    }
-    if (parsed.data.type === 'host.exportResult') {
-      const pending = this.pendingExport
-      if (!pending || pending.operationId !== parsed.data.operationId) return
-      this.pendingExport = null
-      this.activeRunId = null
-      this.activeSessionId = pending.previousSessionId
-      pending.resolve(parsed.data)
-      return
-    }
-    if (parsed.data.type === 'host.navigateResult') {
-      const pending = this.pendingNavigate
-      if (!pending || pending.operationId !== parsed.data.operationId) return
-      this.pendingNavigate = null
-      this.activeRunId = null
-      this.activeSessionId =
-        parsed.data.outcome === 'failed' ? pending.previousSessionId : pending.sessionId
-      pending.resolve(parsed.data)
-      return
-    }
-    if (parsed.data.type === 'host.compactResult') {
-      const pending = this.pendingCompact
-      if (!pending || pending.operationId !== parsed.data.operationId) return
-      this.pendingCompact = null
-      this.activeRunId = null
-      this.activeSessionId =
-        parsed.data.outcome === 'failed' ? pending.previousSessionId : pending.sessionId
-      pending.resolve(parsed.data)
-      return
-    }
-    if (parsed.data.type === 'host.labelResult') {
-      const pending = this.pendingLabel
-      if (!pending || pending.operationId !== parsed.data.operationId) return
-      this.pendingLabel = null
-      this.activeRunId = null
-      this.activeSessionId =
-        parsed.data.outcome === 'failed' ? pending.previousSessionId : pending.sessionId
-      pending.resolve(parsed.data)
-      return
-    }
-    const event = runtimeEventSchema.parse(parsed.data)
-    if (event.type === 'session.replaced') this.activeSessionId = event.targetSessionId
-    else if (event.type === 'session.bound') this.activeSessionId = event.sessionId
-    this.onEvent(event)
-    if (event.type === 'run.stateChanged' && TERMINAL_STATUSES.has(event.status)) {
-      this.activeRunId = null
-    }
+
+    if (this.processState.status !== 'ready' || this.processState.child !== child) return
+    this.post({
+      type: 'session.replacement.ack',
+      operationId: request.operationId,
+      phase: request.phase,
+      accepted: result.accepted,
+      ...(result.targetSessionId ? { targetSessionId: result.targetSessionId } : {}),
+      ...(result.message ? { message: result.message } : {}),
+    })
   }
 
   private handleExit(child: UtilityProcess): void {
-    if (this.child !== child) return
-    this.child = null
-    this.readyPromise = null
-    this.resolveReady = null
-    this.rejectReady?.(new Error('Agent Runtime 在就绪前退出'))
-    this.rejectReady = null
-    if (this.pendingFork) {
-      this.pendingFork.reject(new Error('Agent Runtime 在 Fork 完成前退出'))
-      this.pendingFork = null
-      this.activeRunId = null
-      this.activeSessionId = null
+    const processState = this.processState
+    if (processState.status === 'stopped' || processState.child !== child) return
+    const expected = processState.status === 'stopping'
+    if (processState.status === 'starting') {
+      processState.rejectReady(new Error('Agent Runtime 在就绪前退出'))
     }
-    if (this.pendingImport) {
-      this.pendingImport.reject(new Error('Agent Runtime 在 Import 完成前退出'))
-      this.pendingImport = null
-      this.activeRunId = null
-      this.activeSessionId = null
+    this.processState = { status: 'stopped' }
+    this.requests.rejectAll(
+      (pending) => new Error(expected ? 'Agent Runtime 已关闭' : pending.exitMessage),
+      expected ? 'dispose' : 'exit',
+    )
+
+    if (!expected && this.activity.status === 'busy') {
+      this.emitSyntheticFailure('Agent Runtime 进程意外退出')
+    } else {
+      this.activity = { status: 'idle', sessionId: null }
     }
-    if (this.pendingExport) {
-      this.pendingExport.reject(new Error('Agent Runtime 在 Export 完成前退出'))
-      this.pendingExport = null
-      this.activeRunId = null
-      this.activeSessionId = null
-    }
-    if (this.pendingNavigate) {
-      this.pendingNavigate.reject(new Error('Agent Runtime 在 Tree Navigation 完成前退出'))
-      this.pendingNavigate = null
-      this.activeRunId = null
-      this.activeSessionId = null
-    }
-    if (this.pendingCompact) {
-      this.pendingCompact.reject(new Error('Agent Runtime 在 Compaction 完成前退出'))
-      this.pendingCompact = null
-      this.activeRunId = null
-      this.activeSessionId = null
-    }
-    if (this.pendingLabel) {
-      this.pendingLabel.reject(new Error('Agent Runtime 在 Label 完成前退出'))
-      this.pendingLabel = null
-      this.activeRunId = null
-      this.activeSessionId = null
-    }
-    if (this.pendingReload) {
-      this.pendingReload.reject(new Error('Agent Runtime 在资源重载完成前退出'))
-      this.pendingReload = null
-    }
-    if (this.pendingControls) {
-      this.pendingControls.reject(new Error('Agent Runtime 在 Controls 查询完成前退出'))
-      this.pendingControls = null
-    }
-    if (this.pendingControlsSet) {
-      this.pendingControlsSet.reject(new Error('Agent Runtime 在 Controls 更新完成前退出'))
-      this.pendingControlsSet = null
-    }
-    if (this.pendingSession) {
-      this.pendingSession.reject(new Error('Agent Runtime 在 Session 操作完成前退出'))
-      this.pendingSession = null
-      this.activeRunId = null
-      this.activeSessionId = null
-    }
-    if (this.activeRunId) this.emitSyntheticFailure('Agent Runtime 进程意外退出')
   }
 
   private emitSyntheticFailure(message: string): void {
-    const runId = this.activeRunId
-    const sessionId = this.activeSessionId
-    if (!runId || !sessionId) return
+    if (this.activity.status !== 'busy' || !this.activity.sessionId) return
+    const { id: runId, sessionId } = this.activity
     const at = new Date().toISOString()
     this.onEvent(
       runtimeEventSchema.parse({
@@ -762,22 +681,47 @@ export class RuntimeSupervisor {
         error: message,
       }),
     )
-    this.activeRunId = null
-    this.activeSessionId = null
+    this.activity = { status: 'idle', sessionId: null }
+  }
+
+  private resetRuntimeState(message: string): void {
+    this.requests.rejectAll(() => new Error(message), 'dispose')
+    this.activity = { status: 'idle', sessionId: null }
+  }
+
+  private assertIdle(message: string): void {
+    if (this.activity.status === 'busy') throw new Error(message)
+  }
+
+  private assertSessionAvailable(sessionId: string): void {
+    if (this.activity.sessionId && this.activity.sessionId !== sessionId) {
+      throw new Error('Requested Pi Session is not open')
+    }
   }
 
   private assertActive(runId: string): void {
-    if (this.activeRunId !== runId) throw new Error('运行不存在或已经结束')
+    if (this.activity.status !== 'busy' || this.activity.id !== runId) {
+      throw new Error('运行不存在或已经结束')
+    }
   }
 
   private assertActiveSession(sessionId: string): void {
-    if (!this.child || this.activeSessionId !== sessionId) {
+    if (this.processState.status !== 'ready' || this.activity.sessionId !== sessionId) {
       throw new Error('Pi Session 不存在或已经切换')
     }
   }
 
+  private setActiveSession(sessionId: string): void {
+    this.activity = { ...this.activity, sessionId }
+  }
+
+  private isCurrentChild(child: UtilityProcess): boolean {
+    const state = this.processState
+    return state.status !== 'stopped' && state.child === child
+  }
+
   private post(command: RuntimeCommand): void {
-    if (!this.child) throw new Error('Agent Runtime 尚未启动')
-    this.child.postMessage(command)
+    if (this.processState.status !== 'ready') throw new Error('Agent Runtime 尚未启动')
+    this.processState.child.postMessage(command)
   }
 }
