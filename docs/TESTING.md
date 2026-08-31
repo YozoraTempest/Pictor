@@ -118,7 +118,12 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   source 丢失时才允许回退安装副本。重复 `session.bound` 不得清除 active leaf 或 Runtime Preferences。
 - 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。
 - Electron 用户场景放在 `e2e/*.spec.ts`，每个文件描述一个完整行为，不按页面或组件拆分。
-- 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；不要在场景之间共享可变状态。
+- 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；Feature 专用且负责资源清理的
+  Playwright fixture 使用 `e2e/<feature>-fixture.ts`。fixture 可以复用不可变输入和启动逻辑，但每个
+  场景必须拥有独立 userData、项目、模型响应队列与 Electron 生命周期，不共享可变状态。
+- Pi Extension E2E 按 Tool/RPC、Fork/Clone、Import/Export、Tree/Compaction 和 Message/Image 行为
+  独立执行；需要 Session Tree 的场景必须显式等待 Pi authority 绑定，不能依赖前序 Tool 延迟掩盖
+  `session.bound` 持久化时序。
 - Smoke 用例在标题中添加 `@smoke`。单一核心委托场景同时验证应用启动、Renderer 隔离和完整
   委托链路；独立 Shell、设置迁移、故障恢复、第二协议和中断恢复属于 Full。
 - 测试不得访问真实模型、用户目录或网络服务。E2E 必须使用 `testInfo.outputPath()` 隔离数据，
