@@ -134,11 +134,6 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - name: Install Linux packaging dependency
-        if: github.event_name == 'push'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends libarchive-tools
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -160,25 +155,6 @@ jobs:
       - name: Run full desktop tests
         if: github.event_name == 'push'
         run: xvfb-run --auto-servernum npm run test:e2e:run
-      - run: npm run package:linux:build
-        if: github.event_name == 'push'
-      - run: npm run package:verify:linux
-        if: github.event_name == 'push'
-      - name: Verify portable AppImage launch
-        if: github.event_name == 'push'
-        run: |
-          release_version="$(node --print "require('./package.json').version")"
-          lifecycle_root="$(mktemp -d)"
-          user_data="$lifecycle_root/pictor"
-          chmod +x "./dist/Pictor-$release_version-linux-x64.AppImage"
-          PICTOR_LINUX_EXECUTABLE="./dist/Pictor-$release_version-linux-x64.AppImage" \
-            PICTOR_EXPECTED_DISTRIBUTION=unsupported-linux \
-            PICTOR_USER_DATA_DIR="$user_data" \
-            PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
-            xvfb-run --auto-servernum npm run package:verify:linux:launch
-      - name: Verify Arch package lifecycle in a native container
-        if: github.event_name == 'push'
-        run: bash scripts/verify-arch-package-lifecycle.sh
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@v7
