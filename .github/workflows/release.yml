@@ -9,7 +9,7 @@ on:
       - package-lock.json
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-main
@@ -48,103 +48,25 @@ jobs:
             exit 1
           fi
 
-  windows-package:
-    name: Build Windows x64
+  packages:
+    name: Build desktop packages
     needs: metadata
-    runs-on: windows-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm install --global npm@11.17.0
-      - run: npm ci
-      - run: npm run deps:prepare
-      - run: npm run deps:verify
-      - run: npm run build:app
-      - run: npm run package:windows:build
-      - run: npm run package:verify:windows
-      - name: Upload Windows release asset
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-release-asset
-          path: dist/Pictor-${{ needs.metadata.outputs.version }}-windows-x64-setup.exe
-          if-no-files-found: error
-          retention-days: 1
-  linux-packages:
-    name: Build Linux x64
-    needs: metadata
-    runs-on: ubuntu-24.04
-    timeout-minutes: 55
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Linux release dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes libarchive-tools xauth xvfb
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - name: Install pinned npm without replacing the runner copy
-        run: |
-          npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
-          echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
-      - run: npm --version
-      - run: npm ci
-      - run: npm run deps:prepare
-        env:
-          ELECTRON_GET_USE_PROXY: 'true'
-      - run: npm run deps:verify
-      - run: npm run verify:fast
-      - run: npm run build:app
-      - run: xvfb-run --auto-servernum npm run test:e2e:run
-      - run: npm run package:linux:build
-      - run: npm run package:verify:linux
-      - name: Verify portable AppImage launch
-        env:
-          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
-        run: |
-          lifecycle_root="$(mktemp -d)"
-          user_data="$lifecycle_root/Pictor"
-          chmod +x "./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage"
-          PICTOR_LINUX_EXECUTABLE="./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
-            PICTOR_EXPECTED_DISTRIBUTION=unsupported-linux \
-            PICTOR_USER_DATA_DIR="$user_data" \
-            PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
-            xvfb-run --auto-servernum npm run package:verify:linux:launch
-      - name: Verify Arch package lifecycle in a native container
-        env:
-          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
-        run: bash scripts/verify-arch-package-lifecycle.sh
-      - name: Upload Linux release assets
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-release-assets
-          path: |
-            dist/Pictor-${{ needs.metadata.outputs.version }}-arch-x64.pacman
-            dist/Pictor-${{ needs.metadata.outputs.version }}-linux-x64.AppImage
-          if-no-files-found: error
-          retention-days: 1
-      - name: Upload failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-release-failure-evidence
-          path: test-results/
-          if-no-files-found: ignore
-          retention-days: 7
+    uses: ./.github/workflows/package-desktop.yml
+    with:
+      source_sha: ${{ github.sha }}
+      version: ${{ needs.metadata.outputs.version }}
+      artifact_prefix: release
+      run_source_validation: true
 
   publish:
     name: Publish atomic desktop release
     needs:
       - metadata
-      - windows-package
-      - linux-packages
+      - packages
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -152,7 +74,7 @@ jobs:
           node-version-file: .nvmrc
       - uses: actions/download-artifact@v8
         with:
-          pattern: '*-release-asset*'
+          pattern: release-*-x64
           path: release-assets
           merge-multiple: true
       - name: Read release notes
@@ -208,10 +130,10 @@ jobs:
             --draft
           draft_created=1
           gh release upload "$RELEASE_TAG" \
-            release-assets/Pictor-$RELEASE_VERSION-windows-x64-setup.exe \
-            release-assets/Pictor-$RELEASE_VERSION-arch-x64.pacman \
-            release-assets/Pictor-$RELEASE_VERSION-linux-x64.AppImage \
-            release-assets/SHA256SUMS \
+            "release-assets/Pictor-$RELEASE_VERSION-windows-x64-setup.exe" \
+            "release-assets/Pictor-$RELEASE_VERSION-arch-x64.pacman" \
+            "release-assets/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
+            "release-assets/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY"
           gh release edit "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \

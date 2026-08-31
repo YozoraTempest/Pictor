@@ -1,0 +1,129 @@
+name: Package desktop
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Exact source commit to package
+        type: string
+        required: true
+      version:
+        description: Package version from the source commit
+        type: string
+        required: true
+      artifact_prefix:
+        description: Prefix for intermediate workflow artifacts
+        type: string
+        required: true
+      run_source_validation:
+        description: Run release-only source validation before packaging
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows-package:
+    name: Build Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned npm without replacing the runner copy
+        shell: pwsh
+        run: |
+          $npmPrefix = Join-Path $env:RUNNER_TEMP 'pictor-npm'
+          npm install --global --prefix $npmPrefix npm@11.17.0
+          $npmPrefix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - run: npm ci
+      - run: npm run deps:prepare
+      - run: npm run deps:verify
+      - run: npm run build:app
+      - run: npm run package:windows:build
+      - run: npm run package:verify:windows
+      - name: Stage Windows package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-windows-x64
+          path: dist/Pictor-${{ inputs.version }}-windows-x64-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  linux-packages:
+    name: Build Linux x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Install Linux release dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libarchive-tools xauth xvfb
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned npm without replacing the runner copy
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
+          echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
+      - run: npm --version
+      - run: npm ci
+      - run: npm run deps:prepare
+        env:
+          ELECTRON_GET_USE_PROXY: 'true'
+      - run: npm run deps:verify
+      - name: Run release source validation
+        if: inputs.run_source_validation
+        run: npm run verify:fast
+      - run: npm run build:app
+      - name: Run release desktop tests
+        if: inputs.run_source_validation
+        run: xvfb-run --auto-servernum npm run test:e2e:run
+      - run: npm run package:linux:build
+      - run: npm run package:verify:linux
+      - name: Verify portable AppImage launch
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          lifecycle_root="$(mktemp -d)"
+          user_data="$lifecycle_root/Pictor"
+          chmod +x "./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage"
+          PICTOR_LINUX_EXECUTABLE="./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
+            PICTOR_EXPECTED_DISTRIBUTION=unsupported-linux \
+            PICTOR_USER_DATA_DIR="$user_data" \
+            PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
+            xvfb-run --auto-servernum npm run package:verify:linux:launch
+      - name: Verify Arch package lifecycle in a native container
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: bash scripts/verify-arch-package-lifecycle.sh
+      - name: Stage Linux packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-linux-x64
+          path: |
+            dist/Pictor-${{ inputs.version }}-arch-x64.pacman
+            dist/Pictor-${{ inputs.version }}-linux-x64.AppImage
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-linux-failure-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
