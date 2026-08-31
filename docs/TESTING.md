@@ -40,8 +40,8 @@ Windows E2E 默认隐藏窗口；本地 Linux E2E 使用 `showInactive()` 显示
 | E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Linux PR，复用 `out/`           |
 | E2E Full       | `npm run test:e2e:run`                              | 全部桌面用户场景                              | `develop`、正式发布、本地发布前 |
 | Windows 包验证 | `npm run package:verify:windows`                    | NSIS、ASAR、x64 PE                            | 正式发布、本地发布前            |
-| Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | `develop`、正式发布、本地发布前 |
-| Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer 终态与平台信息 | `develop`、正式发布、桌面验收   |
+| Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | Nightly、正式发布、本地发布前   |
+| Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer 终态与平台信息 | Nightly、正式发布、桌面验收     |
 
 聚合命令：
 
@@ -176,8 +176,8 @@ PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和 `L
 四项必需检查，不用静态检查串行阻塞桌面 Smoke。Quality 与全量 Vitest 在 Linux 运行，以覆盖
 大小写敏感文件系统及全部 POSIX 用例；Windows acceptance 暂时只准备 Electron 并构建桌面应用，
 不执行 Vitest 或 Electron E2E。Linux acceptance 构建应用并执行 E2E Smoke，不重复 Vitest，也不
-构建发行包。推送 `develop` 时仅 Linux 执行 E2E Full，并额外构建、校验 AppImage/Pacman、启动
-AppImage，在原生 Arch 容器中复用与 Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。
+构建发行包。推送 `develop` 时仅 Linux 执行 E2E Full；发布资产构建、AppImage/Pacman 结构校验、
+AppImage 启动和 Arch 容器包生命周期由 Nightly 与正式 Release 负责，不在源码 CI 中重复执行。
 原生 niri 桌面证据仍在发布前由 Arch 工作站补充。
 
 包含 `package.json` 或 `package-lock.json` 版本变化的合并进入 `main` 后，Release 工作流在 Windows
