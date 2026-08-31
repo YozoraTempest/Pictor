@@ -130,10 +130,10 @@ jobs:
             --draft
           draft_created=1
           gh release upload "$RELEASE_TAG" \
-            release-assets/Pictor-$RELEASE_VERSION-windows-x64-setup.exe \
-            release-assets/Pictor-$RELEASE_VERSION-arch-x64.pacman \
-            release-assets/Pictor-$RELEASE_VERSION-linux-x64.AppImage \
-            release-assets/SHA256SUMS \
+            "release-assets/Pictor-$RELEASE_VERSION-windows-x64-setup.exe" \
+            "release-assets/Pictor-$RELEASE_VERSION-arch-x64.pacman" \
+            "release-assets/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
+            "release-assets/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY"
           gh release edit "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \

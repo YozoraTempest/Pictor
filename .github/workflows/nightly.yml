@@ -135,10 +135,10 @@ jobs:
           source_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$SOURCE_SHA"
           built_at="$(date --utc '+%Y-%m-%d %H:%M:%S UTC')"
           {
-            echo 'This is an automated development build from the latest successful `develop` snapshot.'
+            echo "This is an automated development build from the latest successful \`develop\` snapshot."
             echo
-            printf -- '- Source commit: [`%s`](%s)\n' "$SOURCE_SHA" "$source_url"
-            printf -- '- Built at: `%s`\n' "$built_at"
+            printf -- "- Source commit: [\`%s\`](%s)\n" "$SOURCE_SHA" "$source_url"
+            printf -- "- Built at: \`%s\`\n" "$built_at"
             echo
             echo '> Nightly packages are unsigned, may be unstable, and are not official releases. Back up important data before use.'
           } > "$RUNNER_TEMP/nightly-notes.md"
