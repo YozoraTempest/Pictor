@@ -184,8 +184,8 @@ CI 门禁和发行版验收见 [`docs/TESTING.md`](docs/TESTING.md)。
 ## 已知限制
 
 - Windows、Arch 和 AppImage 发布物及应用可执行文件未签名，应用图标仍使用 Electron 默认图标。
-- Windows CI 暂时只验证桌面构建和发布包结构，不执行 Vitest 或 Electron E2E；Windows 桌面行为
-  需要独立手工验收，不能由当前 `Windows acceptance` 结论推导。
+- Windows CI 验证桌面构建、确定性的 Electron Shell Smoke 和发布包结构，但不执行完整 Electron
+  E2E；Chat、Runtime、安装与卸载等 Windows 桌面行为仍需独立验收。
 - Windows 安装验收尚未取得净机证据；AppImage 只执行结构与启动 Smoke，不构成其他 Linux
   发行版兼容承诺。
 - Arch 是滚动发行版，正式支持以发布说明记录的快照日期为验收基线，不承诺未来系统更新永不

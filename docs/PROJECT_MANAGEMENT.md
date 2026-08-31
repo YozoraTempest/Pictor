@@ -31,16 +31,20 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 
 ## 持续集成
 
-- 指向 `develop` 或 `main` 的 Pull Request：在 Linux 并行执行格式、类型、lint、全量 Vitest 和
-  桌面 Smoke；Windows acceptance 暂时只验证依赖准备与桌面构建。PR 不构建发行包。
+- `Changes` job 先按改动路径分类。只修改 Markdown 或工作流时，保留格式与 `actionlint` 等控制面
+  检查，跳过 Vitest、跨平台构建和 E2E；任一其他路径都按应用改动执行完整 PR 门禁。
+- 包含应用改动且指向 `develop` 或 `main` 的 Pull Request：在 Linux 并行执行格式、类型、lint、
+  全量 Vitest 和桌面 Smoke；Windows acceptance 构建应用并执行确定性的桌面 Shell Smoke。PR 不
+  构建发行包。
 - 从 `develop` 或 `hotfix/*` 指向 `main` 的发布 Pull Request：额外校验版本一致性、发布说明和
   版本标签可用性。
 - 从 `ci/*` 指向 `main` 的非发布 Pull Request：只允许修改 `.github/workflows/*.yml`、根
   `README.md`、`CONTRIBUTING.md`、`docs/PROJECT_MANAGEMENT.md` 和 `docs/TESTING.md`；不执行
   发布元数据校验，也不得成为普通功能或文档变更绕过 `develop` 的入口。
-- 合并进入 `develop`：在上述检查之外仅由 Linux 执行全部桌面 E2E。发布资产构建、结构校验、
+- 应用改动合并进入 `develop`：在上述检查之外仅由 Linux 执行全部桌面 E2E。发布资产构建、结构校验、
   AppImage 启动和 Arch 包生命周期由 Nightly 与正式 Release 负责，不在源码 CI 中重复执行。
-  Windows 自动化测试暂时停用。
+- 纯文档或控制面合并只运行路径分类、格式与工作流检查，为该固定提交产生 Nightly 可消费的绿色
+  CI 结果。
 - CI 失败时不得合并。测试失败证据保留七天。
 
 必需检查为 `Quality`、`Unit and integration`、`Windows acceptance` 和独立的
@@ -53,8 +57,9 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 更旧提交。现有 `nightly` 标签已指向该提交时跳过定时重建；维护者可以手动启用 `force` 输入重新
 打包同一绿色提交，但不能绕过源码 CI 门禁。
 
-Nightly 不重复源码 CI 已完成的 `verify:fast` 或完整 E2E，只在只读权限的 Windows 与 Linux job
-中构建应用，并执行 NSIS/Pacman/AppImage 结构校验、AppImage 启动和 Arch 包生命周期等产物验收。
+Nightly 不重复源码 CI 已完成的 `verify:fast` 或完整 E2E，通过与正式 Release 共用的桌面打包工作流
+在只读权限的 Windows 与 Linux job 中构建应用，并执行 NSIS/Pacman/AppImage 结构校验、AppImage
+启动和 Arch 包生命周期等产物验收。
 保留一天的 workflow artifact 向最终 publish job 传递安装包。只有全部平台成功后，publish job
 才获得 `contents: write` 权限，生成 `SHA256SUMS`，删除上一份滚动 Nightly Pre-release 与
 `nightly` 标签，再以固定源码 SHA 一次发布完整的新附件。Nightly 必须标记为 Pre-release 且不设为
