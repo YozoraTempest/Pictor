@@ -181,7 +181,7 @@ jobs:
         run: bash scripts/verify-arch-package-lifecycle.sh
       - name: Upload failure evidence
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-playwright-evidence
           path: test-results/

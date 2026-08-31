@@ -67,7 +67,7 @@ jobs:
       - run: npm run package:windows:build
       - run: npm run package:verify:windows
       - name: Upload Windows release asset
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-release-asset
           path: dist/Pictor-${{ needs.metadata.outputs.version }}-windows-x64-setup.exe
@@ -120,7 +120,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
         run: bash scripts/verify-arch-package-lifecycle.sh
       - name: Upload Linux release assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-release-assets
           path: |
@@ -130,7 +130,7 @@ jobs:
           retention-days: 1
       - name: Upload failure evidence
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-release-failure-evidence
           path: test-results/
@@ -150,7 +150,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: '*-release-asset*'
           path: release-assets
