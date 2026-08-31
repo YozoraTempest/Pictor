@@ -38,8 +38,9 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 - 从 `ci/*` 指向 `main` 的非发布 Pull Request：只允许修改 `.github/workflows/*.yml`、根
   `README.md`、`CONTRIBUTING.md`、`docs/PROJECT_MANAGEMENT.md` 和 `docs/TESTING.md`；不执行
   发布元数据校验，也不得成为普通功能或文档变更绕过 `develop` 的入口。
-- 合并进入 `develop`：在上述检查之外仅由 Linux 执行全部桌面 E2E，并构建、校验和验收 Pacman
-  与 AppImage。Windows 自动化测试暂时停用。
+- 合并进入 `develop`：在上述检查之外仅由 Linux 执行全部桌面 E2E。发布资产构建、结构校验、
+  AppImage 启动和 Arch 包生命周期由 Nightly 与正式 Release 负责，不在源码 CI 中重复执行。
+  Windows 自动化测试暂时停用。
 - CI 失败时不得合并。测试失败证据保留七天。
 
 必需检查为 `Quality`、`Unit and integration`、`Windows acceptance` 和独立的
