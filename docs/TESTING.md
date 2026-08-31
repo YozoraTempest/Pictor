@@ -38,6 +38,7 @@ Windows E2E 默认隐藏窗口；本地 Linux E2E 使用 `showInactive()` 显示
 | 集成测试       | `npm run test:integration`                          | Pi adapter 与运行时协议集成                   | 修改运行时边界时、每个 PR       |
 | Vitest 全量    | `npm test`                                          | 单元与集成测试一次完成                        | 本地提交前、每个 PR             |
 | E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Linux PR，复用 `out/`           |
+| Windows Shell  | `npm run test:e2e:run -- e2e/shell.spec.ts`         | Main/Preload/Renderer、Bridge、沙箱与基础界面 | Windows 应用改动 CI             |
 | E2E Full       | `npm run test:e2e:run`                              | 全部桌面用户场景                              | `develop`、正式发布、本地发布前 |
 | Windows 包验证 | `npm run package:verify:windows`                    | NSIS、ASAR、x64 PE                            | 正式发布、本地发布前            |
 | Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | Nightly、正式发布、本地发布前   |
@@ -147,7 +148,7 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 
 | 基线                    | 自动化证据                                      | 补充桌面证据                                   |
 | ----------------------- | ----------------------------------------------- | ---------------------------------------------- |
-| Windows 11 x64          | Windows hosted runner，构建与 NSIS 结构验证     | 安装、启动、卸载及桌面行为回归                 |
+| Windows 11 x64          | Windows hosted runner，Shell Smoke 与 NSIS 验证 | 安装、启动、卸载及完整桌面行为回归             |
 | 原生 Arch Linux x64     | `archlinux:base` Pacman 生命周期、结构验证      | 发布快照日期的 niri Wayland 会话启动与核心委托 |
 | 便携 AppImage（非基线） | Linux hosted runner，结构验证和 Xvfb 启动 Smoke | 不构成其他发行版兼容承诺                       |
 
@@ -172,31 +173,36 @@ Arch 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electro
 
 ## CI 门禁
 
-PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和 `Linux acceptance`
-四项必需检查，不用静态检查串行阻塞桌面 Smoke。Quality 与全量 Vitest 在 Linux 运行，以覆盖
-大小写敏感文件系统及全部 POSIX 用例；Windows acceptance 暂时只准备 Electron 并构建桌面应用，
-不执行 Vitest 或 Electron E2E。Linux acceptance 构建应用并执行 E2E Smoke，不重复 Vitest，也不
-构建发行包。推送 `develop` 时仅 Linux 执行 E2E Full；发布资产构建、AppImage/Pacman 结构校验、
-AppImage 启动和 Arch 容器包生命周期由 Nightly 与正式 Release 负责，不在源码 CI 中重复执行。
-原生 niri 桌面证据仍在发布前由 Arch 工作站补充。
+`Changes` job 使用 Pull Request 的三点 Diff 或 `develop` push 的两点 Diff 分类改动。只修改
+Markdown 或 `.github/workflows/*.yml` 时，Quality 执行格式检查，并在工作流变化时执行固定版本且
+校验摘要的 `actionlint`；Unit、Windows 和 Linux job 保留原 required check 名称但跳过应用步骤。
+分类失败会由四项 required checks 显式失败，不能形成绕过路径。
 
-包含 `package.json` 或 `package-lock.json` 版本变化的合并进入 `main` 后，Release 工作流在 Windows
-与 Linux hosted runner 上并行构建。Windows 暂时只生成并执行 NSIS/PE 结构校验，不执行测试；
-Linux 执行完整验证，生成 Arch pacman 和便携 AppImage。Arch 容器通过 `pacman` 验证原生包生命周期，
-hosted runner 对 AppImage 执行结构与启动 Smoke。所有构建成功后，单一 publish job 才创建标签与
-GitHub Release，避免只发布部分平台资产。路径受限的 `ci/*` 控制面维护不修改版本文件，因此不会
-触发正式 Release 工作流，但 Pull Request 仍须通过四项普通 CI 门禁。
+包含应用改动时，PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和
+`Linux acceptance` 四项必需检查。Quality 与全量 Vitest 在 Linux 运行，以覆盖大小写敏感文件系统
+及全部 POSIX 用例；Windows acceptance 构建应用并执行 `shell.spec.ts`，验证真实 Electron 的
+Main、Preload、Renderer、Bridge 暴露、沙箱和基础界面；Linux acceptance 构建应用并执行 E2E
+Smoke，不重复 Vitest，也不构建发行包。应用改动推送 `develop` 时仅 Linux 执行 E2E Full；发布
+资产构建、AppImage/Pacman 结构校验、AppImage 启动和 Arch 容器包生命周期由 Nightly 与正式
+Release 负责。原生 niri 桌面证据仍在发布前由 Arch 工作站补充。
+
+包含 `package.json` 或 `package-lock.json` 版本变化的合并进入 `main` 后，Release 调用与 Nightly
+共用的桌面打包工作流。Windows 生成并执行 NSIS/PE 结构校验；Linux 先执行完整源码验证，再生成
+Arch pacman 和便携 AppImage。Arch 容器通过 `pacman` 验证原生包生命周期，hosted runner 对
+AppImage 执行结构与启动 Smoke。所有构建成功后，单一 publish job 才创建标签与 GitHub Release，
+避免只发布部分平台资产。路径受限的 `ci/*` 控制面维护不修改版本文件，因此不会触发正式 Release。
 
 Nightly 工作流每天北京时间 02:17 从远端 `develop` 固定一次源提交，同时支持手动强制重建。该
 SHA 必须已有完成且成功的 `develop` push CI；缺少、运行中或失败的 CI 都会阻止 Nightly，且不能
 回退发布更旧提交。`force` 只允许重新打包同一绿色提交，不能绕过该门禁。现有 `nightly` 标签已经
 指向该提交时，普通定时运行直接成功结束。
 
-源码 CI 已负责静态检查、Vitest 和完整 E2E，因此 Nightly 不重复 `verify:fast` 或 E2E。Windows 与
-Linux 使用同一绿色提交并行生成安装包；Windows 执行桌面构建与 NSIS/PE 结构校验，Linux 执行
-Pacman/AppImage 结构校验、AppImage 启动和 Arch 容器生命周期。各平台只把中间 workflow artifact
-保留一天；全部平台成功后，唯一具有 `contents: write` 权限的 publish job 才生成 `SHA256SUMS`，
-重建滚动的 `nightly` GitHub Pre-release。Nightly 不设为 Latest，不属于正式发布或支持基线。
+源码 CI 已负责应用改动的静态检查、Vitest 和完整 E2E，因此 Nightly 不重复 `verify:fast` 或 E2E。
+Nightly 与 Release 通过 `package-desktop.yml` 的小接口传入固定源码 SHA、版本、artifact 前缀和是否
+执行发布复验；其余跨平台构建、结构校验、AppImage 启动与 Arch 容器生命周期集中在该工作流内。
+各平台只把中间 workflow artifact 保留一天；全部平台成功后，唯一具有 `contents: write` 权限的
+publish job 才生成 `SHA256SUMS`，重建滚动的 `nightly` GitHub Pre-release。Nightly 不设为 Latest，
+不属于正式发布或支持基线。
 
 GitHub 定时工作流只从默认分支执行，因此 Nightly 工作流文件必须进入 `main` 后才会按时运行；
 工作流运行时显式检出并固定 `develop` 提交，不能把默认分支的 `GITHUB_SHA` 当作 Nightly 源版本。
@@ -204,5 +210,5 @@ GitHub 定时工作流只从默认分支执行，因此 Nightly 工作流文件�
 
 分支保护应要求 `Quality`、`Unit and integration`、`Windows acceptance` 和
 `Linux acceptance` 四个检查。结构校验和容器生命周期不代替签名、Windows 净机证据或 Arch
-niri 桌面证据；Windows 自动化测试暂时停用，不能用构建成功代替行为验收；Arch 桌面证据按
-发布快照记录。
+niri 桌面证据；Windows Shell Smoke 不代替完整桌面行为、安装与卸载验收；Arch 桌面证据按发布
+快照记录。

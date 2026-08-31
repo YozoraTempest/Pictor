@@ -88,113 +88,22 @@ jobs:
             echo "should_skip=$should_skip"
           } >> "$GITHUB_OUTPUT"
 
-  windows-package:
-    name: Build Windows x64
+  packages:
+    name: Build desktop packages
     needs: source
     if: needs.source.outputs.should_skip != 'true'
-    runs-on: windows-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.source.outputs.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - name: Install pinned npm without replacing the runner copy
-        shell: pwsh
-        run: |
-          $npmPrefix = Join-Path $env:RUNNER_TEMP 'pictor-npm'
-          npm install --global --prefix $npmPrefix npm@11.17.0
-          $npmPrefix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - run: npm ci
-      - run: npm run deps:prepare
-      - run: npm run deps:verify
-      - run: npm run build:app
-      - run: npm run package:windows:build
-      - run: npm run package:verify:windows
-      - name: Stage Windows Nightly package
-        uses: actions/upload-artifact@v7
-        with:
-          name: nightly-windows-x64
-          path: dist/Pictor-${{ needs.source.outputs.version }}-windows-x64-setup.exe
-          if-no-files-found: error
-          retention-days: 1
-
-  linux-packages:
-    name: Build Linux x64
-    needs: source
-    if: needs.source.outputs.should_skip != 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 55
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.source.outputs.sha }}
-          persist-credentials: false
-      - name: Install Linux release dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes libarchive-tools xauth xvfb
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - name: Install pinned npm without replacing the runner copy
-        run: |
-          npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
-          echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
-      - run: npm --version
-      - run: npm ci
-      - run: npm run deps:prepare
-        env:
-          ELECTRON_GET_USE_PROXY: 'true'
-      - run: npm run deps:verify
-      - run: npm run build:app
-      - run: npm run package:linux:build
-      - run: npm run package:verify:linux
-      - name: Verify portable AppImage launch
-        env:
-          RELEASE_VERSION: ${{ needs.source.outputs.version }}
-        run: |
-          lifecycle_root="$(mktemp -d)"
-          user_data="$lifecycle_root/Pictor"
-          chmod +x "./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage"
-          PICTOR_LINUX_EXECUTABLE="./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
-            PICTOR_EXPECTED_DISTRIBUTION=unsupported-linux \
-            PICTOR_USER_DATA_DIR="$user_data" \
-            PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/nightly-linux-package-launch.png" \
-            xvfb-run --auto-servernum npm run package:verify:linux:launch
-      - name: Verify Arch package lifecycle in a native container
-        env:
-          RELEASE_VERSION: ${{ needs.source.outputs.version }}
-        run: bash scripts/verify-arch-package-lifecycle.sh
-      - name: Stage Linux Nightly packages
-        uses: actions/upload-artifact@v7
-        with:
-          name: nightly-linux-x64
-          path: |
-            dist/Pictor-${{ needs.source.outputs.version }}-arch-x64.pacman
-            dist/Pictor-${{ needs.source.outputs.version }}-linux-x64.AppImage
-          if-no-files-found: error
-          retention-days: 1
-      - name: Upload failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: nightly-linux-failure-evidence
-          path: test-results/
-          if-no-files-found: ignore
-          retention-days: 7
+    uses: ./.github/workflows/package-desktop.yml
+    with:
+      source_sha: ${{ needs.source.outputs.sha }}
+      version: ${{ needs.source.outputs.version }}
+      artifact_prefix: nightly
+      run_source_validation: false
 
   publish:
     name: Publish rolling Nightly
     needs:
       - source
-      - windows-package
-      - linux-packages
+      - packages
     if: ${{ success() && needs.source.outputs.should_skip != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
