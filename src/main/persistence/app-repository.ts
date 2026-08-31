@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 
 import { z } from 'zod'
 
-import { appSnapshotSchema, type AppSnapshot } from '../../shared/desktop-bridge.js'
+import { appSnapshotSchema, type AppSnapshot } from '../../modules/agent-workspace/shared.js'
 import {
   dataIssueSchema,
   projectSchema,

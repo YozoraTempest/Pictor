@@ -9,19 +9,19 @@ import type {
   SessionTreeView,
   UsageSnapshot,
 } from '../../shared/domain.js'
+import type { ModelSettings } from '../../shared/model.js'
 import type {
+  AgentWorkspaceClient,
   AppSnapshot,
-  PictorBridge,
   ProjectCandidate,
   SessionExportFormat,
-} from '../../shared/desktop-bridge.js'
-import type { ModelSettings } from '../../shared/model.js'
+} from './shared.js'
 
 const activeStatuses = new Set(['queued', 'running', 'awaiting-approval', 'stopping'])
 type RuntimeUsage = UsageSnapshot
 
 export type WorkspaceBridge = Pick<
-  PictorBridge,
+  AgentWorkspaceClient,
   | 'getSnapshot'
   | 'pickProjectDirectory'
   | 'registerProject'

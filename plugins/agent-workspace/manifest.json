@@ -1,13 +1,14 @@
 {
   "id": "pictor.agent-workspace",
   "name": "Agent Workspace",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Project, Session, Conversation, and Pi Agent workspace",
   "engines": {
     "pictor": "^0.3.0"
   },
   "dependencies": {},
   "modules": {
+    "main": "./dist/main.js",
     "renderer": "./dist/renderer.js"
   }
 }

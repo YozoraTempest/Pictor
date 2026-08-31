@@ -40,13 +40,15 @@ Bundled 恢复源和独立数据目录。第一版按重启应用生效，不实
 
 - `domain.ts`：Project、Session、Run、Message 和 Tool 等持久化模型。
 - `model.ts`：模型端点设置、连接测试和模型发现语义。
-- `desktop-bridge.ts`：Renderer 与 Main 之间的请求、结果和 `PictorBridge` interface。
+- `desktop-bridge.ts`：Core Shell 启动与 Plugin Manager 使用的 `PictorBridge` interface。
 - `runtime-protocol.ts`：Main 与 Runtime Host 之间的 command、host message 和 Runtime event。
 - `path-identity.ts`：Windows 与 Linux 的项目路径身份语义，不读取文件系统。
 - `errors.ts`：可跨进程表达的错误代码和 `PictorError`。
 - `ipc-result.ts`：把失败转换为可序列化 IPC result，不依赖 Electron。
 - `secret-redaction.ts`：Session、Runtime event 和 Pi transcript 的凭据脱敏。
 - `modules/updater/shared.ts`：应用信息、更新语义和 Updater Module contract。
+- `modules/agent-workspace/shared.ts`：Project、Session、Settings、Runtime intent 与 event 的
+  Agent Workspace Module contract。
 
 不要重新增加一个导出所有共享内容的总入口。调用者应直接依赖自己使用的协议 module，使
 interface 保持可见且范围明确。
@@ -73,6 +75,8 @@ Main 与 Renderer 分别从用户 Plugin Store 动态加载当前进程的 Plugi
 进程内的 Module 调用依赖 TypeScript。Updater 的独立 ESM 包在构建时进入 Bundled 恢复源，首次
 启动复制到用户 Store 后运行；其 Main 入口贡献 contract handler，Renderer 入口提供
 `UpdaterClient` 并向 `settings.sections` 贡献“关于”页面。
+Agent Workspace 同样通过 Main Module 注册 `pictor.agent-workspace` contract handlers，Renderer
+Module 只消费 `AgentWorkspaceClient`；Preload 不再逐项暴露 Workspace IPC 方法。
 
 Plugin 是安装、版本和依赖组合单元；Module 只属于一个 Plugin 的单个进程入口；Contribution 是
 Plugin 通过 SDK 公开的可组合值。Plugin Host 管理 Plugin DAG，Module Kernel 只管理一个 Plugin
@@ -108,10 +112,11 @@ source 使用 `development`，启动时直接读取 live Manifest/入口；它�
 或重新打包 Pictor。`PICTOR_PLUGIN_PROFILE=developer` 选择独立 Developer Profile identity，Profile
 仍只推荐 Bundled roots，不覆盖用户删除选择。
 
-Core Renderer 只渲染不可卸载的 `CoreShell` 和 Plugin Manager。`pictor.agent-workspace` 通过
-`shell.applications` Contribution 提供 Project、Session 与 Conversation GUI；移除或阻塞该
-Plugin 时，CoreShell 显示空 Plugin Manager，而不是让 Renderer bootstrap 因缺少业务 Provider
-失败。设置页 Contribution 只在 Agent Workspace 存在时组合到该应用中。
+Core Renderer 只渲染不可卸载的 `CoreShell` 和 Plugin Manager。`pictor.agent-workspace` 的 Main
+Module 提供 Workspace contract，Renderer Module 通过 `shell.applications` Contribution 提供
+Project、Session 与 Conversation GUI；移除或阻塞该 Plugin 时，Main contract 与 Renderer
+application 同时缺席，CoreShell 显示空 Plugin Manager，而不是让 Renderer bootstrap 因缺少业务
+Provider 失败。设置页 Contribution 只在 Agent Workspace 存在时组合到该应用中。
 
 `pictor.git-changes` 是第二个跨进程 Bundled Plugin，并声明对 `pictor.agent-workspace` 的硬依赖。
 Main 入口通过 Module contract 提供当前项目的 `git status`，Renderer 入口贡献 Git 设置页；删除
@@ -235,7 +240,7 @@ AppImage；原始 os-release 内容不进入 IPC、持久化或日志。
 
 Agent Workspace Renderer Module 的 `AgentWorkspace` 负责页面布局、Settings 和界面级 modal
 编排，并从 Renderer Kernel 接收 Updater Interface 与设置页 Contribution。内部
-`useWorkspaceController` 通过注入的 `PictorBridge` 管理 workspace snapshot、当前 Session、导航
+`useWorkspaceController` 通过注入的 `AgentWorkspaceClient` 管理 workspace snapshot、当前 Session、导航
 竞态、Runtime event reconcile 与 Run/Project/Session intent；测试使用窄 bridge fake 直接验证
 异步状态和事件顺序。不要在 UI 组件中重新实现刷新顺序，也不要为此引入第二套全局 store。
 

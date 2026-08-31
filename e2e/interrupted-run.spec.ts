@@ -3,8 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/desktop-bridge.js'
-import { credentialFixtures } from './support.js'
+import { credentialFixtures, invokeAgentWorkspace } from './support.js'
 
 test('confirms active-run exit and restores the run as interrupted', async ({
   browserName: _browserName,
@@ -45,42 +44,41 @@ test('confirms active-run exit and restores the run as interrupted', async ({
   try {
     const firstWindow = await firstApp.firstWindow()
     await firstWindow.waitForLoadState('domcontentloaded')
-    const setup = await firstWindow.evaluate(
-      async ({ apiKey, baseUrl, projectRoot }) => {
-        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-        const settings = await bridge.saveSettings({
-          apiProtocol: 'chat-completions',
-          baseUrl,
-          modelId: 'pictor-e2e-model',
-          reasoningEffort: null,
-          temperature: null,
-          maxOutputTokens: 64,
-          apiKey: { action: 'replace', value: apiKey },
-        })
-        const project = await bridge.registerProject({ rootPath: projectRoot, trusted: true })
-        if (!project.ok) return { settings, project, session: null, run: null }
-        const session = await bridge.createSession({ projectId: project.value.id })
-        if (!session.ok) return { settings, project, session, run: null }
-        const run = await bridge.startRun({ sessionId: session.value.id, prompt: 'Keep running.' })
-        return { settings, project, session, run }
-      },
-      {
-        apiKey: credentialFixtures.interruptedRun,
-        baseUrl: `http://127.0.0.1:${address.port}/v1`,
-        projectRoot,
-      },
-    )
+    const settings = await invokeAgentWorkspace(firstWindow, 'saveSettings', {
+      apiProtocol: 'chat-completions',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      modelId: 'pictor-e2e-model',
+      reasoningEffort: null,
+      temperature: null,
+      maxOutputTokens: 64,
+      apiKey: { action: 'replace', value: credentialFixtures.interruptedRun },
+    })
+    const project = await invokeAgentWorkspace(firstWindow, 'registerProject', {
+      rootPath: projectRoot,
+      trusted: true,
+    })
+    const session = project.ok
+      ? await invokeAgentWorkspace(firstWindow, 'createSession', { projectId: project.value.id })
+      : null
+    const run =
+      session?.ok === true
+        ? await invokeAgentWorkspace(firstWindow, 'startRun', {
+            sessionId: session.value.id,
+            prompt: 'Keep running.',
+          })
+        : null
+    const setup = { settings, project, session, run }
     expect(setup.run?.ok).toBe(true)
     if (!setup.session?.ok) throw new Error('Interrupted-run E2E session setup failed')
     const interruptedSessionId = setup.session.value.id
     await expect
       .poll(
         () =>
-          firstWindow.evaluate(async (sessionId) => {
-            const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-            const response = await bridge.getSession({ sessionId })
+          invokeAgentWorkspace(firstWindow, 'getSession', {
+            sessionId: interruptedSessionId,
+          }).then((response) => {
             return response.ok ? response.value.runs.at(-1)?.status : null
-          }, interruptedSessionId),
+          }),
         { timeout: 20_000 },
       )
       .toBe('running')
@@ -106,12 +104,13 @@ test('confirms active-run exit and restores the run as interrupted', async ({
     restoredApp = await launch()
     const restoredWindow = await restoredApp.firstWindow()
     await restoredWindow.waitForLoadState('domcontentloaded')
-    const restored = await restoredWindow.evaluate(async () => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      const snapshot = await bridge.getSnapshot()
-      if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
-      return bridge.getSession({ sessionId: snapshot.value.selectedSessionId })
-    })
+    const restoredSnapshot = await invokeAgentWorkspace(restoredWindow, 'getSnapshot', null)
+    const restored =
+      restoredSnapshot.ok && restoredSnapshot.value.selectedSessionId
+        ? await invokeAgentWorkspace(restoredWindow, 'getSession', {
+            sessionId: restoredSnapshot.value.selectedSessionId,
+          })
+        : null
     expect(restored).toEqual(
       expect.objectContaining({
         ok: true,

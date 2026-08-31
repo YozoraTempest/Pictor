@@ -40,8 +40,9 @@ Pi 原生工具和 OpenAI 兼容模型配置。
   RPC UI dialog 无需 Pictor wrapper 即可进入会话 GUI。
 - 明确安装的本地 Pi Extension 直接从 live source 加载，修改源文件后下一次资源 reload 或新建
   Session 使用新版本；源不可用时回退到 Store 安装副本。
-- Project、Session 与 Conversation GUI 由可删除的 `pictor.agent-workspace` 提供；删除全部
-  Bundled Plugin 后，Core Shell 仍可启动并打开 Plugin Manager。
+- Project、Session 与 Conversation GUI 及其 Main contract 由可删除的
+  `pictor.agent-workspace` 提供；删除全部 Bundled Plugin 后，Core Shell 仍可启动并打开 Plugin
+  Manager。
 - `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Main contract 与 Renderer 设置页显示
   当前项目的 Git working tree；它验证了真实 Plugin 间依赖与组合。
 - `pictor.model-openai-compatible` 作为独立 Runtime Provider 注册 Chat Completions/Responses

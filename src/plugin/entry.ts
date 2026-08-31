@@ -1,10 +1,11 @@
 import type { PictorModule } from '../kernel/module.js'
 import type { RuntimeEvent } from '../shared/runtime-protocol.js'
 
-export interface MainPluginContext {
+export interface MainPluginContext<THost = unknown> {
   process: 'main'
   dataPath: string
   appInfo: unknown
+  host: THost
 }
 
 export interface RendererPluginContext {

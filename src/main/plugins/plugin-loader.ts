@@ -10,6 +10,7 @@ import type { PluginStoreSnapshot } from './plugin-store.js'
 export function createMainPluginDefinitions(
   snapshot: PluginStoreSnapshot,
   appInfo: AppInfo,
+  resolveHost: (pluginId: string) => unknown = () => undefined,
 ): PluginDefinition[] {
   return snapshot.plugins.map(({ entry, manifest, rootPath, dataPath }) => ({
     manifest,
@@ -26,7 +27,7 @@ export function createMainPluginDefinitions(
       const entrypoint = readPluginEntrypoint<MainPluginContext>(
         namespace as Record<string, unknown>,
       )
-      return entrypoint({ process: 'main', dataPath, appInfo })
+      return entrypoint({ process: 'main', dataPath, appInfo, host: resolveHost(manifest.id) })
     },
   }))
 }

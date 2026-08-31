@@ -14,13 +14,15 @@ import {
 
 import packageMetadata from '../../package.json' with { type: 'json' }
 import { ModuleRouter, moduleHandlerContributions } from '../kernel/contract.js'
+import type { AgentWorkspaceMainHost } from '../modules/agent-workspace/main.js'
+import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
 import { PluginHost } from '../plugin/host.js'
 import { appInfoSchema } from '../shared/app-info.js'
 import { pluginBootstrapSchema, type PluginBootstrap } from '../shared/plugins.js'
 import { developmentUserDataPath } from './development-profile.js'
 import { detectDesktopDistribution } from './linux-distribution.js'
 import { registerIpc } from './ipc.js'
-import { registerModuleIpc } from './module-ipc.js'
+import { broadcastModuleEvent, registerModuleIpc } from './module-ipc.js'
 import { ModelConnectionTester } from './model-connection.js'
 import { AppRepository } from './persistence/app-repository.js'
 import { SecretStore } from './persistence/secret-store.js'
@@ -212,11 +214,13 @@ void app.whenReady().then(() => {
         coordinatorReference.current?.handleSessionReplacementRequest(request) ??
         Promise.resolve({ accepted: false, message: 'Runtime Coordinator is unavailable' }),
     )
-    const runtimeCoordinator = new RuntimeCoordinator(repository, runtimeSupervisor, (event) => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send('runtime:event', event)
-      }
-    })
+    const runtimeCoordinator = new RuntimeCoordinator(repository, runtimeSupervisor, (event) =>
+      broadcastModuleEvent({
+        moduleId: agentWorkspaceContract.id,
+        event: 'runtimeEvent',
+        payload: event,
+      }),
+    )
     coordinatorReference.current = runtimeCoordinator
     const persistedSnapshot = await repository.getSnapshot()
     let restoreSelectedContextPromise: Promise<void> | null = null
@@ -241,7 +245,16 @@ void app.whenReady().then(() => {
       distribution,
     })
     const mainPluginHost = new PluginHost({ pictorVersion: currentVersion, safeMode })
-    await mainPluginHost.start(createMainPluginDefinitions(pluginStoreSnapshot, appInfo))
+    const agentWorkspaceHost = {
+      repository,
+      runtime: runtimeCoordinator,
+      connectionTester: new ModelConnectionTester(),
+    } satisfies AgentWorkspaceMainHost
+    await mainPluginHost.start(
+      createMainPluginDefinitions(pluginStoreSnapshot, appInfo, (pluginId) =>
+        pluginId === agentWorkspaceContract.id ? agentWorkspaceHost : undefined,
+      ),
+    )
     const pluginManager = new PluginManager(
       pluginStore,
       mainPluginHost.getStatuses(),
@@ -266,10 +279,7 @@ void app.whenReady().then(() => {
       })
     }
     registerIpc({
-      repository,
-      connectionTester: new ModelConnectionTester(),
       validateSender,
-      runtimeCoordinator,
       onRendererReady: restoreSelectedContext,
       appInfo,
       getPluginBootstrap,

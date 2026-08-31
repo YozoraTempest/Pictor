@@ -3,10 +3,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/desktop-bridge.js'
+import type { ModuleTransport } from '../src/kernel/contract.js'
 import { defaultPluginProfile } from '../src/main/plugins/default-profile.js'
 import { PluginStore } from '../src/main/plugins/plugin-store.js'
-import { credentialFixtures } from './support.js'
+import { agentWorkspaceContract } from '../src/modules/agent-workspace/shared.js'
+import { credentialFixtures, invokeAgentWorkspace } from './support.js'
 
 test('loads an unmodified native Pi Extension from the user Store', async ({
   browserName: _browserName,
@@ -249,42 +250,37 @@ export default function (pi) {
   try {
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
-    const setup = await window.evaluate(
-      async ({ apiKey, baseUrl, rootPath }) => {
-        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-        const settings = await bridge.saveSettings({
-          apiProtocol: 'chat-completions',
-          baseUrl,
-          modelId: 'pictor-e2e-model',
-          reasoningEffort: null,
-          temperature: null,
-          maxOutputTokens: null,
-          apiKey: { action: 'replace', value: apiKey },
-        })
-        const project = await bridge.registerProject({ rootPath, trusted: true })
-        if (!project.ok) return { settings, project, session: null }
-        const session = await bridge.createSession({ projectId: project.value.id })
-        return { settings, project, session }
-      },
-      {
-        apiKey: credentialFixtures.localRuntime,
-        baseUrl: `http://127.0.0.1:${address.port}/v1`,
-        rootPath: projectRoot,
-      },
-    )
+    const settings = await invokeAgentWorkspace(window, 'saveSettings', {
+      apiProtocol: 'chat-completions',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      modelId: 'pictor-e2e-model',
+      reasoningEffort: null,
+      temperature: null,
+      maxOutputTokens: null,
+      apiKey: { action: 'replace', value: credentialFixtures.localRuntime },
+    })
+    const project = await invokeAgentWorkspace(window, 'registerProject', {
+      rootPath: projectRoot,
+      trusted: true,
+    })
+    const session = project.ok
+      ? await invokeAgentWorkspace(window, 'createSession', { projectId: project.value.id })
+      : null
+    const setup = { settings, project, session }
     expect(setup).toMatchObject({
       settings: { ok: true },
       project: { ok: true },
       session: { ok: true },
     })
     await window.reload()
-    const startSelectedRun = (prompt: string) =>
-      window.evaluate(async (value) => {
-        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-        const snapshot = await bridge.getSnapshot()
-        if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
-        return bridge.startRun({ sessionId: snapshot.value.selectedSessionId, prompt: value })
-      }, prompt)
+    const startSelectedRun = async (prompt: string) => {
+      const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
+      if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
+      return invokeAgentWorkspace(window, 'startRun', {
+        sessionId: snapshot.value.selectedSessionId,
+        prompt,
+      })
+    }
     expect(await startSelectedRun('Use the hello tool.')).toMatchObject({ ok: true })
 
     await expect(window.getByText('Extension Tool')).toBeVisible({ timeout: 30_000 })
@@ -319,10 +315,7 @@ export default function (pi) {
       timeout: 30_000,
     })
     await expect(window.locator('.timeline').getByText('Native extension completed.')).toBeVisible()
-    const forkedSnapshot = await window.evaluate(async () => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      return bridge.getSnapshot()
-    })
+    const forkedSnapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
     expect(forkedSnapshot).toMatchObject({
       ok: true,
       value: {
@@ -351,10 +344,7 @@ export default function (pi) {
       window.getByRole('heading', { name: 'Use the hello tool. (Fork) (Clone)' }),
     ).toBeVisible({ timeout: 30_000 })
     await expect(window.locator('.timeline').getByText('Native extension completed.')).toBeVisible()
-    const clonedSnapshot = await window.evaluate(async () => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      return bridge.getSnapshot()
-    })
+    const clonedSnapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
     expect(clonedSnapshot).toMatchObject({
       ok: true,
       value: {
@@ -397,10 +387,7 @@ export default function (pi) {
     await expect(
       importedTree.getByRole('button', { name: 'root-checkpoint', exact: true }),
     ).toBeVisible()
-    const importedSnapshot = await window.evaluate(async () => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      return bridge.getSnapshot()
-    })
+    const importedSnapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
     expect(importedSnapshot).toMatchObject({
       ok: true,
       value: {
@@ -461,16 +448,14 @@ export default function (pi) {
     await window.getByText('Runtime 资源已重载').click()
     const authoritativeJsonlBeforeExport = await readFile(authoritativeJsonlPath, 'utf8')
 
-    const exportSelectedSession = (format: 'jsonl' | 'html') =>
-      window.evaluate(async (selectedFormat) => {
-        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-        const snapshot = await bridge.getSnapshot()
-        if (!snapshot.ok || !snapshot.value.selectedSessionId) return snapshot
-        return bridge.exportSession({
-          sessionId: snapshot.value.selectedSessionId,
-          format: selectedFormat,
-        })
-      }, format)
+    const exportSelectedSession = async (format: 'jsonl' | 'html') => {
+      const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
+      if (!snapshot.ok || !snapshot.value.selectedSessionId) return snapshot
+      return invokeAgentWorkspace(window, 'exportSession', {
+        sessionId: snapshot.value.selectedSessionId,
+        format,
+      })
+    }
     await electronApp.evaluate(({ dialog }) => {
       dialog.showSaveDialog = async () => ({ canceled: true, filePath: '' })
     })
@@ -507,10 +492,10 @@ export default function (pi) {
     expect(await readFile(importSource, 'utf8')).toBe(importedJsonl)
     expect(await readFile(authoritativeJsonlPath, 'utf8')).toBe(authoritativeJsonlBeforeExport)
 
-    const historyBeforeNavigation = await window.evaluate(async (sessionId) => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      return bridge.inspectSessionHistory({ sessionId, entryId: null })
-    }, importedSessionId)
+    const historyBeforeNavigation = await invokeAgentWorkspace(window, 'inspectSessionHistory', {
+      sessionId: importedSessionId,
+      entryId: null,
+    })
     if (!historyBeforeNavigation.ok || !historyBeforeNavigation.value.tree?.activeLeafId) {
       throw new Error('Imported Pi Session does not have an active leaf')
     }
@@ -526,15 +511,14 @@ export default function (pi) {
     await expect(timeline.getByText('Imported original answer')).toBeVisible()
     await expect(timeline.getByText('Imported branch answer')).toHaveCount(0)
     await expect(window.getByRole('textbox', { name: '任务描述' })).toBeEnabled()
-    const navigatedHistory = await window.evaluate(async () => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      const snapshot = await bridge.getSnapshot()
-      if (!snapshot.ok || !snapshot.value.selectedSessionId) return snapshot
-      return bridge.inspectSessionHistory({
-        sessionId: snapshot.value.selectedSessionId,
-        entryId: null,
-      })
-    })
+    const navigatedSnapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
+    const navigatedHistory =
+      navigatedSnapshot.ok && navigatedSnapshot.value.selectedSessionId
+        ? await invokeAgentWorkspace(window, 'inspectSessionHistory', {
+            sessionId: navigatedSnapshot.value.selectedSessionId,
+            entryId: null,
+          })
+        : navigatedSnapshot
     expect(navigatedHistory).toMatchObject({
       ok: true,
       value: {
@@ -556,16 +540,25 @@ export default function (pi) {
     const treeLifecycle = await readFile(resolve(projectRoot, 'fork-lifecycle.log'), 'utf8')
     expect(treeLifecycle).toContain(`tree:${activeLeafBeforeNavigation}:imported-original`)
 
-    await window.evaluate((sessionId) => {
-      const target = globalThis as typeof globalThis & {
-        pictor: PictorBridge
-        __pictorNavigationEvents?: unknown[]
-      }
-      target.__pictorNavigationEvents = []
-      target.pictor.onRuntimeEvent((event) => {
-        if (event.sessionId === sessionId) target.__pictorNavigationEvents?.push(event)
-      })
-    }, importedSessionId)
+    await window.evaluate(
+      ({ eventName, moduleId, sessionId }) => {
+        const target = globalThis as typeof globalThis & {
+          pictorModules: ModuleTransport
+          __pictorNavigationEvents?: unknown[]
+        }
+        target.__pictorNavigationEvents = []
+        target.pictorModules.onEvent(moduleId, eventName, (event) => {
+          if (event && typeof event === 'object' && Reflect.get(event, 'sessionId') === sessionId) {
+            target.__pictorNavigationEvents?.push(event)
+          }
+        })
+      },
+      {
+        eventName: 'runtimeEvent',
+        moduleId: agentWorkspaceContract.id,
+        sessionId: importedSessionId,
+      },
+    )
     expect(await startSelectedRun('Continue from the historical answer.')).toMatchObject({
       ok: true,
     })
@@ -637,13 +630,10 @@ export default function (pi) {
       'Imported branch task',
     )
 
-    const cancelledCompaction = await window.evaluate(async (sessionId) => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      return bridge.compactSession({
-        sessionId,
-        customInstructions: 'Cancel E2E compaction',
-      })
-    }, importedSessionId)
+    const cancelledCompaction = await invokeAgentWorkspace(window, 'compactSession', {
+      sessionId: importedSessionId,
+      customInstructions: 'Cancel E2E compaction',
+    })
     expect(cancelledCompaction).toEqual({ ok: true, value: null })
 
     await window.getByRole('button', { name: '压缩上下文' }).click()

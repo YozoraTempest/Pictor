@@ -3,8 +3,12 @@ import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 
-import type { PictorBridge } from '../src/shared/desktop-bridge.js'
-import { credentialFixtures, readSelectedRunStatus, writeChatText } from './support.js'
+import {
+  credentialFixtures,
+  invokeAgentWorkspace,
+  readSelectedRunStatus,
+  writeChatText,
+} from './support.js'
 
 test('shows a readable runtime failure and keeps the session sendable', async ({
   browserName: _browserName,
@@ -42,32 +46,29 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
       )
       .toEqual([process.platform !== 'win32'])
 
-    const setup = await window.evaluate(
-      async ({ apiKey, baseUrl, rootPath }) => {
-        const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-        const settings = await bridge.saveSettings({
-          apiProtocol: 'chat-completions',
-          baseUrl,
-          modelId: 'pictor-e2e-model',
-          reasoningEffort: null,
-          temperature: null,
-          maxOutputTokens: 64,
-          apiKey: { action: 'replace', value: apiKey },
-        })
-        const project = await bridge.registerProject({ rootPath, trusted: true })
-        if (!project.ok) return { settings, project, session: null }
-        const session = await bridge.createSession({ projectId: project.value.id })
-        if (session.ok) {
-          await bridge.selectContext({ projectId: project.value.id, sessionId: session.value.id })
-        }
-        return { settings, project, session }
-      },
-      {
-        apiKey: credentialFixtures.runtimeRecovery,
-        baseUrl: `http://127.0.0.1:${address.port}/v1`,
-        rootPath: projectRoot,
-      },
-    )
+    const settings = await invokeAgentWorkspace(window, 'saveSettings', {
+      apiProtocol: 'chat-completions',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      modelId: 'pictor-e2e-model',
+      reasoningEffort: null,
+      temperature: null,
+      maxOutputTokens: 64,
+      apiKey: { action: 'replace', value: credentialFixtures.runtimeRecovery },
+    })
+    const project = await invokeAgentWorkspace(window, 'registerProject', {
+      rootPath: projectRoot,
+      trusted: true,
+    })
+    const setupSession = project.ok
+      ? await invokeAgentWorkspace(window, 'createSession', { projectId: project.value.id })
+      : null
+    if (project.ok && setupSession?.ok) {
+      await invokeAgentWorkspace(window, 'selectContext', {
+        projectId: project.value.id,
+        sessionId: setupSession.value.id,
+      })
+    }
+    const setup = { settings, project, session: setupSession }
     expect(setup.settings.ok).toBe(true)
     expect(setup.project.ok).toBe(true)
     expect(setup.session?.ok).toBe(true)
@@ -94,12 +95,13 @@ test('shows a readable runtime failure and keeps the session sendable', async ({
     await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
     expect(await readSelectedRunStatus(window)).toBe('completed')
 
-    const session = await window.evaluate(async () => {
-      const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-      const snapshot = await bridge.getSnapshot()
-      if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
-      return bridge.getSession({ sessionId: snapshot.value.selectedSessionId })
-    })
+    const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
+    const session =
+      snapshot.ok && snapshot.value.selectedSessionId
+        ? await invokeAgentWorkspace(window, 'getSession', {
+            sessionId: snapshot.value.selectedSessionId,
+          })
+        : null
     expect(session).toEqual(
       expect.objectContaining({
         ok: true,

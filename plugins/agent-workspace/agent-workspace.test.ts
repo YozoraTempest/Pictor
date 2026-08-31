@@ -13,7 +13,8 @@ it('ships the Agent Workspace as a Renderer Plugin', async () => {
   )
   expect(manifest).toMatchObject({
     id: 'pictor.agent-workspace',
-    modules: { renderer: './dist/renderer.js' },
+    version: '0.3.1',
+    modules: { main: './dist/main.js', renderer: './dist/renderer.js' },
   })
 })
 

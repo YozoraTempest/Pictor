@@ -1,7 +1,9 @@
 import type { Page } from '@playwright/test'
 import type { ServerResponse } from 'node:http'
+import type { z } from 'zod'
 
-import type { PictorBridge } from '../src/shared/desktop-bridge.js'
+import type { ModuleTransport } from '../src/kernel/contract.js'
+import { agentWorkspaceContract } from '../src/modules/agent-workspace/shared.js'
 
 export const credentialFixtures = {
   storedSettings: ['pictor', 'e2e', 'secret'].join('-'),
@@ -12,64 +14,55 @@ export const credentialFixtures = {
 }
 
 export const bridgeKeys = [
-  'cloneSession',
-  'compactSession',
-  'cancelSessionOperation',
-  'createSession',
-  'deleteSession',
-  'exportSession',
   'getAppInfo',
   'getPluginBootstrap',
   'getPluginManagerSnapshot',
-  'getSession',
-  'getSessionRuntimeControls',
-  'getSettings',
-  'getSnapshot',
   'notifyRendererReady',
-  'forkSession',
   'installLocalPlugin',
   'installDevelopmentPlugin',
   'installPiExtension',
   'installPiPackage',
   'installPiPackageSpec',
-  'inspectSessionHistory',
-  'importSession',
-  'listModels',
-  'labelSessionEntry',
-  'navigateSessionTree',
-  'queueRuntimeMessage',
-  'pickProjectDirectory',
-  'pickMessageImages',
-  'onRuntimeEvent',
-  'registerProject',
-  'relinkProject',
-  'reloadSessionResources',
   'removePlugin',
-  'removeProject',
-  'respondToExtensionUi',
-  'clearRuntimeQueue',
-  'renameSession',
   'restoreBundledPlugin',
-  'saveSettings',
-  'saveSessionRuntimeControls',
-  'selectContext',
   'setPluginEnabled',
-  'startRun',
-  'stopRun',
-  'syncComposerText',
-  'testSettings',
 ]
 
 export const moduleBridgeKeys = ['invoke', 'onEvent']
 
+type WorkspaceMethod = keyof typeof agentWorkspaceContract.methods & string
+type WorkspaceMethodInput<Method extends WorkspaceMethod> = z.input<
+  (typeof agentWorkspaceContract.methods)[Method]['input']
+>
+type WorkspaceMethodOutput<Method extends WorkspaceMethod> = z.output<
+  (typeof agentWorkspaceContract.methods)[Method]['output']
+>
+
+export async function invokeAgentWorkspace<Method extends WorkspaceMethod>(
+  window: Page,
+  method: Method,
+  input: WorkspaceMethodInput<Method>,
+): Promise<WorkspaceMethodOutput<Method>> {
+  const output = await window.evaluate(
+    ({ moduleId, methodName, methodInput }) => {
+      const transport = (globalThis as typeof globalThis & { pictorModules: ModuleTransport })
+        .pictorModules
+      return transport.invoke(moduleId, methodName, methodInput)
+    },
+    { moduleId: agentWorkspaceContract.id, methodName: method, methodInput: input },
+  )
+  return agentWorkspaceContract.methods[method].output.parse(
+    output,
+  ) as WorkspaceMethodOutput<Method>
+}
+
 export async function readSelectedRunStatus(window: Page): Promise<string | null> {
-  return window.evaluate(async () => {
-    const bridge = (globalThis as typeof globalThis & { pictor: PictorBridge }).pictor
-    const snapshot = await bridge.getSnapshot()
-    if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
-    const session = await bridge.getSession({ sessionId: snapshot.value.selectedSessionId })
-    return session.ok ? (session.value.runs.at(-1)?.status ?? null) : null
+  const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
+  if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
+  const session = await invokeAgentWorkspace(window, 'getSession', {
+    sessionId: snapshot.value.selectedSessionId,
   })
+  return session.ok ? (session.value.runs.at(-1)?.status ?? null) : null
 }
 
 function writeResponsesEvents(response: ServerResponse, events: unknown[]): void {
