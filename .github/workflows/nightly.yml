@@ -7,12 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: Rebuild Nightly even when the source commit is unchanged
+        description: Rebuild Nightly for the same green source commit
         type: boolean
         required: false
         default: false
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -21,7 +22,7 @@ concurrency:
 
 jobs:
   source:
-    name: Resolve develop snapshot
+    name: Resolve green develop snapshot
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -34,15 +35,36 @@ jobs:
           ref: develop
           fetch-depth: 1
           persist-credentials: false
-      - name: Compare develop with the published Nightly
+      - name: Verify develop CI and compare with the published Nightly
         id: source
         env:
           FORCE_REBUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.force && 'true' || 'false' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
           source_sha="$(git rev-parse HEAD)"
           source_version="$(node --print "require('./package.json').version")"
+          ci_run="$(
+            gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f branch=develop \
+              -f event=push \
+              -f head_sha="$source_sha" \
+              -f per_page=1 \
+              --jq '.workflow_runs[0] | [(.status // ""), (.conclusion // ""), (.html_url // "")] | join("|")'
+          )"
+          IFS='|' read -r ci_status ci_conclusion ci_url <<< "$ci_run"
+
+          if [ "$ci_status" != 'completed' ] || [ "$ci_conclusion" != 'success' ]; then
+            echo "::error::develop commit $source_sha does not have a successful CI push run (status=${ci_status:-missing}, conclusion=${ci_conclusion:-missing})."
+            if [ -n "$ci_url" ]; then
+              echo "CI run: $ci_url"
+            fi
+            exit 1
+          fi
+          echo "Verified successful develop CI: $ci_url"
+
           nightly_sha="$(
             git ls-remote origin 'refs/tags/nightly' 'refs/tags/nightly^{}' |
               awk '
@@ -130,9 +152,7 @@ jobs:
         env:
           ELECTRON_GET_USE_PROXY: 'true'
       - run: npm run deps:verify
-      - run: npm run verify:fast
       - run: npm run build:app
-      - run: xvfb-run --auto-servernum npm run test:e2e:run
       - run: npm run package:linux:build
       - run: npm run package:verify:linux
       - name: Verify portable AppImage launch

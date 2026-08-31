@@ -188,10 +188,14 @@ hosted runner 对 AppImage 执行结构与启动 Smoke。所有构建成功后�
 GitHub Release，避免只发布部分平台资产。路径受限的 `ci/*` 控制面维护不修改版本文件，因此不会
 触发正式 Release 工作流，但 Pull Request 仍须通过四项普通 CI 门禁。
 
-Nightly 工作流每天北京时间 02:17 从远端 `develop` 固定一次源提交，同时支持手动强制重建。
-现有 `nightly` 标签已经指向该提交时，普通定时运行直接成功结束；否则 Windows 与 Linux 使用同一
-提交并行生成和校验正式形态的安装包。Linux 继续执行 `verify:fast`、完整 E2E、AppImage 启动和
-Arch 容器生命周期；Windows 执行桌面构建与 NSIS/PE 结构校验。各平台只把中间 workflow artifact
+Nightly 工作流每天北京时间 02:17 从远端 `develop` 固定一次源提交，同时支持手动强制重建。该
+SHA 必须已有完成且成功的 `develop` push CI；缺少、运行中或失败的 CI 都会阻止 Nightly，且不能
+回退发布更旧提交。`force` 只允许重新打包同一绿色提交，不能绕过该门禁。现有 `nightly` 标签已经
+指向该提交时，普通定时运行直接成功结束。
+
+源码 CI 已负责静态检查、Vitest 和完整 E2E，因此 Nightly 不重复 `verify:fast` 或 E2E。Windows 与
+Linux 使用同一绿色提交并行生成安装包；Windows 执行桌面构建与 NSIS/PE 结构校验，Linux 执行
+Pacman/AppImage 结构校验、AppImage 启动和 Arch 容器生命周期。各平台只把中间 workflow artifact
 保留一天；全部平台成功后，唯一具有 `contents: write` 权限的 publish job 才生成 `SHA256SUMS`，
 重建滚动的 `nightly` GitHub Pre-release。Nightly 不设为 Latest，不属于正式发布或支持基线。
 
