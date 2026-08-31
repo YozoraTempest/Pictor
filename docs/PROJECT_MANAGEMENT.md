@@ -48,10 +48,12 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 ### Nightly
 
 进入 `main` 的 Nightly 工作流每天北京时间 02:17 读取远端 `develop` 的最新提交，并在开始时固定
-该 SHA，保证 Windows、Pacman 和 AppImage 来自同一源码快照。现有 `nightly` 标签已指向该提交时
-跳过定时重建；维护者可以手动启用 `force` 输入强制重建。
+该 SHA。源码提交必须已有完成且成功的 `develop` push CI；缺少或未通过该结果时不得构建或回退到
+更旧提交。现有 `nightly` 标签已指向该提交时跳过定时重建；维护者可以手动启用 `force` 输入重新
+打包同一绿色提交，但不能绕过源码 CI 门禁。
 
-Nightly 先在只读权限的 Windows 与 Linux job 中完成构建、测试、包校验和生命周期验收，并使用
+Nightly 不重复源码 CI 已完成的 `verify:fast` 或完整 E2E，只在只读权限的 Windows 与 Linux job
+中构建应用，并执行 NSIS/Pacman/AppImage 结构校验、AppImage 启动和 Arch 包生命周期等产物验收。
 保留一天的 workflow artifact 向最终 publish job 传递安装包。只有全部平台成功后，publish job
 才获得 `contents: write` 权限，生成 `SHA256SUMS`，删除上一份滚动 Nightly Pre-release 与
 `nightly` 标签，再以固定源码 SHA 一次发布完整的新附件。Nightly 必须标记为 Pre-release 且不设为
