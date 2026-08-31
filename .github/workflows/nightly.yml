@@ -1,0 +1,243 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+      timezone: Asia/Shanghai
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild Nightly even when the source commit is unchanged
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  source:
+    name: Resolve develop snapshot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+      should_skip: ${{ steps.source.outputs.should_skip }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Compare develop with the published Nightly
+        id: source
+        env:
+          FORCE_REBUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.force && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+
+          source_sha="$(git rev-parse HEAD)"
+          source_version="$(node --print "require('./package.json').version")"
+          nightly_sha="$(
+            git ls-remote origin 'refs/tags/nightly' 'refs/tags/nightly^{}' |
+              awk '
+                /\^\{\}$/ { peeled = $1 }
+                !/\^\{\}$/ { direct = $1 }
+                END { print peeled ? peeled : direct }
+              '
+          )"
+
+          should_skip=false
+          if [ "$FORCE_REBUILD" != 'true' ] && [ -n "$nightly_sha" ] && [ "$nightly_sha" = "$source_sha" ]; then
+            should_skip=true
+            echo "Nightly already points to $source_sha. Skipping the rebuild."
+          else
+            echo "Nightly will build develop commit $source_sha."
+          fi
+
+          {
+            echo "sha=$source_sha"
+            echo "version=$source_version"
+            echo "should_skip=$should_skip"
+          } >> "$GITHUB_OUTPUT"
+
+  windows-package:
+    name: Build Windows x64
+    needs: source
+    if: needs.source.outputs.should_skip != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned npm without replacing the runner copy
+        shell: pwsh
+        run: |
+          $npmPrefix = Join-Path $env:RUNNER_TEMP 'pictor-npm'
+          npm install --global --prefix $npmPrefix npm@11.17.0
+          $npmPrefix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - run: npm ci
+      - run: npm run deps:prepare
+      - run: npm run deps:verify
+      - run: npm run build:app
+      - run: npm run package:windows:build
+      - run: npm run package:verify:windows
+      - name: Stage Windows Nightly package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-windows-x64
+          path: dist/Pictor-${{ needs.source.outputs.version }}-windows-x64-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  linux-packages:
+    name: Build Linux x64
+    needs: source
+    if: needs.source.outputs.should_skip != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - name: Install Linux release dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libarchive-tools xauth xvfb
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned npm without replacing the runner copy
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
+          echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
+      - run: npm --version
+      - run: npm ci
+      - run: npm run deps:prepare
+        env:
+          ELECTRON_GET_USE_PROXY: 'true'
+      - run: npm run deps:verify
+      - run: npm run verify:fast
+      - run: npm run build:app
+      - run: xvfb-run --auto-servernum npm run test:e2e:run
+      - run: npm run package:linux:build
+      - run: npm run package:verify:linux
+      - name: Verify portable AppImage launch
+        env:
+          RELEASE_VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          lifecycle_root="$(mktemp -d)"
+          user_data="$lifecycle_root/Pictor"
+          chmod +x "./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage"
+          PICTOR_LINUX_EXECUTABLE="./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
+            PICTOR_EXPECTED_DISTRIBUTION=unsupported-linux \
+            PICTOR_USER_DATA_DIR="$user_data" \
+            PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/nightly-linux-package-launch.png" \
+            xvfb-run --auto-servernum npm run package:verify:linux:launch
+      - name: Verify Arch package lifecycle in a native container
+        env:
+          RELEASE_VERSION: ${{ needs.source.outputs.version }}
+        run: bash scripts/verify-arch-package-lifecycle.sh
+      - name: Stage Linux Nightly packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-linux-x64
+          path: |
+            dist/Pictor-${{ needs.source.outputs.version }}-arch-x64.pacman
+            dist/Pictor-${{ needs.source.outputs.version }}-linux-x64.AppImage
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-linux-failure-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish rolling Nightly
+    needs:
+      - source
+      - windows-package
+      - linux-packages
+    if: ${{ success() && needs.source.outputs.should_skip != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nightly-*-x64
+          path: release-assets
+          merge-multiple: true
+      - name: Prepare checksums and Nightly notes
+        env:
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+          SOURCE_VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          cd release-assets
+          sha256sum \
+            "Pictor-$SOURCE_VERSION-windows-x64-setup.exe" \
+            "Pictor-$SOURCE_VERSION-arch-x64.pacman" \
+            "Pictor-$SOURCE_VERSION-linux-x64.AppImage" > SHA256SUMS
+
+          source_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$SOURCE_SHA"
+          built_at="$(date --utc '+%Y-%m-%d %H:%M:%S UTC')"
+          {
+            echo 'This is an automated development build from the latest successful `develop` snapshot.'
+            echo
+            printf -- '- Source commit: [`%s`](%s)\n' "$SOURCE_SHA" "$source_url"
+            printf -- '- Built at: `%s`\n' "$built_at"
+            echo
+            echo '> Nightly packages are unsigned, may be unstable, and are not official releases. Back up important data before use.'
+          } > "$RUNNER_TEMP/nightly-notes.md"
+      - name: Remove the previous Nightly release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete nightly --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          elif git ls-remote --exit-code --tags origin refs/tags/nightly >/dev/null 2>&1; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/nightly"
+          fi
+      - name: Publish complete Nightly prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+          SOURCE_VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          gh release create nightly \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title 'Pictor Nightly' \
+            --notes-file "$RUNNER_TEMP/nightly-notes.md" \
+            --prerelease \
+            --latest=false \
+            "release-assets/Pictor-$SOURCE_VERSION-windows-x64-setup.exe" \
+            "release-assets/Pictor-$SOURCE_VERSION-arch-x64.pacman" \
+            "release-assets/Pictor-$SOURCE_VERSION-linux-x64.AppImage" \
+            release-assets/SHA256SUMS

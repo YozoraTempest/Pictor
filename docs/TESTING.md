@@ -181,10 +181,23 @@ PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和 `L
 AppImage，在原生 Arch 容器中复用与 Release 相同的 pacman 安装、注册、移除和用户数据保留脚本。
 原生 niri 桌面证据仍在发布前由 Arch 工作站补充。
 
-合并到 `main` 后，Release 工作流在 Windows 与 Linux hosted runner 上并行构建。Windows 暂时只
-生成并执行 NSIS/PE 结构校验，不执行测试；Linux 执行完整验证，生成 Arch pacman 和便携 AppImage。
-Arch 容器通过 `pacman` 验证原生包生命周期，hosted runner 对 AppImage 执行结构与启动 Smoke。
-所有构建成功后，单一 publish job 才创建标签与 GitHub Release，避免只发布部分平台资产。
+包含 `package.json` 或 `package-lock.json` 版本变化的合并进入 `main` 后，Release 工作流在 Windows
+与 Linux hosted runner 上并行构建。Windows 暂时只生成并执行 NSIS/PE 结构校验，不执行测试；
+Linux 执行完整验证，生成 Arch pacman 和便携 AppImage。Arch 容器通过 `pacman` 验证原生包生命周期，
+hosted runner 对 AppImage 执行结构与启动 Smoke。所有构建成功后，单一 publish job 才创建标签与
+GitHub Release，避免只发布部分平台资产。路径受限的 `ci/*` 控制面维护不修改版本文件，因此不会
+触发正式 Release 工作流，但 Pull Request 仍须通过四项普通 CI 门禁。
+
+Nightly 工作流每天北京时间 02:17 从远端 `develop` 固定一次源提交，同时支持手动强制重建。
+现有 `nightly` 标签已经指向该提交时，普通定时运行直接成功结束；否则 Windows 与 Linux 使用同一
+提交并行生成和校验正式形态的安装包。Linux 继续执行 `verify:fast`、完整 E2E、AppImage 启动和
+Arch 容器生命周期；Windows 执行桌面构建与 NSIS/PE 结构校验。各平台只把中间 workflow artifact
+保留一天；全部平台成功后，唯一具有 `contents: write` 权限的 publish job 才生成 `SHA256SUMS`，
+重建滚动的 `nightly` GitHub Pre-release。Nightly 不设为 Latest，不属于正式发布或支持基线。
+
+GitHub 定时工作流只从默认分支执行，因此 Nightly 工作流文件必须进入 `main` 后才会按时运行；
+工作流运行时显式检出并固定 `develop` 提交，不能把默认分支的 `GITHUB_SHA` 当作 Nightly 源版本。
+正式 `v*` 标签和 Release 不得由 Nightly 工作流修改。
 
 分支保护应要求 `Quality`、`Unit and integration`、`Windows acceptance` 和
 `Linux acceptance` 四个检查。结构校验和容器生命周期不代替签名、Windows 净机证据或 Arch
