@@ -172,8 +172,9 @@ CI 门禁和发行版验收见 [`docs/TESTING.md`](docs/TESTING.md)。
 迁移。目录职责、跨进程协议和允许依赖方向见
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
-日常开发从 `develop` 创建短期分支并通过 Pull Request 合回；`develop` 合并到 `main` 时自动
-创建正式版本。分支、Issue、Pull Request 和发布规则见
+日常开发从 `develop` 创建短期分支并通过 Pull Request 合回；包含版本提升的 `develop` 合并到
+`main` 时自动创建正式版本。默认分支定时工作流等控制面维护使用路径受限的 `ci/*` Pull Request，
+不触发正式发布。分支、Issue、Pull Request 和发布规则见
 [`CONTRIBUTING.md`](CONTRIBUTING.md) 和
 [`docs/PROJECT_MANAGEMENT.md`](docs/PROJECT_MANAGEMENT.md)。仓库默认展示稳定的 `main`；提交
 普通贡献时，请在 GitHub 上将 Pull Request 的目标分支改为 `develop`。
