@@ -671,6 +671,12 @@ export default function (pi) {
     await electronApp.evaluate(({ dialog }, imagePath) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [imagePath] })
     }, imageFixture)
+    await window.evaluate(() => {
+      const target = globalThis as typeof globalThis & {
+        __pictorNavigationEvents?: unknown[]
+      }
+      target.__pictorNavigationEvents = []
+    })
     await window.getByRole('button', { name: '添加图片' }).click()
     await expect(window.getByAltText('fixture.png')).toBeVisible()
     await window.getByRole('textbox', { name: '任务描述' }).fill('Inspect the attached image.')
@@ -679,6 +685,26 @@ export default function (pi) {
       .poll(() => readFile(authoritativeJsonlPath, 'utf8'), { timeout: 30_000 })
       .toContain('"type":"image"')
 
+    await expect
+      .poll(
+        () =>
+          window.evaluate(() => {
+            const events = (
+              globalThis as typeof globalThis & {
+                __pictorNavigationEvents?: Array<Record<string, unknown>>
+              }
+            ).__pictorNavigationEvents
+            return Boolean(
+              events?.some(
+                (event) =>
+                  event.type === 'run.stateChanged' &&
+                  ['completed', 'failed', 'stopped', 'interrupted'].includes(String(event.status)),
+              ),
+            )
+          }),
+        { timeout: 30_000 },
+      )
+      .toBe(true)
     await expect(window.getByRole('button', { name: '发送任务' })).toHaveAttribute(
       'title',
       '发送任务',
