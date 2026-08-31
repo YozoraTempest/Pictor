@@ -2,17 +2,17 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Info } from 'lucide-react'
 import { vi } from 'vitest'
 
-import { AboutSettings } from '../modules/updater/AboutSettings'
-import type { UpdaterClient } from '../modules/updater/shared'
-import type { ImageAttachment, SessionHistoryView, SessionRecord } from '../shared/domain'
 import type {
   AppSnapshot,
   IpcResult,
   PictorBridge,
   RuntimeEvent,
   SessionRuntimeControls,
-} from '../shared/desktop-bridge'
-import { App } from './App'
+} from '../../shared/desktop-bridge'
+import type { ImageAttachment, SessionHistoryView, SessionRecord } from '../../shared/domain'
+import { AboutSettings } from '../updater/AboutSettings'
+import type { UpdaterClient } from '../updater/shared'
+import { AgentWorkspace } from './AgentWorkspace'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
 const sessionId = '22222222-2222-4222-8222-222222222222'
@@ -154,7 +154,7 @@ function createUpdater(overrides: Partial<UpdaterClient> = {}): UpdaterClient {
 function renderApp(bridge: PictorBridge, updater: UpdaterClient = createUpdater()) {
   installBridge(bridge)
   return render(
-    <App
+    <AgentWorkspace
       settingsSections={[
         {
           id: 'about',

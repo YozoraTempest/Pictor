@@ -233,8 +233,8 @@ AppImage；原始 os-release 内容不进入 IPC、持久化或日志。
 共享的项目路径身份仅用于持久化去重：Windows 忽略大小写，Linux 保留大小写。Runtime 不把
 项目路径身份误用为 Pi 文件工具的第二套访问边界。
 
-Renderer 的 `App` 只负责页面布局、Settings 和界面级 modal 编排，并从 Renderer Kernel 接收
-Updater Interface 与设置页 Contribution。内部
+Agent Workspace Renderer Module 的 `AgentWorkspace` 负责页面布局、Settings 和界面级 modal
+编排，并从 Renderer Kernel 接收 Updater Interface 与设置页 Contribution。内部
 `useWorkspaceController` 通过注入的 `PictorBridge` 管理 workspace snapshot、当前 Session、导航
 竞态、Runtime event reconcile 与 Run/Project/Session intent；测试使用窄 bridge fake 直接验证
 异步状态和事件顺序。不要在 UI 组件中重新实现刷新顺序，也不要为此引入第二套全局 store。
@@ -250,8 +250,8 @@ Updater Interface 与设置页 Contribution。内部
 - 本地状态、凭据和数据迁移：`src/main/persistence/`。
 - Agent Run 的监管、持久化和广播编排：`src/main/runtime/`。
 - Pi SDK adapter、Runtime Host 和 Extension RPC UI：`src/runtime/`。
-- 工作区与 Session 视图：`src/renderer/workspace/`。
-- 仍未迁移的设置视图：`src/renderer/settings/`。
+- Agent Workspace、Session 视图与设置编排：`src/modules/agent-workspace/`。
+- Core Plugin Manager：`src/renderer/settings/`。
 - 无业务语义且可复用的视图元素：`src/renderer/ui/`。
 - 跨进程 schema 或类型：放入对应的 `src/shared/` 协议 module。
 

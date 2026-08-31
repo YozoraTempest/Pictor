@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { expect, it } from 'vitest'
 
 import { pluginManifestSchema } from '../../src/plugin/manifest.js'
+import rendererEntrypoint from './renderer.js'
 
 it('ships the Agent Workspace as a Renderer Plugin', async () => {
   const manifest = pluginManifestSchema.parse(
@@ -14,4 +15,13 @@ it('ships the Agent Workspace as a Renderer Plugin', async () => {
     id: 'pictor.agent-workspace',
     modules: { renderer: './dist/renderer.js' },
   })
+})
+
+it('delegates Renderer assembly to the Agent Workspace Module', async () => {
+  const modules = await rendererEntrypoint({
+    process: 'renderer',
+    pluginId: 'pictor.agent-workspace',
+  })
+
+  expect(modules.map(({ id }) => id)).toEqual(['pictor.agent-workspace.renderer'])
 })

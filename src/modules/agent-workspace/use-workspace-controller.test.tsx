@@ -1,9 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { SessionHistoryView, SessionRecord, SessionSummary } from '../../shared/domain'
-import type { AppSnapshot, IpcResult, RuntimeEvent } from '../../shared/desktop-bridge'
-import { useWorkspaceController, type WorkspaceBridge } from './use-workspace-controller'
+import type { AppSnapshot, IpcResult, RuntimeEvent } from '../../shared/desktop-bridge.js'
+import type { SessionHistoryView, SessionRecord, SessionSummary } from '../../shared/domain.js'
+import { useWorkspaceController, type WorkspaceBridge } from './use-workspace-controller.js'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
 const firstSessionId = '22222222-2222-4222-8222-222222222222'

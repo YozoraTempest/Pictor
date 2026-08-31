@@ -8,14 +8,14 @@ import type {
   SessionSummary,
   SessionTreeView,
   UsageSnapshot,
-} from '../../shared/domain'
+} from '../../shared/domain.js'
 import type {
   AppSnapshot,
   PictorBridge,
   ProjectCandidate,
   SessionExportFormat,
-} from '../../shared/desktop-bridge'
-import type { ModelSettings } from '../../shared/model'
+} from '../../shared/desktop-bridge.js'
+import type { ModelSettings } from '../../shared/model.js'
 
 const activeStatuses = new Set(['queued', 'running', 'awaiting-approval', 'stopping'])
 type RuntimeUsage = UsageSnapshot
