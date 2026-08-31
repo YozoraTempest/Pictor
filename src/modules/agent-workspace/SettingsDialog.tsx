@@ -15,11 +15,11 @@ import {
   modelSettingsInputSchema,
   type ConnectionTestResult,
   type ModelSettings,
-} from '../../shared/model'
-import type { SettingsSection } from '../../modules/shell/settings'
-import type { PluginStatus } from '../../plugin/host'
-import { Modal } from '../ui/Modal'
-import { PluginManager } from './PluginManager'
+} from '../../shared/model.js'
+import type { PluginStatus } from '../../plugin/host.js'
+import { PluginManager } from '../../renderer/settings/PluginManager.js'
+import { Modal } from '../../renderer/ui/Modal.js'
+import type { SettingsSection } from '../shell/settings.js'
 
 interface SettingsDialogProps {
   initial: ModelSettings | null

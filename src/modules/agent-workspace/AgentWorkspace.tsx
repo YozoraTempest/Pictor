@@ -1,19 +1,16 @@
 import { AlertTriangle, FolderOpen, LoaderCircle, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { Project, SessionSummary } from '../shared/domain'
-import type { SettingsSection } from '../modules/shell/settings'
-import type { AppInfo } from '../shared/app-info'
-import type { PluginStatus } from '../plugin/host'
-import type { RuntimeEvent, SessionRuntimeControls } from '../shared/desktop-bridge'
-import { SettingsDialog } from './settings/SettingsDialog'
-import { Modal } from './ui/Modal'
-import { Conversation, type ExtensionWidget } from './workspace/Conversation'
-import { Sidebar } from './workspace/Sidebar'
-import {
-  useWorkspaceController,
-  type WorkspaceTrustRequest,
-} from './workspace/use-workspace-controller'
+import type { PluginStatus } from '../../plugin/host'
+import type { AppInfo } from '../../shared/app-info'
+import type { RuntimeEvent, SessionRuntimeControls } from '../../shared/desktop-bridge'
+import type { Project, SessionSummary } from '../../shared/domain'
+import { Modal } from '../../renderer/ui/Modal'
+import type { SettingsSection } from '../shell/settings'
+import { Conversation, type ExtensionWidget } from './Conversation'
+import { SettingsDialog } from './SettingsDialog'
+import { Sidebar } from './Sidebar'
+import { useWorkspaceController, type WorkspaceTrustRequest } from './use-workspace-controller'
 
 type Confirmation =
   | { type: 'remove-project'; project: Project }
@@ -27,15 +24,15 @@ function errorMessage(error: unknown): string {
   return '操作失败，请稍后重试'
 }
 
-interface AppProps {
+interface AgentWorkspaceProps {
   settingsSections: readonly SettingsSection[]
   rendererPluginStatuses?: readonly PluginStatus[]
 }
 
-export function App({
+export function AgentWorkspace({
   settingsSections,
   rendererPluginStatuses = [],
-}: AppProps): React.JSX.Element {
+}: AgentWorkspaceProps): React.JSX.Element {
   const workspace = useWorkspaceController(window.pictor)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [appInfoLoading, setAppInfoLoading] = useState(true)
