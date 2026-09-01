@@ -78,8 +78,31 @@ test('imports, configures, reloads, and exports a Pi Session without rewriting a
   await window.getByText('Runtime 资源已重载').click()
   const authoritativeJsonlBeforeExport = await readFile(authoritativeJsonlPath, 'utf8')
 
-  const exportSelectedSession = (format: 'jsonl' | 'html') =>
-    invokeAgentWorkspace(window, 'exportSession', { sessionId: imported.sessionId, format })
+  const exportSelectedSession = async (format: 'jsonl' | 'html') => {
+    const selection = await window.evaluate(
+      ({ format, defaultFileName }) => {
+        const bridge = (
+          globalThis as typeof globalThis & {
+            pictor: {
+              pickSessionExport(input: {
+                format: 'jsonl' | 'html'
+                defaultFileName: string
+              }): Promise<{ ok: boolean; value?: string | null }>
+            }
+          }
+        ).pictor
+        return bridge.pickSessionExport({ format, defaultFileName })
+      },
+      { format, defaultFileName: `export.${format}` },
+    )
+    if (!selection.ok) return selection
+    if (!selection.value) return { ok: true as const, value: false as const }
+    return invokeAgentWorkspace(window, 'exportSession', {
+      sessionId: imported.sessionId,
+      format,
+      destinationPath: selection.value,
+    })
+  }
   await electronApp.evaluate(({ dialog }) => {
     dialog.showSaveDialog = async () => ({ canceled: true, filePath: '' })
   })

@@ -1,9 +1,13 @@
+import { extname } from 'node:path'
+
 import { dialog, ipcMain, type WebFrameMain } from 'electron'
 
+import { readMessageImages } from '../modules/agent-workspace/file-operations.js'
 import {
   packageSpecRequestSchema,
   pluginIdRequestSchema,
   removePluginRequestSchema,
+  sessionExportPickerRequestSchema,
   setPluginEnabledRequestSchema,
 } from '../shared/desktop-bridge.js'
 import type { AppInfo } from '../shared/app-info.js'
@@ -25,6 +29,10 @@ const IPC_CHANNELS = [
   'plugin:set-enabled',
   'plugin:remove',
   'plugin:restore-bundled',
+  'workspace:pick-project-directory',
+  'workspace:pick-session-import',
+  'workspace:pick-session-export',
+  'workspace:pick-message-images',
 ] as const
 
 interface IpcDependencies {
@@ -144,6 +152,63 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
     return ipcResult(async () => {
       const request = pluginIdRequestSchema.parse(input)
       return pluginManager.restoreBundled(request.id)
+    })
+  })
+
+  ipcMain.handle('workspace:pick-project-directory', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '选择 Pictor 项目目录',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      const path = selection.filePaths[0]
+      return selection.canceled || !path ? null : path
+    })
+  })
+
+  ipcMain.handle('workspace:pick-session-import', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '导入 Pi Session JSONL',
+        properties: ['openFile'],
+        filters: [{ name: 'Pi Session', extensions: ['jsonl'] }],
+      })
+      const path = selection.filePaths[0]
+      return selection.canceled || !path ? null : path
+    })
+  })
+
+  ipcMain.handle('workspace:pick-session-export', (event, input: unknown) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const request = sessionExportPickerRequestSchema.parse(input)
+      const selection = await dialog.showSaveDialog({
+        title: request.format === 'jsonl' ? '导出 Pi Session JSONL' : '导出 Pi Session HTML',
+        defaultPath: request.defaultFileName,
+        filters: [
+          request.format === 'jsonl'
+            ? { name: 'Pi Session', extensions: ['jsonl'] }
+            : { name: 'HTML', extensions: ['html'] },
+        ],
+      })
+      if (selection.canceled || !selection.filePath) return null
+      const extension = request.format
+      return extname(selection.filePath) ? selection.filePath : `${selection.filePath}.${extension}`
+    })
+  })
+
+  ipcMain.handle('workspace:pick-message-images', (event) => {
+    validateSender(event.senderFrame)
+    return ipcResult(async () => {
+      const selection = await dialog.showOpenDialog({
+        title: '选择图片',
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+      })
+      if (selection.canceled) return null
+      return readMessageImages(selection.filePaths)
     })
   })
 

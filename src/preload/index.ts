@@ -12,8 +12,11 @@ import {
   pluginIdRequestSchema,
   pluginManagerResultSchema,
   removePluginRequestSchema,
+  sessionExportPickerRequestSchema,
   setPluginEnabledRequestSchema,
   voidResultSchema,
+  workspaceFilePathResultSchema,
+  workspaceImagePickerResultSchema,
   type PictorBridge,
 } from '../shared/desktop-bridge.js'
 
@@ -33,6 +36,23 @@ const bridge = Object.freeze({
     pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-pi-package')),
   installDevelopmentPlugin: async () =>
     pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-development')),
+  pickProjectDirectory: async () =>
+    workspaceFilePathResultSchema.parse(
+      await ipcRenderer.invoke('workspace:pick-project-directory'),
+    ),
+  pickSessionImport: async () =>
+    workspaceFilePathResultSchema.parse(await ipcRenderer.invoke('workspace:pick-session-import')),
+  pickSessionExport: async (input) =>
+    workspaceFilePathResultSchema.parse(
+      await ipcRenderer.invoke(
+        'workspace:pick-session-export',
+        sessionExportPickerRequestSchema.parse(input),
+      ),
+    ),
+  pickMessageImages: async () =>
+    workspaceImagePickerResultSchema.parse(
+      await ipcRenderer.invoke('workspace:pick-message-images'),
+    ),
   installPiPackageSpec: async (input) =>
     pluginManagerResultSchema.parse(
       await ipcRenderer.invoke(

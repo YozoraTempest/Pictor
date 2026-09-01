@@ -89,6 +89,22 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/modules/agent-workspace/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'electron',
+              message: 'Agent Workspace core must stay independent from Electron.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['src/shared/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [

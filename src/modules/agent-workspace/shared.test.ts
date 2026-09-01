@@ -1,7 +1,12 @@
 import { expect, it, vi } from 'vitest'
 
 import type { ModuleTransport } from '../../kernel/contract.js'
-import { createAgentWorkspaceClient } from './shared.js'
+import {
+  createAgentWorkspaceClient,
+  defaultSessionExportFileName,
+  exportSessionRequestSchema,
+  importSessionRequestSchema,
+} from './shared.js'
 
 const sessionId = '11111111-1111-4111-8111-111111111111'
 
@@ -52,4 +57,21 @@ it('validates Runtime events at the Agent Workspace client seam', () => {
     expect.objectContaining({ type: 'session.bound', sessionId }),
   )
   expect(() => dispatch?.({ type: 'unknown' })).toThrow()
+})
+
+it('models file operations as explicit paths at the Workspace contract seam', () => {
+  expect(
+    importSessionRequestSchema.parse({
+      projectId: sessionId,
+      sourcePath: '/imports/session.jsonl',
+    }),
+  ).toEqual({ projectId: sessionId, sourcePath: '/imports/session.jsonl' })
+  expect(
+    exportSessionRequestSchema.parse({
+      sessionId,
+      format: 'html',
+      destinationPath: '/exports/session.html',
+    }),
+  ).toEqual({ sessionId, format: 'html', destinationPath: '/exports/session.html' })
+  expect(defaultSessionExportFileName('invalid:/title  ', 'jsonl')).toBe('invalid__title.jsonl')
 })

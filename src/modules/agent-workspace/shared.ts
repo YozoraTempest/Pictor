@@ -13,6 +13,7 @@ import {
   sessionHistoryViewSchema,
   sessionRecordSchema,
   sessionSummarySchema,
+  type ImageAttachment,
   type Project,
   type SessionHistoryView,
   type SessionRecord,
@@ -52,6 +53,10 @@ export const projectCandidateSchema = z.object({
   name: z.string().min(1),
   rootPath: z.string().min(1),
   existingProjectId: idSchema.nullable(),
+})
+
+export const inspectProjectPathRequestSchema = z.object({
+  rootPath: z.string().min(1),
 })
 
 export const registerProjectRequestSchema = z.object({
@@ -95,9 +100,12 @@ export const forkSessionRequestSchema = sessionIdRequestSchema.extend({
   entryId: z.string().min(1),
 })
 export const cloneSessionRequestSchema = sessionIdRequestSchema
-export const importSessionRequestSchema = projectIdRequestSchema
+export const importSessionRequestSchema = projectIdRequestSchema.extend({
+  sourcePath: z.string().min(1),
+})
 export const exportSessionRequestSchema = sessionIdRequestSchema.extend({
   format: sessionExportFormatSchema,
+  destinationPath: z.string().min(1),
 })
 export const createSessionRequestSchema = z.object({ projectId: idSchema })
 export const selectContextRequestSchema = z.object({
@@ -130,7 +138,7 @@ export const queueRuntimeMessageRequestSchema = z.object({
 })
 
 export const appSnapshotResultSchema = ipcResultSchema(appSnapshotSchema)
-export const projectCandidateResultSchema = ipcResultSchema(projectCandidateSchema.nullable())
+export const projectCandidateResultSchema = ipcResultSchema(projectCandidateSchema)
 export const projectResultSchema = ipcResultSchema(projectSchema)
 export const sessionSummaryResultSchema = ipcResultSchema(sessionSummarySchema)
 export const sessionRecordResultSchema = ipcResultSchema(sessionRecordSchema)
@@ -156,13 +164,15 @@ export const connectionTestIpcResultSchema = ipcResultSchema(connectionTestResul
 export const modelCatalogIpcResultSchema = ipcResultSchema(modelCatalogResultSchema)
 export const voidResultSchema = ipcResultSchema(z.null())
 export const startRunResultSchema = ipcResultSchema(z.object({ runId: idSchema }))
-export const imageAttachmentsResultSchema = ipcResultSchema(z.array(imageAttachmentSchema))
 
 export const agentWorkspaceContract = defineModuleContract({
   id: 'pictor.agent-workspace',
   methods: {
     getSnapshot: { input: z.null(), output: appSnapshotResultSchema },
-    pickProjectDirectory: { input: z.null(), output: projectCandidateResultSchema },
+    inspectProjectPath: {
+      input: inspectProjectPathRequestSchema,
+      output: projectCandidateResultSchema,
+    },
     registerProject: { input: registerProjectRequestSchema, output: projectResultSchema },
     relinkProject: { input: relinkProjectRequestSchema, output: projectResultSchema },
     removeProject: { input: projectIdRequestSchema, output: voidResultSchema },
@@ -206,7 +216,6 @@ export const agentWorkspaceContract = defineModuleContract({
     testSettings: { input: testSettingsRequestSchema, output: connectionTestIpcResultSchema },
     listModels: { input: listModelsRequestSchema, output: modelCatalogIpcResultSchema },
     startRun: { input: startRunRequestSchema, output: startRunResultSchema },
-    pickMessageImages: { input: z.null(), output: imageAttachmentsResultSchema },
     stopRun: { input: runIdRequestSchema, output: voidResultSchema },
     respondToExtensionUi: { input: extensionUiResponseRequestSchema, output: voidResultSchema },
     syncComposerText: { input: composerTextRequestSchema, output: voidResultSchema },
@@ -223,9 +232,32 @@ export type ProjectCandidate = z.infer<typeof projectCandidateSchema>
 export type SessionExportFormat = z.infer<typeof sessionExportFormatSchema>
 export type SessionRuntimeControls = z.infer<typeof sessionRuntimeControlsSchema>
 
+export function defaultSessionExportFileName(title: string, format: SessionExportFormat): string {
+  const printableTitle = [...title]
+    .map((character) => (character.charCodeAt(0) < 32 ? '_' : character))
+    .join('')
+  const safeTitle = printableTitle
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/[ .]+$/g, '')
+    .trim()
+  return `${safeTitle || 'session'}.${format}`
+}
+
+export interface AgentWorkspaceFilePicker {
+  pickProjectDirectory(): Promise<IpcResult<string | null>>
+  pickSessionImport(): Promise<IpcResult<string | null>>
+  pickSessionExport(request: {
+    format: SessionExportFormat
+    defaultFileName: string
+  }): Promise<IpcResult<string | null>>
+  pickMessageImages(): Promise<IpcResult<ImageAttachment[] | null>>
+}
+
 export interface AgentWorkspaceClient {
   getSnapshot(): Promise<IpcResult<AppSnapshot>>
-  pickProjectDirectory(): Promise<IpcResult<ProjectCandidate | null>>
+  inspectProjectPath(
+    request: z.infer<typeof inspectProjectPathRequestSchema>,
+  ): Promise<IpcResult<ProjectCandidate>>
   registerProject(
     request: z.infer<typeof registerProjectRequestSchema>,
   ): Promise<IpcResult<Project>>
@@ -277,7 +309,6 @@ export interface AgentWorkspaceClient {
   testSettings(request: TestSettingsRequest): Promise<IpcResult<ConnectionTestResult>>
   listModels(request: ListModelsRequest): Promise<IpcResult<ModelCatalogResult>>
   startRun(request: z.infer<typeof startRunRequestSchema>): Promise<IpcResult<{ runId: string }>>
-  pickMessageImages(): Promise<IpcResult<z.infer<typeof imageAttachmentSchema>[]>>
   stopRun(request: z.infer<typeof runIdRequestSchema>): Promise<IpcResult<null>>
   respondToExtensionUi(
     request: z.infer<typeof extensionUiResponseRequestSchema>,
@@ -298,7 +329,7 @@ export function createAgentWorkspaceClient(transport: ModuleTransport): AgentWor
 
   return {
     getSnapshot: () => invoke('getSnapshot', null),
-    pickProjectDirectory: () => invoke('pickProjectDirectory', null),
+    inspectProjectPath: (request) => invoke('inspectProjectPath', request),
     registerProject: (request) => invoke('registerProject', request),
     relinkProject: (request) => invoke('relinkProject', request),
     removeProject: (request) => invoke('removeProject', request),
@@ -324,7 +355,6 @@ export function createAgentWorkspaceClient(transport: ModuleTransport): AgentWor
     testSettings: (request) => invoke('testSettings', request),
     listModels: (request) => invoke('listModels', request),
     startRun: (request) => invoke('startRun', request),
-    pickMessageImages: () => invoke('pickMessageImages', null),
     stopRun: (request) => invoke('stopRun', request),
     respondToExtensionUi: (request) => invoke('respondToExtensionUi', request),
     syncComposerText: (request) => invoke('syncComposerText', request),
