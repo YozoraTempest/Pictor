@@ -5,7 +5,7 @@
 ## 提交变更
 
 1. 从最新的 `develop` 创建短期分支，按变更类型使用 `feature/<topic>`、`fix/<topic>`、
-   `docs/<topic>` 或 `ci/<topic>` 命名。
+   `refactor/<topic>`、`docs/<topic>` 或 `ci/<topic>` 命名。
 2. 保持变更范围单一，并在提交前运行 `npm run verify:fast`；涉及桌面交互时再运行
    `npm run verify:pr`。
 3. 创建 Pull Request 时将 base 分支改为 `develop`，关联对应 Issue，并填写实际验证结果。

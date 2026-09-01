@@ -10,9 +10,10 @@ Pictor 使用轻量双分支模型。GitHub Issues 记录可交付工作，Pull 
   变化的合并才触发正式发布；控制面维护不得修改应用源码或版本。
 - `develop`：日常集成分支，功能、修复和维护 Pull Request 均以它为目标；在 GitHub 创建普通
   Pull Request 时必须主动将 base 分支改为 `develop`。
-- 短期分支：通常从 `develop` 创建，使用 `feature/<topic>`、`fix/<topic>`、`docs/<topic>` 或
-  `ci/<topic>` 命名，合并后删除。只有 GitHub 定时工作流等必须先存在于默认分支的控制面维护，
-  才从 `main` 创建 `ci/<topic>` 并直接向 `main` 提交 Pull Request。
+- 短期分支：通常从 `develop` 创建，使用 `feature/<topic>`、`fix/<topic>`、
+  `refactor/<topic>`、`docs/<topic>` 或 `ci/<topic>` 命名，合并后删除。只有 GitHub 定时工作流等
+  必须先存在于默认分支的控制面维护，才从 `main` 创建 `ci/<topic>` 并直接向 `main` 提交 Pull
+  Request。
 - `hotfix/<topic>`：仅用于已发布版本的紧急修复，从 `main` 创建并直接向 `main` 提交 Pull
   Request；发布后必须再将 `main` 合回 `develop`。
 

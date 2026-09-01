@@ -1,5 +1,9 @@
 # 当前代码架构
 
+> 本文记录 `develop` 上仍在运行的 0.3 架构。0.4 的已接受目标、兼容性边界和逐阶段迁移门禁见
+> [`MULTI_FRONTEND_ARCHITECTURE.md`](MULTI_FRONTEND_ARCHITECTURE.md)；在对应阶段合并前，不得把
+> 目标目录或 Interface 误写成当前已经实现的能力。
+
 本文描述 Pictor 当前已经实现的代码结构和依赖规则。Main 和 Renderer 已经由可安装 Plugin Host
 装配，Updater 是首个真实 Bundled Plugin；尚未迁移的业务能力仍位于 Core 启动链路中，后续按
 纵向切片迁移，不能把这些兼容代码当作最终结构。
