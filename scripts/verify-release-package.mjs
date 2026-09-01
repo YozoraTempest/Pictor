@@ -37,6 +37,9 @@ async function run(script, extraEnvironment = {}) {
     cwd: repositoryRoot,
     env: { ...process.env, ...extraEnvironment },
     stdio: 'inherit',
+    // npm.cmd is a Windows shell shim; Node 22.22+ rejects spawning it
+    // without an explicit shell after the CVE-2024-27980 hardening.
+    shell: process.platform === 'win32',
   })
   const exitCode = await new Promise((resolvePromise, reject) => {
     child.once('error', reject)

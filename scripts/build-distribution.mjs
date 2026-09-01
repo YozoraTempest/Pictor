@@ -56,6 +56,9 @@ async function run(executable, arguments_, environment) {
     cwd: repositoryRoot,
     env: environment,
     stdio: 'inherit',
+    // Node 22.22+ requires an explicit shell for Windows .cmd shims after
+    // the CVE-2024-27980 hardening. The arguments here are fixed build steps.
+    shell: process.platform === 'win32' && executable.toLowerCase().endsWith('.cmd'),
   })
   const exitCode = await new Promise((resolvePromise, reject) => {
     child.once('error', reject)
