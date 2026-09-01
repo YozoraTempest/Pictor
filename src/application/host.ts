@@ -1,5 +1,9 @@
 import { join } from 'node:path'
 
+import { createCoreCommandDefinitions } from '../commands/core.js'
+import { CommandEngine } from '../commands/engine.js'
+import { commandContributions } from '../commands/registry.js'
+import type { CommandClient } from '../commands/index.js'
 import { ModuleRouter, moduleHandlerContributions } from '../kernel/contract.js'
 import type { AppInfo } from '../shared/app-info.js'
 import { pluginBootstrapSchema, type PluginBootstrap } from '../shared/plugins.js'
@@ -52,6 +56,7 @@ export interface ApplicationHostOptions {
 
 export interface ApplicationHostServices {
   readonly appInfo: AppInfo
+  readonly commandClient: CommandClient
   readonly repository: AppRepository
   readonly pluginStore: PluginStore
   readonly pluginHost: PluginHost
@@ -71,6 +76,7 @@ export class ApplicationHost {
   private services: ApplicationHostServices | null = null
   private lockLease: FrontendLockLease | null = null
   private pluginHost: PluginHost | null = null
+  private commandEngine: CommandEngine | null = null
 
   constructor(private readonly options: ApplicationHostOptions) {}
 
@@ -165,6 +171,13 @@ export class ApplicationHost {
         this.options.safeMode ?? false,
         pluginStoreSnapshot.registry.entries,
       )
+      const commandEngine = new CommandEngine(
+        createCoreCommandDefinitions(this.options.appInfo, pluginManager),
+      )
+      this.commandEngine = commandEngine
+      for (const contribution of pluginHost.getContributions(commandContributions)) {
+        commandEngine.registerPluginCommands(contribution.owner, contribution.commands)
+      }
       const moduleRouter = new ModuleRouter(pluginHost.getContributions(moduleHandlerContributions))
       const persistedSnapshot = await repository.getSnapshot()
       let restoreSelectedContextPromise: Promise<void> | null = null
@@ -204,6 +217,7 @@ export class ApplicationHost {
 
       const services: ApplicationHostServices = {
         appInfo: this.options.appInfo,
+        commandClient: commandEngine.getClient(),
         repository,
         pluginStore,
         pluginHost,
@@ -244,11 +258,13 @@ export class ApplicationHost {
     }
 
     await runCleanup(async () => this.options.runtimeHost.dispose?.())
+    await runCleanup(async () => this.commandEngine?.dispose())
     await runCleanup(async () => pluginHost?.stop())
     await runCleanup(async () => this.lockLease?.release())
 
     this.services = null
     this.pluginHost = null
+    this.commandEngine = null
     this.lockLease = null
     return firstError
   }

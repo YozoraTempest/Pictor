@@ -89,6 +89,42 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/commands/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'electron',
+              message: 'Command Engine must stay independent from Electron.',
+            },
+            {
+              name: 'react',
+              message: 'Command Engine must stay independent from React.',
+            },
+            {
+              name: 'react-dom',
+              message: 'Command Engine must stay independent from React.',
+            },
+          ],
+          patterns: [
+            {
+              group: [
+                '**/main/**',
+                '**/preload/**',
+                '**/renderer/**',
+                '**/runtime/**',
+                '**/tui/**',
+              ],
+              message: 'Command Engine must depend on headless ports, not process implementations.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['src/modules/agent-workspace/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
@@ -172,6 +208,10 @@ export default tseslint.config(
                 '**/preload/**',
                 '**/runtime/**',
                 '**/shared/runtime-protocol*',
+                '**/commands/engine',
+                '**/commands/core',
+                '**/commands/registry',
+                '**/commands/contract',
               ],
               message:
                 'Renderer modules must use the desktop bridge instead of Node or another process boundary.',

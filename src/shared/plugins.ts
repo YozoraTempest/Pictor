@@ -43,17 +43,6 @@ export const pluginManagerSnapshotSchema = z.object({
   issues: z.array(z.string()),
 })
 
-export const pluginIdRequestSchema = z.object({ id: z.string().min(1) })
-export const extensionIdentitySchema = pluginIdRequestSchema.extend({
-  kind: z.enum(['pictor-plugin', 'pi-extension', 'pi-package']),
-})
-export const setPluginEnabledRequestSchema = extensionIdentitySchema.extend({
-  enabled: z.boolean(),
-})
-export const removePluginRequestSchema = extensionIdentitySchema.extend({
-  deleteData: z.boolean().default(false),
-})
-
 export type PluginManagerSnapshot = z.infer<typeof pluginManagerSnapshotSchema>
 
 export const runtimePluginBootstrapSchema = z.object({

@@ -88,6 +88,9 @@ Command Engine 对 Frontend 暴露四个操作：
 命令结果必须可序列化，并能被 GUI、TUI 和 CLI 在不理解内部实现的情况下呈现。CLI 退出码从稳定错误
 分类映射，GUI/TUI 只渲染同一分类，不自行解释异常字符串。注册表是 Command Engine 的内部 seam；
 Plugin 通过 Host activation context 注册命令，不能取得可变注册表、覆盖 Core 命令或绕过输入校验。
+Engine 和 Preload 只保留有界执行事件历史；活动执行不会被终态保留驱逐，终态按进入终态的顺序
+从最旧记录开始驱逐。`execute` 返回前到达的事件必须可按 execution identity 重放，取消与晚到完成
+竞态仍只能产生一个终态。
 
 首批 Core 命令至少覆盖：
 
@@ -100,6 +103,12 @@ Plugin 通过 Host activation context 注册命令，不能取得可变注册表
 Pictor Shell 只列出标记为 recovery-safe 的 Core 命令。它不复用 CLI parser 或 TUI renderer，也不
 暴露 `bash`、PowerShell、PTY、Pi Tool 或任意进程执行；CLI/TUI/Pictor Shell 的复用点是 Command
 Engine，而不是彼此的实现。
+
+Stage 4 的当前迁移切片建立 `src/commands` Headless Engine，并由 Application Host 在其生命周期内
+拥有和释放它。该切片已接通 `app.info`、`app.doctor` 与 Plugin Manager 的 Core commands，以及
+Electron GUI 的 Command transport；它不实现 CLI/TUI、GUI Host、Pictor Shell、Workbench 拆分或
+Manifest 0.4。Command Engine 的 registry、handler 和权限判定保持内部，Frontend 只接收稳定的
+`CommandClient` 与不可变、可序列化的 contract 值。
 
 ## Frontend 契约
 

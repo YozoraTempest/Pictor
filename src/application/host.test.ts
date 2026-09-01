@@ -161,12 +161,25 @@ describe('ApplicationHost', () => {
         pictorVersion: appInfo.version,
       }),
     )
+    await expect(services.commandClient.list()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'app.info' }),
+        expect.objectContaining({ id: 'app.doctor' }),
+        expect.objectContaining({ id: 'plugin.list' }),
+        expect.objectContaining({ id: 'plugin.install' }),
+        expect.objectContaining({ id: 'plugin.enable' }),
+        expect.objectContaining({ id: 'plugin.disable' }),
+        expect.objectContaining({ id: 'plugin.remove' }),
+        expect.objectContaining({ id: 'plugin.restore' }),
+      ]),
+    )
 
     await host.stop()
     await host.stop()
 
     expect(runtime.dispose).toHaveBeenCalledTimes(1)
     expect(release).toHaveBeenCalledTimes(1)
+    await expect(services.commandClient.list()).rejects.toMatchObject({ code: 'engine-disposed' })
   })
 
   it('cleans up the lock and Runtime when Plugin assembly fails', async () => {

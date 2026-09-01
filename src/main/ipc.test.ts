@@ -4,10 +4,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type { CommandClient } from '../commands/index.js'
 import type { AppInfo } from '../shared/app-info.js'
-import type { PluginBootstrap } from '../shared/plugins.js'
+import type { PluginBootstrap, PluginManagerSnapshot } from '../shared/plugins.js'
 import type { Disposable } from '../kernel/module.js'
-import type { PluginManager } from './plugins/plugin-manager.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
     handlers,
     showOpenDialog: vi.fn(),
     showSaveDialog: vi.fn(),
+    commandExecute: vi.fn(),
   }
 })
 
@@ -37,6 +38,18 @@ import { registerIpc } from './ipc.js'
 
 const roots: string[] = []
 let registration: Disposable
+const commandClient: CommandClient = {
+  list: vi.fn(async () => []),
+  execute: mocks.commandExecute.mockImplementation(async (commandId: string) => ({
+    executionId: '00000000-0000-4000-8000-000000000001',
+    commandId,
+  })),
+  cancel: vi.fn(async () => ({
+    executionId: '00000000-0000-4000-8000-000000000001',
+    accepted: false,
+  })),
+  subscribe: vi.fn(() => () => undefined),
+}
 
 async function invoke(channel: string, input?: unknown): Promise<unknown> {
   const handler = mocks.handlers.get(channel)
@@ -48,12 +61,21 @@ beforeEach(() => {
   mocks.handlers.clear()
   mocks.showOpenDialog.mockReset()
   mocks.showSaveDialog.mockReset()
+  mocks.commandExecute.mockClear()
   registration = registerIpc({
     validateSender: vi.fn(),
     onRendererReady: vi.fn(async () => undefined),
     appInfo: {} as AppInfo,
     getPluginBootstrap: vi.fn(async () => ({}) as PluginBootstrap),
-    pluginManager: {} as PluginManager,
+    pluginManager: {
+      getSnapshot: vi.fn(async (): Promise<PluginManagerSnapshot> => ({
+        safeMode: false,
+        restartRequired: false,
+        items: [],
+        issues: [],
+      })),
+    },
+    commandClient,
   })
 })
 
@@ -129,5 +151,14 @@ describe('Desktop Agent Workspace picker adapter', () => {
       ok: false,
       error: { code: 'persistence-failed' },
     })
+  })
+})
+
+describe('Plugin Manager command adapter', () => {
+  it('does not execute an install command when the picker is cancelled', async () => {
+    mocks.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+
+    await expect(invoke('plugin:install-local')).resolves.toMatchObject({ ok: true })
+    expect(mocks.commandExecute).not.toHaveBeenCalled()
   })
 })

@@ -14,3 +14,4 @@ export type {
   RuntimePersistence,
   UserData,
 } from './ports.js'
+export type { CommandClient } from '../commands/index.js'

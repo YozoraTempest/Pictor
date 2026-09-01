@@ -28,6 +28,58 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
     const updaterRow = window.locator('.plugin-row').filter({ hasText: 'pictor.updater' })
     await expect(updaterRow.getByText('运行中')).toBeVisible()
     expect(rendererErrors).toEqual([])
+    const commandTransport = await window.evaluate(async () => {
+      const client = (
+        globalThis as typeof globalThis & {
+          pictor: {
+            commands: {
+              list: (filter?: { query?: string }) => Promise<Array<{ id: string }>>
+              execute: (
+                commandId: string,
+                input: unknown,
+                context: { frontend: 'gui' },
+              ) => Promise<{ executionId: string }>
+              subscribe: (
+                executionId: string,
+                listener: (event: { type: string }) => void,
+              ) => () => void
+            }
+          }
+        }
+      ).pictor.commands
+      const descriptors = await client.list({ query: 'plugin' })
+      const execution = await client.execute('plugin.list', null, { frontend: 'gui' })
+      const events = await new Promise<string[]>((resolve) => {
+        const received: string[] = []
+        let finished = false
+        let release: (() => void) | null = null
+        const finish = (): void => {
+          if (finished) return
+          finished = true
+          resolve(received)
+          release?.()
+        }
+        release = client.subscribe(execution.executionId, (event) => {
+          received.push(event.type)
+          if (event.type === 'completed' || event.type === 'failed' || event.type === 'cancelled') {
+            finish()
+          }
+        })
+        if (finished) release()
+      })
+      return { ids: descriptors.map(({ id }) => id), events }
+    })
+    expect(commandTransport.ids).toEqual(
+      expect.arrayContaining([
+        'plugin.list',
+        'plugin.install',
+        'plugin.enable',
+        'plugin.disable',
+        'plugin.remove',
+        'plugin.restore',
+      ]),
+    )
+    expect(commandTransport.events).toEqual(['started', 'completed'])
     const rendererImport = await window.evaluate(async () => {
       const bridge = (
         globalThis as typeof globalThis & {

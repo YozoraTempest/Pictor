@@ -120,6 +120,16 @@ function installBridge(bridge: PictorBridge): void {
 function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
   const manager = { safeMode: false, restartRequired: false, items: [], issues: [] }
   return {
+    commands: {
+      list: async () => [],
+      execute: async () => {
+        throw new Error('unused')
+      },
+      cancel: async () => {
+        throw new Error('unused')
+      },
+      subscribe: () => () => undefined,
+    },
     notifyRendererReady: async () => ok(null),
     getAppInfo: async () =>
       ok({
@@ -132,19 +142,14 @@ function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
         distribution: 'windows',
       }),
     getPluginBootstrap: async () => ok({ safeMode: false, plugins: [] }),
-    getPluginManagerSnapshot: async () => ok(manager),
     installLocalPlugin: async () => ok(manager),
     installDevelopmentPlugin: async () => ok(manager),
     installPiExtension: async () => ok(manager),
     installPiPackage: async () => ok(manager),
-    installPiPackageSpec: async () => ok(manager),
     pickProjectDirectory: async () => ok(null),
     pickSessionImport: async () => ok(null),
     pickSessionExport: async () => ok(null),
     pickMessageImages: async () => ok(null),
-    setPluginEnabled: async () => ok(manager),
-    removePlugin: async () => ok(manager),
-    restoreBundledPlugin: async () => ok(manager),
     ...overrides,
   }
 }

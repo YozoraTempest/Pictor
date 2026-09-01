@@ -14,18 +14,14 @@ export const credentialFixtures = {
 }
 
 export const bridgeKeys = [
+  'commands',
   'getAppInfo',
   'getPluginBootstrap',
-  'getPluginManagerSnapshot',
   'notifyRendererReady',
   'installLocalPlugin',
   'installDevelopmentPlugin',
   'installPiExtension',
   'installPiPackage',
-  'installPiPackageSpec',
-  'removePlugin',
-  'restoreBundledPlugin',
-  'setPluginEnabled',
   'pickProjectDirectory',
   'pickSessionImport',
   'pickSessionExport',

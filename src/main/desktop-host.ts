@@ -27,6 +27,7 @@ import { appInfoSchema } from '../shared/app-info.js'
 import type { Disposable } from '../kernel/module.js'
 import { ModelConnectionTester } from './model-connection.js'
 import { defaultPluginProfile, developerPluginProfile } from './plugins/default-profile.js'
+import { registerCommandIpc } from './command-ipc.js'
 import { registerIpc } from './ipc.js'
 import { broadcastModuleEvent, registerModuleIpc } from './module-ipc.js'
 import { createMainPluginDefinitions } from './plugins/plugin-loader.js'
@@ -183,6 +184,7 @@ export class DesktopHost {
   private applicationHost: ApplicationHost | null = null
   private services: ApplicationHostServices | null = null
   private ipc: Disposable | null = null
+  private commandIpc: Disposable | null = null
   private moduleIpc: Disposable | null = null
   private quitting = false
   private activationRegistered = false
@@ -237,6 +239,7 @@ export class DesktopHost {
       coordinatorReference.current = services.runtime
       this.services = services
       registerAppProtocol(services.pluginStore)
+      this.commandIpc = registerCommandIpc(services.commandClient, validateSender)
       this.moduleIpc = registerModuleIpc(services.moduleRouter, validateSender)
       this.ipc = registerIpc({
         validateSender,
@@ -244,6 +247,7 @@ export class DesktopHost {
         appInfo: services.appInfo,
         getPluginBootstrap: () => services.getPluginBootstrap(rendererPluginUrl),
         pluginManager: services.pluginManager,
+        commandClient: services.commandClient,
       })
       session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
         callback(false)
@@ -285,8 +289,10 @@ export class DesktopHost {
       }
     }
     await dispose(this.ipc)
+    await dispose(this.commandIpc)
     await dispose(this.moduleIpc)
     this.ipc = null
+    this.commandIpc = null
     this.moduleIpc = null
 
     if (this.applicationHost) {
