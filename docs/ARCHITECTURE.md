@@ -98,7 +98,9 @@ Updater Main Module 在自身 Plugin 数据目录记忆稳定版或 Nightly 通�
 Pre-release tag 与打包时嵌入的完整源码提交比较滚动快照；GitHub 地址、平台资产和打开目标的校验都
 保持在该 Module 内部。
 Agent Workspace 同样通过 Main Module 注册 `pictor.agent-workspace` contract handlers，Renderer
-Module 只消费 `AgentWorkspaceClient`；Preload 不再逐项暴露 Workspace IPC 方法。
+Module 只消费 `AgentWorkspaceClient`；其 import/export 和项目路径接口只接收显式路径，GUI-only
+选择器由 Desktop bridge 提供，并通过模块拥有的窄 `AgentWorkspaceFilePicker` port 注入 Renderer；
+Preload 不再逐项暴露 Workspace IPC 方法。
 
 Plugin 是安装、版本和依赖组合单元；Module 只属于一个 Plugin 的单个进程入口；Contribution 是
 Plugin 通过 SDK 公开的可组合值。Plugin Host 管理 Plugin DAG，Module Kernel 只管理一个 Plugin

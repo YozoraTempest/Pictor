@@ -10,8 +10,10 @@ import type {
   UsageSnapshot,
 } from '../../shared/domain.js'
 import type { ModelSettings } from '../../shared/model.js'
+import { defaultSessionExportFileName } from './shared.js'
 import type {
   AgentWorkspaceClient,
+  AgentWorkspaceFilePicker,
   AppSnapshot,
   ProjectCandidate,
   SessionExportFormat,
@@ -23,7 +25,7 @@ type RuntimeUsage = UsageSnapshot
 export type WorkspaceBridge = Pick<
   AgentWorkspaceClient,
   | 'getSnapshot'
-  | 'pickProjectDirectory'
+  | 'inspectProjectPath'
   | 'registerProject'
   | 'relinkProject'
   | 'removeProject'
@@ -42,7 +44,6 @@ export type WorkspaceBridge = Pick<
   | 'importSession'
   | 'exportSession'
   | 'startRun'
-  | 'pickMessageImages'
   | 'stopRun'
   | 'queueRuntimeMessage'
   | 'clearRuntimeQueue'
@@ -121,7 +122,10 @@ function errorMessage(error: unknown): string {
   return '操作失败，请稍后重试'
 }
 
-export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceController {
+export function useWorkspaceController(
+  bridge: WorkspaceBridge,
+  filePicker: AgentWorkspaceFilePicker,
+): WorkspaceController {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
@@ -152,6 +156,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const snapshotRequestId = useRef(0)
   const navigationRequestId = useRef(0)
   const selectedSessionIdRef = useRef<string | null>(null)
+  const sessions = useMemo(() => snapshot?.sessions ?? [], [snapshot])
 
   const updateSelectedSessionId = useCallback((value: string | null) => {
     selectedSessionIdRef.current = value
@@ -460,7 +465,13 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       setSessionOperation({ kind: 'import', projectId })
       setActionError(null)
       try {
-        const response = await bridge.importSession({ projectId })
+        const selection = await filePicker.pickSessionImport()
+        if (!selection.ok) {
+          setActionError(selection.error.message)
+          return false
+        }
+        if (!selection.value) return false
+        const response = await bridge.importSession({ projectId, sourcePath: selection.value })
         if (!response.ok) {
           setActionError(response.error.message)
           return false
@@ -475,7 +486,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
         setSessionOperation(null)
       }
     },
-    [bridge, selectSession, sessionOperation],
+    [bridge, filePicker, selectSession, sessionOperation],
   )
 
   const exportSession = useCallback(
@@ -484,7 +495,21 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
       setSessionOperation({ kind: 'export', sessionId, format })
       setActionError(null)
       try {
-        const response = await bridge.exportSession({ sessionId, format })
+        const title = sessions.find((session) => session.id === sessionId)?.title ?? 'session'
+        const selection = await filePicker.pickSessionExport({
+          format,
+          defaultFileName: defaultSessionExportFileName(title, format),
+        })
+        if (!selection.ok) {
+          setActionError(selection.error.message)
+          return false
+        }
+        if (!selection.value) return false
+        const response = await bridge.exportSession({
+          sessionId,
+          format,
+          destinationPath: selection.value,
+        })
         if (!response.ok) {
           setActionError(response.error.message)
           return false
@@ -497,7 +522,7 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
         setSessionOperation(null)
       }
     },
-    [bridge, sessionOperation],
+    [bridge, filePicker, sessionOperation, sessions],
   )
 
   const compactSession = useCallback(
@@ -577,23 +602,33 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const pickProject = useCallback(
     async (relinkProjectId: string | null = null): Promise<WorkspaceTrustRequest | null> => {
       setActionError(null)
-      const response = await bridge.pickProjectDirectory()
-      if (!response.ok) {
-        setActionError(response.error.message)
-        return null
-      }
-      if (!response.value) return null
-      if (response.value.existingProjectId) {
-        if (relinkProjectId && response.value.existingProjectId !== relinkProjectId) {
-          setActionError('该目录已属于另一个项目，请选择不同目录')
+      try {
+        const selection = await filePicker.pickProjectDirectory()
+        if (!selection.ok) {
+          setActionError(selection.error.message)
           return null
         }
-        await selectProject(response.value.existingProjectId)
+        if (!selection.value) return null
+        const response = await bridge.inspectProjectPath({ rootPath: selection.value })
+        if (!response.ok) {
+          setActionError(response.error.message)
+          return null
+        }
+        if (response.value.existingProjectId) {
+          if (relinkProjectId && response.value.existingProjectId !== relinkProjectId) {
+            setActionError('该目录已属于另一个项目，请选择不同目录')
+            return null
+          }
+          await selectProject(response.value.existingProjectId)
+          return null
+        }
+        return { candidate: response.value, relinkProjectId }
+      } catch (error) {
+        setActionError(errorMessage(error))
         return null
       }
-      return { candidate: response.value, relinkProjectId }
     },
-    [bridge, selectProject],
+    [bridge, filePicker, selectProject],
   )
 
   const trustProject = useCallback(
@@ -684,7 +719,6 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   )
 
   const projects = snapshot?.projects ?? []
-  const sessions = snapshot?.sessions ?? []
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null
   const activeSessionSummary =
     sessions.find((candidate) => activeStatuses.has(candidate.lastRunStatus ?? '')) ?? null
@@ -761,16 +795,18 @@ export function useWorkspaceController(bridge: WorkspaceBridge): WorkspaceContro
   const pickMessageImages = useCallback(async (): Promise<void> => {
     const sessionId = selectedSessionIdRef.current
     if (!sessionId) return
-    const response = await bridge.pickMessageImages()
+    const response = await filePicker.pickMessageImages()
     if (!response.ok) {
       setActionError(response.error.message)
       return
     }
+    const images = response.value
+    if (!images) return
     setDraftImages((current) => ({
       ...current,
-      [sessionId]: [...(current[sessionId] ?? []), ...response.value],
+      [sessionId]: [...(current[sessionId] ?? []), ...images],
     }))
-  }, [bridge])
+  }, [filePicker])
 
   const removeMessageImage = useCallback((index: number): void => {
     const sessionId = selectedSessionIdRef.current

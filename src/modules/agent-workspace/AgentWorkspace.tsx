@@ -9,7 +9,12 @@ import type { SettingsSection } from '../shell/settings'
 import { Conversation, type ExtensionWidget } from './Conversation'
 import { SettingsDialog } from './SettingsDialog'
 import { Sidebar } from './Sidebar'
-import type { AgentWorkspaceClient, RuntimeEvent, SessionRuntimeControls } from './shared'
+import type {
+  AgentWorkspaceClient,
+  AgentWorkspaceFilePicker,
+  RuntimeEvent,
+  SessionRuntimeControls,
+} from './shared'
 import { useWorkspaceController, type WorkspaceTrustRequest } from './use-workspace-controller'
 
 type Confirmation =
@@ -26,16 +31,18 @@ function errorMessage(error: unknown): string {
 
 interface AgentWorkspaceProps {
   client: AgentWorkspaceClient
+  filePicker: AgentWorkspaceFilePicker
   settingsSections: readonly SettingsSection[]
   rendererPluginStatuses?: readonly PluginStatus[]
 }
 
 export function AgentWorkspace({
   client,
+  filePicker,
   settingsSections,
   rendererPluginStatuses = [],
 }: AgentWorkspaceProps): React.JSX.Element {
-  const workspace = useWorkspaceController(client)
+  const workspace = useWorkspaceController(client, filePicker)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [appInfoLoading, setAppInfoLoading] = useState(true)
   const [appInfoError, setAppInfoError] = useState<string | null>(null)

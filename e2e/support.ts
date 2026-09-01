@@ -26,6 +26,10 @@ export const bridgeKeys = [
   'removePlugin',
   'restoreBundledPlugin',
   'setPluginEnabled',
+  'pickProjectDirectory',
+  'pickSessionImport',
+  'pickSessionExport',
+  'pickMessageImages',
 ]
 
 export const moduleBridgeKeys = ['invoke', 'onEvent']

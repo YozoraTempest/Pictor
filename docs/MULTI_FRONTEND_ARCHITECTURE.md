@@ -59,6 +59,10 @@ Interface 是调用者和测试共同跨越的 seam。Application Host 只从装
 `EventPublisher`、`UserData`、`AppInfo` 和 `FrontendLock`；这些端口同时有生产 Adapter 和测试
 Adapter，属于真实 seam。除此之外不为单一文件系统实现机械增加 Repository/DAO 层。
 
+Agent Workspace 的 import/export、项目注册和图片读取使用显式路径；取消由 Desktop Adapter 以
+`null` 返回。GUI picker 不进入 Workspace core，而通过模块拥有的 `AgentWorkspaceFilePicker` 窄
+port 连接，CLI/TUI 可以直接调用同一组路径接口。
+
 ## 进程与 Adapter
 
 | Frontend      | Composition root         | Application Host                                                                 | Command transport                                 | UI Plugin 入口                                   |

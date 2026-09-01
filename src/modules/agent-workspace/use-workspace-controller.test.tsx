@@ -1,8 +1,13 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { SessionHistoryView, SessionRecord, SessionSummary } from '../../shared/domain.js'
-import type { AppSnapshot, IpcResult, RuntimeEvent } from './shared.js'
+import type {
+  ImageAttachment,
+  SessionHistoryView,
+  SessionRecord,
+  SessionSummary,
+} from '../../shared/domain.js'
+import type { AgentWorkspaceFilePicker, AppSnapshot, IpcResult, RuntimeEvent } from './shared.js'
 import { useWorkspaceController, type WorkspaceBridge } from './use-workspace-controller.js'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
@@ -153,6 +158,7 @@ function createBridge(
   } = {},
 ): WorkspaceBridge & {
   getSnapshot: ReturnType<typeof vi.fn>
+  inspectProjectPath: ReturnType<typeof vi.fn>
   getSession: ReturnType<typeof vi.fn>
   inspectSessionHistory: ReturnType<typeof vi.fn>
   navigateSessionTree: ReturnType<typeof vi.fn>
@@ -163,7 +169,6 @@ function createBridge(
   importSession: ReturnType<typeof vi.fn>
   exportSession: ReturnType<typeof vi.fn>
   startRun: ReturnType<typeof vi.fn>
-  pickMessageImages: ReturnType<typeof vi.fn>
   stopRun: ReturnType<typeof vi.fn>
 } {
   let snapshot = options.snapshot ?? createSnapshot()
@@ -184,8 +189,10 @@ function createBridge(
         : failure<SessionHistoryView>('不存在')
     },
   )
+  const inspectProjectPath = vi.fn(async () =>
+    ok({ name: 'Pictor', rootPath: '/pictor', existingProjectId: null }),
+  )
   const startRun = vi.fn(async () => ok({ runId }))
-  const pickMessageImages = vi.fn(async () => ok([]))
   const navigateSessionTree = vi.fn(async () => ok(null))
   const compactSession = vi.fn(async () => ok(null))
   const cancelSessionOperation = vi.fn(async () => ok(false))
@@ -198,7 +205,7 @@ function createBridge(
 
   return {
     getSnapshot,
-    pickProjectDirectory: async () => ok(null),
+    inspectProjectPath,
     registerProject: async () => ok(snapshot.projects[0]!),
     relinkProject: async () => ok(snapshot.projects[0]!),
     removeProject: async () => ok(null),
@@ -224,7 +231,6 @@ function createBridge(
     importSession,
     exportSession,
     startRun,
-    pickMessageImages,
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
     stopRun,
@@ -236,6 +242,22 @@ function createBridge(
   }
 }
 
+function createFilePicker(
+  overrides: Partial<AgentWorkspaceFilePicker> = {},
+): AgentWorkspaceFilePicker {
+  return {
+    pickProjectDirectory: vi.fn(async () => ok(null)),
+    pickSessionImport: vi.fn(async () => ok(null)),
+    pickSessionExport: vi.fn(async () => ok(null)),
+    pickMessageImages: vi.fn(async () => ok(null)),
+    ...overrides,
+  }
+}
+
+function renderWorkspaceHook(bridge: WorkspaceBridge, filePicker = createFilePicker()) {
+  return renderHook(() => useWorkspaceController(bridge, filePicker))
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -244,7 +266,7 @@ describe('useWorkspaceController', () => {
   it('initializes the selected workspace through its narrow bridge', async () => {
     const session = createSession(firstSessionId, { title: 'Selected session' })
     const bridge = createBridge({ sessions: { [firstSessionId]: session } })
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
 
     await waitFor(() => expect(result.current.loading).toBe(false))
 
@@ -258,7 +280,7 @@ describe('useWorkspaceController', () => {
   it('exposes a readable initialization failure', async () => {
     const bridge = createBridge()
     bridge.getSnapshot.mockResolvedValue(failure<AppSnapshot>('无法读取工作区'))
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
 
     await waitFor(() => expect(result.current.loading).toBe(false))
 
@@ -272,7 +294,7 @@ describe('useWorkspaceController', () => {
       snapshot: createSnapshot(firstSessionId, null, 'legacy-import'),
       sessions: { [firstSessionId]: legacy },
     })
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
     await waitFor(() => expect(result.current.session).toEqual(legacy))
 
     expect(result.current.disabledReason).toContain('旧版会话是只读历史')
@@ -295,7 +317,7 @@ describe('useWorkspaceController', () => {
       .mockResolvedValueOnce(ok(snapshot))
       .mockImplementationOnce(() => firstSnapshot.promise)
       .mockImplementationOnce(() => secondSnapshot.promise)
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     let firstSelection!: Promise<void>
@@ -338,7 +360,7 @@ describe('useWorkspaceController', () => {
         runtimeListener = listener
       },
     })
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
     await waitFor(() => expect(result.current.session).toEqual(session))
     if (!runtimeListener) throw new Error('Runtime listener was not registered')
 
@@ -388,7 +410,7 @@ describe('useWorkspaceController', () => {
     bridge.getSession
       .mockResolvedValueOnce(ok(createSession(firstSessionId, { messageContent: 'First' })))
       .mockImplementationOnce(() => nextLoad.promise)
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
     await waitFor(() => expect(result.current.session?.id).toBe(firstSessionId))
     if (!runtimeListener) throw new Error('Runtime listener was not registered')
 
@@ -433,7 +455,7 @@ describe('useWorkspaceController', () => {
       .mockResolvedValueOnce(ok(running))
       .mockImplementationOnce(() => staleRefresh.promise)
       .mockImplementationOnce(() => terminalRefresh.promise)
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
     await waitFor(() => expect(result.current.session).toEqual(running))
     if (!runtimeListener) throw new Error('Runtime listener was not registered')
 
@@ -480,7 +502,7 @@ describe('useWorkspaceController', () => {
       },
     })
     bridge.getSession.mockResolvedValueOnce(ok(running)).mockResolvedValue(ok(completed))
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
     await waitFor(() => expect(result.current.session).toEqual(running))
     if (!runtimeListener) throw new Error('Runtime listener was not registered')
 
@@ -575,7 +597,10 @@ describe('useWorkspaceController', () => {
           },
         }),
     )
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const filePicker = createFilePicker({
+      pickSessionImport: vi.fn(async () => ok('/imports/history.jsonl')),
+    })
+    const { result } = renderWorkspaceHook(bridge, filePicker)
     await waitFor(() => expect(result.current.session).toEqual(active))
 
     await act(async () => result.current.inspectSessionHistory('historical-entry'))
@@ -636,7 +661,10 @@ describe('useWorkspaceController', () => {
       }),
     )
     await act(async () => result.current.importSession(projectId))
-    expect(bridge.importSession).toHaveBeenCalledWith({ projectId })
+    expect(bridge.importSession).toHaveBeenCalledWith({
+      projectId,
+      sourcePath: '/imports/history.jsonl',
+    })
     expect(result.current.selectedSessionId).toBe(fourthSessionId)
     expect(result.current.session?.title).toBe('history (Import)')
   })
@@ -686,7 +714,7 @@ describe('useWorkspaceController', () => {
     )
     const pending = deferred<Awaited<ReturnType<WorkspaceBridge['navigateSessionTree']>>>()
     bridge.navigateSessionTree.mockReturnValueOnce(pending.promise)
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
     await waitFor(() => expect(result.current.session).toEqual(active))
     await act(async () => result.current.inspectSessionHistory('historical-entry'))
 
@@ -756,7 +784,7 @@ describe('useWorkspaceController', () => {
     const pending = deferred<IpcResult<SessionHistoryView | null>>()
     bridge.compactSession.mockReturnValueOnce(pending.promise)
     bridge.cancelSessionOperation.mockResolvedValueOnce(ok(true))
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
     await waitFor(() => expect(result.current.session).toEqual(active))
 
     let compacting!: Promise<boolean>
@@ -788,9 +816,12 @@ describe('useWorkspaceController', () => {
 
   it('keeps one Session Import operation active until file selection completes', async () => {
     const bridge = createBridge()
+    const filePicker = createFilePicker({
+      pickSessionImport: vi.fn(async () => ok('/imports/history.jsonl')),
+    })
     const pending = deferred<IpcResult<SessionSummary | null>>()
     bridge.importSession.mockReturnValueOnce(pending.promise)
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge, filePicker)
     await waitFor(() => expect(result.current.session).not.toBeNull())
 
     let importing!: Promise<boolean>
@@ -803,12 +834,36 @@ describe('useWorkspaceController', () => {
     pending.resolve(ok(null))
     await act(async () => importing)
     expect(result.current.importingProjectId).toBeNull()
+    expect(bridge.importSession).toHaveBeenCalledWith({
+      projectId,
+      sourcePath: '/imports/history.jsonl',
+    })
+  })
+
+  it('keeps picker cancellation explicit and does not invoke the workspace core', async () => {
+    const bridge = createBridge()
+    const filePicker = createFilePicker()
+    const { result } = renderWorkspaceHook(bridge, filePicker)
+    await waitFor(() => expect(result.current.session).not.toBeNull())
+
+    await expect(result.current.pickProject()).resolves.toBeNull()
+    await expect(result.current.importSession(projectId)).resolves.toBe(false)
+    await expect(result.current.exportSession(firstSessionId, 'jsonl')).resolves.toBe(false)
+    await act(async () => result.current.pickMessageImages())
+
+    expect(bridge.inspectProjectPath).not.toHaveBeenCalled()
+    expect(bridge.importSession).not.toHaveBeenCalled()
+    expect(bridge.exportSession).not.toHaveBeenCalled()
+    expect(result.current.draftImages).toEqual([])
   })
 
   it('exports a Session without changing the current selection', async () => {
     const bridge = createBridge()
+    const filePicker = createFilePicker({
+      pickSessionExport: vi.fn(async ({ format }) => ok(`/exports/session.${format}`)),
+    })
     bridge.exportSession.mockResolvedValueOnce(ok(true)).mockResolvedValueOnce(ok(false))
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge, filePicker)
     await waitFor(() => expect(result.current.session).not.toBeNull())
 
     await expect(
@@ -817,6 +872,7 @@ describe('useWorkspaceController', () => {
     expect(bridge.exportSession).toHaveBeenCalledWith({
       sessionId: firstSessionId,
       format: 'jsonl',
+      destinationPath: '/exports/session.jsonl',
     })
     expect(result.current.selectedSessionId).toBe(firstSessionId)
     expect(result.current.exportingSession).toBeNull()
@@ -824,15 +880,24 @@ describe('useWorkspaceController', () => {
     await expect(
       act(async () => result.current.exportSession(firstSessionId, 'html')),
     ).resolves.toBe(false)
+    expect(bridge.exportSession).toHaveBeenCalledWith({
+      sessionId: firstSessionId,
+      format: 'html',
+      destinationPath: '/exports/session.html',
+    })
     expect(result.current.actionError).toBeNull()
   })
 
   it('attaches selected images to the next Run and clears them after start', async () => {
     const bridge = createBridge()
-    bridge.pickMessageImages.mockResolvedValueOnce(
-      ok([{ data: 'aW1hZ2U=', mimeType: 'image/png', name: 'fixture.png' }]),
-    )
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const filePicker = createFilePicker({
+      pickMessageImages: vi.fn(async () =>
+        ok([
+          { data: 'aW1hZ2U=', mimeType: 'image/png', name: 'fixture.png' },
+        ] satisfies ImageAttachment[]),
+      ),
+    })
+    const { result } = renderWorkspaceHook(bridge, filePicker)
     await waitFor(() => expect(result.current.session).not.toBeNull())
 
     await act(async () => result.current.pickMessageImages())
@@ -858,7 +923,7 @@ describe('useWorkspaceController', () => {
       .mockResolvedValueOnce(ok({ runId }))
     bridge.getSession.mockResolvedValueOnce(ok(idle)).mockResolvedValue(ok(running))
     bridge.stopRun.mockResolvedValue(failure<null>('停止失败'))
-    const { result } = renderHook(() => useWorkspaceController(bridge))
+    const { result } = renderWorkspaceHook(bridge)
     await waitFor(() => expect(result.current.session).toEqual(idle))
 
     act(() => result.current.setDraft('  run this  '))

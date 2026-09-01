@@ -9,6 +9,7 @@ import type { UpdaterClient } from '../updater/shared'
 import { AgentWorkspace } from './AgentWorkspace'
 import type {
   AgentWorkspaceClient,
+  AgentWorkspaceFilePicker,
   AppSnapshot,
   IpcResult,
   RuntimeEvent,
@@ -44,7 +45,8 @@ function createBridge(
 ): AgentWorkspaceClient {
   return {
     getSnapshot: async () => ok(snapshot),
-    pickProjectDirectory: async () => ok(null),
+    inspectProjectPath: async () =>
+      ok({ name: 'Pictor', rootPath: '/pictor', existingProjectId: null }),
     registerProject: async () => ok(snapshot.projects[0]!),
     relinkProject: async () => ok(snapshot.projects[0]!),
     removeProject: async () => ok(null),
@@ -90,13 +92,24 @@ function createBridge(
     listModels: async () =>
       ok({ outcome: 'success', message: '已获取 1 个可用模型', models: ['gpt-5.6-sol'] }),
     startRun: async () => ok({ runId }),
-    pickMessageImages: async () => ok([]),
     stopRun: async () => ok(null),
     respondToExtensionUi: async () => ok(null),
     queueRuntimeMessage: async () => ok(null),
     clearRuntimeQueue: async () => ok(null),
     syncComposerText: async () => ok(null),
     onRuntimeEvent: (_listener: (event: RuntimeEvent) => void) => () => undefined,
+  }
+}
+
+function createFilePicker(
+  overrides: Partial<AgentWorkspaceFilePicker> = {},
+): AgentWorkspaceFilePicker {
+  return {
+    pickProjectDirectory: async () => ok(null),
+    pickSessionImport: async () => ok(null),
+    pickSessionExport: async () => ok(null),
+    pickMessageImages: async () => ok(null),
+    ...overrides,
   }
 }
 
@@ -125,6 +138,10 @@ function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
     installPiExtension: async () => ok(manager),
     installPiPackage: async () => ok(manager),
     installPiPackageSpec: async () => ok(manager),
+    pickProjectDirectory: async () => ok(null),
+    pickSessionImport: async () => ok(null),
+    pickSessionExport: async () => ok(null),
+    pickMessageImages: async () => ok(null),
     setPluginEnabled: async () => ok(manager),
     removePlugin: async () => ok(manager),
     restoreBundledPlugin: async () => ok(manager),
@@ -165,11 +182,13 @@ function renderApp(
   client: AgentWorkspaceClient,
   updater: UpdaterClient = createUpdater(),
   coreBridgeOverrides: Partial<PictorBridge> = {},
+  filePicker: AgentWorkspaceFilePicker = createFilePicker(),
 ) {
   installBridge(createCoreBridge(coreBridgeOverrides))
   return render(
     <AgentWorkspace
       client={client}
+      filePicker={filePicker}
       settingsSections={[
         {
           id: 'about',
@@ -631,11 +650,15 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
       ...request.controls,
     } satisfies SessionRuntimeControls),
   )
-  bridge.pickMessageImages = vi.fn(async () =>
-    ok([
-      { data: 'aW1hZ2U=', mimeType: 'image/png', name: 'fixture.png' },
-    ] satisfies ImageAttachment[]),
-  )
+  const filePicker = createFilePicker({
+    pickSessionImport: vi.fn(async () => ok('/imports/history.jsonl')),
+    pickSessionExport: vi.fn(async ({ format }) => ok(`/exports/session.${format}`)),
+    pickMessageImages: vi.fn(async () =>
+      ok([
+        { data: 'aW1hZ2U=', mimeType: 'image/png', name: 'fixture.png' },
+      ] satisfies ImageAttachment[]),
+    ),
+  })
   bridge.inspectSessionHistory = vi.fn(async ({ entryId }) => {
     const selectedEntryId = entryId ?? 'active-entry'
     return ok({
@@ -684,18 +707,31 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
       },
     } satisfies SessionHistoryView)
   })
-  renderApp(bridge)
+  renderApp(bridge, createUpdater(), {}, filePicker)
 
   await screen.findByText('Active response details')
   fireEvent.click(screen.getByRole('button', { name: '导入 Pi Session' }))
-  await waitFor(() => expect(bridge.importSession).toHaveBeenCalledWith({ projectId }))
+  await waitFor(() =>
+    expect(bridge.importSession).toHaveBeenCalledWith({
+      projectId,
+      sourcePath: '/imports/history.jsonl',
+    }),
+  )
   fireEvent.click(screen.getByRole('button', { name: '导出 JSONL' }))
   await waitFor(() =>
-    expect(bridge.exportSession).toHaveBeenCalledWith({ sessionId, format: 'jsonl' }),
+    expect(bridge.exportSession).toHaveBeenCalledWith({
+      sessionId,
+      format: 'jsonl',
+      destinationPath: '/exports/session.jsonl',
+    }),
   )
   fireEvent.click(screen.getByRole('button', { name: '导出 HTML' }))
   await waitFor(() =>
-    expect(bridge.exportSession).toHaveBeenCalledWith({ sessionId, format: 'html' }),
+    expect(bridge.exportSession).toHaveBeenCalledWith({
+      sessionId,
+      format: 'html',
+      destinationPath: '/exports/session.html',
+    }),
   )
   fireEvent.click(screen.getByRole('button', { name: 'Session Controls' }))
   expect(await screen.findByRole('dialog', { name: 'Session Controls' })).toBeInTheDocument()

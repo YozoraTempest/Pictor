@@ -10,6 +10,15 @@ it('contributes the Agent Workspace application through its Renderer Module', as
       onEvent: vi.fn(() => () => undefined),
     },
   })
+  Object.defineProperty(window, 'pictor', {
+    configurable: true,
+    value: {
+      pickProjectDirectory: vi.fn(),
+      pickSessionImport: vi.fn(),
+      pickSessionExport: vi.fn(),
+      pickMessageImages: vi.fn(),
+    },
+  })
   const kernel = new ModuleKernel()
 
   await kernel.start([agentWorkspaceRendererModule])

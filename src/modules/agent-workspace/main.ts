@@ -1,7 +1,4 @@
-import { readFile } from 'node:fs/promises'
-import { basename, extname } from 'node:path'
-
-import { dialog } from 'electron'
+import { basename, extname, isAbsolute } from 'node:path'
 
 import { moduleHandlerContributions, registerModuleHandlers } from '../../kernel/contract.js'
 import { defineModule } from '../../kernel/module.js'
@@ -11,14 +8,6 @@ import type { RuntimeCoordinator } from '../../main/runtime/coordinator.js'
 import { PictorError } from '../../shared/errors.js'
 import { ipcResult } from '../../shared/ipc-result.js'
 import { agentWorkspaceContract, sessionRuntimeControlsSchema } from './shared.js'
-
-const imageMimeTypes: Record<string, 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-}
 
 type AgentWorkspaceRepository = Pick<
   AppRepository,
@@ -65,15 +54,11 @@ export interface AgentWorkspaceMainHost {
   connectionTester: Pick<ModelConnectionTester, 'test' | 'listModels'>
 }
 
-function exportFileName(title: string, extension: string): string {
-  const printableTitle = [...title]
-    .map((character) => (character.charCodeAt(0) < 32 ? '_' : character))
-    .join('')
-  const safeTitle = printableTitle
-    .replace(/[<>:"/\\|?*]/g, '_')
-    .replace(/[ .]+$/g, '')
-    .trim()
-  return `${safeTitle || 'session'}.${extension}`
+function requireAbsolutePath(path: string, extension: '.jsonl' | '.html', message: string): string {
+  if (!isAbsolute(path) || extname(path).toLowerCase() !== extension) {
+    throw new PictorError('invalid-input', message)
+  }
+  return path
 }
 
 export function createAgentWorkspaceMainModule(host: AgentWorkspaceMainHost) {
@@ -85,18 +70,12 @@ export function createAgentWorkspaceMainModule(host: AgentWorkspaceMainHost) {
         moduleHandlerContributions,
         registerModuleHandlers(agentWorkspaceContract, {
           getSnapshot: async () => ipcResult(() => repository.getSnapshot()),
-          pickProjectDirectory: async () =>
+          inspectProjectPath: async (request) =>
             ipcResult(async () => {
-              const selection = await dialog.showOpenDialog({
-                title: '选择 Pictor 项目目录',
-                properties: ['openDirectory', 'createDirectory'],
-              })
-              const rootPath = selection.filePaths[0]
-              if (selection.canceled || !rootPath) return null
-              const existing = await repository.findProjectByPath(rootPath)
+              const existing = await repository.findProjectByPath(request.rootPath)
               return {
-                name: basename(rootPath),
-                rootPath,
+                name: basename(request.rootPath),
+                rootPath: request.rootPath,
                 existingProjectId: existing?.id ?? null,
               }
             }),
@@ -165,34 +144,24 @@ export function createAgentWorkspaceMainModule(host: AgentWorkspaceMainHost) {
             ipcResult(() => runtime.forkSession(request.sessionId, request.entryId)),
           cloneSession: async (request) => ipcResult(() => runtime.cloneSession(request.sessionId)),
           importSession: async (request) =>
-            ipcResult(async () => {
-              const selection = await dialog.showOpenDialog({
-                title: '导入 Pi Session JSONL',
-                properties: ['openFile'],
-                filters: [{ name: 'Pi Session', extensions: ['jsonl'] }],
-              })
-              const path = selection.filePaths[0]
-              if (selection.canceled || !path) return null
-              return runtime.importSession(request.projectId, path)
-            }),
+            ipcResult(() =>
+              runtime.importSession(
+                request.projectId,
+                requireAbsolutePath(
+                  request.sourcePath,
+                  '.jsonl',
+                  '请选择有效的 Pi Session JSONL 文件',
+                ),
+              ),
+            ),
           exportSession: async (request) =>
             ipcResult(async () => {
-              const session = await repository.getSession(request.sessionId)
-              const extension = request.format
-              const selection = await dialog.showSaveDialog({
-                title:
-                  request.format === 'jsonl' ? '导出 Pi Session JSONL' : '导出 Pi Session HTML',
-                defaultPath: exportFileName(session.title, extension),
-                filters: [
-                  request.format === 'jsonl'
-                    ? { name: 'Pi Session', extensions: ['jsonl'] }
-                    : { name: 'HTML', extensions: ['html'] },
-                ],
-              })
-              if (selection.canceled || !selection.filePath) return false
-              const destinationPath = extname(selection.filePath)
-                ? selection.filePath
-                : `${selection.filePath}.${extension}`
+              const extension = request.format === 'jsonl' ? '.jsonl' : '.html'
+              const destinationPath = requireAbsolutePath(
+                request.destinationPath,
+                extension,
+                `请选择有效的 ${extension} 导出位置`,
+              )
               await runtime.exportSession(request.sessionId, request.format, destinationPath)
               return true
             }),
@@ -224,28 +193,6 @@ export function createAgentWorkspaceMainModule(host: AgentWorkspaceMainHost) {
             }),
           startRun: async (request) =>
             ipcResult(() => runtime.start(request.sessionId, request.prompt, request.images ?? [])),
-          pickMessageImages: async () =>
-            ipcResult(async () => {
-              const selection = await dialog.showOpenDialog({
-                title: '选择图片',
-                properties: ['openFile', 'multiSelections'],
-                filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
-              })
-              if (selection.canceled) return []
-              return Promise.all(
-                selection.filePaths.map(async (path) => {
-                  const mimeType = imageMimeTypes[extname(path).toLowerCase()]
-                  if (!mimeType) {
-                    throw new PictorError('invalid-input', '请选择支持的图片格式')
-                  }
-                  return {
-                    data: (await readFile(path)).toString('base64'),
-                    mimeType,
-                    name: basename(path),
-                  }
-                }),
-              )
-            }),
           stopRun: async (request) =>
             ipcResult(async () => {
               runtime.stop(request.runId)
