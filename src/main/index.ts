@@ -38,6 +38,9 @@ import { RuntimeSupervisor } from './runtime/supervisor.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
 import { shouldShowMainWindow, shouldShowMainWindowWithoutFocus } from './window-visibility.js'
 
+declare const __PICTOR_BUILD_CHANNEL__: string
+declare const __PICTOR_SOURCE_COMMIT__: string | null
+
 const APP_SCHEME = 'app'
 const APP_HOST = 'bundle'
 
@@ -240,6 +243,8 @@ void app.whenReady().then(() => {
     const appInfo = appInfoSchema.parse({
       name: app.getName(),
       version: currentVersion,
+      buildChannel: __PICTOR_BUILD_CHANNEL__,
+      sourceCommit: __PICTOR_SOURCE_COMMIT__,
       platform: process.platform,
       arch: process.arch,
       distribution,

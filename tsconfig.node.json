@@ -20,6 +20,7 @@
     "src/plugin/**/*.ts",
     "src/modules/**/shared.ts",
     "src/modules/**/main.ts",
+    "src/modules/**/preferences.ts",
     "src/modules/**/update-service.ts",
     "src/modules/**/*.test.ts",
     "e2e/**/*.ts",

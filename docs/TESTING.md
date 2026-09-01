@@ -144,8 +144,9 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   replacement journal 测试覆盖 prepare、取消清理、commit、Main/Runtime 进程退出后的恢复。
 - 受信任 Project 的 `.pi/extensions`、Skills、Prompts 和 Context files 必须由 Pi 原生
   ResourceLoader 自动加载；资源 reload 必须复用当前 Session，而不是重建 Pictor 专属资源层。
-- 更新资产选择覆盖 Windows NSIS、Arch pacman、便携 AppImage、错误平台/架构/版本、非官方 URL
-  和无匹配资产回退。
+- 更新资产选择覆盖稳定版与滚动 Nightly 两个通道、Windows NSIS、Arch pacman、便携 AppImage、
+  错误平台/架构/版本、非官方 URL 和无匹配资产回退；Nightly 必须验证固定 tag、Pre-release 标记
+  和完整源码提交，并按嵌入的构建提交判断快照是否变化。
 - Pacman 使用 `zstd` 压缩，优先缩短 develop 与 Release 的包构建反馈；不为减小附件体积改回
   明显更慢的 `xz`。
 - API Key 在 Unix 写入后验证权限为 `0600`，且不得进入 Renderer、Session 或测试证据。
@@ -205,7 +206,9 @@ SHA 必须已有完成且成功的 `develop` push CI；缺少、运行中或失�
 
 源码 CI 已负责应用改动的静态检查、Vitest 和完整 E2E，因此 Nightly 不重复 `verify:fast` 或 E2E。
 Nightly 与 Release 通过 `package-desktop.yml` 的小接口传入固定源码 SHA、版本、artifact 前缀和是否
-执行发布复验；其余跨平台构建、结构校验、AppImage 启动与 Arch 容器生命周期集中在该工作流内。
+执行发布复验；调用方还必须显式传入 `stable` 或 `nightly` 构建通道，打包应用把通道与固定源码
+SHA 暴露为只读构建身份。其余跨平台构建、结构校验、AppImage 启动与 Arch 容器生命周期集中在该
+工作流内。
 各平台只把中间 workflow artifact 保留一天；全部平台成功后，唯一具有 `contents: write` 权限的
 publish job 才生成 `SHA256SUMS`，重建滚动的 `nightly` GitHub Pre-release。Nightly 不设为 Latest，
 不属于正式发布或支持基线。

@@ -31,8 +31,9 @@ Pi 原生工具和 OpenAI 兼容模型配置。
 - 展示 Markdown 回复、工具状态、命令输出、错误、停止和中断状态；
 - 配置 Chat Completions 或 Responses 兼容模式、API Base URL、模型标识、API Key、模型
   推理强度、温度和最大输出 Token 数；支持从兼容的 `/models` 端点获取并选择模型；
-- 在设置的“关于”页查看版本，并按需检查 GitHub Release；有新版本时只打开与当前平台、
-  架构匹配的 Windows、Arch 或便携 Linux 官方发布包，否则安全回退到对应发布页；
+- 在设置的“关于”页查看版本，选择并记忆稳定版或 Nightly 更新通道，再按需检查 GitHub
+  Release；有新版本或滚动快照时只打开与当前平台、架构匹配的 Windows、Arch 或便携 Linux
+  官方发布包，否则安全回退到对应发布页；
 - 通过 Plugin Host 从用户 Store 动态装配 Main/Renderer Module，支持 SemVer 依赖、故障隔离、
   安全模式和独立 Plugin 测试循环；Updater 已作为可删除、可恢复的 Bundled Plugin 运行。
 - `pictor.pi-extension-host` 可直接安装、禁用和删除原生 `.ts/.js` Pi Extension、Extension 目录
@@ -219,9 +220,11 @@ ResourceLoader、ExtensionRunner 和原生工具注册表；删除或禁用该 P
 管理 Pi 暴露的模型、Thinking、工具和队列偏好。
 
 更新检查只在用户点击“检查更新”后由 Main Process 请求 Pictor 官方 GitHub Release API；
-应用不会在后台轮询。Linux 只在本机读取 `/etc/os-release` 识别原生 Arch，不上传或记录该
-文件。Arch 下载按钮优先打开匹配的官方 Pacman 资产，其他 Linux 只打开匹配版本和架构的官方
-AppImage；没有匹配资产时回退到官方发布页。
+应用不会在后台轮询。稳定通道查询 Latest Release，并按 SemVer 判断；用户显式选择的 Nightly
+通道查询滚动的 `nightly` Pre-release，并用打包时嵌入的源码提交判断快照是否变化。通道选择保存在
+Updater Plugin 的独立数据目录，默认仍为稳定版。Linux 只在本机读取 `/etc/os-release` 识别原生
+Arch，不上传或记录该文件。Arch 下载按钮优先打开匹配的官方 Pacman 资产，其他 Linux 只打开匹配
+版本和架构的官方 AppImage；没有匹配资产时回退到对应官方发布页。
 
 Pictor 不为 Pi 工具增加第二套项目路径守卫或命令审批；项目根目录作为 Pi Session 的工作目录，
 文件与 Shell 操作遵循 Pi 和当前操作系统的权限语义。需要更强隔离时，应使用操作系统或容器提供

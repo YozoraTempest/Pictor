@@ -1983,6 +1983,22 @@ textarea:disabled {
   flex: 0 0 auto;
 }
 
+.update-channel-field {
+  width: min(360px, 100%);
+  margin-top: 14px;
+}
+
+.update-channel-warning {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid #665f3d;
+  border-radius: 5px;
+  background: #272419;
+  color: #d3cc7b;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
 .update-result {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;

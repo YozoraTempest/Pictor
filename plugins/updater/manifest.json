@@ -1,8 +1,8 @@
 {
   "id": "pictor.updater",
   "name": "Updater",
-  "version": "0.3.0",
-  "description": "Pictor release information and on-demand update checks",
+  "version": "0.3.1",
+  "description": "Pictor release information and selectable Stable or Nightly update checks",
   "engines": {
     "pictor": "^0.3.0"
   },

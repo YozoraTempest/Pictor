@@ -15,6 +15,10 @@ on:
         description: Prefix for intermediate workflow artifacts
         type: string
         required: true
+      build_channel:
+        description: Update channel embedded in the packaged application
+        type: string
+        required: true
       run_source_validation:
         description: Run release-only source validation before packaging
         type: boolean
@@ -48,6 +52,9 @@ jobs:
       - run: npm run deps:prepare
       - run: npm run deps:verify
       - run: npm run build:app
+        env:
+          PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
+          PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}
       - run: npm run package:windows:build
       - run: npm run package:verify:windows
       - name: Stage Windows package
@@ -89,6 +96,9 @@ jobs:
         if: inputs.run_source_validation
         run: npm run verify:fast
       - run: npm run build:app
+        env:
+          PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
+          PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}
       - name: Run release desktop tests
         if: inputs.run_source_validation
         run: xvfb-run --auto-servernum npm run test:e2e:run
