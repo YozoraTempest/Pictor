@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises'
-import { extname, join, relative, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import {
   app,
@@ -88,46 +88,12 @@ function registerAppProtocol(pluginStore: PluginStore): void {
 
 async function localFileResponse(filePath: string, requestUrl: string): Promise<Response> {
   try {
-    const body = await readFile(filePath)
-    startupDiagnostic(`App protocol response ${requestUrl} ${filePath} ${body.byteLength} bytes`)
-    return new Response(new Uint8Array(body), {
-      headers: { 'content-type': contentTypeFor(filePath) },
-    })
+    const response = await net.fetch(pathToFileURL(filePath).toString())
+    startupDiagnostic(`App protocol response ${requestUrl} ${filePath} ${response.status}`)
+    return response
   } catch {
     startupDiagnostic(`App protocol missing ${requestUrl} ${filePath}`)
     return new Response('Not found', { status: 404 })
-  }
-}
-
-function contentTypeFor(filePath: string): string {
-  switch (extname(filePath).toLowerCase()) {
-    case '.html':
-      return 'text/html; charset=utf-8'
-    case '.js':
-    case '.mjs':
-    case '.cjs':
-      return 'text/javascript; charset=utf-8'
-    case '.css':
-      return 'text/css; charset=utf-8'
-    case '.json':
-      return 'application/json; charset=utf-8'
-    case '.svg':
-      return 'image/svg+xml'
-    case '.png':
-      return 'image/png'
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg'
-    case '.webp':
-      return 'image/webp'
-    case '.gif':
-      return 'image/gif'
-    case '.woff':
-      return 'font/woff'
-    case '.woff2':
-      return 'font/woff2'
-    default:
-      return 'application/octet-stream'
   }
 }
 
