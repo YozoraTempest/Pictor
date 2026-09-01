@@ -5,6 +5,7 @@ export const defaultPluginProfile = pluginProfileSchema.parse({
   plugins: {
     'pictor.agent-workspace': '^0.4.0',
     'pictor.workbench.delegate': '^0.4.0',
+    'pictor.gui.plugin-manager': '^0.4.0',
     'pictor.agent-resources': '^0.4.0',
     'pictor.git-changes': '^0.4.0',
     'pictor.model-openai-compatible': '^0.4.0',

@@ -1,28 +1,26 @@
-import { Info } from 'lucide-react'
+import { Blocks } from 'lucide-react'
 import { createElement } from 'react'
 
 import { guiSettingsSectionContributions } from '../../src/gui/contract.js'
 import { defineModule } from '../../src/kernel/module.js'
 import { pluginEntrypoint, type GuiPluginContext } from '../../src/plugin/entry.js'
-import { createUpdaterClient } from '../../src/modules/updater/shared.js'
 
-import { AboutSettings } from './AboutSettings.js'
-import { installUpdaterStyles } from './styles.js'
+import { PluginManager } from './PluginManager.js'
+import { installPluginManagerStyles } from './styles.js'
 
 export default pluginEntrypoint<GuiPluginContext>(({ pluginId }) => [
   defineModule({
-    id: 'pictor.updater.gui',
+    id: 'pictor.gui.plugin-manager.gui',
     activate(context) {
-      const client = createUpdaterClient(window.pictorModules)
-      const releaseStyles = installUpdaterStyles()
+      const releaseStyles = installPluginManagerStyles()
       context.onDispose({ dispose: releaseStyles })
       context.contribute(guiSettingsSectionContributions, {
-        id: 'pictor.updater.about',
+        id: 'pictor.gui.plugin-manager.settings',
         owner: pluginId,
-        label: '关于',
-        icon: Info,
-        order: 300,
-        render: () => createElement(AboutSettings, { client }),
+        label: 'Plugins',
+        icon: Blocks,
+        order: 100,
+        render: (settingsContext) => createElement(PluginManager, settingsContext),
       })
     },
   }),

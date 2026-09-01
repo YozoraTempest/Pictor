@@ -1,0 +1,96 @@
+[data-pictor-plugin='pictor.git-changes'] {
+  --git-changes-border: #3c454a;
+  --git-changes-panel: #202529;
+  --git-changes-text: #e7eaec;
+  --git-changes-text-soft: #c2c9cd;
+  --git-changes-text-muted: #8f999f;
+  --git-changes-focus: #e5b957;
+  display: block;
+  padding: 18px;
+  color: var(--git-changes-text);
+  font-size: 11px;
+}
+
+[data-pictor-plugin='pictor.git-changes'] button {
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+}
+
+[data-pictor-plugin='pictor.git-changes'] button:focus-visible {
+  outline: 2px solid var(--git-changes-focus);
+  outline-offset: 2px;
+}
+
+[data-pictor-plugin='pictor.git-changes'] button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+[data-pictor-plugin='pictor.git-changes'] .git-changes-settings__button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid var(--git-changes-border);
+  border-radius: 5px;
+  background: var(--git-changes-panel);
+  color: var(--git-changes-text-soft);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 620;
+}
+
+[data-pictor-plugin='pictor.git-changes'] .git-changes-settings__button:hover:not(:disabled) {
+  border-color: #56b89e;
+  color: var(--git-changes-text);
+}
+
+[data-pictor-plugin='pictor.git-changes'] header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+[data-pictor-plugin='pictor.git-changes'] h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+[data-pictor-plugin='pictor.git-changes'] pre {
+  min-height: 180px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--git-changes-border);
+  border-radius: 5px;
+  background: #111416;
+  color: var(--git-changes-text-soft);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+[data-pictor-plugin='pictor.git-changes'] .git-changes-error {
+  padding: 9px 10px;
+  border: 1px solid #724042;
+  border-radius: 5px;
+  background: #2b1819;
+  color: #ea9290;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+[data-pictor-plugin='pictor.git-changes'] .git-changes-spin {
+  animation: pictor-git-changes-spin 0.9s linear infinite;
+}
+
+@keyframes pictor-git-changes-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

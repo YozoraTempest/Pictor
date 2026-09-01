@@ -14,13 +14,13 @@ import {
   executeCommandAndWait,
   type CommandClient,
 } from '../../src/commands/index.js'
-import type { GuiPluginPicker, GuiPluginSource } from '../../src/shared/desktop-bridge.js'
+import type { GuiPluginSource } from '../../src/shared/desktop-bridge.js'
 import type { IpcResult } from '../../src/shared/errors.js'
 import {
   pluginManagerSnapshotSchema,
   type PluginManagerSnapshot,
 } from '../../src/shared/plugins.js'
-import type { PluginStatus } from '../../src/plugin/host.js'
+import type { GuiSettingsSectionContext } from '../../src/gui/contract.js'
 
 const stateLabels = {
   active: '运行中',
@@ -30,11 +30,7 @@ const stateLabels = {
   'pending-restart': '等待重启',
 } as const
 
-interface PluginManagerProps {
-  commandClient: CommandClient
-  pluginPicker: GuiPluginPicker
-  guiPluginStatuses: readonly PluginStatus[]
-}
+type PluginManagerProps = GuiSettingsSectionContext
 
 async function executePluginCommand(
   commandClient: CommandClient,
@@ -49,10 +45,7 @@ async function executePluginCommand(
       { frontend: 'gui' },
       pluginManagerSnapshotSchema,
     )
-    return {
-      ok: true,
-      value,
-    }
+    return { ok: true, value }
   } catch (error) {
     if (error instanceof CommandFailure) {
       const code =
@@ -126,35 +119,43 @@ export function PluginManager({
 
   if (!snapshot) {
     return (
-      <div className="plugin-manager-loading" role="status">
-        {busy ? <LoaderCircle className="spin" size={17} /> : null}
+      <div
+        className="plugin-manager-loading"
+        data-pictor-plugin="pictor.gui.plugin-manager"
+        role="status"
+      >
+        {busy ? <LoaderCircle className="plugin-manager__spin" size={17} /> : null}
         <span>{error ?? '正在读取 Plugin Registry'}</span>
       </div>
     )
   }
 
   return (
-    <div className="plugin-manager">
+    <section
+      className="plugin-manager"
+      data-pictor-plugin="pictor.gui.plugin-manager"
+      aria-label="Plugin Manager"
+    >
       <header className="plugin-manager__toolbar">
         <div>
           <h3>Plugins</h3>
           <span>{snapshot.items.length} 个已登记扩展</span>
         </div>
         <button
-          className="secondary-button"
+          className="plugin-manager__button"
           type="button"
           disabled={busy !== null}
           onClick={() => void apply('install', () => pickAndInstall('local'))}
         >
           {busy === 'install' ? (
-            <LoaderCircle className="spin" size={14} />
+            <LoaderCircle className="plugin-manager__spin" size={14} />
           ) : (
             <FolderPlus size={14} />
           )}
           安装本地 Plugin
         </button>
         <button
-          className="secondary-button"
+          className="plugin-manager__button"
           type="button"
           disabled={busy !== null}
           onClick={() => void apply('install-development', () => pickAndInstall('development'))}
@@ -163,7 +164,7 @@ export function PluginManager({
           Development Plugin
         </button>
         <button
-          className="secondary-button"
+          className="plugin-manager__button"
           type="button"
           disabled={busy !== null}
           onClick={() => void apply('install-pi-extension', () => pickAndInstall('pi-extension'))}
@@ -172,7 +173,7 @@ export function PluginManager({
           Pi Extension
         </button>
         <button
-          className="secondary-button"
+          className="plugin-manager__button"
           type="button"
           disabled={busy !== null}
           onClick={() => void apply('install-pi-package', () => pickAndInstall('pi-package'))}
@@ -190,7 +191,7 @@ export function PluginManager({
           onChange={(event) => setPackageSpec(event.target.value)}
         />
         <button
-          className="secondary-button"
+          className="plugin-manager__button"
           type="button"
           disabled={busy !== null || !packageSpec.trim()}
           onClick={() =>
@@ -220,7 +221,7 @@ export function PluginManager({
         </div>
       ) : null}
       {error ? (
-        <div className="form-error" role="alert">
+        <div className="plugin-manager__error" role="alert">
           {error}
         </div>
       ) : null}
@@ -254,7 +255,7 @@ export function PluginManager({
                 <div className="plugin-row__actions">
                   {item.canRestore ? (
                     <button
-                      className="secondary-button"
+                      className="plugin-manager__button"
                       type="button"
                       disabled={busy !== null}
                       onClick={() =>
@@ -278,10 +279,7 @@ export function PluginManager({
                               executePluginCommand(
                                 commandClient,
                                 event.target.checked ? 'plugin.enable' : 'plugin.disable',
-                                {
-                                  kind: item.kind,
-                                  id: item.id,
-                                },
+                                { kind: item.kind, id: item.id },
                               ),
                             )
                           }
@@ -289,7 +287,7 @@ export function PluginManager({
                         <span>启用</span>
                       </label>
                       <button
-                        className="icon-button"
+                        className="plugin-manager__icon-button"
                         type="button"
                         title="移除 Plugin，保留数据"
                         aria-label={`移除 ${item.name}`}
@@ -308,7 +306,7 @@ export function PluginManager({
                       </button>
                       {item.kind === 'pictor-plugin' ? (
                         <button
-                          className="icon-button danger-icon-button"
+                          className="plugin-manager__icon-button plugin-manager__danger-icon-button"
                           type="button"
                           title="移除 Plugin 及数据"
                           aria-label={`移除 ${item.name} 及数据`}
@@ -337,10 +335,10 @@ export function PluginManager({
       </div>
 
       {snapshot.issues.map((issue) => (
-        <div className="form-error" role="alert" key={issue}>
+        <div className="plugin-manager__error" role="alert" key={issue}>
           {issue}
         </div>
       ))}
-    </div>
+    </section>
   )
 }

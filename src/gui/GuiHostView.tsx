@@ -1,9 +1,13 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
-import type { PluginStatus } from '../plugin/host.js'
 import { sanitizeGuiDiagnostic } from './diagnostics.js'
 import { PictorShell, type GuiWorkbenchReference, type PictorShellState } from './PictorShell.js'
-import type { GuiWorkbenchContext, GuiWorkbenchContribution } from './contract.js'
+import {
+  normalizeGuiSettingsSectionContributions,
+  type GuiPluginStatus,
+  type GuiWorkbenchContext,
+  type GuiWorkbenchContribution,
+} from './contract.js'
 
 export type GuiHostSelection =
   | { readonly kind: 'workbench'; readonly workbench: GuiWorkbenchContribution }
@@ -12,6 +16,7 @@ export type GuiHostSelection =
 export interface GuiHostViewProps extends GuiWorkbenchContext {
   readonly workbenches: readonly GuiWorkbenchContribution[]
   readonly safeMode: boolean
+  readonly onWorkbenchFailure?: () => void
 }
 
 export function validateGuiWorkbenchContributions(
@@ -30,7 +35,7 @@ export function validateGuiWorkbenchContributions(
 
 export function selectGuiHostView(
   workbenches: readonly GuiWorkbenchContribution[],
-  guiPluginStatuses: readonly PluginStatus[],
+  guiPluginStatuses: readonly GuiPluginStatus[],
   safeMode: boolean,
 ): GuiHostSelection {
   if (safeMode) return { kind: 'shell', state: { kind: 'safe-mode' } }
@@ -63,13 +68,15 @@ export function GuiHostView({
   guiPluginStatuses,
   workbenches,
   safeMode,
+  onWorkbenchFailure,
 }: GuiHostViewProps): React.JSX.Element {
   const selection = selectGuiHostView(workbenches, guiPluginStatuses, safeMode)
+  const normalizedSettingsSections = normalizeGuiSettingsSectionContributions(settingsSections)
   const context: GuiWorkbenchContext = {
     commandClient,
     pluginPicker,
-    settingsSections,
     guiPluginStatuses,
+    settingsSections: normalizedSettingsSections,
   }
 
   if (selection.kind === 'shell') {
@@ -90,6 +97,7 @@ export function GuiHostView({
           }}
         />
       )}
+      onError={onWorkbenchFailure}
     >
       <WorkbenchSlot contribution={workbench} context={context} />
     </WorkbenchErrorBoundary>
@@ -107,7 +115,11 @@ function WorkbenchSlot({
 }
 
 class WorkbenchErrorBoundary extends Component<
-  { children: ReactNode; renderFallback: (error: unknown) => ReactNode },
+  {
+    children: ReactNode
+    renderFallback: (error: unknown) => ReactNode
+    onError: (() => void) | undefined
+  },
   { error: unknown }
 > {
   state: { error: unknown } = { error: null }
@@ -119,6 +131,7 @@ class WorkbenchErrorBoundary extends Component<
   componentDidCatch(_error: unknown, _info: ErrorInfo): void {
     // The fallback is intentionally owned by the GUI Host. A Workbench error
     // must not escape into the GUI-level fatal state.
+    this.props.onError?.()
   }
 
   render(): ReactNode {

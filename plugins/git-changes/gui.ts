@@ -1,11 +1,15 @@
 import { GitBranch, LoaderCircle, RefreshCw } from 'lucide-react'
 import { createElement, useCallback, useEffect, useState } from 'react'
 
+import {
+  guiSettingsSectionContributions,
+  type GuiSettingsSectionContext,
+} from '../../src/gui/contract.js'
 import { defineModule } from '../../src/kernel/module.js'
-import { settingsSectionContributions } from '../../src/modules/shell/settings.js'
 import { createAgentWorkspaceClient } from '../../src/modules/agent-workspace/shared.js'
 import { pluginEntrypoint, type GuiPluginContext } from '../../src/plugin/entry.js'
 import { createGitChangesClient, type GitChangesClient } from './shared.js'
+import { installGitChangesStyles } from './styles.js'
 
 function GitChangesSettings({ client }: { client: GitChangesClient }) {
   const [result, setResult] = useState<{ output: string; message: string | null } | null>(null)
@@ -32,22 +36,26 @@ function GitChangesSettings({ client }: { client: GitChangesClient }) {
 
   return createElement(
     'div',
-    { className: 'git-changes-settings' },
+    { className: 'git-changes-settings', 'data-pictor-plugin': 'pictor.git-changes' },
     createElement(
       'header',
       null,
       createElement('h3', null, 'Git Changes'),
       createElement(
         'button',
-        { className: 'secondary-button', type: 'button', onClick: () => void refresh() },
+        {
+          className: 'git-changes-settings__button',
+          type: 'button',
+          onClick: () => void refresh(),
+        },
         loading
-          ? createElement(LoaderCircle, { className: 'spin', size: 14 })
+          ? createElement(LoaderCircle, { className: 'git-changes-spin', size: 14 })
           : createElement(RefreshCw, { size: 14 }),
         '刷新',
       ),
     ),
     result?.message
-      ? createElement('div', { className: 'form-error', role: 'alert' }, result.message)
+      ? createElement('div', { className: 'git-changes-error', role: 'alert' }, result.message)
       : createElement('pre', null, result?.output || '工作树干净'),
   )
 }
@@ -61,16 +69,21 @@ async function loadGitStatus(client: GitChangesClient) {
   return project ? client.getStatus(project.rootPath) : { output: '', message: '当前未选择项目' }
 }
 
-export default pluginEntrypoint<GuiPluginContext>(() => [
+export default pluginEntrypoint<GuiPluginContext>(({ pluginId }) => [
   defineModule({
     id: 'pictor.git-changes.gui',
     activate(context) {
       const client = createGitChangesClient(window.pictorModules)
-      context.contribute(settingsSectionContributions, {
+      const releaseStyles = installGitChangesStyles()
+      context.onDispose({ dispose: releaseStyles })
+      context.contribute(guiSettingsSectionContributions, {
         id: 'pictor.git-changes',
+        owner: pluginId,
         label: 'Git',
         icon: GitBranch,
-        render: () => createElement(GitChangesSettings, { client }),
+        order: 200,
+        render: (_settingsContext: GuiSettingsSectionContext) =>
+          createElement(GitChangesSettings, { client }),
       })
     },
   }),

@@ -7,7 +7,7 @@ import type {
   UpdateCheckResult,
   UpdaterClient,
   UpdaterSnapshot,
-} from './shared'
+} from '../../src/modules/updater/shared.js'
 
 interface AboutSettingsProps {
   client: UpdaterClient
@@ -116,7 +116,7 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
     : null
 
   return (
-    <div className="about-settings">
+    <div className="about-settings" data-pictor-plugin="pictor.updater">
       <header className="about-product">
         <h3>Pictor</h3>
         <p>面向 Agent 委托工作流的桌面开发环境</p>
@@ -164,13 +164,13 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
             </p>
           </div>
           <button
-            className="secondary-button"
+            className="updater-secondary-button"
             type="button"
             onClick={handleCheckForUpdates}
             disabled={!snapshot || busy !== null}
           >
             {busy === 'check' ? (
-              <LoaderCircle className="spin" size={15} />
+              <LoaderCircle className="updater-spin" size={15} />
             ) : (
               <RefreshCw size={15} />
             )}
@@ -178,7 +178,7 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
           </button>
         </div>
 
-        <label className="field update-channel-field" htmlFor="update-channel">
+        <label className="updater-field update-channel-field" htmlFor="update-channel">
           更新通道
           <select
             id="update-channel"
@@ -221,13 +221,13 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
             </div>
             {result.updateAvailable ? (
               <button
-                className="primary-button"
+                className="updater-primary-button"
                 type="button"
                 onClick={handleOpenUpdate}
                 disabled={busy !== null}
               >
                 {busy === 'open' ? (
-                  <LoaderCircle className="spin" size={15} />
+                  <LoaderCircle className="updater-spin" size={15} />
                 ) : (
                   <Download size={15} />
                 )}
@@ -237,7 +237,7 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
           </div>
         ) : null}
         {error ? (
-          <div className="form-error update-error" role="alert">
+          <div className="updater-form-error updater-error" role="alert">
             {error}
           </div>
         ) : null}

@@ -45,6 +45,8 @@ Pi 原生工具和 OpenAI 兼容模型配置。
   `pictor.agent-workspace` 提供；Delegate Workbench 由可删除的
   `pictor.workbench.delegate` GUI Plugin 提供。删除 Workbench 后，Core Shell 仍可启动，CLI
   仍可使用 Headless Workspace。
+- `pictor.gui.plugin-manager` 是独立的 GUI-only Bundled Plugin，通过公开 Settings Section
+  管理 Plugin 生命周期；删除它不会影响 Delegate 或模型设置，Pictor Shell 仍可恢复它。
 - `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Host contract 与 GUI 设置页显示
   当前项目的 Git working tree；它验证了真实 Plugin 间依赖与组合。
 - `pictor.model-openai-compatible` 作为独立 Runtime Provider 注册 Chat Completions/Responses

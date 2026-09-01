@@ -2,9 +2,13 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Info } from 'lucide-react'
 import { vi } from 'vitest'
 
+import type {
+  GuiSettingsSectionContext,
+  GuiSettingsSectionContribution,
+} from '../../src/gui/contract.js'
 import type { PictorBridge } from '../../src/shared/desktop-bridge.js'
 import type { ImageAttachment, SessionHistoryView, SessionRecord } from '../../src/shared/domain.js'
-import { AboutSettings } from '../../src/modules/updater/AboutSettings.js'
+import { AboutSettings } from '../updater/AboutSettings.js'
 import type { UpdaterClient } from '../../src/modules/updater/shared.js'
 import { AgentWorkspace } from './AgentWorkspace.js'
 import type {
@@ -190,17 +194,23 @@ function renderApp(
   return render(
     <AgentWorkspace
       client={client}
-      commandClient={coreBridge.commands}
       filePicker={filePicker}
-      pluginPicker={coreBridge}
       settingsSections={[
         {
-          id: 'about',
+          id: 'pictor.updater.about',
+          owner: 'pictor.updater',
           label: '关于',
           icon: Info,
           render: () => <AboutSettings client={updater} />,
-        },
+        } satisfies GuiSettingsSectionContribution,
       ]}
+      settingsContext={
+        {
+          commandClient: coreBridge.commands,
+          pluginPicker: coreBridge,
+          guiPluginStatuses: [],
+        } satisfies GuiSettingsSectionContext
+      }
     />,
   )
 }

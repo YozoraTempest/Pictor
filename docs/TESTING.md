@@ -68,6 +68,10 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 - Plugin 测试通过 Manifest、Registry、依赖规划、Plugin Host 或 Plugin Store 的公开 Interface
   验证。必须覆盖拓扑顺序、完整循环链、缺失/禁用/版本不兼容依赖、激活失败隔离、零 Plugin、
   安全模式、Bundled 删除后不自动恢复，以及代码与数据的独立删除语义。
+- GUI Plugin 测试通过公开 GUI Settings Section contract 验证 `owner`、稳定 identity、确定性排序与
+  冲突过滤；Delegate、Updater、Git Changes 和 GUI Plugin Manager 必须分别验证 GUI Module 样式
+  的安装/释放、稳定 data scope 与无全局 selector。Shell、fatal/workbench fallback 的诊断归 GUI Host，
+  Extension notification 与 modal 归 Delegate；没有第二个真实消费者时不添加 overlay/notification point。
 - 核心委托 Smoke 必须通过从用户 Store 动态加载的 Runtime Plugin 完成真实 Pi SDK 与 utility
   process 闭环；Main 构建产物中不得依赖静态 Pi adapter 启动路径。
 - Native Pi Extension 集成必须至少使用一个上游未修改示例，验证 Store 安装、Runtime bundle 的
@@ -112,7 +116,9 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   取消、源历史字节不变和禁止覆盖权威 JSONL；Linux E2E 必须证明 JSONL 只含活跃分支、HTML
   保留完整 Tree，并从安装到用户 Store 的 Runtime Plugin 读取 Pi 导出模板与内置主题资产。
 - 零 Plugin E2E 先通过真实 Store 将全部 Bundled Plugin 标记为 `removed`，重启后只能由 Core
-  Shell 提供 Plugin Manager；安全模式使用同一 Core Shell，但不改变用户 Registry。
+  Shell 的 recovery-safe commands 列出、安装、启用、禁用、恢复和诊断；安全模式使用同一 Core
+  Shell，但不改变用户 Registry。GUI Plugin Manager 被移除时，Delegate 与模型设置仍必须可用，
+  且可在 Shell 中恢复该 GUI Plugin。
 - `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，
   并能被 `npm run build:plugins` 构建；Plugin 测试不要求启动开发服务器。
 - Pi Package spec 安装测试必须通过 Pi `DefaultPackageManager` 覆盖显式 local spec，并由同一实现处理

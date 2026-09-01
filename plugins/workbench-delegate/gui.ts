@@ -23,11 +23,9 @@ export default pluginEntrypoint<GuiPluginContext>(({ pluginId }) => [
         render: (workbenchContext: GuiWorkbenchContext) =>
           createElement(AgentWorkspace, {
             client,
-            commandClient: workbenchContext.commandClient,
             filePicker,
-            pluginPicker: workbenchContext.pluginPicker,
             settingsSections: workbenchContext.settingsSections,
-            guiPluginStatuses: workbenchContext.guiPluginStatuses,
+            settingsContext: workbenchContext,
           }),
       })
     },

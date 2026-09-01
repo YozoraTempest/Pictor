@@ -60,6 +60,9 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
     const updaterRow = window.locator('.plugin-row').filter({ hasText: 'pictor.updater' })
     await expect(updaterRow.getByText('运行中')).toBeVisible()
     expect(guiErrors).toEqual([])
+    await window.getByRole('button', { name: 'Git', exact: true }).click()
+    await expect(window.getByRole('heading', { name: 'Git Changes' })).toBeVisible()
+    await window.getByRole('button', { name: 'Plugins', exact: true }).click()
     const commandTransport = await window.evaluate(async () => {
       const client = (
         globalThis as typeof globalThis & {
@@ -183,12 +186,121 @@ test('starts the Pictor Shell with all Plugins ignored in safe mode', async ({
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
     await expect(window.getByText('安全模式已忽略全部 Plugin')).toBeVisible()
-    await expect(window.getByText('已禁用')).toHaveCount(8)
+    await expect(window.getByText('已禁用')).toHaveCount(9)
     await expect(window.getByText('app.doctor', { exact: true })).toBeVisible()
     await window.getByRole('button', { name: '应用诊断' }).click()
     await expect(window.getByRole('heading', { name: 'app.doctor' })).toBeVisible()
   } finally {
     await electronApp.close()
+  }
+})
+
+test('keeps Delegate usable without the GUI Plugin Manager and restores it from Shell', async ({
+  browserName: _browserName,
+}, testInfo) => {
+  const userDataDirectory = testInfo.outputPath('gui-plugin-manager-user-data')
+  const launch = () =>
+    electron.launch({
+      args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
+      cwd: resolve('.'),
+    })
+
+  const firstApp = await launch()
+  try {
+    const window = await firstApp.firstWindow()
+    await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
+    await window.getByRole('button', { name: '设置' }).click()
+    await window.getByRole('button', { name: 'Plugins' }).click()
+    const managerRow = window
+      .locator('.plugin-row')
+      .filter({ hasText: 'pictor.gui.plugin-manager' })
+    await expect(managerRow).toBeVisible({ timeout: 30_000 })
+    await managerRow.getByRole('button', { name: '移除 GUI Plugin Manager', exact: true }).click()
+    await expect(window.getByText('重启 Pictor 后应用 Plugin 变更')).toBeVisible()
+  } finally {
+    await firstApp.close()
+  }
+
+  const removedApp = await launch()
+  try {
+    const window = await removedApp.firstWindow()
+    await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
+    await window.getByRole('button', { name: '设置' }).click()
+    await expect(window.getByRole('button', { name: '模型', exact: true })).toBeVisible()
+    await expect(window.getByLabel('API Base URL')).toBeVisible()
+    await expect(window.getByRole('button', { name: 'Plugins' })).toHaveCount(0)
+  } finally {
+    await removedApp.close()
+  }
+
+  const store = await initializePluginStore(userDataDirectory)
+  await store.remove('pictor.workbench.delegate')
+
+  const shellApp = await launch()
+  try {
+    const window = await shellApp.firstWindow()
+    await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
+    const managerShellRow = window
+      .locator('.pictor-shell__plugin-row')
+      .filter({ hasText: 'pictor.gui.plugin-manager' })
+    const workbenchShellRow = window
+      .locator('.pictor-shell__plugin-row')
+      .filter({ hasText: 'pictor.workbench.delegate' })
+    await managerShellRow.getByRole('button', { name: '恢复' }).click()
+    await workbenchShellRow.getByRole('button', { name: '恢复' }).click()
+    await expect(window.getByText('操作已记录；重启 Pictor 后生效。')).toBeVisible()
+  } finally {
+    await shellApp.close()
+  }
+
+  const restoredApp = await launch()
+  try {
+    const window = await restoredApp.firstWindow()
+    await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
+    await window.getByRole('button', { name: '设置' }).click()
+    await window.getByRole('button', { name: 'Plugins' }).click()
+    await expect(window.getByText('pictor.gui.plugin-manager', { exact: true })).toBeVisible()
+  } finally {
+    await restoredApp.close()
+  }
+})
+
+test('keeps Delegate usable when the GUI Plugin Manager is disabled', async ({
+  browserName: _browserName,
+}, testInfo) => {
+  const userDataDirectory = testInfo.outputPath('disabled-gui-plugin-manager-user-data')
+  const launch = () =>
+    electron.launch({
+      args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
+      cwd: resolve('.'),
+    })
+
+  const firstApp = await launch()
+  try {
+    const window = await firstApp.firstWindow()
+    await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
+    await window.getByRole('button', { name: '设置' }).click()
+    await window.getByRole('button', { name: 'Plugins', exact: true }).click()
+    const managerRow = window
+      .locator('.plugin-row')
+      .filter({ hasText: 'pictor.gui.plugin-manager' })
+    await expect(managerRow.getByRole('checkbox')).toBeChecked()
+    await managerRow.getByRole('checkbox').click()
+    await expect(window.getByText('重启 Pictor 后应用 Plugin 变更')).toBeVisible()
+  } finally {
+    await firstApp.close()
+  }
+
+  const disabledApp = await launch()
+  try {
+    const window = await disabledApp.firstWindow()
+    await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
+    await window.getByRole('button', { name: '设置' }).click()
+    await expect(window.getByRole('button', { name: '模型', exact: true })).toBeVisible()
+    await expect(window.getByLabel('API Base URL')).toBeVisible()
+    await expect(window.getByRole('button', { name: 'Plugins' })).toHaveCount(0)
+  } finally {
+    await disabledApp.close()
   }
 })
 
@@ -211,7 +323,7 @@ test('starts the Pictor Shell after every Bundled Plugin is removed', async ({
   try {
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
-    await expect(window.getByRole('button', { name: '恢复' })).toHaveCount(8)
+    await expect(window.getByRole('button', { name: '恢复' })).toHaveCount(9)
     const workspaceRow = window
       .locator('.pictor-shell__plugin-row')
       .filter({ hasText: 'pictor.agent-workspace' })
@@ -264,6 +376,7 @@ test('shows all Workbench owners in a conflict Shell and can disable the conflic
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
     await expect(window.getByText('Workbench 冲突')).toBeVisible()
+    await expect(window.locator('style[data-pictor-plugin]')).toHaveCount(0)
     await expect(window.getByText('delegate', { exact: true })).toBeVisible()
     await expect(window.getByText('conflict-workbench', { exact: true })).toBeVisible()
     const pluginList = window.locator('.pictor-shell__plugin-list')
@@ -314,6 +427,7 @@ test('isolates a failed GUI Plugin and enters Shell without a Workbench', async 
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
     await expect(window.getByText('GUI Plugin 加载失败', { exact: true })).toBeVisible()
+    await expect(window.locator('style[data-pictor-plugin]')).toHaveCount(0)
     await expect(
       window.locator('.pictor-shell__plugin-row').filter({ hasText: 'pictor.failed-gui' }),
     ).toBeVisible()
