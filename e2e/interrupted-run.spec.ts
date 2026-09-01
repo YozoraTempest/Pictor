@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 
+import { closeElectronApp } from './electron-cleanup.js'
 import { credentialFixtures, invokeAgentWorkspace } from './support.js'
 
 test('confirms active-run exit and restores the run as interrupted', async ({
@@ -41,6 +42,7 @@ test('confirms active-run exit and restores the run as interrupted', async ({
 
   const firstApp = await launch()
   let restoredApp: Awaited<ReturnType<typeof launch>> | null = null
+  let businessFailed = false
   try {
     const firstWindow = await firstApp.firstWindow()
     await firstWindow.waitForLoadState('domcontentloaded')
@@ -124,12 +126,23 @@ test('confirms active-run exit and restores the run as interrupted', async ({
         }),
       }),
     )
+  } catch (error) {
+    businessFailed = true
+    return Promise.reject(error)
   } finally {
-    await restoredApp?.close().catch(() => undefined)
-    await firstApp.close().catch(() => undefined)
-    server.closeAllConnections()
-    await new Promise<void>((resolveClose, reject) =>
-      server.close((error) => (error ? reject(error) : resolveClose())),
-    )
+    try {
+      if (restoredApp) {
+        await closeElectronApp(restoredApp, { mode: businessFailed ? 'suppress' : 'strict' })
+      }
+    } finally {
+      try {
+        await closeElectronApp(firstApp, { mode: businessFailed ? 'suppress' : 'strict' })
+      } finally {
+        server.closeAllConnections()
+        await new Promise<void>((resolveClose, reject) =>
+          server.close((error) => (error ? reject(error) : resolveClose())),
+        )
+      }
+    }
   }
 })

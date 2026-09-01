@@ -124,4 +124,15 @@ test('navigates, summarizes, and compacts an imported Pi Session', async ({ piEx
   await expect
     .poll(() => readFile(authoritativeJsonlPath, 'utf8'))
     .toContain('Continue after compaction.')
+  await expect
+    .poll(
+      async () => {
+        const session = await invokeAgentWorkspace(window, 'getSession', {
+          sessionId: imported.sessionId,
+        })
+        return session.ok ? session.value.runs.at(-1)?.status : null
+      },
+      { timeout: 30_000 },
+    )
+    .toBe('completed')
 })
