@@ -52,7 +52,7 @@ Runtime utility process ──────────────────�
 | Command Engine   | `list`、`execute`、`cancel`、`subscribe`                                     | 命令注册、输入校验、执行上下文、取消、进度、结构化结果和错误            | IPC、CLI 格式化、GUI 组件、TUI 组件              |
 | Plugin System    | 现有安装、Registry、依赖计划、进程级激活 Interface                           | Store、Bundled 恢复、SemVer、故障隔离、每 Plugin 的 Module Kernel       | 产品 UI 选择、命令语法、Agent 会话语义           |
 | Agent Workspace  | Project、Session、Settings、Runtime intent 与 event                          | `data-v1` 协调、Session 事务、Pi identity 与投影                        | 文件选择器、GUI modal、CLI/TUI 展示              |
-| GUI Host         | Workbench Contribution、Shell 状态和 Host 级 overlay                         | GUI Plugin 装载、Workbench 选择、无插件和失败恢复                       | Delegate 工作台、图形 Plugin Manager、设置业务页 |
+| GUI Host         | Workbench、公开 Settings Section、Shell 状态和 Host 级诊断                   | GUI Plugin 装载、Workbench 选择、无插件和失败恢复                       | Delegate 工作台、图形 Plugin Manager、设置业务页 |
 | TUI Host         | TUI Application Contribution                                                 | terminal 生命周期、退出与终态恢复                                       | 第二套 Agent Runtime、Pi 子进程、GUI Bridge      |
 
 Interface 是调用者和测试共同跨越的 seam。Application Host 只从装配根接收 `RuntimeHost`、
@@ -133,13 +133,21 @@ GUI Host 对 Workbench Contribution 使用确定性选择：
 Pictor Shell 必须能只靠 Core 命令完成 GUI Plugin 的列出、安装、启用、禁用、恢复与诊断闭环。
 图形 Plugin Manager 是 `pictor.gui.plugin-manager`，不是 GUI Host 的不可删除部分。
 
+GUI Settings Section 是产品 GUI 接入设置容器的唯一公开 Contribution。每个 Section 携带 Plugin
+`owner`、稳定全局 `id`、显示顺序和 render function；render context 只提供公开的
+`CommandClient`、`GuiPluginPicker` 与 GUI Plugin statuses。Host 对重复或无效 identity 做确定性过滤，
+不会因为单个产品 Section 让 GUI 进入 fatal。Pictor Shell 与 fatal/workbench error fallback 属于
+GUI Host；Extension notification 与 modal 属于 Delegate Workbench。当前没有第二个真实消费者，不增加
+overlay 或 notification ContributionPoint。
+
 ### Delegate Workbench
 
 `pictor.agent-workspace` 在迁移后只提供 Headless Project、Session、Settings 与 Runtime contract。
-`pictor.workbench.delegate` 依赖它并拥有 AgentWorkspace、Conversation、Sidebar、Settings、Session
-Tree、Composer、Extension UI 和相关样式。禁用或删除 Workbench 不删除 Workspace 数据；GUI 回到
-Pictor Shell，CLI 仍能调用 Headless 能力。默认 Profile 推荐该 Workbench，但不得覆盖用户的显式
-移除选择。
+`pictor.workbench.delegate` 依赖它并拥有 AgentWorkspace、Conversation、Sidebar、Settings 容器、模型
+页、Session Tree、Composer、Extension UI 和相关样式。禁用或删除 Workbench 不删除 Workspace 数据；GUI
+回到 Pictor Shell，CLI 仍能调用 Headless 能力。默认 Profile 推荐该 Workbench，但不得覆盖用户的显式
+移除选择。Updater、Git Changes 和 `pictor.gui.plugin-manager` 分别通过同一 Settings Section contract
+贡献自己的页面，Delegate 不硬编码这些产品页。
 
 ### TUI
 
@@ -221,7 +229,7 @@ Frontend 与 Profile identity 的结构化冲突，不继续初始化 Repository
 - Vitest：44 个 Test File、238 个 Test 全部通过，耗时 59.00 秒。
 - Electron build 成功；Main 入口为 `src/main/index.ts`，另有 Runtime Host utility 入口。
 - Electron `@smoke`：1 个 Delegate GUI/utility-process 场景通过，耗时 4.6 秒。
-- Bundled Plugin 共 7 个；Manifest 只有 `main`、`renderer`、`runtime` 三种 Module 入口。
+- Stage 8 当前 Bundled Plugin 共 9 个；Manifest 使用 `host`、`gui`、`tui`、`runtime` Module 入口。
 - CI required checks 为 Quality、Unit and integration、Windows acceptance、Linux acceptance。
 
 本机 npm 版本差异只记录为环境事实，不改变仓库固定工具链。Agent 在报告回归前必须用仓库声明或

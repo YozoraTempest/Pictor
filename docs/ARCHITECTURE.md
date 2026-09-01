@@ -1,13 +1,13 @@
 # 当前代码架构
 
-> 本文记录 `develop` 上运行的 0.4 Stage 7 架构。完整目标、兼容性边界和后续阶段门禁见
-> [`MULTI_FRONTEND_ARCHITECTURE.md`](MULTI_FRONTEND_ARCHITECTURE.md)；尚未实现的 TUI 与通用 GUI
-> Plugin Manager 的独立提取仍属于后续阶段；当前 Plugin Manager 暂存于 Delegate
-> Workbench 内，不把后续通用化设计提前假定为已完成能力。
+> 本文记录 `develop` 上运行的 0.4 Stage 8 架构。完整目标、兼容性边界和后续阶段门禁见
+> [`MULTI_FRONTEND_ARCHITECTURE.md`](MULTI_FRONTEND_ARCHITECTURE.md)。GUI Plugin Manager、Updater、
+> Git Changes 和 Delegate Workbench 的产品 GUI 均由各自 Plugin 拥有；Core GUI 只保留 Host、Shell、
+> 诊断、公开 contract、bootstrap 与宿主样式。
 
 本文描述 Pictor 当前已经实现的代码结构和依赖规则。Application Host 已从 Electron Main 的启动链
 路中提取，DesktopHost 是它的 Electron 适配器；GUI Renderer 由 `src/gui` 的 GUI Host 装配，
-Workbench 与恢复 Shell 通过公开 contract 组合，Updater 是首个真实 Bundled Plugin。尚未迁移的
+Workbench 与恢复 Shell 通过公开 contract 组合，产品 GUI 由 Bundled Plugin 提供。尚未迁移的
 业务能力仍按纵向切片保留在现有模块中，不能把兼容代码误写成后续 Stage 的最终结构。
 
 ## 源码域
@@ -19,10 +19,10 @@ src/
 ├── application/ 无 Frontend 依赖的 Application Host、生命周期端口和服务装配
 ├── commands/   Headless Command Engine、稳定 Client contract 和 Core commands
 ├── cli/        无 Electron 的 Node CLI Frontend、参数/输出/退出语义和 Headless adapters
-├── gui/        GUI Host、Workbench slot、Pictor Shell 和 GUI Plugin 装配
+├── gui/        GUI Host、Workbench slot、Pictor Shell、公开 GUI contract 和 GUI Plugin 装配
 ├── kernel/     纯 TypeScript Module 生命周期、Token、Contribution 和 Contract Router
 ├── plugin/     Manifest、Registry、Plugin 依赖规划和进程级 Plugin Host
-├── modules/    按 Feature 聚合的 Headless contract、Host 和 GUI 辅助实现
+├── modules/    按 Feature 聚合的 Headless contract、Host 和 domain 能力
 ├── main/       DesktopHost、Electron IPC/协议、Plugin Store、持久化和 Runtime 监管
 ├── preload/    Desktop bridge 的 Electron adapter
 ├── renderer/   React 界面
@@ -31,8 +31,8 @@ src/
 ```
 
 `main`、`preload`、`renderer` 和 `runtime` 分别对应不同的运行环境。`modules/<feature>/` 可以
-并列保存该 Feature 的共享 contract 和可选进程入口，以提高修改 locality；跨进程调用仍必须
-经过共享 contract，不能直接导入另一个进程的实现。
+保存 Headless contract、Host 或 domain 能力，但不再保存产品 React/GUI 实现；GUI 产品界面位于
+`plugins/<plugin>/`。跨进程调用仍必须经过共享 contract，不能直接导入另一个进程的实现。
 
 `application` 是当前已落地的 Headless Application Host 边界。`ApplicationHost` 不导入 Electron、
 React、TUI、Renderer 或 Preload 实现；它在获得 `FrontendLock` 后初始化 `AppRepository` 和
@@ -91,7 +91,10 @@ Bundled 恢复源和独立数据目录。第一版按重启应用生效，不实
   Agent Workspace Module contract。
 
 不要重新增加一个导出所有共享内容的总入口。调用者应直接依赖自己使用的协议 module，使
-interface 保持可见且范围明确。
+interface 保持可见且范围明确。`src/gui/contract.ts` 是 GUI Plugin 使用的公开 contract；它提供
+Workbench slot、带 `owner` 与稳定 `id` 的 Settings Section，以及 Section render context 中的
+`CommandClient`、`GuiPluginPicker` 和 GUI Plugin status。旧的 `shell.settings-sections` 不存在，也
+不保留兼容别名。
 
 ## 依赖方向
 
@@ -115,9 +118,9 @@ Node Module 入口、Shared 和 E2E；`tsconfig.web.json` 覆盖 GUI、Kernel、
 
 Host 与 GUI 分别从用户 Plugin Store 动态加载当前进程的 Plugin 入口。跨进程 Feature 通过固定的
 `module:invoke` / `module:event` Electron transport 通信，输入和结果只在进程 seam 校验；同一
-进程内的 Module 调用依赖 TypeScript。Updater 的独立 ESM 包在构建时进入 Bundled 恢复源，首次
+进程内的 Module 调用依赖 TypeScript。Updater 的独立 ESM 包在 `plugins/updater` 构建时进入 Bundled 恢复源，首次
 启动复制到用户 Store 后运行；其 Host 入口贡献 contract handler，GUI 入口提供
-`UpdaterClient` 并向 `settings.sections` 贡献“关于”页面。
+`UpdaterClient` 并向公开 `gui.settings-sections` Contribution 贡献“关于”页面。
 Updater Host Module 在自身 Plugin 数据目录记忆稳定版或 Nightly 通道，默认稳定版；GUI 只消费
 快照、选择通道、检查和打开四个 intent。稳定版按 SemVer 比较 Latest Release，Nightly 使用固定
 Pre-release tag 与打包时嵌入的完整源码提交比较滚动快照；GitHub 地址、平台资产和打开目标的校验都
@@ -168,11 +171,22 @@ source 使用 `development`，启动时直接读取 live Manifest/入口；它�
 
 GUI Host 的 `src/gui` 只装配不可卸载的 `GuiHostView` 与 Pictor Shell。`pictor.agent-workspace`
 的 Host Module 提供 Workspace contract，`pictor.workbench.delegate` GUI Plugin 通过 `gui.workbenches` Contribution
-提供 Project、Session、Conversation 和 Settings GUI，并由 GUI Plugin context 注入真实 `pluginId`；
+提供 Project、Session、Conversation 和 Settings 容器，并由 GUI Plugin context 注入真实 `pluginId`；
 零个或多个 Workbench、GUI Plugin 加载失败和 Workbench render throw 都回到 Shell，只有
-AppInfo、Plugin bootstrap 或 GUI Host 自身 contract 失败才进入 fatal state。完整图形 Plugin
-Manager 与 Delegate Workbench 一起交付，但通过 CommandClient 和窄 picker adapter 保持独立边界，
-后续可提取为 `pictor.gui.plugin-manager`；设置页 Contribution 只在 Workbench 存在时组合。
+AppInfo、Plugin bootstrap 或 GUI Host 自身 contract 失败才进入 fatal state。独立的
+`pictor.gui.plugin-manager` 通过公开 Settings Section、CommandClient、GuiPluginPicker 和 GUI Plugin
+status 工作；Delegate 不拥有或导入它。删除或禁用该 Plugin 后，Delegate 与模型设置仍可用，只是
+对应 Settings Section 消失；Plugin 恢复仍由 Pictor Shell 的 Core command 完成。
+
+GUI Settings Section 是产品 GUI 的唯一设置页 Contribution。Host 会按 `order`、`id`、`owner`
+确定性排序，并在重复 identity 时保留字典序最小的 owner；无效 identity 或 render contract 被
+过滤，不会把整个 GUI Host 推入 fatal。Delegate 只拥有 Settings modal、模型页和 Extension UI：
+Extension notification 与 modal 由 Delegate 渲染。Pictor Shell 的恢复提示、Host 诊断、fatal state
+和 Workbench error fallback 属于 GUI Host。当前没有第二个真实消费者，因此不增加 overlay 或
+notification ContributionPoint；这项边界由 GUI contract 与 Workbench/Host 测试固定。
+每个 GUI Plugin 在自己的 GUI Module 激活时通过 `installGuiPluginStyles` 安装带稳定 Plugin identity
+的样式，在释放时移除；Host 进入 Shell 前会释放已激活的 GUI Plugin，因此冲突、失败和停用路径不会
+把产品样式留在 Shell。
 
 `pictor.git-changes` 是第二个跨进程 Bundled Plugin，并声明对 `pictor.agent-workspace` 的硬依赖。
 Host 入口通过 Module contract 提供当前项目的 `git status`，GUI 入口贡献 Git 设置页；删除
@@ -294,8 +308,8 @@ AppImage；原始 os-release 内容不进入 IPC、持久化或日志。
 共享的项目路径身份仅用于持久化去重：Windows 忽略大小写，Linux 保留大小写。Runtime 不把
 项目路径身份误用为 Pi 文件工具的第二套访问边界。
 
-Delegate Workbench GUI Plugin 的 `AgentWorkspace` 负责页面布局、Settings 和界面级 modal
-编排，并从 GUI Host 接收 Updater Interface 与设置页 Contribution。内部
+Delegate Workbench GUI Plugin 的 `AgentWorkspace` 负责页面布局、Settings 容器、模型页和界面级 modal
+编排，并从 GUI Host 接收公开 Settings Section 与 render context。内部
 `useWorkspaceController` 通过注入的 `AgentWorkspaceClient` 管理 workspace snapshot、当前 Session、导航
 竞态、Runtime event reconcile 与 Run/Project/Session intent；测试使用窄 bridge fake 直接验证
 异步状态和事件顺序。不要在 UI 组件中重新实现刷新顺序，也不要为此引入第二套全局 store。
@@ -307,8 +321,8 @@ Delegate Workbench GUI Plugin 的 `AgentWorkspace` 负责页面布局、Settings
 - Command Engine、Core commands 和 Frontend transport contract：`src/commands/`。
 - Plugin Manifest、Registry schema、依赖规划与隔离 Host：`src/plugin/`。
 - Plugin Store、安装副本和 Bundled 恢复：`src/main/plugins/`。
-- 新增业务 Feature：`src/modules/<feature>/`，按需要创建 `shared.ts`、`host.ts`、
-  `gui.tsx` 或 `runtime.ts`。
+- 新增 Headless 业务 Feature：`src/modules/<feature>/`，按需要创建 `shared.ts`、`host.ts`、
+  `preferences.ts`、`update-service.ts` 或 `runtime.ts`；产品 GUI 放入对应 `plugins/<plugin>/`。
 - Electron Main 启动装配：`src/main/index.ts`；DesktopHost、窗口、安全、协议和 IPC adapter：`src/main/desktop-host.ts`、`src/main/`。
 - 本地状态、凭据和数据迁移：`src/main/persistence/`。
 - Agent Run 的 Runtime Coordinator、监管、持久化和广播编排：`src/main/runtime/`，由 `ApplicationHost` 统一装配。
@@ -316,8 +330,10 @@ Delegate Workbench GUI Plugin 的 `AgentWorkspace` 负责页面布局、Settings
 - Agent Workspace Headless contract、Host 和文件操作：`src/modules/agent-workspace/`。
 - Delegate Workbench GUI、Session 视图与设置编排：`plugins/workbench-delegate/`。
 - GUI Host、Workbench slot、Pictor Shell 与 GUI bootstrap：`src/gui/`。
-- GUI Host 公共 Contribution：`src/gui/`；Delegate 内的 Plugin Manager 与 Modal 暂存于
-  `plugins/workbench-delegate/`，保持可独立提取。
+- GUI Host 公共 Contribution：`src/gui/contract.ts`；GUI Plugin 样式生命周期 helper：
+  `src/gui/plugin-style.ts`。
+- GUI Plugin Manager：`plugins/gui-plugin-manager/`；Updater GUI：`plugins/updater/`；Git Changes
+  GUI：`plugins/git-changes/`；Delegate Workbench GUI：`plugins/workbench-delegate/`。
 - 跨进程 schema 或类型：放入对应的 `src/shared/` 协议 module。
 
 使用 `npm run plugin:new -- <name>` 生成 Manifest、Host/GUI 入口和测试骨架；

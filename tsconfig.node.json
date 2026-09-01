@@ -37,6 +37,7 @@
     "plugins/pi-extension-host/pi-extension-host.test.ts",
     "plugins/updater/host.ts",
     "plugins/updater/updater.test.ts",
+    "plugins/gui-plugin-manager/gui-plugin-manager.test.ts",
     "plugins/agent-resources/agent-resources.test.ts",
     "e2e/**/*.ts",
     "src/shared/**/*.ts",

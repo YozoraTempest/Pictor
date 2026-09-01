@@ -1,11 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { Info } from 'lucide-react'
+import { Settings2 } from 'lucide-react'
 import { vi } from 'vitest'
 
+import type {
+  GuiSettingsSectionContext,
+  GuiSettingsSectionContribution,
+} from '../../src/gui/contract.js'
 import type { PictorBridge } from '../../src/shared/desktop-bridge.js'
 import type { ImageAttachment, SessionHistoryView, SessionRecord } from '../../src/shared/domain.js'
-import { AboutSettings } from '../../src/modules/updater/AboutSettings.js'
-import type { UpdaterClient } from '../../src/modules/updater/shared.js'
 import { AgentWorkspace } from './AgentWorkspace.js'
 import type {
   AgentWorkspaceClient,
@@ -150,38 +152,18 @@ function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
   }
 }
 
-function createUpdater(overrides: Partial<UpdaterClient> = {}): UpdaterClient {
-  const appInfo = {
-    name: 'Pictor',
-    version: '0.1.0',
-    buildChannel: 'stable' as const,
-    sourceCommit: 'a'.repeat(40),
-    platform: 'win32' as const,
-    arch: 'x64' as const,
-    distribution: 'windows' as const,
-  }
+function createTestSettingsSection(): GuiSettingsSectionContribution {
   return {
-    getSnapshot: async () => ({ appInfo, channel: 'stable' }),
-    setChannel: async (channel) => ({ appInfo, channel }),
-    checkForUpdates: async () =>
-      ok({
-        channel: 'stable',
-        currentVersion: '0.1.0',
-        latestVersion: '0.2.0',
-        latestCommit: null,
-        updateAvailable: true,
-        packageAvailable: true,
-        packageKind: 'windows-nsis',
-        publishedAt: now,
-      }),
-    openUpdate: async () => ok(null),
-    ...overrides,
+    id: 'pictor.workbench.delegate.test-settings',
+    owner: 'pictor.workbench.delegate.test',
+    label: '测试设置',
+    icon: Settings2,
+    render: () => <div>Delegate test settings</div>,
   }
 }
 
 function renderApp(
   client: AgentWorkspaceClient,
-  updater: UpdaterClient = createUpdater(),
   coreBridgeOverrides: Partial<PictorBridge> = {},
   filePicker: AgentWorkspaceFilePicker = createFilePicker(),
 ) {
@@ -190,17 +172,15 @@ function renderApp(
   return render(
     <AgentWorkspace
       client={client}
-      commandClient={coreBridge.commands}
       filePicker={filePicker}
-      pluginPicker={coreBridge}
-      settingsSections={[
+      settingsSections={[createTestSettingsSection()]}
+      settingsContext={
         {
-          id: 'about',
-          label: '关于',
-          icon: Info,
-          render: () => <AboutSettings client={updater} />,
-        },
-      ]}
+          commandClient: coreBridge.commands,
+          pluginPicker: coreBridge,
+          guiPluginStatuses: [],
+        } satisfies GuiSettingsSectionContext
+      }
     />,
   )
 }
@@ -211,6 +191,16 @@ it('renders the empty delegate workspace from a persisted snapshot', async () =>
   expect(await screen.findByRole('heading', { name: '选择一个项目开始' })).toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: '新建项目' })).toHaveLength(3)
   expect(screen.getByText('v0.1.0')).toBeInTheDocument()
+})
+
+it('composes a local GUI settings contribution inside the settings container', async () => {
+  renderApp(createBridge(emptySnapshot()))
+
+  await screen.findByRole('heading', { name: '选择一个项目开始' })
+  fireEvent.click(screen.getByRole('button', { name: '设置' }))
+  fireEvent.click(screen.getByRole('button', { name: '测试设置' }))
+
+  expect(await screen.findByText('Delegate test settings')).toBeInTheDocument()
 })
 
 it('keeps Extension status, dialog, and title state scoped to the active Session', async () => {
@@ -711,7 +701,7 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
       },
     } satisfies SessionHistoryView)
   })
-  renderApp(bridge, createUpdater(), {}, filePicker)
+  renderApp(bridge, {}, filePicker)
 
   await screen.findByText('Active response details')
   fireEvent.click(screen.getByRole('button', { name: '导入 Pi Session' }))
@@ -825,117 +815,6 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
   fireEvent.click(screen.getByRole('button', { name: '返回当前节点' }))
   expect(await screen.findByText('Active response details')).toBeInTheDocument()
   expect(screen.queryByText(/正在查看历史分支/)).not.toBeInTheDocument()
-})
-
-it('shows app information and downloads an available update from settings', async () => {
-  const checkForUpdates = vi.fn(async () =>
-    ok({
-      channel: 'stable' as const,
-      currentVersion: '0.1.0',
-      latestVersion: '0.2.0',
-      latestCommit: null,
-      updateAvailable: true,
-      packageAvailable: true,
-      packageKind: 'windows-nsis' as const,
-      publishedAt: now,
-    }),
-  )
-  const openUpdate = vi.fn(async () => ok(null))
-  renderApp(createBridge(emptySnapshot()), createUpdater({ checkForUpdates, openUpdate }))
-
-  await screen.findByRole('heading', { name: '选择一个项目开始' })
-  fireEvent.click(screen.getByRole('button', { name: '设置' }))
-  fireEvent.click(screen.getByRole('button', { name: '关于' }))
-
-  await waitFor(() => expect(screen.getAllByText('v0.1.0')).toHaveLength(2))
-  fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
-  expect(await screen.findByText('发现新版本 v0.2.0')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '下载发行包' }))
-  await waitFor(() => expect(openUpdate).toHaveBeenCalledOnce())
-})
-
-it('selects and checks the persisted rolling Nightly channel', async () => {
-  const appInfo = {
-    name: 'Pictor',
-    version: '0.3.0',
-    buildChannel: 'stable' as const,
-    sourceCommit: 'a'.repeat(40),
-    platform: 'win32' as const,
-    arch: 'x64' as const,
-    distribution: 'windows' as const,
-  }
-  const setChannel = vi.fn(async (channel: 'stable' | 'nightly') => ({ appInfo, channel }))
-  const checkForUpdates = vi.fn(async () =>
-    ok({
-      channel: 'nightly' as const,
-      currentVersion: '0.3.0',
-      latestVersion: '0.3.0',
-      latestCommit: 'b'.repeat(40),
-      updateAvailable: true,
-      packageAvailable: true,
-      packageKind: 'windows-nsis' as const,
-      publishedAt: now,
-    }),
-  )
-  renderApp(
-    createBridge(emptySnapshot()),
-    createUpdater({
-      getSnapshot: async () => ({ appInfo, channel: 'stable' }),
-      setChannel,
-      checkForUpdates,
-    }),
-  )
-
-  await screen.findByRole('heading', { name: '选择一个项目开始' })
-  fireEvent.click(screen.getByRole('button', { name: '设置' }))
-  fireEvent.click(screen.getByRole('button', { name: '关于' }))
-  await waitFor(() => expect(screen.getByLabelText('更新通道')).toBeEnabled())
-
-  fireEvent.change(screen.getByLabelText('更新通道'), { target: { value: 'nightly' } })
-  await waitFor(() => expect(setChannel).toHaveBeenCalledWith('nightly'))
-  expect(await screen.findByRole('note')).toHaveTextContent('最新通过 CI 的 develop 快照')
-
-  fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
-  expect(await screen.findByText('可以切换到 Nightly bbbbbbb')).toBeInTheDocument()
-  expect(checkForUpdates).toHaveBeenCalledOnce()
-})
-
-it('shows the Linux platform in app information', async () => {
-  renderApp(
-    createBridge(emptySnapshot()),
-    createUpdater({
-      getSnapshot: async () => ({
-        channel: 'stable',
-        appInfo: {
-          name: 'Pictor',
-          version: '0.1.0',
-          buildChannel: 'stable',
-          sourceCommit: 'a'.repeat(40),
-          platform: 'linux',
-          arch: 'x64',
-          distribution: 'arch',
-        },
-      }),
-    }),
-    {
-      getAppInfo: async () =>
-        ok({
-          name: 'Pictor',
-          version: '0.1.0',
-          buildChannel: 'stable',
-          sourceCommit: 'a'.repeat(40),
-          platform: 'linux',
-          arch: 'x64',
-          distribution: 'arch',
-        }),
-    },
-  )
-
-  await screen.findByRole('heading', { name: '选择一个项目开始' })
-  fireEvent.click(screen.getByRole('button', { name: '设置' }))
-  fireEvent.click(screen.getByRole('button', { name: '关于' }))
-
-  expect(await screen.findByText('Linux x64')).toBeInTheDocument()
 })
 
 it('saves the selected Responses compatibility mode', async () => {

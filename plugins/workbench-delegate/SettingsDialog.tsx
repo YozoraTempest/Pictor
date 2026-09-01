@@ -1,6 +1,5 @@
 import {
   CheckCircle2,
-  Blocks,
   KeyRound,
   LoaderCircle,
   RefreshCw,
@@ -10,27 +9,24 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
+import type {
+  GuiSettingsSectionContext,
+  GuiSettingsSectionContribution,
+} from '../../src/gui/contract.js'
 import {
   baseUrlSchema,
   modelSettingsInputSchema,
   type ConnectionTestResult,
   type ModelSettings,
 } from '../../src/shared/model.js'
-import type { CommandClient } from '../../src/commands/index.js'
-import type { GuiPluginPicker } from '../../src/shared/desktop-bridge.js'
-import type { PluginStatus } from '../../src/plugin/host.js'
-import { PluginManager } from './PluginManager.js'
 import { Modal } from './Modal.js'
-import type { SettingsSection } from '../../src/modules/shell/settings.js'
 import type { AgentWorkspaceClient } from '../../src/modules/agent-workspace/shared.js'
 
 interface SettingsDialogProps {
   client: AgentWorkspaceClient
-  commandClient: CommandClient
   initial: ModelSettings | null
-  pluginPicker: GuiPluginPicker
-  sections: readonly SettingsSection[]
-  guiPluginStatuses: readonly PluginStatus[]
+  sections: readonly GuiSettingsSectionContribution[]
+  settingsContext: GuiSettingsSectionContext
   onClose: () => void
   onSaved: (settings: ModelSettings) => void
 }
@@ -61,11 +57,9 @@ function createFormState(settings: ModelSettings | null): FormState {
 
 export function SettingsDialog({
   client,
-  commandClient,
   initial,
-  pluginPicker,
   sections,
-  guiPluginStatuses,
+  settingsContext,
   onClose,
   onSaved,
 }: SettingsDialogProps): React.JSX.Element {
@@ -185,12 +179,7 @@ export function SettingsDialog({
   }
 
   return (
-    <Modal
-      title="设置"
-      description="管理模型连接、Plugins 与应用信息。"
-      onClose={onClose}
-      width="wide"
-    >
+    <Modal title="设置" description="管理模型连接与应用信息。" onClose={onClose} width="wide">
       <nav className="settings-tabs" aria-label="设置页面">
         <button
           type="button"
@@ -200,15 +189,6 @@ export function SettingsDialog({
         >
           <SlidersHorizontal size={15} />
           模型
-        </button>
-        <button
-          type="button"
-          className={activeTab === 'plugins' ? 'is-active' : ''}
-          aria-current={activeTab === 'plugins' ? 'page' : undefined}
-          onClick={() => setActiveTab('plugins')}
-        >
-          <Blocks size={15} />
-          Plugins
         </button>
         {sections.map((section) => {
           const Icon = section.icon
@@ -450,14 +430,7 @@ export function SettingsDialog({
           </footer>
         </>
       ) : null}
-      {activeTab === 'plugins' ? (
-        <PluginManager
-          commandClient={commandClient}
-          pluginPicker={pluginPicker}
-          guiPluginStatuses={guiPluginStatuses}
-        />
-      ) : null}
-      {sections.find((section) => section.id === activeTab)?.render() ?? null}
+      {sections.find((section) => section.id === activeTab)?.render(settingsContext) ?? null}
     </Modal>
   )
 }

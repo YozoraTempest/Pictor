@@ -28,7 +28,6 @@
     "src/modules/**/shared.ts",
     "src/modules/**/gui.ts",
     "src/modules/**/*.tsx",
-    "src/modules/shell/**/*.ts",
     "src/shared/**/*.ts",
     "e2e/electron-cleanup.ts",
     "tests/**/*.ts",
@@ -37,6 +36,17 @@
     "plugins/workbench-delegate/**/*.tsx",
     "plugins/git-changes/gui.ts",
     "plugins/git-changes/shared.ts",
-    "plugins/updater/gui.ts"
+    "plugins/git-changes/styles.ts",
+    "plugins/git-changes/gui.test.tsx",
+    "plugins/gui-plugin-manager/gui.ts",
+    "plugins/gui-plugin-manager/gui.test.tsx",
+    "plugins/gui-plugin-manager/PluginManager.tsx",
+    "plugins/gui-plugin-manager/PluginManager.test.tsx",
+    "plugins/gui-plugin-manager/styles.ts",
+    "plugins/updater/gui.ts",
+    "plugins/updater/AboutSettings.tsx",
+    "plugins/updater/AboutSettings.test.tsx",
+    "plugins/updater/gui.test.tsx",
+    "plugins/updater/styles.ts"
   ]
 }

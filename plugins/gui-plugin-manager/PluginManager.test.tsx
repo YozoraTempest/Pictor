@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -48,7 +50,7 @@ async function click(element: HTMLElement): Promise<void> {
 }
 
 describe('PluginManager command integration', () => {
-  it('loads its production snapshot through the CommandClient transport', async () => {
+  it('loads its production snapshot through the public CommandClient context', async () => {
     const executionId = '00000000-0000-4000-8000-000000000001'
     const execute = vi.fn(async () => ({ executionId, commandId: 'plugin.list' }))
     const subscribe = vi.fn((_id: string | undefined, listener: (value: CommandEvent) => void) => {

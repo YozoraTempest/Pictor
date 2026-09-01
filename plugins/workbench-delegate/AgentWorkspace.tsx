@@ -1,13 +1,13 @@
 import { AlertTriangle, FolderOpen, LoaderCircle, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { CommandClient } from '../../src/commands/index.js'
-import type { PluginStatus } from '../../src/plugin/host.js'
+import type {
+  GuiSettingsSectionContext,
+  GuiSettingsSectionContribution,
+} from '../../src/gui/contract.js'
 import type { AppInfo } from '../../src/shared/app-info.js'
-import type { GuiPluginPicker } from '../../src/shared/desktop-bridge.js'
 import type { Project, SessionSummary } from '../../src/shared/domain.js'
 import { Modal } from './Modal.js'
-import type { SettingsSection } from '../../src/modules/shell/settings.js'
 import { Conversation, type ExtensionWidget } from './Conversation.js'
 import { SettingsDialog } from './SettingsDialog.js'
 import { Sidebar } from './Sidebar.js'
@@ -33,20 +33,16 @@ function errorMessage(error: unknown): string {
 
 interface AgentWorkspaceProps {
   client: AgentWorkspaceClient
-  commandClient: CommandClient
   filePicker: AgentWorkspaceFilePicker
-  pluginPicker: GuiPluginPicker
-  settingsSections: readonly SettingsSection[]
-  guiPluginStatuses?: readonly PluginStatus[]
+  settingsSections: readonly GuiSettingsSectionContribution[]
+  settingsContext: GuiSettingsSectionContext
 }
 
 export function AgentWorkspace({
   client,
-  commandClient,
   filePicker,
-  pluginPicker,
   settingsSections,
-  guiPluginStatuses = [],
+  settingsContext,
 }: AgentWorkspaceProps): React.JSX.Element {
   const workspace = useWorkspaceController(client, filePicker)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
@@ -341,24 +337,28 @@ export function AgentWorkspace({
 
   if (workspace.loading || appInfoLoading) {
     return (
-      <main className="app-loading">
-        <LoaderCircle className="spin" size={22} />
-        <span>正在打开 Pictor</span>
-      </main>
+      <div data-pictor-plugin="pictor.workbench.delegate">
+        <main className="app-loading">
+          <LoaderCircle className="spin" size={22} />
+          <span>正在打开 Pictor</span>
+        </main>
+      </div>
     )
   }
 
   const loadError = workspace.loadError ?? appInfoError
   if (loadError || !workspace.snapshot) {
     return (
-      <main className="fatal-state">
-        <AlertTriangle size={26} />
-        <h1>无法加载本地工作区</h1>
-        <p>{loadError ?? 'Pictor 未能读取应用状态。'}</p>
-        <button className="secondary-button" type="button" onClick={() => location.reload()}>
-          重新加载
-        </button>
-      </main>
+      <div data-pictor-plugin="pictor.workbench.delegate">
+        <main className="fatal-state">
+          <AlertTriangle size={26} />
+          <h1>无法加载本地工作区</h1>
+          <p>{loadError ?? 'Pictor 未能读取应用状态。'}</p>
+          <button className="secondary-button" type="button" onClick={() => location.reload()}>
+            重新加载
+          </button>
+        </main>
+      </div>
     )
   }
 
@@ -372,556 +372,563 @@ export function AgentWorkspace({
     extensionUiRequest?.sessionId === workspace.selectedSessionId ? extensionUiRequest : null
 
   return (
-    <main className="app-shell">
-      <Sidebar
-        projects={workspace.projects}
-        sessions={workspace.sessions}
-        selectedProjectId={workspace.selectedProjectId}
-        selectedSessionId={workspace.selectedSessionId}
-        importingProjectId={workspace.importingProjectId}
-        exportingSession={workspace.exportingSession}
-        onAddProject={() => void pickProject()}
-        onSelectProject={(id) => void workspace.selectProject(id)}
-        onRemoveProject={(project) => requestDestructiveAction({ type: 'remove-project', project })}
-        onRelinkProject={(project) => void pickProject(project.id)}
-        onCreateSession={(id) => void workspace.createSession(id)}
-        onImportSession={(id) => void workspace.importSession(id)}
-        onExportSession={(id, format) => void workspace.exportSession(id, format)}
-        onSelectSession={(projectId, sessionId) =>
-          void workspace.selectSession(projectId, sessionId)
-        }
-        onRenameSession={(target) => {
-          setRenameTarget(target)
-          setRenameValue(target.title)
-        }}
-        onDeleteSession={(target) =>
-          requestDestructiveAction({ type: 'delete-session', session: target })
-        }
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
-
-      <Conversation
-        key={workspace.selectedSessionId ?? workspace.selectedProjectId ?? 'empty-workspace'}
-        project={workspace.selectedProject}
-        session={workspace.session}
-        loading={workspace.sessionLoading}
-        draft={workspace.draft}
-        draftImages={workspace.draftImages}
-        extensionWidgets={
-          workspace.selectedSessionId
-            ? Object.values(extensionWidgets[workspace.selectedSessionId] ?? {})
-            : []
-        }
-        appVersion={appInfo?.version ?? null}
-        disabledReason={workspace.disabledReason}
-        activeRun={workspace.activeRun}
-        anotherSessionRunning={workspace.anotherSessionRunning}
-        actionError={workspace.actionError ?? workspace.snapshot.issues[0]?.message ?? null}
-        queuedMessages={workspace.queuedMessages}
-        runtimeUsage={workspace.runtimeUsage}
-        sessionTree={workspace.sessionTree}
-        sessionTreeLoading={workspace.sessionTreeLoading}
-        canInspectSessionTree={workspace.canInspectSessionTree}
-        navigatingEntryId={workspace.navigatingEntryId}
-        forkingEntryId={workspace.forkingEntryId}
-        cloningSession={workspace.cloningSession}
-        compactingSession={workspace.compactingSession}
-        runtimeCompactionReason={workspace.runtimeCompactionReason}
-        onDraftChange={workspace.setDraft}
-        onPickMessageImages={() => void workspace.pickMessageImages()}
-        onRemoveMessageImage={workspace.removeMessageImage}
-        onSend={() => void workspace.startRun()}
-        onQueue={(mode) => void workspace.queueMessage(mode)}
-        onClearQueue={() => void workspace.clearQueue()}
-        onInspectSessionHistory={(entryId) => void workspace.inspectSessionHistory(entryId)}
-        onNavigateSessionTree={(entryId) => void workspace.navigateSessionTree(entryId)}
-        onOpenBranchSummary={(entryId) => setBranchSummaryTarget(entryId)}
-        onOpenEntryLabel={(entryId, label) => {
-          setEntryLabelTarget(entryId)
-          setEntryLabelValue(label)
-        }}
-        onOpenCompaction={() => setCompactionOpen(true)}
-        onCancelSessionOperation={() => void workspace.cancelSessionOperation()}
-        onOpenSessionControls={() => void openSessionControls()}
-        onForkSession={(entryId) => void workspace.forkSession(entryId)}
-        onCloneSession={() => void workspace.cloneSession()}
-        onStop={(runId) => void workspace.stopRun(runId)}
-        onAddProject={() => void pickProject()}
-        onCreateSession={(id) => void workspace.createSession(id)}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onRelinkProject={(project) => void pickProject(project.id)}
-      />
-
-      {extensionNotice || currentExtensionStatusEntries.length > 0 ? (
-        <div className="extension-notices">
-          {extensionNotice ? (
-            <button
-              className="extension-notice"
-              type="button"
-              onClick={() => setExtensionNotice(null)}
-            >
-              {extensionNotice}
-            </button>
-          ) : null}
-
-          {currentExtensionStatusEntries.length > 0 ? (
-            <div className="extension-statuses" aria-label="Extension statuses" aria-live="polite">
-              {currentExtensionStatusEntries.map(([key, text]) => (
-                <div className="extension-status" data-status-key={key} key={key}>
-                  {text}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {settingsOpen ? (
-        <SettingsDialog
-          client={client}
-          commandClient={commandClient}
-          initial={workspace.snapshot.settings}
-          pluginPicker={pluginPicker}
-          sections={settingsSections}
-          guiPluginStatuses={guiPluginStatuses}
-          onClose={() => setSettingsOpen(false)}
-          onSaved={workspace.applySettings}
-        />
-      ) : null}
-
-      {currentExtensionUiRequest ? (
-        <Modal
-          title={currentExtensionUiRequest.title}
-          description={currentExtensionUiRequest.message ?? ''}
-          onClose={() =>
-            void respondToExtensionUi(currentExtensionUiRequest.kind === 'confirm' ? false : null)
+    <div data-pictor-plugin="pictor.workbench.delegate">
+      <main className="app-shell">
+        <Sidebar
+          projects={workspace.projects}
+          sessions={workspace.sessions}
+          selectedProjectId={workspace.selectedProjectId}
+          selectedSessionId={workspace.selectedSessionId}
+          importingProjectId={workspace.importingProjectId}
+          exportingSession={workspace.exportingSession}
+          onAddProject={() => void pickProject()}
+          onSelectProject={(id) => void workspace.selectProject(id)}
+          onRemoveProject={(project) =>
+            requestDestructiveAction({ type: 'remove-project', project })
           }
-        >
-          <div className="extension-ui-dialog">
-            {currentExtensionUiRequest.kind === 'select' ? (
+          onRelinkProject={(project) => void pickProject(project.id)}
+          onCreateSession={(id) => void workspace.createSession(id)}
+          onImportSession={(id) => void workspace.importSession(id)}
+          onExportSession={(id, format) => void workspace.exportSession(id, format)}
+          onSelectSession={(projectId, sessionId) =>
+            void workspace.selectSession(projectId, sessionId)
+          }
+          onRenameSession={(target) => {
+            setRenameTarget(target)
+            setRenameValue(target.title)
+          }}
+          onDeleteSession={(target) =>
+            requestDestructiveAction({ type: 'delete-session', session: target })
+          }
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+
+        <Conversation
+          key={workspace.selectedSessionId ?? workspace.selectedProjectId ?? 'empty-workspace'}
+          project={workspace.selectedProject}
+          session={workspace.session}
+          loading={workspace.sessionLoading}
+          draft={workspace.draft}
+          draftImages={workspace.draftImages}
+          extensionWidgets={
+            workspace.selectedSessionId
+              ? Object.values(extensionWidgets[workspace.selectedSessionId] ?? {})
+              : []
+          }
+          appVersion={appInfo?.version ?? null}
+          disabledReason={workspace.disabledReason}
+          activeRun={workspace.activeRun}
+          anotherSessionRunning={workspace.anotherSessionRunning}
+          actionError={workspace.actionError ?? workspace.snapshot.issues[0]?.message ?? null}
+          queuedMessages={workspace.queuedMessages}
+          runtimeUsage={workspace.runtimeUsage}
+          sessionTree={workspace.sessionTree}
+          sessionTreeLoading={workspace.sessionTreeLoading}
+          canInspectSessionTree={workspace.canInspectSessionTree}
+          navigatingEntryId={workspace.navigatingEntryId}
+          forkingEntryId={workspace.forkingEntryId}
+          cloningSession={workspace.cloningSession}
+          compactingSession={workspace.compactingSession}
+          runtimeCompactionReason={workspace.runtimeCompactionReason}
+          onDraftChange={workspace.setDraft}
+          onPickMessageImages={() => void workspace.pickMessageImages()}
+          onRemoveMessageImage={workspace.removeMessageImage}
+          onSend={() => void workspace.startRun()}
+          onQueue={(mode) => void workspace.queueMessage(mode)}
+          onClearQueue={() => void workspace.clearQueue()}
+          onInspectSessionHistory={(entryId) => void workspace.inspectSessionHistory(entryId)}
+          onNavigateSessionTree={(entryId) => void workspace.navigateSessionTree(entryId)}
+          onOpenBranchSummary={(entryId) => setBranchSummaryTarget(entryId)}
+          onOpenEntryLabel={(entryId, label) => {
+            setEntryLabelTarget(entryId)
+            setEntryLabelValue(label)
+          }}
+          onOpenCompaction={() => setCompactionOpen(true)}
+          onCancelSessionOperation={() => void workspace.cancelSessionOperation()}
+          onOpenSessionControls={() => void openSessionControls()}
+          onForkSession={(entryId) => void workspace.forkSession(entryId)}
+          onCloneSession={() => void workspace.cloneSession()}
+          onStop={(runId) => void workspace.stopRun(runId)}
+          onAddProject={() => void pickProject()}
+          onCreateSession={(id) => void workspace.createSession(id)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onRelinkProject={(project) => void pickProject(project.id)}
+        />
+
+        {extensionNotice || currentExtensionStatusEntries.length > 0 ? (
+          <div className="extension-notices">
+            {extensionNotice ? (
+              <button
+                className="extension-notice"
+                type="button"
+                onClick={() => setExtensionNotice(null)}
+              >
+                {extensionNotice}
+              </button>
+            ) : null}
+
+            {currentExtensionStatusEntries.length > 0 ? (
+              <div
+                className="extension-statuses"
+                aria-label="Extension statuses"
+                aria-live="polite"
+              >
+                {currentExtensionStatusEntries.map(([key, text]) => (
+                  <div className="extension-status" data-status-key={key} key={key}>
+                    {text}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {settingsOpen ? (
+          <SettingsDialog
+            client={client}
+            initial={workspace.snapshot.settings}
+            sections={settingsSections}
+            settingsContext={settingsContext}
+            onClose={() => setSettingsOpen(false)}
+            onSaved={workspace.applySettings}
+          />
+        ) : null}
+
+        {currentExtensionUiRequest ? (
+          <Modal
+            title={currentExtensionUiRequest.title}
+            description={currentExtensionUiRequest.message ?? ''}
+            onClose={() =>
+              void respondToExtensionUi(currentExtensionUiRequest.kind === 'confirm' ? false : null)
+            }
+          >
+            <div className="extension-ui-dialog">
+              {currentExtensionUiRequest.kind === 'select' ? (
+                <label className="field field--full">
+                  <span>选择</span>
+                  <select
+                    aria-label={currentExtensionUiRequest.title}
+                    value={extensionUiValue}
+                    onChange={(event) => setExtensionUiValue(event.target.value)}
+                  >
+                    {currentExtensionUiRequest.options.map((option) => (
+                      <option value={option} key={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : currentExtensionUiRequest.kind === 'input' ? (
+                <label className="field field--full">
+                  <span>输入</span>
+                  <input
+                    autoFocus
+                    value={extensionUiValue}
+                    placeholder={currentExtensionUiRequest.value ?? ''}
+                    onChange={(event) => setExtensionUiValue(event.target.value)}
+                  />
+                </label>
+              ) : currentExtensionUiRequest.kind === 'editor' ? (
+                <label className="field field--full">
+                  <span>内容</span>
+                  <textarea
+                    autoFocus
+                    value={extensionUiValue}
+                    onChange={(event) => setExtensionUiValue(event.target.value)}
+                  />
+                </label>
+              ) : (
+                <p>{currentExtensionUiRequest.message}</p>
+              )}
+            </div>
+            <footer className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={modalBusy}
+                onClick={() =>
+                  void respondToExtensionUi(
+                    currentExtensionUiRequest.kind === 'confirm' ? false : null,
+                  )
+                }
+              >
+                取消
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={modalBusy}
+                onClick={() =>
+                  void respondToExtensionUi(
+                    currentExtensionUiRequest.kind === 'confirm' ? true : extensionUiValue,
+                  )
+                }
+              >
+                {modalBusy ? <LoaderCircle className="spin" size={15} /> : null}
+                确认
+              </button>
+            </footer>
+          </Modal>
+        ) : null}
+
+        {trustRequest ? (
+          <Modal
+            title={trustRequest.relinkProjectId ? '重新关联项目' : '信任此项目？'}
+            description={trustRequest.candidate.rootPath}
+            onClose={() => setTrustRequest(null)}
+          >
+            <div className="trust-content">
+              <ShieldCheck size={22} />
+              <p>
+                Agent 可以读取和修改此目录中的文件，并会把完成任务所需的上下文发送到你配置的模型
+                API。
+              </p>
+              <p>
+                Pi 原生工具和项目 Extension 会以当前用户权限运行；请只信任你了解的项目和代码来源。
+              </p>
+            </div>
+            <footer className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setTrustRequest(null)}
+                disabled={modalBusy}
+              >
+                取消
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void confirmTrust()}
+                disabled={modalBusy}
+              >
+                {modalBusy ? <LoaderCircle className="spin" size={15} /> : <FolderOpen size={15} />}
+                信任并添加
+              </button>
+            </footer>
+          </Modal>
+        ) : null}
+
+        {confirmation ? (
+          <Modal
+            title={confirmation.type === 'remove-project' ? '移除项目？' : '删除 Session？'}
+            description={
+              confirmation.type === 'remove-project'
+                ? confirmation.project.name
+                : confirmation.session.title
+            }
+            onClose={() => setConfirmation(null)}
+          >
+            <div className="confirm-content">
+              <AlertTriangle size={21} />
+              <p>
+                {confirmation.type === 'remove-project'
+                  ? 'Pictor 将删除此项目的登记和全部 Session 数据，但不会删除本地项目目录或其中的文件。'
+                  : '此 Session 的消息、运行和工具记录将从 Pictor 中永久删除。项目文件不会改变。'}
+              </p>
+            </div>
+            <footer className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setConfirmation(null)}
+                disabled={modalBusy}
+              >
+                取消
+              </button>
+              <button
+                className="danger-button"
+                type="button"
+                onClick={() => void confirmDestructiveAction()}
+                disabled={modalBusy}
+              >
+                {modalBusy ? <LoaderCircle className="spin" size={15} /> : null}
+                {confirmation.type === 'remove-project' ? '移除项目' : '删除 Session'}
+              </button>
+            </footer>
+          </Modal>
+        ) : null}
+
+        {renameTarget ? (
+          <Modal title="重命名 Session" onClose={() => setRenameTarget(null)}>
+            <label className="field field--full rename-field">
+              <span>名称</span>
+              <input
+                value={renameValue}
+                maxLength={120}
+                autoFocus
+                onChange={(event) => setRenameValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void saveRename()
+                }}
+              />
+            </label>
+            <footer className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setRenameTarget(null)}
+                disabled={modalBusy}
+              >
+                取消
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void saveRename()}
+                disabled={modalBusy || !renameValue.trim()}
+              >
+                保存
+              </button>
+            </footer>
+          </Modal>
+        ) : null}
+
+        {compactionOpen ? (
+          <Modal
+            title="压缩上下文"
+            onClose={() => {
+              if (!workspace.compactingSession) setCompactionOpen(false)
+            }}
+          >
+            <label className="field field--full">
+              <span>自定义摘要指令（可选）</span>
+              <textarea
+                rows={6}
+                maxLength={20_000}
+                value={compactionInstructions}
+                disabled={workspace.compactingSession}
+                onChange={(event) => setCompactionInstructions(event.target.value)}
+              />
+            </label>
+            <footer className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() =>
+                  workspace.compactingSession ? void cancelCompaction() : setCompactionOpen(false)
+                }
+              >
+                {workspace.compactingSession ? '取消压缩' : '取消'}
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={workspace.compactingSession}
+                onClick={() => void startCompaction()}
+              >
+                {workspace.compactingSession ? <LoaderCircle className="spin" size={15} /> : null}
+                开始压缩
+              </button>
+            </footer>
+          </Modal>
+        ) : null}
+
+        {branchSummaryTarget ? (
+          <Modal
+            title="总结后切换分支"
+            onClose={() => {
+              if (!workspace.navigatingEntryId) setBranchSummaryTarget(null)
+            }}
+          >
+            <label className="field field--full">
+              <span>自定义摘要指令（可选）</span>
+              <textarea
+                rows={6}
+                maxLength={20_000}
+                value={branchSummaryInstructions}
+                disabled={workspace.navigatingEntryId !== null}
+                onChange={(event) => setBranchSummaryInstructions(event.target.value)}
+              />
+            </label>
+            <footer className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() =>
+                  workspace.navigatingEntryId
+                    ? void cancelBranchSummary()
+                    : setBranchSummaryTarget(null)
+                }
+              >
+                {workspace.navigatingEntryId ? '取消总结' : '取消'}
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={workspace.navigatingEntryId !== null}
+                onClick={() => void startBranchSummary()}
+              >
+                {workspace.navigatingEntryId ? <LoaderCircle className="spin" size={15} /> : null}
+                总结并切换
+              </button>
+            </footer>
+          </Modal>
+        ) : null}
+
+        {sessionControls ? (
+          <Modal title="Session Controls" onClose={() => setSessionControls(null)}>
+            <div className="form-grid">
               <label className="field field--full">
-                <span>选择</span>
+                <span>Model</span>
+                <input
+                  value={sessionControls.modelId}
+                  onChange={(event) =>
+                    setSessionControls((current) =>
+                      current ? { ...current, modelId: event.target.value } : current,
+                    )
+                  }
+                />
+              </label>
+              <label className="field field--full">
+                <span>Thinking Level</span>
                 <select
-                  aria-label={currentExtensionUiRequest.title}
-                  value={extensionUiValue}
-                  onChange={(event) => setExtensionUiValue(event.target.value)}
+                  value={sessionControls.thinkingLevel}
+                  onChange={(event) =>
+                    setSessionControls((current) =>
+                      current
+                        ? {
+                            ...current,
+                            thinkingLevel: event.target
+                              .value as SessionRuntimeControls['thinkingLevel'],
+                          }
+                        : current,
+                    )
+                  }
                 >
-                  {currentExtensionUiRequest.options.map((option) => (
-                    <option value={option} key={option}>
-                      {option}
+                  {['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((level) => (
+                    <option value={level} key={level}>
+                      {level}
                     </option>
                   ))}
                 </select>
               </label>
-            ) : currentExtensionUiRequest.kind === 'input' ? (
-              <label className="field field--full">
-                <span>输入</span>
-                <input
-                  autoFocus
-                  value={extensionUiValue}
-                  placeholder={currentExtensionUiRequest.value ?? ''}
-                  onChange={(event) => setExtensionUiValue(event.target.value)}
-                />
+              <label className="field">
+                <span>Steering</span>
+                <select
+                  value={sessionControls.steeringMode}
+                  onChange={(event) =>
+                    setSessionControls((current) =>
+                      current
+                        ? {
+                            ...current,
+                            steeringMode: event.target.value as 'all' | 'one-at-a-time',
+                          }
+                        : current,
+                    )
+                  }
+                >
+                  <option value="one-at-a-time">one-at-a-time</option>
+                  <option value="all">all</option>
+                </select>
               </label>
-            ) : currentExtensionUiRequest.kind === 'editor' ? (
-              <label className="field field--full">
-                <span>内容</span>
-                <textarea
-                  autoFocus
-                  value={extensionUiValue}
-                  onChange={(event) => setExtensionUiValue(event.target.value)}
-                />
+              <label className="field">
+                <span>Follow-up</span>
+                <select
+                  value={sessionControls.followUpMode}
+                  onChange={(event) =>
+                    setSessionControls((current) =>
+                      current
+                        ? {
+                            ...current,
+                            followUpMode: event.target.value as 'all' | 'one-at-a-time',
+                          }
+                        : current,
+                    )
+                  }
+                >
+                  <option value="one-at-a-time">one-at-a-time</option>
+                  <option value="all">all</option>
+                </select>
               </label>
-            ) : (
-              <p>{currentExtensionUiRequest.message}</p>
-            )}
-          </div>
-          <footer className="modal-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={modalBusy}
-              onClick={() =>
-                void respondToExtensionUi(
-                  currentExtensionUiRequest.kind === 'confirm' ? false : null,
-                )
-              }
-            >
-              取消
-            </button>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={modalBusy}
-              onClick={() =>
-                void respondToExtensionUi(
-                  currentExtensionUiRequest.kind === 'confirm' ? true : extensionUiValue,
-                )
-              }
-            >
-              {modalBusy ? <LoaderCircle className="spin" size={15} /> : null}
-              确认
-            </button>
-          </footer>
-        </Modal>
-      ) : null}
+            </div>
+            <fieldset className="field field--full">
+              <legend>Active Tools</legend>
+              <div className="tool-toggle-list">
+                {sessionControls.availableTools.map((tool) => (
+                  <label key={tool}>
+                    <input
+                      type="checkbox"
+                      checked={sessionControls.activeTools.includes(tool)}
+                      onChange={(event) =>
+                        setSessionControls((current) =>
+                          current
+                            ? {
+                                ...current,
+                                activeTools: event.target.checked
+                                  ? [...current.activeTools, tool]
+                                  : current.activeTools.filter((name) => name !== tool),
+                              }
+                            : current,
+                        )
+                      }
+                    />
+                    <span>{tool}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <footer className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={modalBusy}
+                onClick={() => void reloadSessionResources()}
+              >
+                重新加载资源
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={modalBusy}
+                onClick={() => setSessionControls(null)}
+              >
+                取消
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={modalBusy}
+                onClick={() => void saveSessionControls()}
+              >
+                保存
+              </button>
+            </footer>
+          </Modal>
+        ) : null}
 
-      {trustRequest ? (
-        <Modal
-          title={trustRequest.relinkProjectId ? '重新关联项目' : '信任此项目？'}
-          description={trustRequest.candidate.rootPath}
-          onClose={() => setTrustRequest(null)}
-        >
-          <div className="trust-content">
-            <ShieldCheck size={22} />
-            <p>
-              Agent 可以读取和修改此目录中的文件，并会把完成任务所需的上下文发送到你配置的模型 API。
-            </p>
-            <p>
-              Pi 原生工具和项目 Extension 会以当前用户权限运行；请只信任你了解的项目和代码来源。
-            </p>
-          </div>
-          <footer className="modal-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setTrustRequest(null)}
-              disabled={modalBusy}
-            >
-              取消
-            </button>
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => void confirmTrust()}
-              disabled={modalBusy}
-            >
-              {modalBusy ? <LoaderCircle className="spin" size={15} /> : <FolderOpen size={15} />}
-              信任并添加
-            </button>
-          </footer>
-        </Modal>
-      ) : null}
-
-      {confirmation ? (
-        <Modal
-          title={confirmation.type === 'remove-project' ? '移除项目？' : '删除 Session？'}
-          description={
-            confirmation.type === 'remove-project'
-              ? confirmation.project.name
-              : confirmation.session.title
-          }
-          onClose={() => setConfirmation(null)}
-        >
-          <div className="confirm-content">
-            <AlertTriangle size={21} />
-            <p>
-              {confirmation.type === 'remove-project'
-                ? 'Pictor 将删除此项目的登记和全部 Session 数据，但不会删除本地项目目录或其中的文件。'
-                : '此 Session 的消息、运行和工具记录将从 Pictor 中永久删除。项目文件不会改变。'}
-            </p>
-          </div>
-          <footer className="modal-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setConfirmation(null)}
-              disabled={modalBusy}
-            >
-              取消
-            </button>
-            <button
-              className="danger-button"
-              type="button"
-              onClick={() => void confirmDestructiveAction()}
-              disabled={modalBusy}
-            >
-              {modalBusy ? <LoaderCircle className="spin" size={15} /> : null}
-              {confirmation.type === 'remove-project' ? '移除项目' : '删除 Session'}
-            </button>
-          </footer>
-        </Modal>
-      ) : null}
-
-      {renameTarget ? (
-        <Modal title="重命名 Session" onClose={() => setRenameTarget(null)}>
-          <label className="field field--full rename-field">
-            <span>名称</span>
-            <input
-              value={renameValue}
-              maxLength={120}
-              autoFocus
-              onChange={(event) => setRenameValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void saveRename()
-              }}
-            />
-          </label>
-          <footer className="modal-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setRenameTarget(null)}
-              disabled={modalBusy}
-            >
-              取消
-            </button>
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => void saveRename()}
-              disabled={modalBusy || !renameValue.trim()}
-            >
-              保存
-            </button>
-          </footer>
-        </Modal>
-      ) : null}
-
-      {compactionOpen ? (
-        <Modal
-          title="压缩上下文"
-          onClose={() => {
-            if (!workspace.compactingSession) setCompactionOpen(false)
-          }}
-        >
-          <label className="field field--full">
-            <span>自定义摘要指令（可选）</span>
-            <textarea
-              rows={6}
-              maxLength={20_000}
-              value={compactionInstructions}
-              disabled={workspace.compactingSession}
-              onChange={(event) => setCompactionInstructions(event.target.value)}
-            />
-          </label>
-          <footer className="modal-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() =>
-                workspace.compactingSession ? void cancelCompaction() : setCompactionOpen(false)
-              }
-            >
-              {workspace.compactingSession ? '取消压缩' : '取消'}
-            </button>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={workspace.compactingSession}
-              onClick={() => void startCompaction()}
-            >
-              {workspace.compactingSession ? <LoaderCircle className="spin" size={15} /> : null}
-              开始压缩
-            </button>
-          </footer>
-        </Modal>
-      ) : null}
-
-      {branchSummaryTarget ? (
-        <Modal
-          title="总结后切换分支"
-          onClose={() => {
-            if (!workspace.navigatingEntryId) setBranchSummaryTarget(null)
-          }}
-        >
-          <label className="field field--full">
-            <span>自定义摘要指令（可选）</span>
-            <textarea
-              rows={6}
-              maxLength={20_000}
-              value={branchSummaryInstructions}
-              disabled={workspace.navigatingEntryId !== null}
-              onChange={(event) => setBranchSummaryInstructions(event.target.value)}
-            />
-          </label>
-          <footer className="modal-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() =>
-                workspace.navigatingEntryId
-                  ? void cancelBranchSummary()
-                  : setBranchSummaryTarget(null)
-              }
-            >
-              {workspace.navigatingEntryId ? '取消总结' : '取消'}
-            </button>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={workspace.navigatingEntryId !== null}
-              onClick={() => void startBranchSummary()}
-            >
-              {workspace.navigatingEntryId ? <LoaderCircle className="spin" size={15} /> : null}
-              总结并切换
-            </button>
-          </footer>
-        </Modal>
-      ) : null}
-
-      {sessionControls ? (
-        <Modal title="Session Controls" onClose={() => setSessionControls(null)}>
-          <div className="form-grid">
+        {entryLabelTarget ? (
+          <Modal title="标记 Session 节点" onClose={() => setEntryLabelTarget(null)}>
             <label className="field field--full">
-              <span>Model</span>
+              <span>Label</span>
               <input
-                value={sessionControls.modelId}
-                onChange={(event) =>
-                  setSessionControls((current) =>
-                    current ? { ...current, modelId: event.target.value } : current,
-                  )
-                }
+                autoFocus
+                maxLength={120}
+                value={entryLabelValue}
+                onChange={(event) => setEntryLabelValue(event.target.value)}
               />
             </label>
-            <label className="field field--full">
-              <span>Thinking Level</span>
-              <select
-                value={sessionControls.thinkingLevel}
-                onChange={(event) =>
-                  setSessionControls((current) =>
-                    current
-                      ? {
-                          ...current,
-                          thinkingLevel: event.target
-                            .value as SessionRuntimeControls['thinkingLevel'],
-                        }
-                      : current,
-                  )
-                }
+            <footer className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={modalBusy}
+                onClick={() => setEntryLabelTarget(null)}
               >
-                {['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((level) => (
-                  <option value={level} key={level}>
-                    {level}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Steering</span>
-              <select
-                value={sessionControls.steeringMode}
-                onChange={(event) =>
-                  setSessionControls((current) =>
-                    current
-                      ? {
-                          ...current,
-                          steeringMode: event.target.value as 'all' | 'one-at-a-time',
-                        }
-                      : current,
-                  )
-                }
+                取消
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={modalBusy}
+                onClick={() => void saveEntryLabel()}
               >
-                <option value="one-at-a-time">one-at-a-time</option>
-                <option value="all">all</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Follow-up</span>
-              <select
-                value={sessionControls.followUpMode}
-                onChange={(event) =>
-                  setSessionControls((current) =>
-                    current
-                      ? {
-                          ...current,
-                          followUpMode: event.target.value as 'all' | 'one-at-a-time',
-                        }
-                      : current,
-                  )
-                }
-              >
-                <option value="one-at-a-time">one-at-a-time</option>
-                <option value="all">all</option>
-              </select>
-            </label>
-          </div>
-          <fieldset className="field field--full">
-            <legend>Active Tools</legend>
-            <div className="tool-toggle-list">
-              {sessionControls.availableTools.map((tool) => (
-                <label key={tool}>
-                  <input
-                    type="checkbox"
-                    checked={sessionControls.activeTools.includes(tool)}
-                    onChange={(event) =>
-                      setSessionControls((current) =>
-                        current
-                          ? {
-                              ...current,
-                              activeTools: event.target.checked
-                                ? [...current.activeTools, tool]
-                                : current.activeTools.filter((name) => name !== tool),
-                            }
-                          : current,
-                      )
-                    }
-                  />
-                  <span>{tool}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <footer className="modal-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={modalBusy}
-              onClick={() => void reloadSessionResources()}
-            >
-              重新加载资源
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={modalBusy}
-              onClick={() => setSessionControls(null)}
-            >
-              取消
-            </button>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={modalBusy}
-              onClick={() => void saveSessionControls()}
-            >
-              保存
-            </button>
-          </footer>
-        </Modal>
-      ) : null}
-
-      {entryLabelTarget ? (
-        <Modal title="标记 Session 节点" onClose={() => setEntryLabelTarget(null)}>
-          <label className="field field--full">
-            <span>Label</span>
-            <input
-              autoFocus
-              maxLength={120}
-              value={entryLabelValue}
-              onChange={(event) => setEntryLabelValue(event.target.value)}
-            />
-          </label>
-          <footer className="modal-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={modalBusy}
-              onClick={() => setEntryLabelTarget(null)}
-            >
-              取消
-            </button>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={modalBusy}
-              onClick={() => void saveEntryLabel()}
-            >
-              保存
-            </button>
-          </footer>
-        </Modal>
-      ) : null}
-    </main>
+                保存
+              </button>
+            </footer>
+          </Modal>
+        ) : null}
+      </main>
+    </div>
   )
 }

@@ -1,9 +1,7 @@
 import styles from './styles.css?raw'
 
+import { installGuiPluginStyles } from '../../src/gui/plugin-style.js'
+
 export function installWorkbenchStyles(target: Document = document): () => void {
-  const style = target.createElement('style')
-  style.dataset.pictorPlugin = 'pictor.workbench.delegate'
-  style.textContent = styles
-  target.head.append(style)
-  return () => style.remove()
+  return installGuiPluginStyles('pictor.workbench.delegate', styles, target)
 }

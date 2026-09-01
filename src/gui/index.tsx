@@ -4,22 +4,32 @@ import { createRoot } from 'react-dom/client'
 import * as jsxDevRuntime from 'react/jsx-dev-runtime'
 import * as jsxRuntime from 'react/jsx-runtime'
 
-import { settingsSectionContributions } from '../modules/shell/settings.js'
 import type { PictorBridge } from '../shared/desktop-bridge.js'
 import { pluginBootstrapSchema, type PluginBootstrap } from '../shared/plugins.js'
 import { readPluginEntrypoint, type GuiPluginContext } from '../plugin/entry.js'
 import { PluginHost, type PluginDefinition } from '../plugin/host.js'
-import { GuiHostView, validateGuiWorkbenchContributions } from './GuiHostView.js'
+import { GuiHostView, selectGuiHostView, validateGuiWorkbenchContributions } from './GuiHostView.js'
 import { sanitizeGuiDiagnostic } from './diagnostics.js'
-import { guiWorkbenchContributions } from './contract.js'
+import {
+  guiSettingsSectionContributions,
+  guiWorkbenchContributions,
+  normalizeGuiSettingsSectionContributions,
+} from './contract.js'
 
 export { GuiHostView } from './GuiHostView.js'
 export {
+  guiSettingsSectionContributions,
   guiWorkbenchContributions,
+  normalizeGuiSettingsSectionContributions,
+  type GuiPluginStatus,
+  type GuiSettingsSectionContext,
+  type GuiSettingsSectionContribution,
   type GuiWorkbenchContext,
   type GuiWorkbenchContribution,
 } from './contract.js'
 export type { GuiHostViewProps } from './GuiHostView.js'
+export { installGuiPluginStyles } from './plugin-style.js'
+export type { GuiPluginStyleTarget } from './plugin-style.js'
 
 export interface GuiHostRuntime {
   stop(): Promise<void>
@@ -39,6 +49,12 @@ export async function startGui(
   let beforeUnload: (() => void) | null = null
   let stopped = false
 
+  const disposePluginHost = async (): Promise<void> => {
+    const activePluginHost = pluginHost
+    pluginHost = null
+    await activePluginHost?.stop()
+  }
+
   const stop = async (): Promise<void> => {
     if (stopped) return
     stopped = true
@@ -46,8 +62,7 @@ export async function startGui(
       window.removeEventListener('beforeunload', beforeUnload)
       beforeUnload = null
     }
-    await pluginHost?.stop()
-    pluginHost = null
+    await disposePluginHost()
   }
 
   Object.assign(globalThis, {
@@ -72,16 +87,22 @@ export async function startGui(
     const workbenches = validateGuiWorkbenchContributions(
       pluginHost.getContributions(guiWorkbenchContributions),
     )
+    const settingsSections = normalizeGuiSettingsSectionContributions(
+      pluginHost.getContributions(guiSettingsSectionContributions),
+    )
+    const initialSelection = selectGuiHostView(workbenches, statuses, bootstrap.safeMode)
+    if (initialSelection.kind === 'shell') await disposePluginHost()
 
     root.render(
       <StrictMode>
         <GuiHostView
           commandClient={bridge.commands}
           pluginPicker={bridge}
-          settingsSections={pluginHost.getContributions(settingsSectionContributions)}
+          settingsSections={settingsSections}
           guiPluginStatuses={statuses}
           workbenches={workbenches}
           safeMode={bootstrap.safeMode}
+          onWorkbenchFailure={() => void disposePluginHost()}
         />
       </StrictMode>,
     )
@@ -135,7 +156,7 @@ export function createGuiPluginDefinitions(
 
 function FatalState({ error }: { error: unknown }): React.JSX.Element {
   return (
-    <main className="fatal-state">
+    <main className="pictor-host-fatal">
       <h1>无法启动 Pictor</h1>
       <p>{sanitizeGuiDiagnostic(error, 'GUI Host 无法建立')}</p>
     </main>

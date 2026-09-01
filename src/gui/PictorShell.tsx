@@ -16,12 +16,12 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { CommandFailure, executeCommandAndWait } from '../commands/index.js'
 import type { CommandClient, CommandDescriptor } from '../commands/index.js'
-import type { PluginStatus } from '../plugin/host.js'
 import { appInfoSchema, type AppInfo } from '../shared/app-info.js'
 import type { GuiPluginPicker, GuiPluginSource } from '../shared/desktop-bridge.js'
 import { appDoctorResultSchema, type AppDoctorResult } from '../shared/app-doctor.js'
 import { pluginManagerSnapshotSchema, type PluginManagerSnapshot } from '../shared/plugins.js'
 import type { output, ZodType } from 'zod'
+import type { GuiPluginStatus } from './contract.js'
 import { sanitizeGuiDiagnostic, safePluginSource } from './diagnostics.js'
 
 export const GUI_RECOVERY_COMMAND_IDS = [
@@ -59,7 +59,7 @@ export type PictorShellState =
     }
   | {
       readonly kind: 'plugin-failure'
-      readonly failures: readonly PluginStatus[]
+      readonly failures: readonly GuiPluginStatus[]
     }
   | {
       readonly kind: 'workbench-render-failure'
@@ -70,7 +70,7 @@ export type PictorShellState =
 export interface PictorShellProps {
   readonly commandClient: CommandClient
   readonly pluginPicker: GuiPluginPicker
-  readonly guiPluginStatuses: readonly PluginStatus[]
+  readonly guiPluginStatuses: readonly GuiPluginStatus[]
   readonly safeMode: boolean
   readonly state: PictorShellState
 }
@@ -246,9 +246,9 @@ export function PictorShell({
   }, [priorityPluginIds, snapshot])
 
   return (
-    <main className="pictor-shell app-shell">
+    <main className="pictor-shell">
       <header className="pictor-shell__header">
-        <div className="brand-mark" aria-hidden="true">
+        <div className="pictor-shell__brand-mark" aria-hidden="true">
           P
         </div>
         <div>
@@ -324,7 +324,7 @@ export function PictorShell({
         ) : null}
 
         {error ? (
-          <div className="form-error" role="alert">
+          <div className="pictor-shell__error" role="alert">
             {error}
           </div>
         ) : null}
@@ -343,7 +343,7 @@ export function PictorShell({
             <div className="pictor-shell__toolbar-actions">
               {availableCommandIds.has('app.info') ? (
                 <button
-                  className="secondary-button"
+                  className="pictor-shell__secondary-button"
                   type="button"
                   disabled={busy !== null}
                   onClick={() => void readAppInfo()}
@@ -353,13 +353,13 @@ export function PictorShell({
               ) : null}
               {availableCommandIds.has('app.doctor') ? (
                 <button
-                  className="secondary-button"
+                  className="pictor-shell__secondary-button"
                   type="button"
                   disabled={busy !== null}
                   onClick={() => void runDoctor()}
                 >
                   {busy === 'app.doctor' ? (
-                    <LoaderCircle className="spin" size={14} />
+                    <LoaderCircle className="pictor-shell__spin" size={14} />
                   ) : (
                     <Wrench size={14} />
                   )}{' '}
@@ -368,13 +368,13 @@ export function PictorShell({
               ) : null}
               {availableCommandIds.has('plugin.list') ? (
                 <button
-                  className="secondary-button"
+                  className="pictor-shell__secondary-button"
                   type="button"
                   disabled={busy !== null}
                   onClick={() => void runSnapshotCommand('plugin.list', null, 'plugin.list')}
                 >
                   {busy === 'plugin.list' ? (
-                    <LoaderCircle className="spin" size={14} />
+                    <LoaderCircle className="pictor-shell__spin" size={14} />
                   ) : (
                     <RefreshCw size={14} />
                   )}{' '}
@@ -385,12 +385,12 @@ export function PictorShell({
           </header>
           <div className="pictor-shell__command-list">
             {busy === 'load' && descriptors.length === 0 ? (
-              <div className="plugin-manager-loading" role="status">
-                <LoaderCircle className="spin" size={17} />
+              <div className="pictor-shell__loading" role="status">
+                <LoaderCircle className="pictor-shell__spin" size={17} />
                 <span>正在读取 recovery-safe 命令</span>
               </div>
             ) : descriptors.length === 0 ? (
-              <div className="plugin-list__empty">没有可用的 recovery-safe Core command</div>
+              <div className="pictor-shell__empty">没有可用的 recovery-safe Core command</div>
             ) : (
               descriptors.map((descriptor) => (
                 <div className="pictor-shell__command" key={descriptor.id}>
@@ -415,26 +415,26 @@ export function PictorShell({
               {availableCommandIds.has('plugin.install') ? (
                 <>
                   <button
-                    className="secondary-button"
+                    className="pictor-shell__secondary-button"
                     type="button"
                     disabled={busy !== null}
                     onClick={() => void installPlugin('local')}
                   >
                     {busy === 'plugin.install:local' ? (
-                      <LoaderCircle className="spin" size={14} />
+                      <LoaderCircle className="pictor-shell__spin" size={14} />
                     ) : (
                       <FolderPlus size={14} />
                     )}{' '}
                     安装本地 GUI Plugin
                   </button>
                   <button
-                    className="secondary-button"
+                    className="pictor-shell__secondary-button"
                     type="button"
                     disabled={busy !== null}
                     onClick={() => void installPlugin('development')}
                   >
                     {busy === 'plugin.install:development' ? (
-                      <LoaderCircle className="spin" size={14} />
+                      <LoaderCircle className="pictor-shell__spin" size={14} />
                     ) : (
                       <FileCode2 size={14} />
                     )}{' '}
@@ -457,7 +457,7 @@ export function PictorShell({
               </div>
               <div className="pictor-shell__plugin-list">
                 {orderedItems.length === 0 ? (
-                  <div className="plugin-list__empty">没有可恢复的已登记 Plugin</div>
+                  <div className="pictor-shell__empty">没有可恢复的已登记 Plugin</div>
                 ) : (
                   orderedItems.map((item) => {
                     const guiStatus = guiPluginStatuses.find((status) => status.id === item.id)
@@ -478,7 +478,9 @@ export function PictorShell({
                           <small>{safePluginSource(item.source)}</small>
                         </div>
                         <div className="pictor-shell__plugin-state">
-                          <span className={`plugin-state plugin-state--${effectiveState}`}>
+                          <span
+                            className={`pictor-shell__state-badge pictor-shell__state-badge--${effectiveState}`}
+                          >
                             {stateLabels[effectiveState]}
                           </span>
                           <code>effectiveState: {effectiveState}</code>
@@ -488,7 +490,7 @@ export function PictorShell({
                         availableCommandIds.has('plugin.restore') &&
                         item.canRestore ? (
                           <button
-                            className="secondary-button"
+                            className="pictor-shell__secondary-button"
                             type="button"
                             disabled={busy !== null}
                             aria-label="恢复"
@@ -507,7 +509,7 @@ export function PictorShell({
                             {availableCommandIds.has('plugin.enable') &&
                             availableCommandIds.has('plugin.disable') ? (
                               <button
-                                className="secondary-button"
+                                className="pictor-shell__secondary-button"
                                 type="button"
                                 disabled={busy !== null}
                                 aria-label={`${item.desiredState === 'enabled' ? '禁用' : '启用'} ${item.id}`}
@@ -526,7 +528,7 @@ export function PictorShell({
                             ) : null}
                             {availableCommandIds.has('plugin.remove') ? (
                               <button
-                                className="icon-button danger-icon-button"
+                                className="pictor-shell__icon-button pictor-shell__danger-icon-button"
                                 type="button"
                                 disabled={busy !== null}
                                 aria-label={`移除 ${item.id}`}
@@ -555,8 +557,8 @@ export function PictorShell({
               </div>
             </>
           ) : (
-            <div className="plugin-manager-loading" role="status">
-              {busy === 'load' ? <LoaderCircle className="spin" size={17} /> : null}
+            <div className="pictor-shell__loading" role="status">
+              {busy === 'load' ? <LoaderCircle className="pictor-shell__spin" size={17} /> : null}
               <span>正在读取 Plugin 状态</span>
             </div>
           )}
@@ -566,7 +568,7 @@ export function PictorShell({
           <section className="pictor-shell__errors" aria-labelledby="pictor-shell-errors-title">
             <h2 id="pictor-shell-errors-title">errors</h2>
             {snapshot.issues.map((issue) => (
-              <div className="form-error" role="alert" key={issue}>
+              <div className="pictor-shell__error" role="alert" key={issue}>
                 {sanitizeGuiDiagnostic(issue, 'Plugin 状态存在诊断项')}
               </div>
             ))}
@@ -579,7 +581,7 @@ export function PictorShell({
           <section className="pictor-shell__errors" aria-labelledby="gui-failures-title">
             <h2 id="gui-failures-title">GUI Plugin errors</h2>
             {failureStatuses.map((status) => (
-              <div className="form-error" role="alert" key={status.id}>
+              <div className="pictor-shell__error" role="alert" key={status.id}>
                 <code>{status.id}</code>：{sanitizeGuiDiagnostic(status.reason, 'Plugin 未能加载')}
               </div>
             ))}
