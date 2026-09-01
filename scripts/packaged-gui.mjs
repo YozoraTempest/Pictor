@@ -40,7 +40,9 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
 
   try {
     await waitForCdp(port, child, () => ({ stdout, stderr }))
-    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
+      timeout: 120_000,
+    })
     const applicationPid =
       (await findProcessByArgument(`--remote-debugging-port=${port}`)) ?? child.pid
     return {
