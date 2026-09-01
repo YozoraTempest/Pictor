@@ -260,9 +260,13 @@ export class DesktopHost {
       const services = await applicationHost.start()
       coordinatorReference.current = services.runtime
       this.services = services
+      startupDiagnostic('Desktop Host registering protocol')
       registerAppProtocol(services.pluginStore)
+      startupDiagnostic('Desktop Host registering command IPC')
       this.commandIpc = registerCommandIpc(services.commandClient, validateSender)
+      startupDiagnostic('Desktop Host registering module IPC')
       this.moduleIpc = registerModuleIpc(services.moduleRouter, validateSender)
+      startupDiagnostic('Desktop Host registering app IPC')
       this.ipc = registerIpc({
         validateSender,
         onGuiReady: services.restoreSelectedContext,
@@ -273,7 +277,9 @@ export class DesktopHost {
         callback(false)
       })
 
+      startupDiagnostic('Desktop Host creating main window')
       createMainWindow(services.runtime)
+      startupDiagnostic('Desktop Host main window created')
       app.on('activate', this.handleActivate)
       this.activationRegistered = true
       app.on('before-quit', this.handleBeforeQuit)
@@ -373,4 +379,8 @@ const createDesktopHostPluginDefinitions: HostPluginDefinitionsFactory = (
         ? updaterHost
         : undefined,
   )
+}
+
+function startupDiagnostic(message: string): void {
+  if (process.env.PICTOR_STARTUP_DIAGNOSTICS === '1') console.error(`[pictor startup] ${message}`)
 }
