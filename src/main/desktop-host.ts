@@ -134,6 +134,7 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
     title: 'Pictor',
     webPreferences: {
       ...getSecureWebPreferences(),
+      backgroundThrottling: false,
       preload: join(__dirname, '../preload/index.cjs'),
     },
   })
