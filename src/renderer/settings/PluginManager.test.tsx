@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { CommandClient, CommandEvent } from '../../commands/index.js'
@@ -38,6 +38,13 @@ function event(type: 'started' | 'completed', executionId: string): CommandEvent
       value: snapshot,
     },
   }
+}
+
+async function click(element: HTMLElement): Promise<void> {
+  await act(async () => {
+    fireEvent.click(element)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  })
 }
 
 describe('PluginManager command integration', () => {
@@ -106,7 +113,7 @@ describe('PluginManager command integration', () => {
     )
     await waitFor(() => expect(screen.getByText('0 个已登记扩展')).toBeVisible())
 
-    await screen.getByRole('button', { name: 'Development Plugin' }).click()
+    await click(screen.getByRole('button', { name: 'Development Plugin' }))
     await waitFor(() =>
       expect(execute).toHaveBeenCalledWith(
         'plugin.install',

@@ -80,20 +80,26 @@ describe('GuiHostView', () => {
     const broken = workbench('delegate', 'pictor.delegate', () => {
       throw new Error('render failed')
     })
-    render(
-      <GuiHostView
-        commandClient={commandClient}
-        pluginPicker={pluginPicker}
-        settingsSections={[]}
-        rendererPluginStatuses={[]}
-        workbenches={[broken]}
-        safeMode={false}
-      />,
-    )
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      render(
+        <GuiHostView
+          commandClient={commandClient}
+          pluginPicker={pluginPicker}
+          settingsSections={[]}
+          rendererPluginStatuses={[]}
+          workbenches={[broken]}
+          safeMode={false}
+        />,
+      )
 
-    expect(await screen.findByRole('heading', { name: 'Pictor Shell' })).toBeInTheDocument()
-    expect(screen.getByText('Workbench 加载失败')).toBeInTheDocument()
-    expect(screen.getByText('render failed')).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: 'Pictor Shell' })).toBeInTheDocument()
+      expect(screen.getByText('Workbench 加载失败')).toBeInTheDocument()
+      expect(screen.getByText('render failed')).toBeInTheDocument()
+      expect(consoleError).toHaveBeenCalled()
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('rejects malformed Workbench contracts before mounting the host', () => {

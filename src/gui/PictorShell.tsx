@@ -175,7 +175,7 @@ export function PictorShell({
     setBusy(null)
     if (result.ok) {
       setSnapshot(result.value)
-      setNotice('操作已记录；重启 Pictor 后生效。')
+      setNotice(commandId === 'plugin.list' ? null : snapshotNotice('操作', result.value))
     } else setError(result.error)
   }
 
@@ -230,7 +230,7 @@ export function PictorShell({
     setBusy(null)
     if (result.ok) {
       setSnapshot(result.value)
-      setNotice('Plugin 安装意图已记录；重启 Pictor 后生效。')
+      setNotice(snapshotNotice('Plugin 安装意图', result.value))
     } else setError(result.error)
   }
 
@@ -666,4 +666,10 @@ function commandErrorMessage(error: unknown): string {
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
+}
+
+function snapshotNotice(label: string, snapshot: PluginManagerSnapshot): string {
+  return snapshot.restartRequired
+    ? `${label}已记录；重启 Pictor 后生效。`
+    : `${label}已完成，无需重启。`
 }
