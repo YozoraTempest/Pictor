@@ -6,21 +6,28 @@ import process from 'node:process'
 
 export async function launchPackagedGui(executablePath, arguments_, options = {}) {
   const port = await findFreePort()
-  const child = spawn(
-    executablePath,
-    [`--remote-debugging-port=${port}`, '--no-sandbox', ...arguments_],
-    {
-      cwd: options.cwd,
-      shell: options.shell ?? false,
-      env: {
-        ...(options.env ?? process.env),
-        ...(executablePath.toLowerCase().endsWith('.appimage')
-          ? { APPIMAGE_EXTRACT_AND_RUN: '1' }
-          : {}),
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
+  const windowsBatchLauncher =
+    process.platform === 'win32' && executablePath.toLowerCase().endsWith('.cmd')
+  const command = windowsBatchLauncher ? (process.env.ComSpec ?? 'cmd.exe') : executablePath
+  const commandArguments = windowsBatchLauncher
+    ? [
+        '/d',
+        '/s',
+        '/c',
+        `call ${quoteForCmd(executablePath)} ${quoteForCmd(`--remote-debugging-port=${port}`)} ${quoteForCmd('--no-sandbox')} ${arguments_.map(quoteForCmd).join(' ')}`,
+      ]
+    : [`--remote-debugging-port=${port}`, '--no-sandbox', ...arguments_]
+  const child = spawn(command, commandArguments, {
+    cwd: options.cwd,
+    shell: windowsBatchLauncher ? false : (options.shell ?? false),
+    env: {
+      ...(options.env ?? process.env),
+      ...(executablePath.toLowerCase().endsWith('.appimage')
+        ? { APPIMAGE_EXTRACT_AND_RUN: '1' }
+        : {}),
     },
-  )
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
   let stdout = ''
   let stderr = ''
   child.stdout.on('data', (chunk) => {
@@ -182,4 +189,8 @@ async function firstPage(browser, readOutput) {
 function waitForExit(child, timeoutMs) {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve()
   return withTimeout(new Promise((resolve) => child.once('exit', resolve)), timeoutMs)
+}
+
+function quoteForCmd(argument) {
+  return `"${String(argument).replaceAll('"', '\\"')}"`
 }
