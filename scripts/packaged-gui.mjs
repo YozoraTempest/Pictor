@@ -36,7 +36,7 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
     const applicationPid =
       (await findProcessByArgument(`--remote-debugging-port=${port}`)) ?? child.pid
     return {
-      firstWindow: () => firstPage(browser),
+      firstWindow: () => firstPage(browser, () => ({ stdout, stderr })),
       close: async () => {
         await withTimeout(
           browser.close().catch(() => undefined),
@@ -162,14 +162,21 @@ async function withTimeout(promise, timeoutMs) {
   await Promise.race([promise, new Promise((resolve) => globalThis.setTimeout(resolve, timeoutMs))])
 }
 
-async function firstPage(browser) {
-  const deadline = Date.now() + 30_000
+async function firstPage(browser, readOutput) {
+  const deadline = Date.now() + 90_000
   while (Date.now() < deadline) {
     const page = browser.contexts().flatMap((context) => context.pages())[0]
     if (page) return page
     await new Promise((resolve) => globalThis.setTimeout(resolve, 100))
   }
-  throw new Error('Packaged GUI did not create a renderer page')
+  const pages = browser.contexts().flatMap((context) => context.pages())
+  throw new Error(
+    `Packaged GUI did not create a renderer page: ${JSON.stringify({
+      pageCount: pages.length,
+      pages: pages.map((page) => ({ url: page.url() })),
+      ...readOutput(),
+    })}`,
+  )
 }
 
 function waitForExit(child, timeoutMs) {
