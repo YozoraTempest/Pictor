@@ -97,7 +97,8 @@ Engine 和 Preload 只保留有界执行事件历史；活动执行不会被终�
 - `app.info`、`app.doctor`；
 - `plugin.list`、`plugin.install`、`plugin.enable`、`plugin.disable`、`plugin.remove`、
   `plugin.restore`；
-- `ui.list`、`ui.activate`；
+- Stage 5 CLI 的 `ui list/install/enable/disable/restore` 只路由到上述 `plugin.*` 命令，不新增
+  `ui.*` Core command；
 - Profile 与安全模式诊断。
 
 Pictor Shell 只列出标记为 recovery-safe 的 Core 命令。它不复用 CLI parser 或 TUI renderer，也不
@@ -109,6 +110,13 @@ Stage 4 的当前迁移切片建立 `src/commands` Headless Engine，并由 Appl
 Electron GUI 的 Command transport；它不实现 CLI/TUI、GUI Host、Pictor Shell、Workbench 拆分或
 Manifest 0.4。Command Engine 的 registry、handler 和权限判定保持内部，Frontend 只接收稳定的
 `CommandClient` 与不可变、可序列化的 contract 值。
+
+Stage 5 的当前迁移切片建立 `src/cli` Node Frontend。`runCli(args, deps)` 通过注入的 Host 工厂和
+`CommandClient` 路由 `doctor`、Plugin 生命周期命令以及 CLI 层的 `ui` 别名；`help`/`version` 不
+创建 Host 或获取锁。text/JSON 输出和退出码集中在 CLI 层，SIGINT 会通过已有 execution identity
+调用 `CommandClient.cancel` 并等待终态。CLI 使用与 GUI 相同的 `ProfileFileLock`，Node adapter
+提供不启动 Electron 的 Runtime/EventPublisher；本阶段不实现 GUI Host、Pictor Shell、Workbench、
+TUI、Manifest 0.4 或独立打包。
 
 ## Frontend 契约
 

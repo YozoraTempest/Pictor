@@ -10,8 +10,8 @@ import {
 import type { CommandDefinition } from './engine.js'
 
 const emptyInputSchema = z.null()
-const pluginKindSchema = z.enum(['pictor-plugin', 'pi-extension', 'pi-package'])
-const pluginIdentitySchema = z.object({
+export const pluginKindSchema = z.enum(['pictor-plugin', 'pi-extension', 'pi-package'])
+export const pluginIdentitySchema = z.object({
   kind: pluginKindSchema,
   id: z.string().trim().min(1),
 })
@@ -40,6 +40,7 @@ export const appDoctorResultSchema = z.object({
   status: z.enum(['ok', 'degraded']),
   checks: z.array(appDoctorCheckSchema),
 })
+export type AppDoctorResult = z.output<typeof appDoctorResultSchema>
 
 type PluginIdentity = z.infer<typeof pluginIdentitySchema>
 type PluginInstallRequest = z.infer<typeof pluginInstallRequestSchema>

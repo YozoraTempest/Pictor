@@ -15,6 +15,7 @@ import {
 
 import {
   ApplicationHost,
+  ProfileFileLock,
   type ApplicationHostServices,
   type EventPublisher,
   type FrontendLock,
@@ -163,18 +164,36 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
 export class ElectronFrontendLock implements FrontendLock {
   private leaseHeld = false
 
+  constructor(private readonly profileLock: FrontendLock) {}
+
   async acquire(): Promise<FrontendLockLease | null> {
     if (this.leaseHeld) throw new Error('Electron Frontend lock has already been acquired')
     if (!app.requestSingleInstanceLock()) return null
 
+    let profileLease: FrontendLockLease | null = null
+    try {
+      profileLease = await this.profileLock.acquire()
+      if (!profileLease) {
+        app.releaseSingleInstanceLock()
+        return null
+      }
+    } catch (error) {
+      app.releaseSingleInstanceLock()
+      throw error
+    }
+
     this.leaseHeld = true
     let released = false
     return {
-      release: () => {
+      release: async () => {
         if (released) return
         released = true
-        this.leaseHeld = false
-        app.releaseSingleInstanceLock()
+        try {
+          await profileLease?.release()
+        } finally {
+          this.leaseHeld = false
+          app.releaseSingleInstanceLock()
+        }
       },
     }
   }
@@ -189,7 +208,6 @@ export class DesktopHost {
   private quitting = false
   private activationRegistered = false
   private beforeQuitRegistered = false
-  private readonly frontendLock = new ElectronFrontendLock()
 
   async start(): Promise<void> {
     if (this.applicationHost) throw new Error('Desktop Host has already started')
@@ -197,6 +215,8 @@ export class DesktopHost {
     const currentVersion = app.isPackaged ? app.getVersion() : packageMetadata.version
     const userDataDirectory = app.getPath('userData')
     const dataDirectory = join(userDataDirectory, 'data-v1')
+    const sharedProfileLock = new ProfileFileLock(userDataDirectory, { frontend: 'gui' })
+    const frontendLock = new ElectronFrontendLock(sharedProfileLock)
     const safeMode = process.argv.includes('--safe-mode')
     const distribution = await detectDesktopDistribution()
     const appInfo = appInfoSchema.parse({
@@ -223,7 +243,7 @@ export class DesktopHost {
       bundledPluginsDirectory: bundledPluginsDirectory(),
       runtimeHost: runtimeSupervisor,
       eventPublisher: this.createEventPublisher(),
-      frontendLock: this.frontendLock,
+      frontendLock,
       profile:
         process.env.PICTOR_PLUGIN_PROFILE === 'developer'
           ? developerPluginProfile
