@@ -62,6 +62,9 @@ test('persists image prompts and Extension command messages', async ({ piExtensi
   await expect(timeline.getByText('Extension note: hello')).toBeVisible({ timeout: 30_000 })
   expect(await readFile(authoritativeJsonlPath, 'utf8')).toContain('e2e-command-state')
 
+  await expect
+    .poll(async () => terminalEventCount(await runtimeEvents()), { timeout: 30_000 })
+    .toBe(2)
   await clearRuntimeEvents()
   expect(await startSelectedRun('/e2e-user')).toMatchObject({ ok: true })
   await expect
