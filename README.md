@@ -237,6 +237,9 @@ Workbench Plugin 迁移契约见
   `AgentSessionRuntime` runner 运行，Host/Plugin/锁清理由 Pictor seam 覆盖。要让 Host 完全
   接管同一个 terminal、SIGINT 和异步退出清理，仍需要一个窄的上游 terminal/exit 注入适配，
   不能用私有字段或复制 Renderer 绕过。
+- 同一版本的 `InteractiveMode` 构造器还会覆盖 `AgentSessionRuntime` 的单一 rebind callback；
+  TUI adapter 会在底层方法调用前拒绝 `/new`、`/fork`、`/clone`、`/resume` 和 `/import`，避免
+  Session identity 失配。完整 replacement transaction 路由需要独立的上游 public composition seam。
 
 ## 本地数据与安全边界
 

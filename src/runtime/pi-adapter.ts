@@ -37,6 +37,7 @@ import {
 } from '../shared/runtime-protocol.js'
 import { classifyRuntimeFailure, type RuntimeFailure } from '../shared/runtime-failure.js'
 import { createSecretRedactor, type SecretRedactor } from '../shared/secret-redaction.js'
+import { PictorError } from '../shared/errors.js'
 import type {
   AgentRuntimeForkResult,
   AgentRuntimeCompactResult,
@@ -449,7 +450,7 @@ class PiSessionRuntime implements PiSessionLike {
   }
 
   createInteractiveRunner(options?: InteractiveRuntimeOptions): InteractiveRuntimeRunner {
-    return new PiInteractiveRunner(this.runtime, options)
+    return createPiInteractiveRunner(this.runtime, options)
   }
 
   getActiveToolNames(): string[] {
@@ -532,17 +533,83 @@ class PiSessionRuntime implements PiSessionLike {
   }
 }
 
+export const PICTOR_TUI_SESSION_REPLACEMENT_ERROR =
+  'Pictor TUI 当前不支持在 InteractiveMode 中替换 Session；请退出 TUI 后使用 --project/--session 或其他受支持的 Pictor 入口创建或恢复。'
+
+type InteractiveRuntimeAdapterTarget = Pick<
+  AgentSessionRuntime,
+  | 'setBeforeSessionInvalidate'
+  | 'setRebindSession'
+  | 'newSession'
+  | 'fork'
+  | 'switchSession'
+  | 'importFromJsonl'
+>
+
+const sessionReplacementMethods = new Set<PropertyKey>([
+  'newSession',
+  'fork',
+  'switchSession',
+  'importFromJsonl',
+])
+
+const interactiveHookMethods = new Set<PropertyKey>([
+  'setBeforeSessionInvalidate',
+  'setRebindSession',
+])
+
+/**
+ * Protects Pictor's AgentSessionRuntime hooks from the InteractiveMode
+ * constructor in Pi 0.84.1. Session replacement is rejected before any Pi
+ * public replacement method runs because it cannot safely join Pictor's
+ * transaction with Pi's single rebind callback in this dependency version.
+ */
+export function createInteractiveRuntimeAdapter<T extends InteractiveRuntimeAdapterTarget>(
+  runtime: T,
+): T {
+  return new Proxy(runtime, {
+    get(target, property) {
+      if (interactiveHookMethods.has(property)) return () => undefined
+      if (sessionReplacementMethods.has(property)) {
+        return () => {
+          throw new PictorError('invalid-input', PICTOR_TUI_SESSION_REPLACEMENT_ERROR)
+        }
+      }
+      const value = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+}
+
+type InteractiveModeFactory = (
+  runtime: AgentSessionRuntime,
+  options: InteractiveModeOptions,
+) => Pick<InteractiveMode, 'run'>
+
+const createInteractiveMode: InteractiveModeFactory = (runtime, options) =>
+  new InteractiveMode(runtime, options)
+
 /**
  * Pi's public InteractiveMode owns its ProcessTerminal and signal handlers in
  * 0.84.1. Keep that implementation behind the Runtime Plugin boundary; the
- * TUI Host only sees this runner contract.
+ * TUI Host only sees this runner contract. The factory is a narrow Pictor
+ * seam for deterministic tests and never changes the production default.
  */
+export function createPiInteractiveRunner(
+  runtime: AgentSessionRuntime,
+  options?: InteractiveRuntimeOptions,
+  modeFactory: InteractiveModeFactory = createInteractiveMode,
+): InteractiveRuntimeRunner {
+  return new PiInteractiveRunner(runtime, options, modeFactory)
+}
+
 class PiInteractiveRunner implements InteractiveRuntimeRunner {
-  private readonly mode: InteractiveMode
+  private readonly mode: Pick<InteractiveMode, 'run'>
 
   constructor(
     private readonly runtime: AgentSessionRuntime,
-    options?: InteractiveRuntimeOptions,
+    options: InteractiveRuntimeOptions | undefined,
+    modeFactory: InteractiveModeFactory,
   ) {
     const modeOptions: InteractiveModeOptions = {
       ...(options?.initialMessage !== undefined ? { initialMessage: options.initialMessage } : {}),
@@ -552,7 +619,7 @@ class PiInteractiveRunner implements InteractiveRuntimeRunner {
       ...(options?.verbose !== undefined ? { verbose: options.verbose } : {}),
       ...(options?.tuiMode !== undefined ? { tuiMode: options.tuiMode } : {}),
     }
-    this.mode = new InteractiveMode(runtime, modeOptions)
+    this.mode = modeFactory(createInteractiveRuntimeAdapter(runtime), modeOptions)
   }
 
   run(): Promise<void> {

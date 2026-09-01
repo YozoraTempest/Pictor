@@ -146,7 +146,8 @@ it('keeps TUI Core and Delegate Plugin on public non-GUI boundaries', async () =
 
 it('keeps the production Pi composition on the public InteractiveMode runner seam', async () => {
   const source = await readFile(resolve('src/runtime/pi-adapter.ts'), 'utf8')
-  expect(source).toContain('new InteractiveMode(runtime, modeOptions)')
+  expect(source).toContain('new InteractiveMode(runtime, options)')
+  expect(source).toContain('modeFactory(createInteractiveRuntimeAdapter(runtime), modeOptions)')
   expect(source).toContain('return this.mode.run()')
   expect(source).not.toMatch(/as\s+any/)
 })

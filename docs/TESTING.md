@@ -71,6 +71,8 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   terminal 覆盖输入、输出、resize、取消和退出清理；测试不改写真实 stdin/stdout。另用同一
   `AgentWorkspaceClient`/`RuntimeCoordinator` 验证 session-level Pi event 按 queue 保存 active leaf、
   从 JSONL 重建并持久化 Projection，最终 `getSession()` 与 `inspectSessionHistory` 一致，
+  并用严格 public Runtime spy 验证 InteractiveMode 的 `/new`、`/fork`、`/clone`、`/resume`、`/import`
+  在适配层稳定拒绝且不调用底层 replacement method，
   用两个独立 Frontend 验证 GUI/CLI/TUI Profile 锁冲突，确认 Plugin disabled/removed、Plugin
   失败和所有 dispose 只执行一次且失败仍释放锁。TUI boundary 测试拒绝 Electron、DOM、GUI
   私有实现、跨 Plugin 私有导入和子进程启动。

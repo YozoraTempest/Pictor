@@ -264,6 +264,13 @@ import-boundary 测试，并
 Host 接管同一 terminal、SIGINT 和异步退出清理需要窄的上游 terminal/exit adapter，留作后续
 依赖适配，当前其余安全范围已落地。
 
+Pi 0.84.1 的 `InteractiveMode` 还会在构造时覆盖 `AgentSessionRuntime` 的单一 rebind callback。
+TUI 因此通过公开方法 Proxy 保留 Pictor binding，并在调用底层 Runtime replacement method 之前
+拒绝 `/new`、`/fork`、`/clone`、`/resume` 和 `/import`，保证原 JSONL 与 Pictor Session identity
+不会先切换再失配。当前使用 `--project`/`--session` 和其他 Pictor 受支持入口完成创建/恢复；完整
+replacement prepare/commit/abort 路由需要独立的上游 public composition seam，与 terminal/exit
+适配是两个独立限制。
+
 ### 各阶段最低门禁
 
 | Stage | Multica Issue | 独立分支                                   | 合并前新增证据                                             |

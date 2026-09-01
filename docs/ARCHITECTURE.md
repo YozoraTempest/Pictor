@@ -160,6 +160,12 @@ session-level entry/leaf event 经 RuntimeCoordinator persistence queue 先保�
 同一个 JSONL 重建并持久化 Session Projection。`inspectSessionHistory` 仍是同一 authority 的只读
 Projection view。
 
+由于 Pi 0.84.1 的 `InteractiveMode` 构造器会覆盖 `AgentSessionRuntime` 的单一 rebind callback，
+TUI 传入一个只使用公开 Runtime 方法的 adapter：它保留 Pictor hook，并在底层调用前稳定拒绝
+InteractiveMode 的 `/new`、`/fork`、`/clone`、`/resume` 和 `/import`。本阶段的 Session replacement
+使用 TUI 启动参数或 Pictor 受支持入口；完整 replacement transaction 路由需要独立的上游
+public composition seam。
+
 `RuntimeCoordinator` 拥有自身需要的窄 persistence 和 Runtime host interface。现有
 `AppRepository` 与注入的 `RuntimeHost` 直接满足它们；测试使用 in-memory adapter，不依赖具体
 实现类型。不要为整个持久化模块添加只有一个 production adapter 的抽象。
