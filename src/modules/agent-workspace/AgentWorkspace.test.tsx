@@ -112,6 +112,8 @@ function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
       ok({
         name: 'Pictor',
         version: '0.1.0',
+        buildChannel: 'stable',
+        sourceCommit: 'a'.repeat(40),
         platform: 'win32',
         arch: 'x64',
         distribution: 'windows',
@@ -131,18 +133,24 @@ function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
 }
 
 function createUpdater(overrides: Partial<UpdaterClient> = {}): UpdaterClient {
+  const appInfo = {
+    name: 'Pictor',
+    version: '0.1.0',
+    buildChannel: 'stable' as const,
+    sourceCommit: 'a'.repeat(40),
+    platform: 'win32' as const,
+    arch: 'x64' as const,
+    distribution: 'windows' as const,
+  }
   return {
-    getAppInfo: async () => ({
-      name: 'Pictor',
-      version: '0.1.0',
-      platform: 'win32',
-      arch: 'x64',
-      distribution: 'windows',
-    }),
+    getSnapshot: async () => ({ appInfo, channel: 'stable' }),
+    setChannel: async (channel) => ({ appInfo, channel }),
     checkForUpdates: async () =>
       ok({
+        channel: 'stable',
         currentVersion: '0.1.0',
         latestVersion: '0.2.0',
+        latestCommit: null,
         updateAvailable: true,
         packageAvailable: true,
         packageKind: 'windows-nsis',
@@ -782,8 +790,10 @@ it('opens the Session Tree, inspects a historical branch, and returns to the act
 it('shows app information and downloads an available update from settings', async () => {
   const checkForUpdates = vi.fn(async () =>
     ok({
+      channel: 'stable' as const,
       currentVersion: '0.1.0',
       latestVersion: '0.2.0',
+      latestCommit: null,
       updateAvailable: true,
       packageAvailable: true,
       packageKind: 'windows-nsis' as const,
@@ -804,16 +814,67 @@ it('shows app information and downloads an available update from settings', asyn
   await waitFor(() => expect(openUpdate).toHaveBeenCalledOnce())
 })
 
+it('selects and checks the persisted rolling Nightly channel', async () => {
+  const appInfo = {
+    name: 'Pictor',
+    version: '0.3.0',
+    buildChannel: 'stable' as const,
+    sourceCommit: 'a'.repeat(40),
+    platform: 'win32' as const,
+    arch: 'x64' as const,
+    distribution: 'windows' as const,
+  }
+  const setChannel = vi.fn(async (channel: 'stable' | 'nightly') => ({ appInfo, channel }))
+  const checkForUpdates = vi.fn(async () =>
+    ok({
+      channel: 'nightly' as const,
+      currentVersion: '0.3.0',
+      latestVersion: '0.3.0',
+      latestCommit: 'b'.repeat(40),
+      updateAvailable: true,
+      packageAvailable: true,
+      packageKind: 'windows-nsis' as const,
+      publishedAt: now,
+    }),
+  )
+  renderApp(
+    createBridge(emptySnapshot()),
+    createUpdater({
+      getSnapshot: async () => ({ appInfo, channel: 'stable' }),
+      setChannel,
+      checkForUpdates,
+    }),
+  )
+
+  await screen.findByRole('heading', { name: '选择一个项目开始' })
+  fireEvent.click(screen.getByRole('button', { name: '设置' }))
+  fireEvent.click(screen.getByRole('button', { name: '关于' }))
+  await waitFor(() => expect(screen.getByLabelText('更新通道')).toBeEnabled())
+
+  fireEvent.change(screen.getByLabelText('更新通道'), { target: { value: 'nightly' } })
+  await waitFor(() => expect(setChannel).toHaveBeenCalledWith('nightly'))
+  expect(await screen.findByRole('note')).toHaveTextContent('最新通过 CI 的 develop 快照')
+
+  fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
+  expect(await screen.findByText('可以切换到 Nightly bbbbbbb')).toBeInTheDocument()
+  expect(checkForUpdates).toHaveBeenCalledOnce()
+})
+
 it('shows the Linux platform in app information', async () => {
   renderApp(
     createBridge(emptySnapshot()),
     createUpdater({
-      getAppInfo: async () => ({
-        name: 'Pictor',
-        version: '0.1.0',
-        platform: 'linux',
-        arch: 'x64',
-        distribution: 'arch',
+      getSnapshot: async () => ({
+        channel: 'stable',
+        appInfo: {
+          name: 'Pictor',
+          version: '0.1.0',
+          buildChannel: 'stable',
+          sourceCommit: 'a'.repeat(40),
+          platform: 'linux',
+          arch: 'x64',
+          distribution: 'arch',
+        },
       }),
     }),
     {
@@ -821,6 +882,8 @@ it('shows the Linux platform in app information', async () => {
         ok({
           name: 'Pictor',
           version: '0.1.0',
+          buildChannel: 'stable',
+          sourceCommit: 'a'.repeat(40),
           platform: 'linux',
           arch: 'x64',
           distribution: 'arch',

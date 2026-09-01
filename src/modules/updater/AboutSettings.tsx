@@ -1,7 +1,13 @@
 import { CheckCircle2, Download, LoaderCircle, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { AppInfo, UpdateCheckResult, UpdaterClient } from './shared'
+import type {
+  AppInfo,
+  UpdateChannel,
+  UpdateCheckResult,
+  UpdaterClient,
+  UpdaterSnapshot,
+} from './shared'
 
 interface AboutSettingsProps {
   client: UpdaterClient
@@ -12,10 +18,12 @@ function errorMessage(error: unknown): string {
 }
 
 export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element {
-  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
-  const [busy, setBusy] = useState<'check' | 'open' | null>(null)
+  const [snapshot, setSnapshot] = useState<UpdaterSnapshot | null>(null)
+  const [busy, setBusy] = useState<'channel' | 'check' | 'open' | null>(null)
   const [result, setResult] = useState<UpdateCheckResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const appInfo: AppInfo | null = snapshot?.appInfo ?? null
+  const channel = snapshot?.channel ?? 'stable'
   const packageLabel =
     result?.packageKind === 'windows-nsis'
       ? 'Windows x64 安装包'
@@ -28,9 +36,9 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
   useEffect(() => {
     let active = true
     void client
-      .getAppInfo()
+      .getSnapshot()
       .then((value) => {
-        if (active) setAppInfo(value)
+        if (active) setSnapshot(value)
       })
       .catch((cause: unknown) => {
         if (active) setError(errorMessage(cause))
@@ -40,23 +48,72 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
     }
   }, [client])
 
+  const handleChannelChange = async (nextChannel: UpdateChannel) => {
+    const previousSnapshot = snapshot
+    if (!previousSnapshot || nextChannel === previousSnapshot.channel) return
+    setBusy('channel')
+    setError(null)
+    setResult(null)
+    setSnapshot({ ...previousSnapshot, channel: nextChannel })
+    try {
+      setSnapshot(await client.setChannel(nextChannel))
+    } catch (cause) {
+      setSnapshot(previousSnapshot)
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const handleCheckForUpdates = async () => {
     setBusy('check')
     setError(null)
     setResult(null)
-    const response = await client.checkForUpdates()
-    setBusy(null)
-    if (response.ok) setResult(response.value)
-    else setError(response.error.message)
+    try {
+      const response = await client.checkForUpdates()
+      if (response.ok) setResult(response.value)
+      else setError(response.error.message)
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(null)
+    }
   }
 
   const handleOpenUpdate = async () => {
     setBusy('open')
     setError(null)
-    const response = await client.openUpdate()
-    setBusy(null)
-    if (!response.ok) setError(response.error.message)
+    try {
+      const response = await client.openUpdate()
+      if (!response.ok) setError(response.error.message)
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setBusy(null)
+    }
   }
+
+  const buildLabel = appInfo
+    ? appInfo.buildChannel === 'nightly'
+      ? `Nightly ${appInfo.sourceCommit?.slice(0, 7) ?? ''}`.trim()
+      : appInfo.buildChannel === 'stable'
+        ? `Stable ${appInfo.sourceCommit?.slice(0, 7) ?? ''}`.trim()
+        : 'Development'
+    : '读取中'
+  const latestCommit = result?.latestCommit?.slice(0, 7) ?? null
+  const resultTitle = result
+    ? result.channel === 'nightly'
+      ? result.updateAvailable
+        ? appInfo?.buildChannel === 'nightly'
+          ? `发现新的 Nightly ${latestCommit ?? ''}`.trim()
+          : `可以切换到 Nightly ${latestCommit ?? ''}`.trim()
+        : `当前已是最新 Nightly ${latestCommit ?? ''}`.trim()
+      : result.updateAvailable
+        ? `发现新版本 v${result.latestVersion}`
+        : appInfo?.buildChannel === 'stable'
+          ? `当前已是最新稳定版 v${result.currentVersion}`
+          : '当前没有更新的稳定版本'
+    : null
 
   return (
     <div className="about-settings">
@@ -69,6 +126,10 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
         <div>
           <dt>版本</dt>
           <dd>{appInfo ? `v${appInfo.version}` : '读取中'}</dd>
+        </div>
+        <div>
+          <dt>构建</dt>
+          <dd>{buildLabel}</dd>
         </div>
         <div>
           <dt>平台</dt>
@@ -96,13 +157,17 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
         <div className="update-settings__heading">
           <div>
             <h3 id="update-heading">应用更新</h3>
-            <p>从 Pictor 官方 GitHub Release 检查稳定版本。</p>
+            <p>
+              {channel === 'stable'
+                ? '从 Pictor 官方 GitHub Release 检查稳定版本。'
+                : '从滚动 Nightly Pre-release 检查最新 develop 快照。'}
+            </p>
           </div>
           <button
             className="secondary-button"
             type="button"
             onClick={handleCheckForUpdates}
-            disabled={busy !== null}
+            disabled={!snapshot || busy !== null}
           >
             {busy === 'check' ? (
               <LoaderCircle className="spin" size={15} />
@@ -113,6 +178,26 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
           </button>
         </div>
 
+        <label className="field update-channel-field" htmlFor="update-channel">
+          更新通道
+          <select
+            id="update-channel"
+            value={channel}
+            disabled={!snapshot || busy !== null}
+            onChange={(event) => void handleChannelChange(event.target.value as UpdateChannel)}
+          >
+            <option value="stable">稳定版（推荐）</option>
+            <option value="nightly">Nightly（每日滚动）</option>
+          </select>
+        </label>
+
+        {channel === 'nightly' ? (
+          <div className="update-channel-warning" role="note">
+            Nightly 来自最新通过 CI 的 develop 快照，未签名且可能包含不兼容的数据变更。切换前请备份
+            Pictor 用户数据。
+          </div>
+        ) : null}
+
         {result ? (
           <div
             className={`update-result ${result.updateAvailable ? 'is-available' : ''}`}
@@ -120,16 +205,17 @@ export function AboutSettings({ client }: AboutSettingsProps): React.JSX.Element
           >
             <CheckCircle2 size={16} />
             <div>
-              <strong>
-                {result.updateAvailable
-                  ? `发现新版本 v${result.latestVersion}`
-                  : `当前已是最新版本 v${result.currentVersion}`}
-              </strong>
+              <strong>{resultTitle}</strong>
               {result.updateAvailable ? (
                 <span>
                   {result.packageAvailable
                     ? `可以下载官方${packageLabel ?? '发行包'}。`
                     : '该版本未附带匹配的发行包，可前往发布页查看。'}
+                </span>
+              ) : null}
+              {result.channel === 'nightly' && result.publishedAt ? (
+                <span>
+                  发布于 {new Date(result.publishedAt).toLocaleString('zh-CN', { hour12: false })}
                 </span>
               ) : null}
             </div>

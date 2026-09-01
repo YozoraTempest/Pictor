@@ -46,7 +46,7 @@ Bundled 恢复源和独立数据目录。第一版按重启应用生效，不实
 - `errors.ts`：可跨进程表达的错误代码和 `PictorError`。
 - `ipc-result.ts`：把失败转换为可序列化 IPC result，不依赖 Electron。
 - `secret-redaction.ts`：Session、Runtime event 和 Pi transcript 的凭据脱敏。
-- `modules/updater/shared.ts`：应用信息、更新语义和 Updater Module contract。
+- `modules/updater/shared.ts`：应用构建身份、更新通道语义和 Updater Module contract。
 - `modules/agent-workspace/shared.ts`：Project、Session、Settings、Runtime intent 与 event 的
   Agent Workspace Module contract。
 
@@ -75,6 +75,10 @@ Main 与 Renderer 分别从用户 Plugin Store 动态加载当前进程的 Plugi
 进程内的 Module 调用依赖 TypeScript。Updater 的独立 ESM 包在构建时进入 Bundled 恢复源，首次
 启动复制到用户 Store 后运行；其 Main 入口贡献 contract handler，Renderer 入口提供
 `UpdaterClient` 并向 `settings.sections` 贡献“关于”页面。
+Updater Main Module 在自身 Plugin 数据目录记忆稳定版或 Nightly 通道，默认稳定版；Renderer 只消费
+快照、选择通道、检查和打开四个 intent。稳定版按 SemVer 比较 Latest Release，Nightly 使用固定
+Pre-release tag 与打包时嵌入的完整源码提交比较滚动快照；GitHub 地址、平台资产和打开目标的校验都
+保持在该 Module 内部。
 Agent Workspace 同样通过 Main Module 注册 `pictor.agent-workspace` contract handlers，Renderer
 Module 只消费 `AgentWorkspaceClient`；Preload 不再逐项暴露 Workspace IPC 方法。
 

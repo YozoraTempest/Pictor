@@ -8,13 +8,10 @@ export default pluginEntrypoint<MainPluginContext>((context) => {
   const appInfo = appInfoSchema.parse(context.appInfo)
   return [
     createUpdaterMainModule({
-      currentVersion: appInfo.version,
-      platform: appInfo.platform,
-      arch: appInfo.arch,
-      distribution: appInfo.distribution,
+      appInfo,
+      dataPath: context.dataPath,
       fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
       openExternal: (url) => shell.openExternal(url),
-      getAppInfo: () => appInfo,
     }),
   ]
 })

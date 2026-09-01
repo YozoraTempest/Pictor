@@ -97,6 +97,7 @@ jobs:
       source_sha: ${{ needs.source.outputs.sha }}
       version: ${{ needs.source.outputs.version }}
       artifact_prefix: nightly
+      build_channel: nightly
       run_source_validation: false
 
   publish:
