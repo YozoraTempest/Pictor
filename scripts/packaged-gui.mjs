@@ -80,7 +80,8 @@ async function findFreePort() {
 }
 
 async function waitForCdp(port, child, readOutput) {
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + 120_000
+  let browserReady = false
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       throw new Error(
@@ -88,8 +89,17 @@ async function waitForCdp(port, child, readOutput) {
       )
     }
     try {
-      const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/version`)
-      if (response.ok) return
+      if (!browserReady) {
+        const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/version`)
+        browserReady = response.ok
+      }
+      if (browserReady) {
+        const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/list`)
+        if (response.ok) {
+          const targets = await response.json()
+          if (Array.isArray(targets) && targets.some((target) => target?.type === 'page')) return
+        }
+      }
     } catch {
       // Electron may need a few cycles to bind the port.
     }
