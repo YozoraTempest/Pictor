@@ -1,6 +1,7 @@
 # Pictor Domain Language
 
-This glossary defines the product language used to describe Pictor's desktop support and releases.
+This glossary defines the product language used to describe Pictor's application architecture,
+desktop support, and releases.
 
 ## Language
 
@@ -28,9 +29,41 @@ _Avoid_: Universal Linux package, Supported Distribution
 The deterministic shell environment used to execute an individually approved Agent command. It is independent of the user's login shell.
 _Avoid_: Terminal, user shell, Git Bash
 
-**Core Host**:
-The immutable Pictor desktop foundation that remains available when no optional product capability is installed.
-_Avoid_: Core Plugin, Built-in Plugin
+**Application Host**:
+The headless owner of one Pictor Profile's application state and product capabilities shared by every Frontend.
+_Avoid_: Core Host, GUI Kernel, UI Kernel
+
+**Frontend**:
+A user-facing interaction mode attached to an Application Host. Pictor Frontends are GUI, TUI, and CLI.
+_Avoid_: Client, Renderer, UI Kernel
+
+**Pictor Command**:
+An application-level operation exposed consistently to Frontends.
+_Avoid_: Shell command, IPC handler, CLI-only command
+
+**Command Engine**:
+The single execution interface through which Frontends discover, run, cancel, and observe Pictor Commands.
+_Avoid_: Command Kernel, command registry, command bus
+
+**GUI Host**:
+The minimal graphical Frontend host that presents one Workbench Plugin or the Pictor Shell.
+_Avoid_: GUI Kernel, Core GUI, Workbench
+
+**Pictor Shell**:
+The built-in lightweight GUI for invoking recovery-safe Pictor Commands when no Workbench Plugin is available.
+_Avoid_: Recovery Console, Kernel Shell, terminal emulator
+
+**TUI Host**:
+The terminal Frontend host that composes one TUI application from installed Plugins.
+_Avoid_: Pictor Shell, CLI, terminal emulator
+
+**CLI Frontend**:
+The non-interactive Frontend that invokes Pictor Commands with stable text or structured output.
+_Avoid_: Pictor Shell, TUI, Electron Renderer
+
+**Workbench Plugin**:
+A Plugin that owns one product GUI contributed to the GUI Host's Workbench slot.
+_Avoid_: Core UI, Shell Application, built-in Workbench
 
 **Plugin**:
 An independently installed, versioned, enabled, disabled, or removed Pictor product capability.
