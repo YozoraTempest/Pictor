@@ -45,6 +45,7 @@
     "plugins/gui-plugin-manager/styles.ts",
     "plugins/updater/gui.ts",
     "plugins/updater/AboutSettings.tsx",
+    "plugins/updater/AboutSettings.test.tsx",
     "plugins/updater/gui.test.tsx",
     "plugins/updater/styles.ts"
   ]

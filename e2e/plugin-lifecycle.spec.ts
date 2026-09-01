@@ -233,21 +233,24 @@ test('keeps Delegate usable without the GUI Plugin Manager and restores it from 
     await removedApp.close()
   }
 
-  const store = await initializePluginStore(userDataDirectory)
-  await store.remove('pictor.workbench.delegate')
-
-  const shellApp = await launch()
+  const shellApp = await electron.launch({
+    args: [resolve('out/main/index.js'), '--safe-mode', `--user-data-dir=${userDataDirectory}`],
+    cwd: resolve('.'),
+  })
   try {
     const window = await shellApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
+    await expect(window.getByText('安全模式已忽略全部 Plugin')).toBeVisible()
     const managerShellRow = window
       .locator('.pictor-shell__plugin-row')
       .filter({ hasText: 'pictor.gui.plugin-manager' })
     const workbenchShellRow = window
       .locator('.pictor-shell__plugin-row')
       .filter({ hasText: 'pictor.workbench.delegate' })
+    await expect(managerShellRow).toBeVisible()
+    await expect(workbenchShellRow).toBeVisible()
+    await expect(workbenchShellRow.getByRole('button', { name: '恢复' })).toHaveCount(0)
     await managerShellRow.getByRole('button', { name: '恢复' }).click()
-    await workbenchShellRow.getByRole('button', { name: '恢复' }).click()
     await expect(window.getByText('操作已记录；重启 Pictor 后生效。')).toBeVisible()
   } finally {
     await shellApp.close()

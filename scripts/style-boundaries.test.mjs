@@ -39,11 +39,24 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function expectPrefixedKeyframes(css, prefix) {
+  const names = [...css.matchAll(/@(?:-webkit-)?keyframes\s+([\w-]+)/g)].map(([, name]) => name)
+  expect(names.length).toBeGreaterThan(0)
+  for (const name of names) expect(name).toMatch(new RegExp(`^${escapeRegExp(prefix)}`))
+}
+
 it('keeps each product stylesheet inside its stable data scope', () => {
   expectScoped(styles.delegate, roots.delegate)
   expectScoped(styles.manager, roots.manager)
   expectScoped(styles.updater, roots.updater)
   expectScoped(styles.gitChanges, roots.gitChanges)
+})
+
+it('keeps product keyframe names globally unique to their plugin', () => {
+  expectPrefixedKeyframes(styles.delegate, 'pictor-delegate-')
+  expectPrefixedKeyframes(styles.manager, 'pictor-plugin-manager-')
+  expectPrefixedKeyframes(styles.updater, 'pictor-updater-')
+  expectPrefixedKeyframes(styles.gitChanges, 'pictor-git-changes-')
 })
 
 it('keeps product selectors out of the Host stylesheet and Delegate stylesheet', () => {

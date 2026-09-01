@@ -1695,10 +1695,10 @@
 }
 
 [data-pictor-plugin='pictor.workbench.delegate'] .spin {
-  animation: spin 0.9s linear infinite;
+  animation: pictor-delegate-spin 0.9s linear infinite;
 }
 
-@keyframes spin {
+@keyframes pictor-delegate-spin {
   to {
     transform: rotate(360deg);
   }
