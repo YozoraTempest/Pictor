@@ -8,4 +8,5 @@ it('provides distinct default and Developer Profile identities with the same pro
   expect(defaultPluginProfile.id).toBe('pictor.default')
   expect(developerPluginProfile.id).toBe('pictor.developer')
   expect(developerPluginProfile.plugins).toEqual(defaultPluginProfile.plugins)
+  expect(defaultPluginProfile.plugins['pictor.workbench.delegate']).toBe('^0.4.0')
 })

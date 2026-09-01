@@ -15,8 +15,8 @@ import {
   Trash2,
 } from 'lucide-react'
 
-import type { Project, SessionSummary } from '../../shared/domain.js'
-import type { SessionExportFormat } from './shared.js'
+import type { Project, SessionSummary } from '../../src/shared/domain.js'
+import type { SessionExportFormat } from '../../src/modules/agent-workspace/shared.js'
 
 interface SidebarProps {
   projects: Project[]

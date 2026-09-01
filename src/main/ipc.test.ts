@@ -50,7 +50,7 @@ beforeEach(() => {
   mocks.commandExecute.mockClear()
   registration = registerIpc({
     validateSender: vi.fn(),
-    onRendererReady: vi.fn(async () => undefined),
+    onGuiReady: vi.fn(async () => undefined),
     appInfo: {} as AppInfo,
     getPluginBootstrap: vi.fn(async () => ({}) as PluginBootstrap),
   })

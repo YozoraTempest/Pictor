@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { cp, copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { cp, copyFile, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 
 import { z } from 'zod'
@@ -47,8 +47,15 @@ export interface PluginStoreIssue {
 export interface PluginStoreSnapshot {
   registry: PluginRegistry
   plugins: readonly StoredPluginPackage[]
+  blockedPlugins: readonly StoredPluginBlock[]
   nativeExtensions: readonly StoredNativeExtension[]
   issues: readonly PluginStoreIssue[]
+}
+
+export interface StoredPluginBlock {
+  entry: InstalledPictorPlugin
+  rootPath: string
+  reason: string
 }
 
 export interface StoredNativeExtension {
@@ -116,6 +123,13 @@ export class PluginStore {
         source: { kind: 'bundled', reference: bundled.manifest.id },
         desiredState: existing?.kind === 'pictor-plugin' ? existing.desiredState : 'enabled',
       }
+      if (existing?.kind === 'pictor-plugin' && existing.version !== entry.version) {
+        this.issues.push({
+          source: bundled.rootPath,
+          message: `Installed Plugin ${existing.id}@${existing.version} is retained; install or restore ${existing.id}@${entry.version} explicitly to apply the 0.4 package.`,
+        })
+        continue
+      }
       const installed = await this.isPackageInstalled(entry)
       if (existing?.kind !== 'pictor-plugin' || existing.version !== entry.version || !installed) {
         try {
@@ -137,6 +151,7 @@ export class PluginStore {
     this.ensureInitialized()
     const issues = [...this.issues]
     const plugins: StoredPluginPackage[] = []
+    const blockedPlugins: StoredPluginBlock[] = []
     const nativeExtensions: StoredNativeExtension[] = []
 
     for (const entry of this.registry.entries) {
@@ -167,7 +182,17 @@ export class PluginStore {
           ? resolve(entry.source.reference)
           : this.packagePath(entry)
       try {
-        const manifest = await this.readManifest(rootPath)
+        const manifestResult = await this.readStoredManifest(rootPath)
+        if (manifestResult.kind === 'blocked') {
+          blockedPlugins.push({
+            entry: { ...entry, source: { ...entry.source } },
+            rootPath,
+            reason: manifestResult.reason,
+          })
+          issues.push({ source: rootPath, message: manifestResult.reason })
+          continue
+        }
+        const manifest = manifestResult.manifest
         if (manifest.id !== entry.id || manifest.version !== entry.version) {
           throw new Error(
             `Installed Manifest is ${manifest.id}@${manifest.version}, expected ${entry.id}@${entry.version}`,
@@ -187,6 +212,7 @@ export class PluginStore {
     return {
       registry: pluginRegistrySchema.parse(this.registry),
       plugins,
+      blockedPlugins,
       nativeExtensions,
       issues,
     }
@@ -424,6 +450,22 @@ export class PluginStore {
     return manifest
   }
 
+  private async readStoredManifest(
+    rootPath: string,
+  ): Promise<{ kind: 'current'; manifest: PluginManifest } | { kind: 'blocked'; reason: string }> {
+    const source = JSON.parse(await readFile(join(rootPath, MANIFEST_FILE), 'utf8')) as unknown
+    const parsed = pluginManifestSchema.safeParse(source)
+    if (parsed.success) return { kind: 'current', manifest: parsed.data }
+    if (isLegacyManifest(source)) {
+      return {
+        kind: 'blocked',
+        reason:
+          'Installed Plugin uses the 0.3 Manifest (main/renderer); Pictor 0.4 blocks it without migration. Install a 0.4 package with explicit host/gui entries or restore its bundled 0.4 package.',
+      }
+    }
+    throw parsed.error
+  }
+
   private async copyPackage(sourcePath: string, entry: InstalledPictorPlugin): Promise<void> {
     const stagingPath = join(this.pluginsDirectory, `.install-${randomUUID()}`)
     const idDirectory = join(this.pluginsDirectory, entry.id)
@@ -503,4 +545,12 @@ export class PluginStore {
   private errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
   }
+}
+
+function isLegacyManifest(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || !('modules' in value)) return false
+  const modules = value.modules
+  return (
+    modules !== null && typeof modules === 'object' && ('main' in modules || 'renderer' in modules)
+  )
 }

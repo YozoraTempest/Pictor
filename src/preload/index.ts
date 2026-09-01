@@ -155,8 +155,7 @@ const commandClient: CommandClient = Object.freeze({
 
 const bridge = Object.freeze({
   commands: commandClient,
-  notifyRendererReady: async () =>
-    voidResultSchema.parse(await ipcRenderer.invoke('app:renderer-ready')),
+  notifyGuiReady: async () => voidResultSchema.parse(await ipcRenderer.invoke('app:gui-ready')),
   getAppInfo: async () => appInfoResultSchema.parse(await ipcRenderer.invoke('app:get-info')),
   getPluginBootstrap: async () =>
     pluginBootstrapResultSchema.parse(await ipcRenderer.invoke('plugin:get-bootstrap')),

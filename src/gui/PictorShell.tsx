@@ -70,7 +70,7 @@ export type PictorShellState =
 export interface PictorShellProps {
   readonly commandClient: CommandClient
   readonly pluginPicker: GuiPluginPicker
-  readonly rendererPluginStatuses: readonly PluginStatus[]
+  readonly guiPluginStatuses: readonly PluginStatus[]
   readonly safeMode: boolean
   readonly state: PictorShellState
 }
@@ -115,7 +115,7 @@ export async function executeShellCommand<TSchema extends ZodType>(
 export function PictorShell({
   commandClient,
   pluginPicker,
-  rendererPluginStatuses,
+  guiPluginStatuses,
   safeMode,
   state,
 }: PictorShellProps): React.JSX.Element {
@@ -234,9 +234,7 @@ export function PictorShell({
     } else setError(result.error)
   }
 
-  const failureStatuses = rendererPluginStatuses.filter(
-    (status) => status.effectiveState === 'failed',
-  )
+  const failureStatuses = guiPluginStatuses.filter((status) => status.effectiveState === 'failed')
   const priorityPluginIds = useMemo(() => relatedPluginIds(state), [state])
   const orderedItems = useMemo(() => {
     if (!snapshot) return []
@@ -295,7 +293,7 @@ export function PictorShell({
 
         {state.kind === 'plugin-failure' ? (
           <div className="pictor-shell__diagnostic" role="alert">
-            <strong>Renderer Plugin 加载失败</strong>
+            <strong>GUI Plugin 加载失败</strong>
             <ul>
               {state.failures.map((failure) => (
                 <li key={`${failure.id}:${failure.version}`}>
@@ -320,7 +318,7 @@ export function PictorShell({
 
         {safeMode ? (
           <div className="pictor-shell__notice" role="status">
-            <ShieldAlert size={16} /> 安全模式已忽略全部 Plugin；Renderer Plugin
+            <ShieldAlert size={16} /> 安全模式已忽略全部 Plugin；GUI Plugin
             不会加载，恢复操作会在重启后生效。
           </div>
         ) : null}
@@ -462,14 +460,12 @@ export function PictorShell({
                   <div className="plugin-list__empty">没有可恢复的已登记 Plugin</div>
                 ) : (
                   orderedItems.map((item) => {
-                    const rendererStatus = rendererPluginStatuses.find(
-                      (status) => status.id === item.id,
-                    )
+                    const guiStatus = guiPluginStatuses.find((status) => status.id === item.id)
                     const effectiveState =
                       item.effectiveState === 'pending-restart'
                         ? item.effectiveState
-                        : (rendererStatus?.effectiveState ?? item.effectiveState)
-                    const reason = rendererStatus?.reason ?? item.reason
+                        : (guiStatus?.effectiveState ?? item.effectiveState)
+                    const reason = guiStatus?.reason ?? item.reason
                     const canManage = item.kind === 'pictor-plugin'
                     return (
                       <div
@@ -580,8 +576,8 @@ export function PictorShell({
         {doctor ? <DoctorResult result={doctor} /> : null}
         {appInfo ? <AppInfoResult value={appInfo} /> : null}
         {failureStatuses.length > 0 && state.kind !== 'plugin-failure' ? (
-          <section className="pictor-shell__errors" aria-labelledby="renderer-failures-title">
-            <h2 id="renderer-failures-title">Renderer Plugin errors</h2>
+          <section className="pictor-shell__errors" aria-labelledby="gui-failures-title">
+            <h2 id="gui-failures-title">GUI Plugin errors</h2>
             {failureStatuses.map((status) => (
               <div className="form-error" role="alert" key={status.id}>
                 <code>{status.id}</code>：{sanitizeGuiDiagnostic(status.reason, 'Plugin 未能加载')}
@@ -644,7 +640,7 @@ function stateDescription(state: PictorShellState): string {
     case 'workbench-conflict':
       return '发现多个 Workbench Contribution，宿主拒绝任意选择。'
     case 'plugin-failure':
-      return 'Renderer Plugin 加载失败，宿主已隔离失败并保留恢复入口。'
+      return 'GUI Plugin 加载失败，宿主已隔离失败并保留恢复入口。'
     case 'workbench-render-failure':
       return 'Workbench 渲染失败，宿主已隔离该界面并回到 Shell。'
   }

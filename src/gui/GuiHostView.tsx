@@ -22,7 +22,7 @@ export function validateGuiWorkbenchContributions(
       throw new Error('GUI Workbench Contribution requires id and pluginId')
     }
     if (typeof workbench.render !== 'function') {
-      throw new Error(`GUI Workbench Contribution has no renderer: ${workbench.id}`)
+      throw new Error(`GUI Workbench Contribution has no render function: ${workbench.id}`)
     }
   }
   return workbenches
@@ -30,14 +30,14 @@ export function validateGuiWorkbenchContributions(
 
 export function selectGuiHostView(
   workbenches: readonly GuiWorkbenchContribution[],
-  rendererPluginStatuses: readonly PluginStatus[],
+  guiPluginStatuses: readonly PluginStatus[],
   safeMode: boolean,
 ): GuiHostSelection {
   if (safeMode) return { kind: 'shell', state: { kind: 'safe-mode' } }
 
   const ordered = [...workbenches].sort(compareWorkbench)
   if (ordered.length === 0) {
-    const failures = rendererPluginStatuses
+    const failures = guiPluginStatuses
       .filter((status) => status.effectiveState === 'failed')
       .sort((left, right) => compareText(left.id, right.id))
     return failures.length > 0
@@ -60,16 +60,16 @@ export function GuiHostView({
   commandClient,
   pluginPicker,
   settingsSections,
-  rendererPluginStatuses,
+  guiPluginStatuses,
   workbenches,
   safeMode,
 }: GuiHostViewProps): React.JSX.Element {
-  const selection = selectGuiHostView(workbenches, rendererPluginStatuses, safeMode)
+  const selection = selectGuiHostView(workbenches, guiPluginStatuses, safeMode)
   const context: GuiWorkbenchContext = {
     commandClient,
     pluginPicker,
     settingsSections,
-    rendererPluginStatuses,
+    guiPluginStatuses,
   }
 
   if (selection.kind === 'shell') {
@@ -118,7 +118,7 @@ class WorkbenchErrorBoundary extends Component<
 
   componentDidCatch(_error: unknown, _info: ErrorInfo): void {
     // The fallback is intentionally owned by the GUI Host. A Workbench error
-    // must not escape into the Renderer-level fatal state.
+    // must not escape into the GUI-level fatal state.
   }
 
   render(): ReactNode {

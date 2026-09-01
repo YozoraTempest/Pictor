@@ -45,7 +45,7 @@ import type {
   SessionTreeView,
   ToolEvent,
   UsageSnapshot,
-} from '../../shared/domain.js'
+} from '../../src/shared/domain.js'
 type RuntimeUsage = UsageSnapshot
 
 export interface ExtensionWidget {

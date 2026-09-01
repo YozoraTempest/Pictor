@@ -3,8 +3,8 @@ export {
   type ApplicationHostOptions,
   type ApplicationHostPluginContext,
   type ApplicationHostServices,
-  type MainPluginDefinitionsFactory,
-  type RendererPluginUrlResolver,
+  type HostPluginDefinitionsFactory,
+  type GuiPluginUrlResolver,
 } from './host.js'
 export type {
   EventPublisher,

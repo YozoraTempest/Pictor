@@ -3,7 +3,8 @@ import { createElement, useCallback, useEffect, useState } from 'react'
 
 import { defineModule } from '../../src/kernel/module.js'
 import { settingsSectionContributions } from '../../src/modules/shell/settings.js'
-import { pluginEntrypoint, type RendererPluginContext } from '../../src/plugin/entry.js'
+import { createAgentWorkspaceClient } from '../../src/modules/agent-workspace/shared.js'
+import { pluginEntrypoint, type GuiPluginContext } from '../../src/plugin/entry.js'
 import { createGitChangesClient, type GitChangesClient } from './shared.js'
 
 function GitChangesSettings({ client }: { client: GitChangesClient }) {
@@ -52,7 +53,7 @@ function GitChangesSettings({ client }: { client: GitChangesClient }) {
 }
 
 async function loadGitStatus(client: GitChangesClient) {
-  const snapshot = await window.pictor.getSnapshot()
+  const snapshot = await createAgentWorkspaceClient(window.pictorModules).getSnapshot()
   if (!snapshot.ok) return { output: '', message: snapshot.error.message }
   const project = snapshot.value.projects.find(
     (candidate) => candidate.id === snapshot.value.selectedProjectId,
@@ -60,9 +61,9 @@ async function loadGitStatus(client: GitChangesClient) {
   return project ? client.getStatus(project.rootPath) : { output: '', message: '当前未选择项目' }
 }
 
-export default pluginEntrypoint<RendererPluginContext>(() => [
+export default pluginEntrypoint<GuiPluginContext>(() => [
   defineModule({
-    id: 'pictor.git-changes.renderer',
+    id: 'pictor.git-changes.gui',
     activate(context) {
       const client = createGitChangesClient(window.pictorModules)
       context.contribute(settingsSectionContributions, {

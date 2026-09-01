@@ -14,7 +14,7 @@ import type { PluginBootstrap } from '../shared/plugins.js'
 import type { Disposable } from '../kernel/module.js'
 
 const IPC_CHANNELS = [
-  'app:renderer-ready',
+  'app:gui-ready',
   'app:get-info',
   'plugin:get-bootstrap',
   'plugin:pick',
@@ -26,18 +26,18 @@ const IPC_CHANNELS = [
 
 interface IpcDependencies {
   validateSender: (frame: WebFrameMain | null) => void
-  onRendererReady: () => Promise<void>
+  onGuiReady: () => Promise<void>
   appInfo: AppInfo
   getPluginBootstrap: () => Promise<PluginBootstrap>
 }
 
 export function registerIpc(dependencies: IpcDependencies): Disposable {
-  const { validateSender, onRendererReady, appInfo, getPluginBootstrap } = dependencies
+  const { validateSender, onGuiReady, appInfo, getPluginBootstrap } = dependencies
 
-  ipcMain.handle('app:renderer-ready', (event) => {
+  ipcMain.handle('app:gui-ready', (event) => {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
-      await onRendererReady()
+      await onGuiReady()
       return null
     })
   })

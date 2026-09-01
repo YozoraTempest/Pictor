@@ -8,7 +8,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { ModuleRouter, moduleHandlerContributions } from '../../kernel/contract.js'
 import { ModuleKernel } from '../../kernel/kernel.js'
-import { createUpdaterMainModule } from './main.js'
+import { createUpdaterHostModule } from './host.js'
 
 const temporaryDirectories: string[] = []
 const sourceCommit = 'a'.repeat(40)
@@ -20,10 +20,10 @@ afterEach(async () => {
 async function startUpdater(dataPath: string) {
   const kernel = new ModuleKernel()
   await kernel.start([
-    createUpdaterMainModule({
+    createUpdaterHostModule({
       appInfo: {
         name: 'Pictor',
-        version: '0.3.0',
+        version: '0.4.0',
         buildChannel: 'stable',
         sourceCommit,
         platform: 'linux',
@@ -47,7 +47,7 @@ it('contributes the Updater snapshot and persists the selected channel', async (
   const first = await startUpdater(dataPath)
 
   await expect(first.router.invoke('pictor.updater', 'getSnapshot', null)).resolves.toMatchObject({
-    appInfo: { version: '0.3.0', buildChannel: 'stable', sourceCommit },
+    appInfo: { version: '0.4.0', buildChannel: 'stable', sourceCommit },
     channel: 'stable',
   })
   await expect(

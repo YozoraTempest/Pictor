@@ -3,7 +3,7 @@ import * as jsxDevRuntime from 'react/jsx-dev-runtime'
 import * as jsxRuntime from 'react/jsx-runtime'
 
 import { startGui } from '../gui/index.js'
-import './styles.css'
+import '../gui/styles.css'
 
 const root = document.getElementById('root')
 

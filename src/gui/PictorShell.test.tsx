@@ -115,7 +115,7 @@ describe('PictorShell', () => {
       <PictorShell
         commandClient={client}
         pluginPicker={pluginPicker}
-        rendererPluginStatuses={[]}
+        guiPluginStatuses={[]}
         safeMode={false}
         state={shellState}
       />,
@@ -142,7 +142,7 @@ describe('PictorShell', () => {
       <PictorShell
         commandClient={client}
         pluginPicker={pluginPicker}
-        rendererPluginStatuses={[]}
+        guiPluginStatuses={[]}
         safeMode={false}
         state={shellState}
       />,
@@ -167,7 +167,7 @@ describe('PictorShell', () => {
       <PictorShell
         commandClient={client}
         pluginPicker={{ pickPlugin: vi.fn() }}
-        rendererPluginStatuses={[]}
+        guiPluginStatuses={[]}
         safeMode={false}
         state={shellState}
       />,
@@ -214,7 +214,7 @@ describe('PictorShell', () => {
       <PictorShell
         commandClient={client}
         pluginPicker={{ pickPlugin: vi.fn() }}
-        rendererPluginStatuses={[]}
+        guiPluginStatuses={[]}
         safeMode={false}
         state={shellState}
       />,
@@ -310,7 +310,7 @@ describe('PictorShell', () => {
       <PictorShell
         commandClient={client}
         pluginPicker={{ pickPlugin: vi.fn() }}
-        rendererPluginStatuses={[]}
+        guiPluginStatuses={[]}
         safeMode={false}
         state={shellState}
       />,

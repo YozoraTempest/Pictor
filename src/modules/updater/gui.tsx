@@ -7,8 +7,8 @@ import { createUpdaterClient, type UpdaterClient } from './shared.js'
 
 export const updaterClientToken = new Token<UpdaterClient>('updater.client')
 
-export const updaterRendererModule = defineModule({
-  id: 'updater.renderer',
+export const updaterGuiModule = defineModule({
+  id: 'updater.gui',
   provides: updaterClientToken,
   activate(context) {
     const client = createUpdaterClient(window.pictorModules)

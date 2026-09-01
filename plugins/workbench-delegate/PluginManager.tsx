@@ -9,11 +9,18 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { CommandFailure, executeCommandAndWait, type CommandClient } from '../../commands/index.js'
-import type { GuiPluginPicker, GuiPluginSource } from '../../shared/desktop-bridge.js'
-import type { IpcResult } from '../../shared/errors.js'
-import { pluginManagerSnapshotSchema, type PluginManagerSnapshot } from '../../shared/plugins'
-import type { PluginStatus } from '../../plugin/host'
+import {
+  CommandFailure,
+  executeCommandAndWait,
+  type CommandClient,
+} from '../../src/commands/index.js'
+import type { GuiPluginPicker, GuiPluginSource } from '../../src/shared/desktop-bridge.js'
+import type { IpcResult } from '../../src/shared/errors.js'
+import {
+  pluginManagerSnapshotSchema,
+  type PluginManagerSnapshot,
+} from '../../src/shared/plugins.js'
+import type { PluginStatus } from '../../src/plugin/host.js'
 
 const stateLabels = {
   active: '运行中',
@@ -26,7 +33,7 @@ const stateLabels = {
 interface PluginManagerProps {
   commandClient: CommandClient
   pluginPicker: GuiPluginPicker
-  rendererPluginStatuses: readonly PluginStatus[]
+  guiPluginStatuses: readonly PluginStatus[]
 }
 
 async function executePluginCommand(
@@ -70,7 +77,7 @@ async function executePluginCommand(
 export function PluginManager({
   commandClient,
   pluginPicker,
-  rendererPluginStatuses,
+  guiPluginStatuses,
 }: PluginManagerProps): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<PluginManagerSnapshot | null>(null)
   const [busy, setBusy] = useState<string | null>('load')
@@ -223,12 +230,12 @@ export function PluginManager({
           <div className="plugin-list__empty">没有已安装的 Plugin</div>
         ) : (
           snapshot.items.map((item) => {
-            const rendererStatus = rendererPluginStatuses.find((status) => status.id === item.id)
+            const guiStatus = guiPluginStatuses.find((status) => status.id === item.id)
             const effectiveState =
               item.effectiveState === 'pending-restart'
                 ? item.effectiveState
-                : (rendererStatus?.effectiveState ?? item.effectiveState)
-            const reason = rendererStatus?.reason ?? item.reason
+                : (guiStatus?.effectiveState ?? item.effectiveState)
+            const reason = guiStatus?.reason ?? item.reason
             return (
               <div className="plugin-row" key={`${item.kind}:${item.id}`}>
                 <div className="plugin-row__identity">

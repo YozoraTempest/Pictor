@@ -1,11 +1,21 @@
-import { appendFile, cp, copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  access,
+  appendFile,
+  cp,
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 
 import { build } from 'vite'
 
 const sourceRoot = resolve('plugins')
 const outputRoot = resolve('.pictor', 'bundled-plugins')
-const processNames = ['main', 'renderer', 'runtime']
+const processNames = ['host', 'gui', 'tui', 'runtime']
 
 function bundledPiExtensionModules() {
   return {
@@ -32,6 +42,10 @@ for (const directory of directories.toSorted((left, right) =>
   const manifestPath = join(pluginRoot, 'manifest.json')
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   if (typeof manifest.id !== 'string') throw new Error(`Invalid Plugin Manifest: ${manifestPath}`)
+  const moduleKeys = Object.keys(manifest.modules ?? {})
+  if (moduleKeys.some((key) => !processNames.includes(key))) {
+    throw new Error(`Plugin Manifest uses an unsupported Module key: ${manifestPath}`)
+  }
 
   const packageRoot = join(outputRoot, manifest.id)
   const distRoot = join(packageRoot, 'dist')
@@ -42,11 +56,11 @@ for (const directory of directories.toSorted((left, right) =>
   for (const processName of processNames) {
     const manifestEntry = manifest.modules?.[processName]
     if (!manifestEntry) continue
-    const sourceEntry = join(pluginRoot, `${processName}.ts`)
+    const sourceEntry = await sourceEntryPath(pluginRoot, processName, manifestPath)
     const outputName = basename(manifestEntry)
-    const renderer = processName === 'renderer'
+    const gui = processName === 'gui'
     const runtime = processName === 'runtime'
-    const nodeProcess = processName === 'main' || runtime
+    const nodeProcess = processName !== 'gui'
     await build({
       configFile: false,
       logLevel: 'warn',
@@ -61,17 +75,13 @@ for (const directory of directories.toSorted((left, right) =>
         minify: false,
         lib: {
           entry: sourceEntry,
-          name: renderer ? '__pictorPluginBundle' : undefined,
-          formats: [renderer ? 'iife' : 'es'],
+          name: gui ? '__pictorPluginBundle' : undefined,
+          formats: [gui ? 'iife' : 'es'],
           fileName: () => outputName.replace(/\.js$/, ''),
         },
         rollupOptions: {
-          external: renderer
-            ? ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime']
-            : processName === 'main'
-              ? ['electron']
-              : [],
-          output: renderer
+          external: gui ? ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime'] : [],
+          output: gui
             ? {
                 format: 'iife',
                 name: '__pictorPluginBundle',
@@ -96,7 +106,7 @@ for (const directory of directories.toSorted((left, right) =>
         },
       },
     })
-    if (renderer) {
+    if (gui) {
       await appendFile(join(distRoot, outputName), '\nexport default __pictorPluginBundle;\n')
     }
     if (runtime && manifest.id === 'pictor.pi-agent-runtime') {
@@ -130,4 +140,18 @@ for (const directory of directories.toSorted((left, right) =>
     const exists = await readdir(source).catch(() => null)
     if (exists) await cp(source, join(packageRoot, resourceDirectory), { recursive: true })
   }
+}
+
+async function sourceEntryPath(pluginRoot, processName, manifestPath) {
+  for (const extension of ['.ts', '.tsx']) {
+    const candidate = join(pluginRoot, `${processName}${extension}`)
+    if (
+      await access(candidate).then(
+        () => true,
+        () => false,
+      )
+    )
+      return candidate
+  }
+  throw new Error(`Missing ${processName} entry for ${manifestPath}`)
 }

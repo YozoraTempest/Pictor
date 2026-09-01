@@ -2,11 +2,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Info } from 'lucide-react'
 import { vi } from 'vitest'
 
-import type { PictorBridge } from '../../shared/desktop-bridge'
-import type { ImageAttachment, SessionHistoryView, SessionRecord } from '../../shared/domain'
-import { AboutSettings } from '../updater/AboutSettings'
-import type { UpdaterClient } from '../updater/shared'
-import { AgentWorkspace } from './AgentWorkspace'
+import type { PictorBridge } from '../../src/shared/desktop-bridge.js'
+import type { ImageAttachment, SessionHistoryView, SessionRecord } from '../../src/shared/domain.js'
+import { AboutSettings } from '../../src/modules/updater/AboutSettings.js'
+import type { UpdaterClient } from '../../src/modules/updater/shared.js'
+import { AgentWorkspace } from './AgentWorkspace.js'
 import type {
   AgentWorkspaceClient,
   AgentWorkspaceFilePicker,
@@ -14,7 +14,7 @@ import type {
   IpcResult,
   RuntimeEvent,
   SessionRuntimeControls,
-} from './shared'
+} from '../../src/modules/agent-workspace/shared.js'
 
 const projectId = '11111111-1111-4111-8111-111111111111'
 const sessionId = '22222222-2222-4222-8222-222222222222'
@@ -129,7 +129,7 @@ function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
       },
       subscribe: () => () => undefined,
     },
-    notifyRendererReady: async () => ok(null),
+    notifyGuiReady: async () => ok(null),
     getAppInfo: async () =>
       ok({
         name: 'Pictor',

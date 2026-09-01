@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { CommandClient, CommandEvent } from '../../commands/index.js'
-import type { GuiPluginPicker } from '../../shared/desktop-bridge.js'
-import { pluginManagerSnapshotSchema } from '../../shared/plugins.js'
+import type { CommandClient, CommandEvent } from '../../src/commands/index.js'
+import type { GuiPluginPicker } from '../../src/shared/desktop-bridge.js'
+import { pluginManagerSnapshotSchema } from '../../src/shared/plugins.js'
 import { PluginManager } from './PluginManager.js'
 
 const snapshot = pluginManagerSnapshotSchema.parse({
@@ -70,11 +70,7 @@ describe('PluginManager command integration', () => {
     }
 
     render(
-      <PluginManager
-        commandClient={commands}
-        pluginPicker={pluginPicker}
-        rendererPluginStatuses={[]}
-      />,
+      <PluginManager commandClient={commands} pluginPicker={pluginPicker} guiPluginStatuses={[]} />,
     )
 
     await waitFor(() => expect(screen.getByText('0 个已登记扩展')).toBeVisible())
@@ -108,7 +104,7 @@ describe('PluginManager command integration', () => {
       <PluginManager
         commandClient={commands}
         pluginPicker={{ pickPlugin }}
-        rendererPluginStatuses={[]}
+        guiPluginStatuses={[]}
       />,
     )
     await waitFor(() => expect(screen.getByText('0 个已登记扩展')).toBeVisible())

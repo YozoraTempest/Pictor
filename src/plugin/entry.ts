@@ -1,15 +1,20 @@
 import type { PictorModule } from '../kernel/module.js'
 import type { RuntimeEvent } from '../shared/runtime-protocol.js'
 
-export interface MainPluginContext<THost = unknown> {
-  process: 'main'
+export interface HostPluginContext<THost = unknown> {
+  process: 'host'
   dataPath: string
   appInfo: unknown
   host: THost
 }
 
-export interface RendererPluginContext {
-  process: 'renderer'
+export interface GuiPluginContext {
+  process: 'gui'
+  pluginId: string
+}
+
+export interface TuiPluginContext {
+  process: 'tui'
   pluginId: string
 }
 
@@ -24,7 +29,8 @@ export interface RuntimePluginContext {
   }[]
 }
 
-export type PluginProcessContext = MainPluginContext | RendererPluginContext | RuntimePluginContext
+export type PluginProcessContext =
+  HostPluginContext | GuiPluginContext | TuiPluginContext | RuntimePluginContext
 
 export type PluginEntrypoint<TContext extends PluginProcessContext = PluginProcessContext> = (
   context: TContext,

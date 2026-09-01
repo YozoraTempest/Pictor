@@ -28,12 +28,12 @@ const manifest = {
   version: packageMetadata.version,
   engines: { pictor: `^${packageMetadata.version}` },
   dependencies: {},
-  modules: { main: './dist/main.js', renderer: './dist/renderer.js' },
+  modules: { host: './dist/host.js', gui: './dist/gui.js' },
 }
 const files = {
   'manifest.json': `${JSON.stringify(manifest, null, 2)}\n`,
-  'main.ts': `import { defineModule } from '../../src/kernel/module.js'\nimport { pluginEntrypoint, type MainPluginContext } from '../../src/plugin/entry.js'\n\nexport default pluginEntrypoint<MainPluginContext>(() => [\n  defineModule({ id: '${pluginId}.main', activate() {} }),\n])\n`,
-  'renderer.ts': `import { defineModule } from '../../src/kernel/module.js'\nimport { pluginEntrypoint, type RendererPluginContext } from '../../src/plugin/entry.js'\n\nexport default pluginEntrypoint<RendererPluginContext>(() => [\n  defineModule({ id: '${pluginId}.renderer', activate() {} }),\n])\n`,
+  'host.ts': `import { defineModule } from '../../src/kernel/module.js'\nimport { pluginEntrypoint, type HostPluginContext } from '../../src/plugin/entry.js'\n\nexport default pluginEntrypoint<HostPluginContext>(() => [\n  defineModule({ id: '${pluginId}.host', activate() {} }),\n])\n`,
+  'gui.ts': `import { createElement } from 'react'\nimport { defineModule } from '../../src/kernel/module.js'\nimport { pluginEntrypoint, type GuiPluginContext } from '../../src/plugin/entry.js'\n\nexport default pluginEntrypoint<GuiPluginContext>(() => [\n  defineModule({ id: '${pluginId}.gui', activate() {\n    createElement('div', null)\n  } }),\n])\n`,
   [`${name}.test.ts`]: `// @vitest-environment node\n\nimport { expect, it } from 'vitest'\n\nimport { pluginManifestSchema } from '../../src/plugin/manifest.js'\nimport manifest from './manifest.json'\n\nit('defines the ${name} Plugin package', () => {\n  expect(pluginManifestSchema.parse(manifest).id).toBe('${pluginId}')\n})\n`,
 }
 

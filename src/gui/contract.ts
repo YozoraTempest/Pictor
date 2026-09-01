@@ -10,7 +10,7 @@ export interface GuiWorkbenchContext {
   readonly commandClient: CommandClient
   readonly pluginPicker: GuiPluginPicker
   readonly settingsSections: readonly SettingsSection[]
-  readonly rendererPluginStatuses: readonly PluginStatus[]
+  readonly guiPluginStatuses: readonly PluginStatus[]
 }
 
 export interface GuiWorkbenchContribution {

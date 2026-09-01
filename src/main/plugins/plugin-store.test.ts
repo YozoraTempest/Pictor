@@ -41,13 +41,13 @@ describe('PluginStore', () => {
         id,
         name: id,
         version,
-        engines: { pictor: '^0.2.0' },
+        engines: { pictor: '^0.4.0' },
         dependencies: {},
-        modules: { main: './dist/main.js' },
+        modules: { host: './dist/host.js' },
       })}\n`,
     )
     await mkdir(join(directory, 'dist'), { recursive: true })
-    await writeFile(join(directory, 'dist', 'main.js'), 'export default []\n')
+    await writeFile(join(directory, 'dist', 'host.js'), 'export default []\n')
   }
 
   it('installs Bundled Plugins into the user Store and creates all registry roots', async () => {
@@ -68,7 +68,7 @@ describe('PluginStore', () => {
       manifest: { id: 'pictor.example', version: '1.0.0' },
     })
     await expect(
-      readFile(join(snapshot.plugins[0]!.rootPath, 'dist', 'main.js'), 'utf8'),
+      readFile(join(snapshot.plugins[0]!.rootPath, 'dist', 'host.js'), 'utf8'),
     ).resolves.toContain('export default')
     for (const directory of ['plugins', 'plugin-data', 'pi-extensions', 'pi-packages']) {
       expect((await stat(join(fixture.userData, directory))).isDirectory()).toBe(true)
@@ -140,15 +140,79 @@ describe('PluginStore', () => {
       kind: 'development',
       reference: developmentPlugin,
     })
-    await writeFile(join(developmentPlugin, 'dist', 'main.js'), 'export default ["updated"]\n')
+    await writeFile(join(developmentPlugin, 'dist', 'host.js'), 'export default ["updated"]\n')
 
     const restarted = new PluginStore(options)
     await restarted.initialize()
     const snapshot = await restarted.getSnapshot()
     expect(snapshot.plugins[0]?.rootPath).toBe(developmentPlugin)
     await expect(
-      readFile(join(snapshot.plugins[0]!.rootPath, 'dist', 'main.js'), 'utf8'),
+      readFile(join(snapshot.plugins[0]!.rootPath, 'dist', 'host.js'), 'utf8'),
     ).resolves.toContain('updated')
+  })
+
+  it('retains an installed 0.3 Plugin and blocks it without rewriting registry or data', async () => {
+    const fixture = await createStoreFixture()
+    await writePlugin(join(fixture.bundled, 'legacy'), 'pictor.legacy', '0.4.0')
+
+    const installedRoot = join(fixture.userData, 'plugins', 'pictor.legacy', '0.3.0')
+    const dataRoot = join(fixture.userData, 'plugin-data', 'pictor.legacy')
+    await mkdir(join(installedRoot, 'dist'), { recursive: true })
+    await mkdir(dataRoot, { recursive: true })
+    await writeFile(
+      join(installedRoot, 'manifest.json'),
+      `${JSON.stringify({
+        id: 'pictor.legacy',
+        name: 'Legacy',
+        version: '0.3.0',
+        engines: { pictor: '^0.3.0' },
+        dependencies: {},
+        modules: { main: './dist/main.js', renderer: './dist/renderer.js' },
+      })}\n`,
+    )
+    await writeFile(join(installedRoot, 'dist', 'main.js'), 'export default []\n')
+    await writeFile(join(dataRoot, 'state.json'), '{"keep":true}\n')
+    const registry = {
+      schemaVersion: 1,
+      entries: [
+        {
+          kind: 'pictor-plugin',
+          id: 'pictor.legacy',
+          version: '0.3.0',
+          source: { kind: 'bundled', reference: 'pictor.legacy' },
+          desiredState: 'enabled',
+        },
+      ],
+    }
+    const registryText = `${JSON.stringify(registry)}\n`
+    await mkdir(fixture.userData, { recursive: true })
+    await writeFile(join(fixture.userData, 'plugin-registry.json'), registryText)
+
+    const store = new PluginStore({
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    })
+    await store.initialize()
+    const snapshot = await store.getSnapshot()
+
+    expect(snapshot.plugins).toEqual([])
+    expect(snapshot.blockedPlugins).toHaveLength(1)
+    expect(snapshot.blockedPlugins[0]).toMatchObject({
+      entry: { id: 'pictor.legacy', version: '0.3.0' },
+      reason: expect.stringContaining('host/gui'),
+    })
+    expect(snapshot.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: expect.stringContaining('0.3') }),
+      ]),
+    )
+    await expect(readFile(join(fixture.userData, 'plugin-registry.json'), 'utf8')).resolves.toBe(
+      registryText,
+    )
+    await expect(readFile(join(dataRoot, 'state.json'), 'utf8')).resolves.toBe('{"keep":true}\n')
+    await expect(readFile(join(installedRoot, 'manifest.json'), 'utf8')).resolves.toContain(
+      '"main"',
+    )
   })
 
   it('reports an invalid Bundled Manifest without preventing Core Store startup', async () => {

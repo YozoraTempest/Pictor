@@ -8,16 +8,16 @@ import type {
   SessionSummary,
   SessionTreeView,
   UsageSnapshot,
-} from '../../shared/domain.js'
-import type { ModelSettings } from '../../shared/model.js'
-import { defaultSessionExportFileName } from './shared.js'
+} from '../../src/shared/domain.js'
+import type { ModelSettings } from '../../src/shared/model.js'
+import { defaultSessionExportFileName } from '../../src/modules/agent-workspace/shared.js'
 import type {
   AgentWorkspaceClient,
   AgentWorkspaceFilePicker,
   AppSnapshot,
   ProjectCandidate,
   SessionExportFormat,
-} from './shared.js'
+} from '../../src/modules/agent-workspace/shared.js'
 
 const activeStatuses = new Set(['queued', 'running', 'awaiting-approval', 'stopping'])
 type RuntimeUsage = UsageSnapshot

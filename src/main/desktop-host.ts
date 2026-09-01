@@ -9,6 +9,7 @@ import {
   protocol,
   safeStorage,
   session,
+  shell,
   type Event,
   type WebFrameMain,
 } from 'electron'
@@ -20,10 +21,11 @@ import {
   type EventPublisher,
   type FrontendLock,
   type FrontendLockLease,
-  type MainPluginDefinitionsFactory,
+  type HostPluginDefinitionsFactory,
   type UserData,
 } from '../application/index.js'
 import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
+import type { UpdaterHostAdapter } from '../modules/updater/host.js'
 import { appInfoSchema } from '../shared/app-info.js'
 import type { Disposable } from '../kernel/module.js'
 import { ModelConnectionTester } from './model-connection.js'
@@ -31,7 +33,7 @@ import { defaultPluginProfile, developerPluginProfile } from './plugins/default-
 import { registerCommandIpc } from './command-ipc.js'
 import { registerIpc } from './ipc.js'
 import { broadcastModuleEvent, registerModuleIpc } from './module-ipc.js'
-import { createMainPluginDefinitions } from './plugins/plugin-loader.js'
+import { createHostPluginDefinitions } from './plugins/plugin-loader.js'
 import { SecretStore } from './persistence/secret-store.js'
 import { RuntimeSupervisor } from './runtime/supervisor.js'
 import { detectDesktopDistribution } from './linux-distribution.js'
@@ -53,7 +55,7 @@ function isPathWithin(root: string, candidate: string): boolean {
 }
 
 function registerAppProtocol(pluginStore: PluginStore): void {
-  const rendererRoot = resolve(__dirname, '../renderer')
+  const guiRoot = resolve(__dirname, '../renderer')
 
   protocol.handle(APP_SCHEME, async (request) => {
     const requestUrl = new URL(request.url)
@@ -75,8 +77,8 @@ function registerAppProtocol(pluginStore: PluginStore): void {
       return net.fetch(pathToFileURL(pluginFile).toString())
     }
 
-    const filePath = resolve(rendererRoot, requestedPath)
-    if (!isPathWithin(rendererRoot, filePath)) {
+    const filePath = resolve(guiRoot, requestedPath)
+    if (!isPathWithin(guiRoot, filePath)) {
       return new Response('Not found', { status: 404 })
     }
     return net.fetch(pathToFileURL(filePath).toString())
@@ -89,7 +91,7 @@ function bundledPluginsDirectory(): string {
     : resolve(__dirname, '../../.pictor/bundled-plugins')
 }
 
-function rendererPluginUrl(rootPath: string, id: string, version: string, entry: string): string {
+function guiPluginUrl(rootPath: string, id: string, version: string, entry: string): string {
   const filePath = resolve(rootPath, entry)
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
   if (developmentUrl) {
@@ -250,7 +252,7 @@ export class DesktopHost {
           : defaultPluginProfile,
       safeMode,
       secretStore: new SecretStore(dataDirectory, safeStorage),
-      createMainPluginDefinitions: createDesktopMainPluginDefinitions,
+      createHostPluginDefinitions: createDesktopHostPluginDefinitions,
     })
     this.applicationHost = applicationHost
 
@@ -263,9 +265,9 @@ export class DesktopHost {
       this.moduleIpc = registerModuleIpc(services.moduleRouter, validateSender)
       this.ipc = registerIpc({
         validateSender,
-        onRendererReady: services.restoreSelectedContext,
+        onGuiReady: services.restoreSelectedContext,
         appInfo: services.appInfo,
-        getPluginBootstrap: () => services.getPluginBootstrap(rendererPluginUrl),
+        getPluginBootstrap: () => services.getPluginBootstrap(guiPluginUrl),
       })
       session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
         callback(false)
@@ -350,7 +352,7 @@ export class DesktopHost {
   }
 }
 
-const createDesktopMainPluginDefinitions: MainPluginDefinitionsFactory = (
+const createDesktopHostPluginDefinitions: HostPluginDefinitionsFactory = (
   snapshot,
   appInfo,
   context,
@@ -360,7 +362,15 @@ const createDesktopMainPluginDefinitions: MainPluginDefinitionsFactory = (
     runtime: context.runtime,
     connectionTester: new ModelConnectionTester(),
   }
-  return createMainPluginDefinitions(snapshot, appInfo, (pluginId) =>
-    pluginId === agentWorkspaceContract.id ? agentWorkspaceHost : undefined,
+  const updaterHost: UpdaterHostAdapter = {
+    fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    openExternal: (url) => shell.openExternal(url),
+  }
+  return createHostPluginDefinitions(snapshot, appInfo, (pluginId) =>
+    pluginId === agentWorkspaceContract.id
+      ? agentWorkspaceHost
+      : pluginId === 'pictor.updater'
+        ? updaterHost
+        : undefined,
   )
 }

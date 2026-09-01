@@ -1,6 +1,6 @@
 # Pictor
 
-Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发环境。当前 0.3.0 版本提供
+Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发环境。当前 0.4.0 版本提供
 可组合 Plugin Host、本地项目、Pi JSONL 权威 Session、原生 Pi Agent Runtime 与 Extension、
 Pi 原生工具和 OpenAI 兼容模型配置。
 
@@ -34,17 +34,18 @@ Pi 原生工具和 OpenAI 兼容模型配置。
 - 在设置的“关于”页查看版本，选择并记忆稳定版或 Nightly 更新通道，再按需检查 GitHub
   Release；有新版本或滚动快照时只打开与当前平台、架构匹配的 Windows、Arch 或便携 Linux
   官方发布包，否则安全回退到对应发布页；
-- 通过 Plugin Host 从用户 Store 动态装配 Main/Renderer Module，支持 SemVer 依赖、故障隔离、
+- 通过 Plugin Host 从用户 Store 动态装配 Host/GUI/TUI/Runtime Module，支持 SemVer 依赖、故障隔离、
   安全模式和独立 Plugin 测试循环；Updater 已作为可删除、可恢复的 Bundled Plugin 运行。
 - `pictor.pi-extension-host` 可直接安装、禁用和删除原生 `.ts/.js` Pi Extension、Extension 目录
   与本地 Pi Package；Package Manifest 和约定 `extensions/` 都交给 Pi 原生解析，自定义 Tool 和
   RPC UI dialog 无需 Pictor wrapper 即可进入会话 GUI。
 - 明确安装的本地 Pi Extension 直接从 live source 加载，修改源文件后下一次资源 reload 或新建
   Session 使用新版本；源不可用时回退到 Store 安装副本。
-- Project、Session 与 Conversation GUI 及其 Main contract 由可删除的
-  `pictor.agent-workspace` 提供；删除全部 Bundled Plugin 后，Core Shell 仍可启动并打开 Plugin
-  Manager。
-- `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Main contract 与 Renderer 设置页显示
+- Project、Session、Settings 与 Runtime contract 由可删除的
+  `pictor.agent-workspace` 提供；Delegate Workbench 由可删除的
+  `pictor.workbench.delegate` GUI Plugin 提供。删除 Workbench 后，Core Shell 仍可启动，CLI
+  仍可使用 Headless Workspace。
+- `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Host contract 与 GUI 设置页显示
   当前项目的 Git working tree；它验证了真实 Plugin 间依赖与组合。
 - `pictor.model-openai-compatible` 作为独立 Runtime Provider 注册 Chat Completions/Responses
   模型；Pi Runtime 只消费 `model.providers` Contribution，不硬编码模型供应商。
@@ -73,7 +74,7 @@ Pictor 不再预探测、替换或审批 Bash。`bash` 工具由 Pi 原生实现
 
 ## 安装与卸载
 
-从 0.3.0 起，正式 GitHub Release 原子提供以下 x64 发布包及 `SHA256SUMS`：
+从 0.4.0 起，正式 GitHub Release 原子提供以下 x64 发布包及 `SHA256SUMS`：
 
 ```text
 Pictor-<version>-windows-x64-setup.exe

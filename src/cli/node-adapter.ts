@@ -4,7 +4,13 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { ApplicationHost, ProfileFileLock, type EventPublisher } from '../application/index.js'
+import { createHostPluginDefinitions } from '../main/plugins/plugin-loader.js'
+import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
+import type { AgentWorkspaceHost } from '../modules/agent-workspace/host.js'
+import type { UpdaterHostAdapter } from '../modules/updater/host.js'
+import { ModelConnectionTester } from '../main/model-connection.js'
 import { appInfoSchema, type AppInfo } from '../shared/app-info.js'
+import { PictorError } from '../shared/errors.js'
 import { defaultPluginProfile, developerPluginProfile } from '../main/plugins/default-profile.js'
 import { detectDesktopDistribution } from '../main/linux-distribution.js'
 
@@ -84,9 +90,26 @@ async function createNodeApplicationHost(
     ...(useProfile ? { profile } : {}),
     pluginActivationMode: 'headless',
     safeMode: options.safeMode,
-    // A CLI must never evaluate a GUI/Electron Plugin entrypoint. Core
-    // command definitions are assembled by ApplicationHost itself.
-    createMainPluginDefinitions: () => [],
+    createHostPluginDefinitions: (snapshot, appInfo, context) => {
+      const agentWorkspaceHost: AgentWorkspaceHost = {
+        repository: context.repository,
+        runtime: context.runtime,
+        connectionTester: new ModelConnectionTester(),
+      }
+      const updaterHost: UpdaterHostAdapter = {
+        fetch: globalThis.fetch,
+        openExternal: async () => {
+          throw new PictorError('internal', 'CLI 不支持打开外部更新链接，请在 GUI 中操作')
+        },
+      }
+      return createHostPluginDefinitions(snapshot, appInfo, (pluginId) =>
+        pluginId === agentWorkspaceContract.id
+          ? agentWorkspaceHost
+          : pluginId === 'pictor.updater'
+            ? updaterHost
+            : undefined,
+      )
+    },
   })
 }
 

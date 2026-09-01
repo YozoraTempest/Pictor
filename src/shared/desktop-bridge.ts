@@ -35,7 +35,7 @@ export const workspaceImagePickerResultSchema = ipcResultSchema(
 
 export interface PictorBridge extends GuiPluginPicker {
   commands: CommandClient
-  notifyRendererReady(): Promise<IpcResult<null>>
+  notifyGuiReady(): Promise<IpcResult<null>>
   getAppInfo(): Promise<IpcResult<AppInfo>>
   getPluginBootstrap(): Promise<IpcResult<PluginBootstrap>>
   pickProjectDirectory(): Promise<IpcResult<string | null>>

@@ -1,23 +1,23 @@
 import { AlertTriangle, FolderOpen, LoaderCircle, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { CommandClient } from '../../commands/index.js'
-import type { PluginStatus } from '../../plugin/host'
-import type { AppInfo } from '../../shared/app-info'
-import type { GuiPluginPicker } from '../../shared/desktop-bridge.js'
-import type { Project, SessionSummary } from '../../shared/domain'
-import { Modal } from '../../renderer/ui/Modal'
-import type { SettingsSection } from '../shell/settings'
-import { Conversation, type ExtensionWidget } from './Conversation'
-import { SettingsDialog } from './SettingsDialog'
-import { Sidebar } from './Sidebar'
+import type { CommandClient } from '../../src/commands/index.js'
+import type { PluginStatus } from '../../src/plugin/host.js'
+import type { AppInfo } from '../../src/shared/app-info.js'
+import type { GuiPluginPicker } from '../../src/shared/desktop-bridge.js'
+import type { Project, SessionSummary } from '../../src/shared/domain.js'
+import { Modal } from './Modal.js'
+import type { SettingsSection } from '../../src/modules/shell/settings.js'
+import { Conversation, type ExtensionWidget } from './Conversation.js'
+import { SettingsDialog } from './SettingsDialog.js'
+import { Sidebar } from './Sidebar.js'
 import type {
   AgentWorkspaceClient,
   AgentWorkspaceFilePicker,
   RuntimeEvent,
   SessionRuntimeControls,
-} from './shared'
-import { useWorkspaceController, type WorkspaceTrustRequest } from './use-workspace-controller'
+} from '../../src/modules/agent-workspace/shared.js'
+import { useWorkspaceController, type WorkspaceTrustRequest } from './use-workspace-controller.js'
 
 type Confirmation =
   | { type: 'remove-project'; project: Project }
@@ -37,7 +37,7 @@ interface AgentWorkspaceProps {
   filePicker: AgentWorkspaceFilePicker
   pluginPicker: GuiPluginPicker
   settingsSections: readonly SettingsSection[]
-  rendererPluginStatuses?: readonly PluginStatus[]
+  guiPluginStatuses?: readonly PluginStatus[]
 }
 
 export function AgentWorkspace({
@@ -46,7 +46,7 @@ export function AgentWorkspace({
   filePicker,
   pluginPicker,
   settingsSections,
-  rendererPluginStatuses = [],
+  guiPluginStatuses = [],
 }: AgentWorkspaceProps): React.JSX.Element {
   const workspace = useWorkspaceController(client, filePicker)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
@@ -181,7 +181,7 @@ export function AgentWorkspace({
       }
     })
     void window.pictor
-      .notifyRendererReady()
+      .notifyGuiReady()
       .then((result) => {
         if (!result.ok) setExtensionNotice(result.error.message)
       })
@@ -483,7 +483,7 @@ export function AgentWorkspace({
           initial={workspace.snapshot.settings}
           pluginPicker={pluginPicker}
           sections={settingsSections}
-          rendererPluginStatuses={rendererPluginStatuses}
+          guiPluginStatuses={guiPluginStatuses}
           onClose={() => setSettingsOpen(false)}
           onSaved={workspace.applySettings}
         />
