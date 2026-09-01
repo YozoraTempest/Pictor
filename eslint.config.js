@@ -40,6 +40,55 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/application/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'electron',
+              message: 'Application Host must stay independent from Electron.',
+            },
+            {
+              name: 'react',
+              message: 'Application Host must stay independent from React.',
+            },
+            {
+              name: 'react-dom',
+              message: 'Application Host must stay independent from React.',
+            },
+            {
+              name: 'react/jsx-runtime',
+              message: 'Application Host must stay independent from React.',
+            },
+            {
+              name: 'react/jsx-dev-runtime',
+              message: 'Application Host must stay independent from React.',
+            },
+          ],
+          patterns: [
+            {
+              group: [
+                '**/renderer',
+                '**/renderer/**',
+                '**/renderer.*',
+                '**/preload',
+                '**/preload/**',
+                '**/preload.*',
+                '**/tui',
+                '**/tui/**',
+                '**/tui.*',
+              ],
+              message:
+                'Application Host must depend on headless ports instead of Frontend implementations.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['src/shared/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [

@@ -10,6 +10,7 @@ import {
   moduleBridgeKeys,
   readSelectedRunStatus,
 } from './support.js'
+import { closeElectronApp } from './electron-cleanup.js'
 
 test('@smoke completes the delegate flow through the GUI and utility-process boundary', async ({
   browserName: _browserName,
@@ -174,6 +175,7 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
           cwd: resolve('.'),
         },
   )
+  let businessFailed = false
 
   try {
     const window = await electronApp.firstWindow()
@@ -256,9 +258,15 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
 
     await window.getByRole('textbox', { name: '任务描述' }).fill('Keep working until stopped.')
     await window.getByRole('button', { name: '发送任务' }).click()
-    await expect(window.getByText('Working until stopped')).toBeVisible({ timeout: 20_000 })
+    await expect
+      .poll(() => modelRequestCount, {
+        message: 'the utility process should enter the fourth in-flight model request',
+        timeout: 20_000,
+      })
+      .toBe(4)
     await window.getByRole('button', { name: '停止', exact: true }).click()
     await expect(window.getByText('已停止').last()).toBeVisible({ timeout: 20_000 })
+    expect(await readSelectedRunStatus(window)).toBe('stopped')
 
     const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
     const evidence =
@@ -392,10 +400,16 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
         'utf8',
       ),
     ).not.toContain('Historical branch from JSONL')
+  } catch (error) {
+    businessFailed = true
+    return Promise.reject(error)
   } finally {
-    await electronApp.close()
-    await new Promise<void>((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
-    )
+    try {
+      await closeElectronApp(electronApp, { mode: businessFailed ? 'suppress' : 'strict' })
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      )
+    }
   }
 })

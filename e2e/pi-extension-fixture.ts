@@ -14,6 +14,7 @@ import type { ModuleTransport } from '../src/kernel/contract.js'
 import { defaultPluginProfile } from '../src/main/plugins/default-profile.js'
 import { PluginStore } from '../src/main/plugins/plugin-store.js'
 import { agentWorkspaceContract } from '../src/modules/agent-workspace/shared.js'
+import { closeElectronApp } from './electron-cleanup.js'
 import { credentialFixtures, invokeAgentWorkspace } from './support.js'
 
 type ExtensionTool = 'hello' | 'ask_gui'
@@ -120,27 +121,6 @@ async function closeServer(server: Server): Promise<void> {
   await new Promise<void>((resolveClose, reject) =>
     server.close((error) => (error ? reject(error) : resolveClose())),
   )
-}
-
-async function closeElectronApp(app: ElectronApplication): Promise<void> {
-  await app
-    .evaluate(({ dialog }) => {
-      dialog.showMessageBoxSync = () => 1
-    })
-    .catch(() => undefined)
-  let timeout: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([
-      app.close(),
-      new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => reject(new Error('Electron fixture did not exit')), 5_000)
-      }),
-    ])
-  } catch {
-    app.process().kill('SIGKILL')
-  } finally {
-    if (timeout) clearTimeout(timeout)
-  }
 }
 
 function importedSessionJsonl(): string {
@@ -463,7 +443,7 @@ async function createHarness(testInfo: TestInfo) {
     }
     return { harness, server }
   } catch (error) {
-    if (electronApp) await closeElectronApp(electronApp)
+    if (electronApp) await closeElectronApp(electronApp, { mode: 'suppress' })
     await closeServer(server)
     throw error
   }
@@ -472,11 +452,17 @@ async function createHarness(testInfo: TestInfo) {
 export const test = base.extend<{ piExtension: PiExtensionHarness }>({
   piExtension: async ({ browserName: _browserName }, provide, testInfo) => {
     const { harness, server } = await createHarness(testInfo)
+    let businessFailed = false
     try {
       await provide(harness)
+    } catch (error) {
+      businessFailed = true
+      return Promise.reject(error)
     } finally {
       try {
-        await closeElectronApp(harness.electronApp)
+        await closeElectronApp(harness.electronApp, {
+          mode: businessFailed ? 'suppress' : 'strict',
+        })
       } finally {
         await closeServer(server)
       }

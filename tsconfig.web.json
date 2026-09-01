@@ -27,6 +27,7 @@
     "src/modules/agent-workspace/use-workspace-controller.ts",
     "src/modules/shell/**/*.ts",
     "src/shared/**/*.ts",
+    "e2e/electron-cleanup.ts",
     "tests/**/*.ts",
     "tests/**/*.tsx"
   ]

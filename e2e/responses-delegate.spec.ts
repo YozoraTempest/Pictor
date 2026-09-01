@@ -1,4 +1,4 @@
-import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
+import { _electron as electron, expect, test } from '@playwright/test'
 import { mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
@@ -10,23 +10,7 @@ import {
   writeResponsesText,
   writeResponsesToolCall,
 } from './support.js'
-
-async function closeElectronApp(app: ElectronApplication): Promise<void> {
-  let timeout: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([
-      app.close(),
-      new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(
-          () => reject(new Error('Electron did not exit within 5 seconds')),
-          5_000,
-        )
-      }),
-    ])
-  } finally {
-    if (timeout) clearTimeout(timeout)
-  }
-}
+import { closeElectronApp } from './electron-cleanup.js'
 
 test('completes model discovery and the delegate tool flow with Responses', async ({
   browserName: _browserName,
@@ -84,7 +68,7 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
     cwd: resolve('.'),
   })
-  let appClosed = false
+  let businessFailed = false
 
   try {
     const window = await electronApp.firstWindow()
@@ -137,12 +121,16 @@ test('completes model discovery and the delegate tool flow with Responses', asyn
     expect(firstRuntimeRequest).toEqual(
       expect.objectContaining({ reasoning: expect.objectContaining({ effort: 'xhigh' }) }),
     )
-    await closeElectronApp(electronApp)
-    appClosed = true
+  } catch (error) {
+    businessFailed = true
+    return Promise.reject(error)
   } finally {
-    if (!appClosed) electronApp.process().kill('SIGKILL')
-    await new Promise<void>((resolveClose, reject) =>
-      server.close((error) => (error ? reject(error) : resolveClose())),
-    )
+    try {
+      await closeElectronApp(electronApp, { mode: businessFailed ? 'suppress' : 'strict' })
+    } finally {
+      await new Promise<void>((resolveClose, reject) =>
+        server.close((error) => (error ? reject(error) : resolveClose())),
+      )
+    }
   }
 })

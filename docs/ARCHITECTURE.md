@@ -4,9 +4,10 @@
 > [`MULTI_FRONTEND_ARCHITECTURE.md`](MULTI_FRONTEND_ARCHITECTURE.md)；在对应阶段合并前，不得把
 > 目标目录或 Interface 误写成当前已经实现的能力。
 
-本文描述 Pictor 当前已经实现的代码结构和依赖规则。Main 和 Renderer 已经由可安装 Plugin Host
-装配，Updater 是首个真实 Bundled Plugin；尚未迁移的业务能力仍位于 Core 启动链路中，后续按
-纵向切片迁移，不能把这些兼容代码当作最终结构。
+本文描述 Pictor 当前已经实现的代码结构和依赖规则。Application Host 已从 Electron Main 的启动链
+路中提取，DesktopHost 是它的 Electron 适配器；Main 和 Renderer 仍由可安装 Plugin Host 装配，
+Updater 是首个真实 Bundled Plugin。尚未迁移的业务能力仍按纵向切片保留在现有模块中，不能把兼容
+代码误写成后续 Stage 的最终结构。
 
 ## 源码域
 
@@ -14,10 +15,11 @@
 
 ```text
 src/
+├── application/ 无 Frontend 依赖的 Application Host、生命周期端口和服务装配
 ├── kernel/     纯 TypeScript Module 生命周期、Token、Contribution 和 Contract Router
 ├── plugin/     Manifest、Registry、Plugin 依赖规划和进程级 Plugin Host
 ├── modules/    按 Feature 聚合的新代码及 Main/Renderer/Runtime 入口
-├── main/       Electron Main、Plugin Store、既有 IPC、持久化和 Runtime 监管
+├── main/       DesktopHost、Electron IPC/协议、Plugin Store、持久化和 Runtime 监管
 ├── preload/    Desktop bridge 的 Electron adapter
 ├── renderer/   React 界面
 ├── runtime/    独立 Agent Runtime Host 和 Pi adapter
@@ -27,6 +29,17 @@ src/
 `main`、`preload`、`renderer` 和 `runtime` 分别对应不同的运行环境。`modules/<feature>/` 可以
 并列保存该 Feature 的共享 contract 和可选进程入口，以提高修改 locality；跨进程调用仍必须
 经过共享 contract，不能直接导入另一个进程的实现。
+
+`application` 是当前已落地的 Headless Application Host 边界。`ApplicationHost` 不导入 Electron、
+React、TUI、Renderer 或 Preload 实现；它在获得 `FrontendLock` 后初始化 `AppRepository` 和
+`PluginStore`，装配 `RuntimeCoordinator`、Main `PluginHost`、`PluginManager` 与 `ModuleRouter`，
+并通过 `RuntimeHost`、`EventPublisher`、`UserData` 和 `AppInfo` 端口连接 Frontend。Plugin Module
+定义由 Composition root 提供，使纯 Node 测试可以使用不依赖 Electron 的定义。
+
+`src/main/desktop-host.ts` 是当前 GUI 的 DesktopHost 适配器。它创建 Electron `RuntimeSupervisor`、
+safeStorage-backed `SecretStore`、`AppInfo` 和 Frontend lock，注册 App protocol、IPC、窗口与退出
+流程，再把这些端口交给 Application Host；`src/main/index.ts` 只负责 Electron scheme、sandbox、
+开发环境 userData 设置和 DesktopHost 装配。
 
 `kernel` 不依赖 Electron、React、Pi 或业务模型。它只按 Token 依赖排序并激活一个 Plugin 在
 当前进程中的 Module，保存 Provider，收集 Contribution，并在关闭时逆序释放 Disposable。
@@ -60,8 +73,9 @@ interface 保持可见且范围明确。
 ## 依赖方向
 
 ```text
-Renderer -> Desktop bridge / Module contract -> Preload adapter -> IPC -> Main
-Main -> Runtime protocol -> Runtime Plugin Host -> Pi Agent Runtime Plugin
+Renderer -> Desktop bridge / Module contract -> Preload adapter -> IPC -> DesktopHost
+DesktopHost -> Application Host ports -> RuntimeCoordinator / PluginHost / Repository
+Application Host -> RuntimeHost -> RuntimeSupervisor -> Runtime protocol -> Runtime Plugin Host
 Main / Preload / Renderer / Runtime -> Shared
 Main / Renderer / Runtime -> Plugin Host -> per-plugin Kernel
 Kernel -X-> Electron / React / Pi / 业务实现
@@ -91,12 +105,17 @@ Plugin 通过 SDK 公开的可组合值。Plugin Host 管理 Plugin DAG，Module
 的内部 DAG，两者不能合并成同一层依赖图。独立 Renderer bundle 复用 Core 提供的 React/JSX
 runtime，不携带第二套 React 实例。
 
+`ApplicationHost` 在启动前先获得由 Frontend Adapter 提供的排他锁；随后并行初始化 `AppRepository`
+和 `PluginStore`，根据当前 Plugin snapshot 配置 Runtime bootstrap，再启动 Main `PluginHost`。
+任何启动步骤失败都会释放已获得的 lock、Runtime Host 和已创建的 Plugin Kernel。关闭时先停止
+Runtime，再逆序停止 Plugin Kernel，最后释放 lock；DesktopHost 另外负责注销 IPC handler。
+
 `RuntimeCoordinator` 拥有自身需要的窄 persistence 和 Runtime host interface。现有
-`AppRepository` 与 `RuntimeSupervisor` 直接满足它们；测试使用 in-memory adapter，不依赖具体
+`AppRepository` 与注入的 `RuntimeHost` 直接满足它们；测试使用 in-memory adapter，不依赖具体
 实现类型。不要为整个持久化模块添加只有一个 production adapter 的抽象。
 
-`RuntimeSupervisor` 只启动 utility process 并传入已安装 Plugin 的 Runtime catalog。utility
-process 自己运行 Plugin Host，从用户 Store 动态导入 Runtime 入口，并通过 `agent.runtimes`
+DesktopHost 提供的 `RuntimeSupervisor` 只启动 utility process 并传入已安装 Plugin 的 Runtime
+catalog。utility process 自己运行 Plugin Host，从用户 Store 动态导入 Runtime 入口，并通过 `agent.runtimes`
 Contribution 选择 Provider。`pictor.pi-agent-runtime` 使用 Pi `AgentSessionRuntime` 管理当前
 `AgentSession` 及其可替换生命周期；Main 不静态 import Pi adapter。Pi 所需 WASM 与 Runtime
 bundle 一同进入 Store，Node 内置模块保持外部导入，npm 实现依赖内联到 bundle。
@@ -255,13 +274,14 @@ Agent Workspace Renderer Module 的 `AgentWorkspace` 负责页面布局、Settin
 ## 新代码放置
 
 - Module 生命周期、Token、Contribution 和通用 contract 路由：`src/kernel/`。
+- Application Host、Headless 生命周期端口和服务装配：`src/application/`。
 - Plugin Manifest、Registry schema、依赖规划与隔离 Host：`src/plugin/`。
 - Plugin Store、安装副本和 Bundled 恢复：`src/main/plugins/`。
 - 新增业务 Feature：`src/modules/<feature>/`，按需要创建 `shared.ts`、`main.ts`、
   `renderer.tsx` 或 `runtime.ts`。
-- Electron 生命周期、窗口、安全或 IPC adapter：`src/main/`。
+- Electron Main 启动装配：`src/main/index.ts`；DesktopHost、窗口、安全、协议和 IPC adapter：`src/main/desktop-host.ts`、`src/main/`。
 - 本地状态、凭据和数据迁移：`src/main/persistence/`。
-- Agent Run 的监管、持久化和广播编排：`src/main/runtime/`。
+- Agent Run 的 Runtime Coordinator、监管、持久化和广播编排：`src/main/runtime/`，由 `ApplicationHost` 统一装配。
 - Pi SDK adapter、Runtime Host 和 Extension RPC UI：`src/runtime/`。
 - Agent Workspace、Session 视图与设置编排：`src/modules/agent-workspace/`。
 - Core Plugin Manager：`src/renderer/settings/`。
