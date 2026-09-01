@@ -2,7 +2,7 @@ import { basename, extname, isAbsolute } from 'node:path'
 
 import { moduleHandlerContributions, registerModuleHandlers } from '../../kernel/contract.js'
 import { defineModule } from '../../kernel/module.js'
-import type { ModelConnectionTester } from '../../main/model-connection.js'
+import type { ModelConnectionTester } from '../../application/index.js'
 import type { AppRepository } from '../../main/persistence/app-repository.js'
 import type { RuntimeCoordinator } from '../../main/runtime/coordinator.js'
 import { PictorError } from '../../shared/errors.js'

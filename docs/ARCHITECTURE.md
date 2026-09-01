@@ -1,9 +1,10 @@
 # 当前代码架构
 
-> 本文记录 `develop` 上运行的 0.4 Stage 8 架构。完整目标、兼容性边界和后续阶段门禁见
+> 本文记录 `develop` 上运行的 0.4 Stage 9 架构。完整目标、兼容性边界和后续阶段门禁见
 > [`MULTI_FRONTEND_ARCHITECTURE.md`](MULTI_FRONTEND_ARCHITECTURE.md)。GUI Plugin Manager、Updater、
 > Git Changes 和 Delegate Workbench 的产品 GUI 均由各自 Plugin 拥有；Core GUI 只保留 Host、Shell、
-> 诊断、公开 contract、bootstrap 与宿主样式。
+> 诊断、公开 contract、bootstrap 与宿主样式。Node TUI Host、TUI Contribution 和 Delegate TUI
+> 已在 Stage 9 落地；Stage 10 才处理三种桌面包的多入口打包。
 
 本文描述 Pictor 当前已经实现的代码结构和依赖规则。Application Host 已从 Electron Main 的启动链
 路中提取，DesktopHost 是它的 Electron 适配器；GUI Renderer 由 `src/gui` 的 GUI Host 装配，
@@ -19,6 +20,7 @@ src/
 ├── application/ 无 Frontend 依赖的 Application Host、生命周期端口和服务装配
 ├── commands/   Headless Command Engine、稳定 Client contract 和 Core commands
 ├── cli/        无 Electron 的 Node CLI Frontend、参数/输出/退出语义和 Headless adapters
+├── tui/        无 Electron 的 Node TUI Composition root、Host、Terminal 和公开 Contribution
 ├── gui/        GUI Host、Workbench slot、Pictor Shell、公开 GUI contract 和 GUI Plugin 装配
 ├── kernel/     纯 TypeScript Module 生命周期、Token、Contribution 和 Contract Router
 ├── plugin/     Manifest、Registry、Plugin 依赖规划和进程级 Plugin Host
@@ -47,6 +49,15 @@ text/JSON 输出、SIGINT 取消和退出码；Profile 锁、Host 工厂、IO �
 以 user-data/profile 路径为锁身份，并以原子文件创建和 owner token 证明释放权限。崩溃后的锁仅在
 owner 元数据有效、本机 hostname 匹配且通过 `process.kill(pid, 0)` 明确证明 owner 已退出时恢复；
 外部主机、活动或无法判定的进程、损坏元数据和复核失败的锁都保留。
+
+`src/tui` 是 Stage 9 的独立 Node Composition root。`TuiHost` 是深模块：装配 TUI Plugin Kernel，
+拥有 TUI terminal 生命周期、SIGINT/SIGTERM 取消、fatal/无可用 TUI 诊断和最终清理；TUI Plugin
+只能实现 `TuiApplicationContribution`，通过 `AgentWorkspaceClient`、`CommandClient` 和窄的
+Runtime interactive runner seam 访问应用能力。`pictor.tui.delegate` 拥有 Delegate 的 Project、
+Session 和 Pi 交互，Core TUI Host 不包含这些业务分支。TUI 的 Node adapter 使用同一个
+`ApplicationHost`、`ProfileFileLock`、Plugin Store/Profile、Workspace、Provider、Pi resources 和
+JSONL identity；显式 `--project`/`--session` 才能定位或创建上下文，空数据目录会进入可理解的
+首次使用路径。
 
 `commands` 是当前 Stage 4 已落地的 Headless Command Engine 边界。它只向调用者提供不可变的
 `CommandClient`（`list`、`execute`、`cancel`、`subscribe`）以及可序列化的 descriptor、event、
@@ -101,6 +112,7 @@ Workbench slot、带 `owner` 与稳定 `id` 的 Settings Section，以及 Sectio
 ```text
 Renderer -> Desktop bridge / Module contract / CommandClient -> Preload adapter -> IPC -> DesktopHost
 CLI -> Application Host ports -> Command Client
+TUI -> Application Host ports / ModuleTransport -> TUI Contribution
 DesktopHost -> Application Host ports -> RuntimeCoordinator / PluginHost / Repository
 Application Host -> Command Engine -> Core commands / Plugin command contributions
 Application Host -> RuntimeHost -> RuntimeSupervisor -> Runtime protocol -> Runtime Plugin Host
@@ -113,8 +125,8 @@ Renderer -X-> Electron / Node / 其他进程实现
 ```
 
 ESLint 对进程方向执行静态检查。`tsconfig.node.json` 覆盖 Main、Preload、Runtime、Kernel、
-Node Module 入口、Shared 和 E2E；`tsconfig.web.json` 覆盖 GUI、Kernel、GUI Module
-入口、Shared 和 Web 测试基础设施。
+Node Module 入口、TUI、Shared 和 E2E；`tsconfig.tui.json` 负责可执行的 TUI Node 产物；
+`tsconfig.web.json` 覆盖 GUI、Kernel、GUI Module 入口、Shared 和 Web 测试基础设施。
 
 Host 与 GUI 分别从用户 Plugin Store 动态加载当前进程的 Plugin 入口。跨进程 Feature 通过固定的
 `module:invoke` / `module:event` Electron transport 通信，输入和结果只在进程 seam 校验；同一
@@ -139,6 +151,20 @@ runtime，不携带第二套 React 实例。
 和 `PluginStore`，根据当前 Plugin snapshot 配置 Runtime bootstrap，再启动 Host `PluginHost`。
 任何启动步骤失败都会释放已获得的 lock、Runtime Host 和已创建的 Plugin Kernel。关闭时先停止
 Runtime，再逆序停止 Plugin Kernel，最后释放 lock；DesktopHost 另外负责注销 IPC handler。
+
+TUI 的 `InProcessRuntimeHost` 在 ApplicationHost 组装完成的 Runtime bootstrap 上加载 Runtime
+Plugin Host；它调用 Runtime public contribution，不启动 Electron utility process。`PiAgentRuntime`
+通过 `InteractiveRuntimeRunner` 封装已打开的 Pi `AgentSessionRuntime`，生产路径实际执行
+`new InteractiveMode(...).run()`。TUI 不保存 transcript 或第二份 history；Pi InteractiveMode 的
+session-level entry/leaf event 经 RuntimeCoordinator persistence queue 先保存 active leaf，再从
+同一个 JSONL 重建并持久化 Session Projection。`inspectSessionHistory` 仍是同一 authority 的只读
+Projection view。
+
+由于 Pi 0.84.1 的 `InteractiveMode` 构造器会覆盖 `AgentSessionRuntime` 的单一 rebind callback，
+TUI 传入一个只使用公开 Runtime 方法的 adapter：它保留 Pictor hook，并在底层调用前稳定拒绝
+InteractiveMode 的 `/new`、`/fork`、`/clone`、`/resume` 和 `/import`。本阶段的 Session replacement
+使用 TUI 启动参数或 Pictor 受支持入口；完整 replacement transaction 路由需要独立的上游
+public composition seam。
 
 `RuntimeCoordinator` 拥有自身需要的窄 persistence 和 Runtime host interface。现有
 `AppRepository` 与注入的 `RuntimeHost` 直接满足它们；测试使用 in-memory adapter，不依赖具体
@@ -327,6 +353,7 @@ Delegate Workbench GUI Plugin 的 `AgentWorkspace` 负责页面布局、Settings
 - 本地状态、凭据和数据迁移：`src/main/persistence/`。
 - Agent Run 的 Runtime Coordinator、监管、持久化和广播编排：`src/main/runtime/`，由 `ApplicationHost` 统一装配。
 - Pi SDK adapter、Runtime Host 和 Extension RPC UI：`src/runtime/`。
+- TUI Host、公开 Contribution、Node adapter、参数入口和 fake-terminal seam：`src/tui/`。
 - Agent Workspace Headless contract、Host 和文件操作：`src/modules/agent-workspace/`。
 - Delegate Workbench GUI、Session 视图与设置编排：`plugins/workbench-delegate/`。
 - GUI Host、Workbench slot、Pictor Shell 与 GUI bootstrap：`src/gui/`。
@@ -334,6 +361,9 @@ Delegate Workbench GUI Plugin 的 `AgentWorkspace` 负责页面布局、Settings
   `src/gui/plugin-style.ts`。
 - GUI Plugin Manager：`plugins/gui-plugin-manager/`；Updater GUI：`plugins/updater/`；Git Changes
   GUI：`plugins/git-changes/`；Delegate Workbench GUI：`plugins/workbench-delegate/`。
+- Delegate TUI：`plugins/tui-delegate/`；其 Manifest 只声明 `modules.tui`，依赖 Agent Workspace、
+  Provider、Pi Runtime、Extension Host 和 Agent Resources，不导入 Repository、Plugin Store、
+  RuntimeCoordinator、`src/main` 或 GUI 私有实现。
 - 跨进程 schema 或类型：放入对应的 `src/shared/` 协议 module。
 
 使用 `npm run plugin:new -- <name>` 生成 Manifest、Host/GUI 入口和测试骨架；

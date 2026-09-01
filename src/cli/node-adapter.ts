@@ -3,12 +3,16 @@ import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { ApplicationHost, ProfileFileLock, type EventPublisher } from '../application/index.js'
+import {
+  ApplicationHost,
+  ModelConnectionTester,
+  ProfileFileLock,
+  type EventPublisher,
+} from '../application/index.js'
 import { createHostPluginDefinitions } from '../main/plugins/plugin-loader.js'
 import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
 import type { AgentWorkspaceHost } from '../modules/agent-workspace/host.js'
 import type { UpdaterHostAdapter } from '../modules/updater/host.js'
-import { ModelConnectionTester } from '../main/model-connection.js'
 import { appInfoSchema, type AppInfo } from '../shared/app-info.js'
 import { PictorError } from '../shared/errors.js'
 import { defaultPluginProfile, developerPluginProfile } from '../main/plugins/default-profile.js'

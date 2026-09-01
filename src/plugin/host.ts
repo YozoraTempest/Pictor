@@ -121,9 +121,17 @@ export class PluginHost {
   }
 
   async stop(): Promise<void> {
-    for (const active of this.activePlugins.toReversed()) await active.kernel.stop()
+    let firstError: Error | null = null
+    for (const active of this.activePlugins.toReversed()) {
+      try {
+        await active.kernel.stop()
+      } catch (error) {
+        firstError ??= error instanceof Error ? error : new Error(String(error))
+      }
+    }
     this.activePlugins.length = 0
     this.started = false
+    if (firstError) throw firstError
   }
 
   private status(

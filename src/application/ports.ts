@@ -113,6 +113,8 @@ export interface RuntimePersistence {
 
 export interface RuntimeHost {
   configurePluginBootstrap?(bootstrap: RuntimePluginBootstrap): void
+  /** Start an in-process Runtime Plugin Host when the frontend owns it. */
+  initialize?(): Promise<void>
   openSession?(config: RuntimeSessionOpenConfig): Promise<void>
   closeSession?(): Promise<void>
   start(config: RuntimeStartConfig): Promise<void>

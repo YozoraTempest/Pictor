@@ -1034,6 +1034,7 @@ export class RuntimeCoordinator {
     if (event.type === 'session.activeLeafChanged') {
       this.persistenceQueue = this.persistenceQueue
         .then(() => this.repository.setPiSessionActiveLeaf(event.sessionId, event.activeLeafId))
+        .then(() => this.repository.rebuildSessionProjection(event.sessionId))
         .then(() => this.broadcast(event))
         .catch(() =>
           this.broadcast({
@@ -1042,7 +1043,7 @@ export class RuntimeCoordinator {
             sessionId: event.sessionId,
             at: new Date().toISOString(),
             category: 'runtime',
-            message: 'Pi Session 活跃分支持久化失败',
+            message: 'Pi Session 活跃分支或 Projection 持久化失败',
           }),
         )
       return

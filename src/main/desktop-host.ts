@@ -16,6 +16,7 @@ import {
 
 import {
   ApplicationHost,
+  ModelConnectionTester,
   ProfileFileLock,
   type ApplicationHostServices,
   type EventPublisher,
@@ -28,7 +29,6 @@ import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
 import type { UpdaterHostAdapter } from '../modules/updater/host.js'
 import { appInfoSchema } from '../shared/app-info.js'
 import type { Disposable } from '../kernel/module.js'
-import { ModelConnectionTester } from './model-connection.js'
 import { defaultPluginProfile, developerPluginProfile } from './plugins/default-profile.js'
 import { registerCommandIpc } from './command-ipc.js'
 import { registerIpc } from './ipc.js'

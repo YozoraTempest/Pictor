@@ -196,6 +196,17 @@ describe('ApplicationHost', () => {
     await expect(host.stop()).resolves.toBeUndefined()
   })
 
+  it('releases the Frontend lock when Runtime disposal fails', async () => {
+    const { options, release, runtime } = await createOptions()
+    runtime.dispose.mockRejectedValueOnce(new Error('runtime dispose failed'))
+    const host = new ApplicationHost(options)
+    await host.start()
+
+    await expect(host.stop()).rejects.toThrow('runtime dispose failed')
+    expect(runtime.dispose).toHaveBeenCalledOnce()
+    expect(release).toHaveBeenCalledOnce()
+  })
+
   it('does not initialize a Profile when its Frontend lock is unavailable', async () => {
     const acquire = vi.fn(async () => null)
     const { options, runtime } = await createOptions({ frontendLock: { acquire } })

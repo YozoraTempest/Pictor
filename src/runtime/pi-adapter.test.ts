@@ -6,6 +6,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  AgentSessionRuntime,
   AgentSessionEvent,
   ExtensionCommandContextActions,
   ExtensionUIContext,
@@ -20,9 +21,14 @@ import type {
   RuntimeLabelConfig,
   RuntimeNavigateConfig,
   RuntimeStartConfig,
+  RuntimeSessionOpenConfig,
 } from '../shared/runtime-protocol.js'
 import { REDACTED_SECRET } from '../shared/secret-redaction.js'
-import { PiAgentRuntime } from './pi-adapter.js'
+import {
+  PICTOR_TUI_SESSION_REPLACEMENT_ERROR,
+  PiAgentRuntime,
+  createPiInteractiveRunner,
+} from './pi-adapter.js'
 
 const sessionFactory = async () => ({
   subscribe: () => () => undefined,
@@ -205,6 +211,137 @@ describe('PiAgentRuntime cleanup', () => {
     expect(dispose).not.toHaveBeenCalled()
     await runtime.dispose()
     expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('exposes the InteractiveMode runner only through the Runtime public contract', async () => {
+    const runner = { run: vi.fn(async () => undefined) }
+    const runtime = new PiAgentRuntime(
+      () => undefined,
+      async () => ({
+        ...(await sessionFactory()),
+        createInteractiveRunner: () => runner,
+      }),
+    )
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const config: RuntimeSessionOpenConfig = {
+      type: 'session.open',
+      operationId: '01234567-89ab-4def-8123-456789abcdef',
+      sessionId: '11234567-89ab-4def-8123-456789abcdef',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-interactive'),
+      sessionDirectory: join(root, 'session-interactive'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+    }
+
+    await runtime.openSession(config)
+    expect(runtime.createInteractiveRunner()).toBe(runner)
+    await runtime.dispose()
+  })
+
+  it('rejects InteractiveMode Session replacement before Pi can change identity', async () => {
+    const beforeSessionInvalidate = vi.fn()
+    const rebindSession = vi.fn()
+    const newSession = vi.fn(
+      async (_options?: Parameters<AgentSessionRuntime['newSession']>[0]) => ({
+        cancelled: false,
+      }),
+    )
+    const fork = vi.fn(
+      async (_entryId: string, _options?: Parameters<AgentSessionRuntime['fork']>[1]) => ({
+        cancelled: false,
+      }),
+    )
+    const switchSession = vi.fn(
+      async (
+        _sessionPath: string,
+        _options?: Parameters<AgentSessionRuntime['switchSession']>[1],
+      ) => ({ cancelled: false }),
+    )
+    const importFromJsonl = vi.fn(async (_inputPath: string, _cwdOverride?: string) => ({
+      cancelled: false,
+    }))
+    const publicRuntime = {
+      setBeforeSessionInvalidate: beforeSessionInvalidate,
+      setRebindSession: rebindSession,
+      newSession,
+      fork,
+      switchSession,
+      importFromJsonl,
+    } satisfies Pick<
+      AgentSessionRuntime,
+      | 'setBeforeSessionInvalidate'
+      | 'setRebindSession'
+      | 'newSession'
+      | 'fork'
+      | 'switchSession'
+      | 'importFromJsonl'
+    >
+
+    const pictorBeforeInvalidate = vi.fn()
+    const pictorRebind = vi.fn(async () => undefined)
+    beforeSessionInvalidate(pictorBeforeInvalidate)
+    rebindSession(pictorRebind)
+
+    let adaptedRuntime: AgentSessionRuntime | undefined
+    const run = vi.fn(async () => {
+      const runtime = adaptedRuntime
+      expect(runtime).toBeDefined()
+      if (!runtime) throw new Error('InteractiveMode runtime was not adapted')
+
+      // These calls model InteractiveMode's constructor hook registration.
+      runtime.setBeforeSessionInvalidate(() => undefined)
+      runtime.setRebindSession(async () => undefined)
+      const rejectReplacement = (invoke: () => unknown) =>
+        expect(Promise.resolve().then(invoke)).rejects.toThrow(PICTOR_TUI_SESSION_REPLACEMENT_ERROR)
+      await rejectReplacement(() => runtime.newSession())
+      await rejectReplacement(() => runtime.fork('entry'))
+      await rejectReplacement(() => runtime.fork('entry', { position: 'at' }))
+      await rejectReplacement(() => runtime.switchSession('/other/session.jsonl'))
+      await rejectReplacement(() => runtime.importFromJsonl('/other/session.jsonl'))
+    })
+
+    // This strict public-method spy facade exercises the deterministic runner
+    // seam; production passes a real AgentSessionRuntime instance.
+    const runner = createPiInteractiveRunner(
+      publicRuntime as unknown as AgentSessionRuntime,
+      undefined,
+      (runtime) => {
+        adaptedRuntime = runtime
+        return { run }
+      },
+    )
+    await runner.run()
+
+    expect(run).toHaveBeenCalledOnce()
+    expect(beforeSessionInvalidate).toHaveBeenCalledOnce()
+    expect(beforeSessionInvalidate).toHaveBeenCalledWith(pictorBeforeInvalidate)
+    expect(rebindSession).toHaveBeenCalledOnce()
+    expect(rebindSession).toHaveBeenCalledWith(pictorRebind)
+    expect(newSession).not.toHaveBeenCalled()
+    expect(fork).not.toHaveBeenCalled()
+    expect(switchSession).not.toHaveBeenCalled()
+    expect(importFromJsonl).not.toHaveBeenCalled()
   })
 
   it('applies a model control to the already-open Pi Session', async () => {

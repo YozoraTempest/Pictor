@@ -1,0 +1,34 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": false,
+    "declaration": false,
+    "outDir": "out/tui",
+    "rootDir": ".",
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": [
+    "src/tui/**/*.ts",
+    "src/application/**/*.ts",
+    "src/commands/**/*.ts",
+    "src/kernel/**/*.ts",
+    "src/main/persistence/**/*.ts",
+    "src/main/runtime/coordinator.ts",
+    "src/main/plugins/plugin-loader.ts",
+    "src/main/plugins/plugin-manager.ts",
+    "src/main/plugins/plugin-store.ts",
+    "src/plugin/**/*.ts",
+    "src/runtime/**/*.ts",
+    "src/shared/**/*.ts",
+    "plugins/agent-workspace/host.ts",
+    "plugins/tui-delegate/tui.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "src/runtime/host.ts",
+    "plugins/tui-delegate/**/*.test.ts"
+  ]
+}
