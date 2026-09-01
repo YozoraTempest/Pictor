@@ -134,7 +134,7 @@ async function findProcessByArgument(argument) {
 
 async function probeCdpTarget(target) {
   if (!target?.webSocketDebuggerUrl) return { ok: false, reason: 'missing page target' }
-  const websocket = new WebSocket(target.webSocketDebuggerUrl)
+  const websocket = new globalThis.WebSocket(target.webSocketDebuggerUrl)
   try {
     await new Promise((resolve, reject) => {
       const timer = globalThis.setTimeout(() => reject(new Error('open timeout')), 10_000)
