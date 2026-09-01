@@ -54,6 +54,8 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
         cdpTargets = targets
       },
     )
+    const cdpProbe = await probeCdpTarget(cdpTargets.find((target) => target?.type === 'page'))
+    if (cdpProbe) cdpTargets = cdpTargets.map((target) => ({ ...target, cdpProbe }))
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
       timeout: 120_000,
     })
@@ -128,6 +130,59 @@ async function waitForCdp(port, child, readOutput, updateTargets) {
 
 async function findProcessByArgument(argument) {
   return (await findProcessesByArgument(argument))[0] ?? null
+}
+
+async function probeCdpTarget(target) {
+  if (!target?.webSocketDebuggerUrl) return { ok: false, reason: 'missing page target' }
+  const websocket = new WebSocket(target.webSocketDebuggerUrl)
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = globalThis.setTimeout(() => reject(new Error('open timeout')), 10_000)
+      websocket.addEventListener(
+        'open',
+        () => {
+          globalThis.clearTimeout(timer)
+          resolve()
+        },
+        { once: true },
+      )
+      websocket.addEventListener(
+        'error',
+        (event) => {
+          globalThis.clearTimeout(timer)
+          reject(event.error ?? new Error('websocket error'))
+        },
+        { once: true },
+      )
+    })
+    const response = await new Promise((resolve, reject) => {
+      const timer = globalThis.setTimeout(() => reject(new Error('evaluate timeout')), 10_000)
+      const listener = (event) => {
+        const message = JSON.parse(event.data)
+        if (message.id !== 1) return
+        websocket.removeEventListener('message', listener)
+        globalThis.clearTimeout(timer)
+        resolve(message)
+      }
+      websocket.addEventListener('message', listener)
+      websocket.send(
+        JSON.stringify({
+          id: 1,
+          method: 'Runtime.evaluate',
+          params: {
+            expression:
+              'JSON.stringify({url: location.href, title: document.title, readyState: document.readyState})',
+            returnByValue: true,
+          },
+        }),
+      )
+    })
+    return { ok: true, response }
+  } catch (error) {
+    return { ok: false, reason: String(error) }
+  } finally {
+    websocket.close()
+  }
 }
 
 async function findProcessesByArgument(argument) {
