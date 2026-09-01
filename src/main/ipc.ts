@@ -10,6 +10,22 @@ import type { AppInfo } from '../shared/app-info.js'
 import { ipcResult } from '../shared/ipc-result.js'
 import type { PluginBootstrap } from '../shared/plugins.js'
 import type { PluginManager } from './plugins/plugin-manager.js'
+import type { Disposable } from '../kernel/module.js'
+
+const IPC_CHANNELS = [
+  'app:renderer-ready',
+  'app:get-info',
+  'plugin:get-bootstrap',
+  'plugin:get-manager-snapshot',
+  'plugin:install-local',
+  'plugin:install-development',
+  'plugin:install-pi-extension',
+  'plugin:install-pi-package',
+  'plugin:install-pi-package-spec',
+  'plugin:set-enabled',
+  'plugin:remove',
+  'plugin:restore-bundled',
+] as const
 
 interface IpcDependencies {
   validateSender: (frame: WebFrameMain | null) => void
@@ -19,7 +35,7 @@ interface IpcDependencies {
   pluginManager: PluginManager
 }
 
-export function registerIpc(dependencies: IpcDependencies): void {
+export function registerIpc(dependencies: IpcDependencies): Disposable {
   const { validateSender, onRendererReady, appInfo, getPluginBootstrap, pluginManager } =
     dependencies
 
@@ -130,4 +146,10 @@ export function registerIpc(dependencies: IpcDependencies): void {
       return pluginManager.restoreBundled(request.id)
     })
   })
+
+  return {
+    dispose: () => {
+      for (const channel of IPC_CHANNELS) ipcMain.removeHandler(channel)
+    },
+  }
 }

@@ -156,11 +156,18 @@ export class RuntimeSupervisor {
 
   constructor(
     private readonly onEvent: (event: RuntimeEvent) => void,
-    private readonly pluginBootstrap: RuntimePluginBootstrap,
+    private pluginBootstrap: RuntimePluginBootstrap | undefined,
     private readonly onSessionReplacementRequest?: (
       request: RuntimeSessionReplacementRequest,
     ) => Promise<{ accepted: boolean; targetSessionId?: string; message?: string }>,
   ) {}
+
+  configurePluginBootstrap(bootstrap: RuntimePluginBootstrap): void {
+    if (this.processState.status !== 'stopped') {
+      throw new Error('Runtime Plugin bootstrap cannot change after startup')
+    }
+    this.pluginBootstrap = bootstrap
+  }
 
   openSession(config: RuntimeSessionOpenConfig): Promise<void> {
     return this.requestRuntimeOperation({
@@ -557,6 +564,7 @@ export class RuntimeSupervisor {
   }
 
   private spawnChild(): void {
+    if (!this.pluginBootstrap) throw new Error('Runtime Plugin bootstrap is not configured')
     const child = utilityProcess.fork(join(__dirname, 'runtime/host.js'), [], {
       serviceName: 'Pictor Agent Runtime',
       env: {
