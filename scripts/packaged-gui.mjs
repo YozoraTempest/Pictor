@@ -37,6 +37,7 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
   })
   let stdout = ''
   let stderr = ''
+  let cdpTargets = []
   child.stdout.on('data', (chunk) => {
     stdout += chunk.toString()
   })
@@ -45,7 +46,14 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
   })
 
   try {
-    await waitForCdp(port, child, () => ({ stdout, stderr }))
+    await waitForCdp(
+      port,
+      child,
+      () => ({ stdout, stderr, cdpTargets }),
+      (targets) => {
+        cdpTargets = targets
+      },
+    )
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
       timeout: 120_000,
     })
@@ -69,7 +77,7 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
       },
     }
   } catch (error) {
-    const output = JSON.stringify({ stdout, stderr })
+    const output = JSON.stringify({ stdout, stderr, cdpTargets })
     await stopProcess(child.pid)
     await waitForExit(child, 2_000)
     throw new Error(`${String(error)}\nPackaged GUI output: ${output}`, { cause: error })
@@ -88,7 +96,7 @@ async function findFreePort() {
   return address.port
 }
 
-async function waitForCdp(port, child, readOutput) {
+async function waitForCdp(port, child, readOutput, updateTargets) {
   const deadline = Date.now() + 120_000
   let browserReady = false
   while (Date.now() < deadline) {
@@ -106,6 +114,7 @@ async function waitForCdp(port, child, readOutput) {
         const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/list`)
         if (response.ok) {
           const targets = await response.json()
+          if (Array.isArray(targets)) updateTargets(targets)
           if (Array.isArray(targets) && targets.some((target) => target?.type === 'page')) return
         }
       }

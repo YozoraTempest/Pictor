@@ -90,7 +90,7 @@ async function localFileResponse(filePath: string, requestUrl: string): Promise<
   try {
     const body = await readFile(filePath)
     startupDiagnostic(`App protocol response ${requestUrl} ${filePath} ${body.byteLength} bytes`)
-    return new Response(body, {
+    return new Response(new Uint8Array(body), {
       headers: { 'content-type': contentTypeFor(filePath) },
     })
   } catch {
