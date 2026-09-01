@@ -20,6 +20,7 @@ import type {
   RuntimeLabelConfig,
   RuntimeNavigateConfig,
   RuntimeStartConfig,
+  RuntimeSessionOpenConfig,
 } from '../shared/runtime-protocol.js'
 import { REDACTED_SECRET } from '../shared/secret-redaction.js'
 import { PiAgentRuntime } from './pi-adapter.js'
@@ -205,6 +206,52 @@ describe('PiAgentRuntime cleanup', () => {
     expect(dispose).not.toHaveBeenCalled()
     await runtime.dispose()
     expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('exposes the InteractiveMode runner only through the Runtime public contract', async () => {
+    const runner = { run: vi.fn(async () => undefined) }
+    const runtime = new PiAgentRuntime(
+      () => undefined,
+      async () => ({
+        ...(await sessionFactory()),
+        createInteractiveRunner: () => runner,
+      }),
+    )
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const config: RuntimeSessionOpenConfig = {
+      type: 'session.open',
+      operationId: '01234567-89ab-4def-8123-456789abcdef',
+      sessionId: '11234567-89ab-4def-8123-456789abcdef',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-interactive'),
+      sessionDirectory: join(root, 'session-interactive'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+    }
+
+    await runtime.openSession(config)
+    expect(runtime.createInteractiveRunner()).toBe(runner)
+    await runtime.dispose()
   })
 
   it('applies a model control to the already-open Pi Session', async () => {

@@ -1,7 +1,5 @@
-import { pathToFileURL } from 'node:url'
-
-import { readPluginEntrypoint, type RuntimePluginContext } from '../plugin/entry.js'
-import { PluginHost, type PluginDefinition } from '../plugin/host.js'
+import { PluginHost } from '../plugin/host.js'
+import { createRuntimePluginDefinitions } from '../plugin/loader.js'
 import { runtimePluginBootstrapSchema } from '../shared/plugins.js'
 import {
   runtimeCommandSchema,
@@ -50,23 +48,7 @@ const statePromise = (async (): Promise<RuntimeHostState> => {
   if (!bootstrapSource) throw new Error('Missing Runtime Plugin bootstrap')
   const bootstrap = runtimePluginBootstrapSchema.parse(JSON.parse(bootstrapSource))
   const emit = (event: RuntimeEvent) => parentPort.postMessage(event)
-  const definitions: PluginDefinition[] = bootstrap.plugins.map(
-    ({ manifest, desiredState, dataPath, runtimeEntryPath }) => ({
-      manifest,
-      desiredState,
-      async createModules() {
-        if (!runtimeEntryPath) return []
-        const namespace: unknown = await import(pathToFileURL(runtimeEntryPath).toString())
-        if (!namespace || typeof namespace !== 'object') {
-          throw new Error(`Invalid Runtime Plugin entry: ${manifest.id}`)
-        }
-        const entrypoint = readPluginEntrypoint<RuntimePluginContext>(
-          namespace as Record<string, unknown>,
-        )
-        return entrypoint({ process: 'runtime', dataPath, emit, extensions: bootstrap.extensions })
-      },
-    }),
-  )
+  const definitions = createRuntimePluginDefinitions(bootstrap, emit)
   const host = new PluginHost({
     pictorVersion: bootstrap.pictorVersion,
     safeMode: bootstrap.safeMode,

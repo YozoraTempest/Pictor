@@ -41,6 +41,24 @@ export type AgentRuntimeCompactResult =
 
 export type AgentRuntimeLabelResult = { outcome: 'completed'; activeLeafId: string }
 
+/**
+ * Small public seam used by a Node TUI frontend.  The Pi AgentSessionRuntime
+ * and InteractiveMode instances remain private to the Runtime Plugin adapter.
+ */
+export interface InteractiveRuntimeOptions {
+  readonly initialMessage?: string
+  readonly initialMessages?: readonly string[]
+  readonly verbose?: boolean
+  readonly tuiMode?: 'regular' | 'fullscreen'
+}
+
+export interface InteractiveRuntimeRunner {
+  run(): Promise<void>
+  cancel?(): void | Promise<void>
+  handleInput?(data: string): void
+  handleResize?(): void
+}
+
 export interface ModelRuntimeProvider {
   id: string
   register(
@@ -63,6 +81,8 @@ export interface AgentRuntimeResources {
 export interface AgentRuntimeProvider {
   id: string
   configure(resources: AgentRuntimeResources): void
+  isActive?(): boolean
+  createInteractiveRunner?(options?: InteractiveRuntimeOptions): InteractiveRuntimeRunner
   openSession(config: RuntimeSessionOpenConfig): Promise<void>
   closeSession(): Promise<void>
   start(config: RuntimeStartConfig): Promise<void>

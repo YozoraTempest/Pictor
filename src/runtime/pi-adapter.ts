@@ -7,6 +7,7 @@ import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  InteractiveMode,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -16,6 +17,7 @@ import {
   type ExtensionCommandContextActions,
   type ExtensionError,
   type ExtensionUIContext,
+  type InteractiveModeOptions,
   type SessionStats,
 } from '@earendil-works/pi-coding-agent'
 
@@ -43,6 +45,8 @@ import type {
   AgentRuntimeLabelResult,
   AgentRuntimeNavigateResult,
   AgentRuntimeResources,
+  InteractiveRuntimeOptions,
+  InteractiveRuntimeRunner,
   ModelRuntimeProvider,
 } from './plugin-interface.js'
 import { ExtensionUiBroker } from './extension-ui.js'
@@ -110,6 +114,7 @@ interface PiSessionLike {
   getActiveLeafId(): string | null
   getDiagnostics?(): ReadonlyArray<{ type: 'info' | 'warning' | 'error'; message: string }>
   dispose(): void | Promise<void>
+  createInteractiveRunner?(options?: InteractiveRuntimeOptions): InteractiveRuntimeRunner
   bindExtensionUi?(
     context: ExtensionUIContext,
     options?: {
@@ -443,6 +448,10 @@ class PiSessionRuntime implements PiSessionLike {
     return this.runtime.dispose()
   }
 
+  createInteractiveRunner(options?: InteractiveRuntimeOptions): InteractiveRuntimeRunner {
+    return new PiInteractiveRunner(this.runtime, options)
+  }
+
   getActiveToolNames(): string[] {
     return this.runtime.session.getActiveToolNames()
   }
@@ -523,6 +532,38 @@ class PiSessionRuntime implements PiSessionLike {
   }
 }
 
+/**
+ * Pi's public InteractiveMode owns its ProcessTerminal and signal handlers in
+ * 0.84.1. Keep that implementation behind the Runtime Plugin boundary; the
+ * TUI Host only sees this runner contract.
+ */
+class PiInteractiveRunner implements InteractiveRuntimeRunner {
+  private readonly mode: InteractiveMode
+
+  constructor(
+    private readonly runtime: AgentSessionRuntime,
+    options?: InteractiveRuntimeOptions,
+  ) {
+    const modeOptions: InteractiveModeOptions = {
+      ...(options?.initialMessage !== undefined ? { initialMessage: options.initialMessage } : {}),
+      ...(options?.initialMessages !== undefined
+        ? { initialMessages: [...options.initialMessages] }
+        : {}),
+      ...(options?.verbose !== undefined ? { verbose: options.verbose } : {}),
+      ...(options?.tuiMode !== undefined ? { tuiMode: options.tuiMode } : {}),
+    }
+    this.mode = new InteractiveMode(runtime, modeOptions)
+  }
+
+  run(): Promise<void> {
+    return this.mode.run()
+  }
+
+  cancel(): Promise<void> {
+    return this.runtime.session.abort()
+  }
+}
+
 async function sanitizePiTranscript(path: string, redactor: SecretRedactor): Promise<void> {
   let content: string
   try {
@@ -570,6 +611,18 @@ export class PiAgentRuntime {
     this.promptPaths = [...resources.promptPaths]
     this.modelProviders = [...resources.modelProviders]
     this.requestSessionReplacement = resources.requestSessionReplacement
+  }
+
+  isActive(): boolean {
+    return this.current !== undefined || this.sessionOperation !== null
+  }
+
+  createInteractiveRunner(options?: InteractiveRuntimeOptions): InteractiveRuntimeRunner {
+    const session = this.opened?.session
+    if (!session?.createInteractiveRunner) {
+      throw new Error('Pi InteractiveMode requires an open Agent Session')
+    }
+    return session.createInteractiveRunner(options)
   }
 
   async openSession(config: RuntimeSessionOpenConfig): Promise<void> {

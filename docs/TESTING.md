@@ -29,21 +29,22 @@ Windows E2E 默认隐藏窗口；本地 Linux E2E 使用 `showInactive()` 显示
 
 ## 测试分层
 
-| 层级           | 命令                                                | 覆盖范围                                      | 运行时机                        |
-| -------------- | --------------------------------------------------- | --------------------------------------------- | ------------------------------- |
-| 静态检查       | `npm run check:format`、`check:types`、`check:lint` | 格式、类型、Lint                              | 本地提交前、每个 PR             |
-| Module 测试    | `npm run test:module -- <name>`                     | 单个 Feature 目录                             | 对应 Feature 开发循环           |
-| Plugin 测试    | `npm run test:plugin -- <name>`                     | 单个 Plugin 或 `host` 底座                    | Plugin 开发循环                 |
-| 单元测试       | `npm run test:unit`                                 | 纯函数、组件、服务边界                        | 开发循环、每个 PR               |
-| CLI 测试       | `npx vitest run src/cli`                            | Node CLI 路由、text/JSON、取消、Profile 锁    | Stage 5 开发循环、每个 PR       |
-| 集成测试       | `npm run test:integration`                          | Pi adapter 与运行时协议集成                   | 修改运行时边界时、每个 PR       |
-| Vitest 全量    | `npm test`                                          | 单元与集成测试一次完成                        | 本地提交前、每个 PR             |
-| E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Linux PR，复用 `out/`           |
-| Windows Shell  | `npm run test:e2e:run -- e2e/shell.spec.ts`         | Main/Preload/Renderer、Bridge、沙箱与基础界面 | Windows 应用改动 CI             |
-| E2E Full       | `npm run test:e2e:run`                              | 全部桌面用户场景                              | `develop`、正式发布、本地发布前 |
-| Windows 包验证 | `npm run package:verify:windows`                    | NSIS、ASAR、x64 PE                            | 正式发布、本地发布前            |
-| Linux 包验证   | `npm run package:verify:linux`                      | Pacman/AppImage、桌面入口、ASAR、x64 ELF      | Nightly、正式发布、本地发布前   |
-| Linux 包启动   | `npm run package:verify:linux:launch`               | 打包后 Main、Preload、Renderer 终态与平台信息 | Nightly、正式发布、桌面验收     |
+| 层级           | 命令                                                                                 | 覆盖范围                                             | 运行时机                        |
+| -------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------- |
+| 静态检查       | `npm run check:format`、`check:types`、`check:lint`                                  | 格式、类型、Lint                                     | 本地提交前、每个 PR             |
+| Module 测试    | `npm run test:module -- <name>`                                                      | 单个 Feature 目录                                    | 对应 Feature 开发循环           |
+| Plugin 测试    | `npm run test:plugin -- <name>`                                                      | 单个 Plugin 或 `host` 底座                           | Plugin 开发循环                 |
+| 单元测试       | `npm run test:unit`                                                                  | 纯函数、组件、服务边界                               | 开发循环、每个 PR               |
+| CLI 测试       | `npx vitest run src/cli`                                                             | Node CLI 路由、text/JSON、取消、Profile 锁           | Stage 5 开发循环、每个 PR       |
+| TUI 测试       | `npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs` | Host 生命周期、fake terminal、JSONL、Plugin boundary | Stage 9 开发循环、每个 PR       |
+| 集成测试       | `npm run test:integration`                                                           | Pi adapter 与运行时协议集成                          | 修改运行时边界时、每个 PR       |
+| Vitest 全量    | `npm test`                                                                           | 单元与集成测试一次完成                               | 本地提交前、每个 PR             |
+| E2E Smoke      | `npm run test:e2e:smoke:run`                                                         | 桌面启动、Chat 委托闭环                              | Linux PR，复用 `out/`           |
+| Windows Shell  | `npm run test:e2e:run -- e2e/shell.spec.ts`                                          | Main/Preload/Renderer、Bridge、沙箱与基础界面        | Windows 应用改动 CI             |
+| E2E Full       | `npm run test:e2e:run`                                                               | 全部桌面用户场景                                     | `develop`、正式发布、本地发布前 |
+| Windows 包验证 | `npm run package:verify:windows`                                                     | NSIS、ASAR、x64 PE                                   | 正式发布、本地发布前            |
+| Linux 包验证   | `npm run package:verify:linux`                                                       | Pacman/AppImage、桌面入口、ASAR、x64 ELF             | Nightly、正式发布、本地发布前   |
+| Linux 包启动   | `npm run package:verify:linux:launch`                                                | 打包后 Main、Preload、Renderer 终态与平台信息        | Nightly、正式发布、桌面验收     |
 
 聚合命令：
 
@@ -56,6 +57,9 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 `*:run` 是只消费已有产物的叶子命令，不负责构建。`test:e2e`、`test:e2e:smoke`、`package`
 等便捷命令会自行构建，适合独立调用。聚合命令必须调用叶子命令，避免重复构建或重复测试。
 
+`verify:fast` 和 `verify:pr` 的静态检查包含 `tsconfig.tui.json`；聚合验证还会执行
+`npm run build:tui`，以确认 TUI Node 入口和 Bundled Plugin 都能从干净产物启动。
+
 ## 用例放置
 
 - 与实现同层的 `*.test.ts(x)` 默认属于单元测试。
@@ -63,6 +67,12 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
   必须覆盖 help/version 不启动 Host、text/JSON 成功与失败、参数错误、Command failure、`ui` 别名、
   SIGINT 取消和稳定退出码。Profile lock 测试使用两个独立锁实例或子进程验证真实争用、owner 元数据、
   释放和无法证明所有权时不删除现有锁；CLI 源码不得静态导入 Electron。
+- TUI 测试调用 `TuiHost`、`runTui` 和 `TuiApplicationContribution` 的公开 Interface，使用 fake
+  terminal 覆盖输入、输出、resize、取消和退出清理；测试不改写真实 stdin/stdout。另用同一
+  `AgentWorkspaceClient`/`inspectSessionHistory` 验证 Pi JSONL Projection 和 active leaf 一致，
+  用两个独立 Frontend 验证 GUI/CLI/TUI Profile 锁冲突，确认 Plugin disabled/removed、Plugin
+  失败和所有 dispose 只执行一次且失败仍释放锁。TUI boundary 测试拒绝 Electron、DOM、GUI
+  私有实现、跨 Plugin 私有导入和子进程启动。
 - Kernel 测试通过公开 Interface 验证依赖排序、Provider、Contribution 和逆序释放；Feature 测试
   通过 Module Interface 或 contract router 验证，不读取 Kernel 内部状态。
 - Plugin 测试通过 Manifest、Registry、依赖规划、Plugin Host 或 Plugin Store 的公开 Interface

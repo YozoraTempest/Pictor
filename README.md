@@ -47,6 +47,9 @@ Pi 原生工具和 OpenAI 兼容模型配置。
   仍可使用 Headless Workspace。
 - `pictor.gui.plugin-manager` 是独立的 GUI-only Bundled Plugin，通过公开 Settings Section
   管理 Plugin 生命周期；删除它不会影响 Delegate 或模型设置，Pictor Shell 仍可恢复它。
+- `pictor.tui.delegate` 是独立的 TUI-only Bundled Plugin；`src/tui` 以 Node Composition root
+  复用同一 Profile 锁、Application Host、Workspace、Provider、Pi Runtime 和 Pi JSONL，TUI
+  不启动 Electron 或 `pi` 子进程。
 - `pictor.git-changes` 依赖 Agent Workspace，并通过独立 Host contract 与 GUI 设置页显示
   当前项目的 Git working tree；它验证了真实 Plugin 间依赖与组合。
 - `pictor.model-openai-compatible` 作为独立 Runtime Provider 注册 Chat Completions/Responses
@@ -137,6 +140,19 @@ CLI 默认使用与开发 GUI 相同的 `pictor-dev` user-data/profile；开发�
 支持 `doctor`、`plugin` 生命周期命令和映射到 `plugin.*` 的 `ui` 命令。JSON 模式只在 stdout 写入
 一个 JSON 文档，退出码为成功 `0`、失败 `1`、用法错误 `2`、Profile 冲突 `4`、取消 `130`。
 
+TUI 使用独立 Node 入口，不依赖 Electron：
+
+```bash
+npm run build:tui
+npm run tui -- --user-data-dir ./pictor-tui --non-interactive
+npm run tui -- --user-data-dir ./pictor-tui --project /path/to/project
+```
+
+入口支持 `--user-data-dir`、`--safe-mode`、`--profile`、`--project`、`--session` 和
+`--tui-mode regular|fullscreen`。没有项目时只显示首次使用诊断，不猜测或静默创建目录；有
+明确项目路径时才会通过 Agent Workspace 注册并创建 Session。TUI 的成功、失败、用法错误、
+Profile 冲突、无可用 TUI、Plugin 失败和取消退出码分别为 `0`、`1`、`2`、`4`、`5`、`6`、`130`。
+
 首次启动后，在“设置 > 模型”中完成以下配置，再添加本地项目并创建 Session：
 
 - 选择 **Chat Completions** 或 **Responses**。API Base URL 填 API 根地址，例如
@@ -163,6 +179,7 @@ npm run test:plugin -- host
 npm run test:watch
 npm run verify:fast
 npm run verify:pr
+npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs
 ```
 
 发布前运行 `npm run verify:release`，然后在目标平台构建并验证发布包：
@@ -186,8 +203,8 @@ Electron E2E 使用本地确定性 OpenAI 兼容服务验证完整 GUI、真实 
 CI 门禁和发行版验收见 [`docs/TESTING.md`](docs/TESTING.md)。
 
 应用源码统一位于 `src/`。`kernel/` 保存最小 Module Kernel，`modules/` 按 Feature 聚合新增
-功能；既有代码继续按 Electron Main、Preload、Renderer、Agent Runtime 和共享协议划分并逐步
-迁移。目录职责、跨进程协议和允许依赖方向见
+功能；既有代码继续按 Electron Main、Preload、Renderer、Agent Runtime 和共享协议划分，
+`tui/` 是不导入 Electron/GUI 私有实现的 Node Frontend。目录职责、跨进程协议和允许依赖方向见
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 Pictor 0.4 的 Headless Application Host、Command Engine、GUI/TUI/CLI Frontend、Pictor Shell 和
 Workbench Plugin 迁移契约见
@@ -215,6 +232,11 @@ Workbench Plugin 迁移契约见
   API Key 验证任何外部服务商。
 - 正式支持仅覆盖 Windows 11 x64 与原生 Arch Linux x64/niri；持久化格式尚未形成跨版本兼容
   承诺。
+- 当前锁定的 Pi `0.84.1` 将 `InteractiveMode` 的 terminal 创建和 `process.exit()` 保留在
+  Pi 内部，且包根未导出 `createInteractiveTui`；生产 TUI 已通过公开 `InteractiveMode` 和
+  `AgentSessionRuntime` runner 运行，Host/Plugin/锁清理由 Pictor seam 覆盖。要让 Host 完全
+  接管同一个 terminal、SIGINT 和异步退出清理，仍需要一个窄的上游 terminal/exit 注入适配，
+  不能用私有字段或复制 Renderer 绕过。
 
 ## 本地数据与安全边界
 
@@ -229,6 +251,10 @@ API Key 明文保存在独立的 `auth.json`，依靠当前用户的数据目录
 整个用户数据目录。
 
 源码开发默认把数据写入独立的 `pictor-dev/data-v1`，自动化测试继续使用各自的临时目录。
+
+TUI 与 GUI/CLI 使用同一个 user-data/profile 锁和 `data-v1`。TUI Plugin 只能通过公开的
+`TuiApplicationContribution`、`AgentWorkspaceClient`、`CommandClient` 和 Runtime interactive
+runner seam 访问应用能力；Pi JSONL 仍是唯一会话历史来源。
 
 Renderer 启用 Chromium sandbox、context isolation 和限制性 CSP，不开放 Node 或原始
 Electron API。Pi Runtime Plugin 从用户 Store 动态加载到独立 utility process，直接交给 Pi

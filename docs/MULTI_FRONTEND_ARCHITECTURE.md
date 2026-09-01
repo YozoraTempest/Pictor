@@ -235,6 +235,34 @@ Frontend 与 Profile identity 的结构化冲突，不继续初始化 Repository
 本机 npm 版本差异只记录为环境事实，不改变仓库固定工具链。Agent 在报告回归前必须用仓库声明或
 CI 环境复验。
 
+### Stage 9 当前实现
+
+Stage 9 已落地 `src/tui` Node Composition root、`TuiHost`、公开的
+`TuiApplicationContribution`、TUI Plugin 装载和 `pictor.tui.delegate`。TUI 与 GUI/CLI 共用
+`ApplicationHost`、`ProfileFileLock`、Plugin Store/Profile、Agent Workspace、Provider、Pi
+resources 和 Pi JSONL identity；TUI Plugin 只通过 `AgentWorkspaceClient`、`CommandClient` 和
+Runtime public interactive runner 访问这些能力。显式 `--user-data-dir`、`--safe-mode`、
+`--profile`、`--project`、`--session` 和 `--tui-mode` 参数已定义，空数据目录进入可理解的首次
+使用路径，参数错误、Profile 冲突、无 TUI、Plugin 失败、取消和正常退出有稳定退出码。
+
+`pictor.tui.delegate` 的 Manifest 只声明 `modules.tui`，并依赖实际使用的 Agent Workspace、
+Agent Resources、Model Provider、Pi Agent Runtime 和 Pi Extension Host。Node TUI 的 Runtime
+Plugin Host 直接装配相同的 Runtime bootstrap；Pi adapter 使用已安装的
+`@earendil-works/pi-coding-agent@0.84.1` 公开 `AgentSessionRuntime` 与 `InteractiveMode`，
+生产路径执行 `new InteractiveMode(...).run()`，不启动 `pi` 子进程、不使用 Electron/DOM、也不
+建立第二份 transcript。
+
+`npm run build:tui` 构建 Plugin Store snapshot 和 `out/tui`，`npm run tui -- ...` 运行开发入口；
+`verify:fast` 与 `verify:pr` 都覆盖 TUI types/build/unit。Stage 9 新增 fake terminal、JSONL
+projection consistency、Plugin disabled/removed、锁冲突、dispose 和 import-boundary 测试，并
+保留 Stage 8 GUI/style boundary。
+
+已安装 Pi 版本的 `InteractiveMode` 尚未公开 terminal 注入和可异步接管的退出钩子，包根也未导出
+`createInteractiveTui`。因此 Pictor 的 fake terminal 通过自身 runner seam 注入，生产 Pi runner
+仍由 Pi 处理其 `ProcessTerminal`/`process.exit()`；不使用私有字段或复制 Renderer。完全由 TUI
+Host 接管同一 terminal、SIGINT 和异步退出清理需要窄的上游 terminal/exit adapter，留作后续
+依赖适配，当前其余安全范围已落地。
+
 ### 各阶段最低门禁
 
 | Stage | Multica Issue | 独立分支                                   | 合并前新增证据                                             |

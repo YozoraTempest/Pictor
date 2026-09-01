@@ -148,6 +148,7 @@ export class ApplicationHost {
           this.options.safeMode ?? false,
         ),
       )
+      await this.options.runtimeHost.initialize?.()
 
       const runtime = new RuntimeCoordinator(repository, this.options.runtimeHost, (event) =>
         this.options.eventPublisher.publish(event),

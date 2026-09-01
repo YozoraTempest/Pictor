@@ -1,0 +1,19 @@
+{
+  "id": "pictor.tui.delegate",
+  "name": "Delegate TUI",
+  "version": "0.4.0",
+  "description": "Pi-powered terminal interface for Delegate sessions",
+  "engines": {
+    "pictor": "^0.4.0"
+  },
+  "dependencies": {
+    "pictor.agent-workspace": "^0.4.0",
+    "pictor.agent-resources": "^0.4.0",
+    "pictor.model-openai-compatible": "^0.4.0",
+    "pictor.pi-agent-runtime": "^0.4.0",
+    "pictor.pi-extension-host": "^0.4.0"
+  },
+  "modules": {
+    "tui": "./dist/tui.js"
+  }
+}
