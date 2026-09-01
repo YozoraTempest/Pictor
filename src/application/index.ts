@@ -14,13 +14,5 @@ export type {
   RuntimePersistence,
   UserData,
 } from './ports.js'
-export {
-  PROFILE_LOCK_FILE,
-  ProfileFileLock,
-  type ProfileLockFileHandle,
-  type ProfileLockFileSystem,
-  type ProfileFileLockOptions,
-  type ProfileLockConflict,
-  type ProfileLockOwner,
-} from './profile-lock.js'
+export { ProfileFileLock, type ProfileLockConflict, type ProfileLockOwner } from './profile-lock.js'
 export type { CommandClient } from '../commands/index.js'

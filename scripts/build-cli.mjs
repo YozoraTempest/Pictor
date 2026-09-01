@@ -6,11 +6,11 @@ import { fileURLToPath } from 'node:url'
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outputDirectory = resolve(projectRoot, 'out', 'cli')
+const compilerScript = resolve(projectRoot, 'node_modules', 'typescript', 'bin', 'tsc')
 
 await rm(outputDirectory, { recursive: true, force: true })
 
-const compiler = process.platform === 'win32' ? 'tsc.cmd' : 'tsc'
-const compilerProcess = spawn(compiler, ['-p', 'tsconfig.cli.json'], {
+const compilerProcess = spawn(process.execPath, [compilerScript, '-p', 'tsconfig.cli.json'], {
   cwd: projectRoot,
   stdio: 'inherit',
 })
