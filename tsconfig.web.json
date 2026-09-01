@@ -20,6 +20,8 @@
     "src/renderer/**/*.ts",
     "src/renderer/**/*.tsx",
     "src/kernel/**/*.ts",
+    "src/commands/contract.ts",
+    "src/commands/index.ts",
     "src/plugin/**/*.ts",
     "src/modules/**/shared.ts",
     "src/modules/**/renderer.ts",

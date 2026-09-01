@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import type { CommandClient } from '../commands/index.js'
 import { appInfoSchema, type AppInfo } from './app-info.js'
 import { imageAttachmentSchema, type ImageAttachment } from './domain.js'
 import { ipcResultSchema, type IpcResult } from './errors.js'
@@ -30,6 +31,7 @@ export const workspaceImagePickerResultSchema = ipcResultSchema(
 )
 
 export interface PictorBridge {
+  commands: CommandClient
   notifyRendererReady(): Promise<IpcResult<null>>
   getAppInfo(): Promise<IpcResult<AppInfo>>
   getPluginBootstrap(): Promise<IpcResult<PluginBootstrap>>

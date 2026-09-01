@@ -16,6 +16,7 @@ Updater 是首个真实 Bundled Plugin。尚未迁移的业务能力仍按纵向
 ```text
 src/
 ├── application/ 无 Frontend 依赖的 Application Host、生命周期端口和服务装配
+├── commands/   Headless Command Engine、稳定 Client contract 和 Core commands
 ├── kernel/     纯 TypeScript Module 生命周期、Token、Contribution 和 Contract Router
 ├── plugin/     Manifest、Registry、Plugin 依赖规划和进程级 Plugin Host
 ├── modules/    按 Feature 聚合的新代码及 Main/Renderer/Runtime 入口
@@ -35,6 +36,13 @@ React、TUI、Renderer 或 Preload 实现；它在获得 `FrontendLock` 后初�
 `PluginStore`，装配 `RuntimeCoordinator`、Main `PluginHost`、`PluginManager` 与 `ModuleRouter`，
 并通过 `RuntimeHost`、`EventPublisher`、`UserData` 和 `AppInfo` 端口连接 Frontend。Plugin Module
 定义由 Composition root 提供，使纯 Node 测试可以使用不依赖 Electron 的定义。
+
+`commands` 是当前 Stage 4 已落地的 Headless Command Engine 边界。它只向调用者提供不可变的
+`CommandClient`（`list`、`execute`、`cancel`、`subscribe`）以及可序列化的 descriptor、event、
+result 和 error；registry、handler、调用上下文的权限判定和 `AbortSignal` 均为 Engine 内部实现。
+ApplicationHost 在完成 Plugin Host 装配后拥有 Engine，并在停止时释放它；Core commands 复用
+现有 `PluginManager`，不复制 Plugin Store 或 Registry 业务逻辑。GUI 的 command transport 只负责
+IPC 适配，Renderer 不直接导入 Main、Repository 或 Plugin Manager。
 
 `src/main/desktop-host.ts` 是当前 GUI 的 DesktopHost 适配器。它创建 Electron `RuntimeSupervisor`、
 safeStorage-backed `SecretStore`、`AppInfo` 和 Frontend lock，注册 App protocol、IPC、窗口与退出
@@ -73,8 +81,9 @@ interface 保持可见且范围明确。
 ## 依赖方向
 
 ```text
-Renderer -> Desktop bridge / Module contract -> Preload adapter -> IPC -> DesktopHost
+Renderer -> Desktop bridge / Module contract / CommandClient -> Preload adapter -> IPC -> DesktopHost
 DesktopHost -> Application Host ports -> RuntimeCoordinator / PluginHost / Repository
+Application Host -> Command Engine -> Core commands / Plugin command contributions
 Application Host -> RuntimeHost -> RuntimeSupervisor -> Runtime protocol -> Runtime Plugin Host
 Main / Preload / Renderer / Runtime -> Shared
 Main / Renderer / Runtime -> Plugin Host -> per-plugin Kernel
@@ -277,6 +286,7 @@ Agent Workspace Renderer Module 的 `AgentWorkspace` 负责页面布局、Settin
 
 - Module 生命周期、Token、Contribution 和通用 contract 路由：`src/kernel/`。
 - Application Host、Headless 生命周期端口和服务装配：`src/application/`。
+- Command Engine、Core commands 和 Frontend transport contract：`src/commands/`。
 - Plugin Manifest、Registry schema、依赖规划与隔离 Host：`src/plugin/`。
 - Plugin Store、安装副本和 Bundled 恢复：`src/main/plugins/`。
 - 新增业务 Feature：`src/modules/<feature>/`，按需要创建 `shared.ts`、`main.ts`、

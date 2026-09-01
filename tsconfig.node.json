@@ -18,6 +18,7 @@
     "src/preload/**/*.ts",
     "src/runtime/**/*.ts",
     "src/kernel/**/*.ts",
+    "src/commands/**/*.ts",
     "src/plugin/**/*.ts",
     "src/modules/**/shared.ts",
     "src/modules/**/main.ts",

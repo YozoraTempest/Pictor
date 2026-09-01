@@ -14,6 +14,7 @@ export const credentialFixtures = {
 }
 
 export const bridgeKeys = [
+  'commands',
   'getAppInfo',
   'getPluginBootstrap',
   'getPluginManagerSnapshot',

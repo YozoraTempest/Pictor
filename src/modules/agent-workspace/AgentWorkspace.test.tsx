@@ -120,6 +120,16 @@ function installBridge(bridge: PictorBridge): void {
 function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
   const manager = { safeMode: false, restartRequired: false, items: [], issues: [] }
   return {
+    commands: {
+      list: async () => [],
+      execute: async () => {
+        throw new Error('unused')
+      },
+      cancel: async () => {
+        throw new Error('unused')
+      },
+      subscribe: () => () => undefined,
+    },
     notifyRendererReady: async () => ok(null),
     getAppInfo: async () =>
       ok({

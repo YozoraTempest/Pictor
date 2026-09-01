@@ -2,6 +2,8 @@ import { extname } from 'node:path'
 
 import { dialog, ipcMain, type WebFrameMain } from 'electron'
 
+import { executeCommandAndWait } from '../commands/await.js'
+import type { CommandClient } from '../commands/index.js'
 import { readMessageImages } from '../modules/agent-workspace/file-operations.js'
 import {
   packageSpecRequestSchema,
@@ -12,7 +14,11 @@ import {
 } from '../shared/desktop-bridge.js'
 import type { AppInfo } from '../shared/app-info.js'
 import { ipcResult } from '../shared/ipc-result.js'
-import type { PluginBootstrap } from '../shared/plugins.js'
+import {
+  pluginManagerSnapshotSchema,
+  type PluginBootstrap,
+  type PluginManagerSnapshot,
+} from '../shared/plugins.js'
 import type { PluginManager } from './plugins/plugin-manager.js'
 import type { Disposable } from '../kernel/module.js'
 
@@ -41,11 +47,24 @@ interface IpcDependencies {
   appInfo: AppInfo
   getPluginBootstrap: () => Promise<PluginBootstrap>
   pluginManager: PluginManager
+  commandClient?: CommandClient
 }
 
 export function registerIpc(dependencies: IpcDependencies): Disposable {
   const { validateSender, onRendererReady, appInfo, getPluginBootstrap, pluginManager } =
     dependencies
+  const commandClient = dependencies.commandClient
+
+  const runPluginCommand = (commandId: string, input: unknown): Promise<PluginManagerSnapshot> => {
+    if (!commandClient) throw new Error('Command Engine is unavailable')
+    return executeCommandAndWait(
+      commandClient,
+      commandId,
+      input,
+      { frontend: 'gui' },
+      pluginManagerSnapshotSchema,
+    )
+  }
 
   ipcMain.handle('app:renderer-ready', (event) => {
     validateSender(event.senderFrame)
@@ -67,7 +86,9 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
 
   ipcMain.handle('plugin:get-manager-snapshot', (event) => {
     validateSender(event.senderFrame)
-    return ipcResult(() => pluginManager.getSnapshot())
+    return ipcResult(() =>
+      commandClient ? runPluginCommand('plugin.list', null) : pluginManager.getSnapshot(),
+    )
   })
 
   ipcMain.handle('plugin:install-local', (event) => {
@@ -79,7 +100,9 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
       })
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return pluginManager.installLocal(path)
+      return commandClient
+        ? runPluginCommand('plugin.install', { source: 'local', path })
+        : pluginManager.installLocal(path)
     })
   })
 
@@ -92,7 +115,9 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
       })
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return pluginManager.installDevelopment(path)
+      return commandClient
+        ? runPluginCommand('plugin.install', { source: 'development', path })
+        : pluginManager.installDevelopment(path)
     })
   })
 
@@ -106,7 +131,9 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
       })
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return pluginManager.installPiExtension(path)
+      return commandClient
+        ? runPluginCommand('plugin.install', { source: 'pi-extension', path })
+        : pluginManager.installPiExtension(path)
     })
   })
 
@@ -119,7 +146,9 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
       })
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return pluginManager.installPiPackage(path)
+      return commandClient
+        ? runPluginCommand('plugin.install', { source: 'pi-package', path })
+        : pluginManager.installPiPackage(path)
     })
   })
 
@@ -127,7 +156,12 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = packageSpecRequestSchema.parse(input)
-      return pluginManager.installPiPackageSpec(request.spec)
+      return commandClient
+        ? runPluginCommand('plugin.install', {
+            source: 'pi-package-spec',
+            spec: request.spec,
+          })
+        : pluginManager.installPiPackageSpec(request.spec)
     })
   })
 
@@ -135,7 +169,12 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = setPluginEnabledRequestSchema.parse(input)
-      return pluginManager.setEnabled(request.kind, request.id, request.enabled)
+      return commandClient
+        ? runPluginCommand(request.enabled ? 'plugin.enable' : 'plugin.disable', {
+            kind: request.kind,
+            id: request.id,
+          })
+        : pluginManager.setEnabled(request.kind, request.id, request.enabled)
     })
   })
 
@@ -143,7 +182,9 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = removePluginRequestSchema.parse(input)
-      return pluginManager.remove(request.kind, request.id, request.deleteData)
+      return commandClient
+        ? runPluginCommand('plugin.remove', request)
+        : pluginManager.remove(request.kind, request.id, request.deleteData)
     })
   })
 
@@ -151,7 +192,9 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
       const request = pluginIdRequestSchema.parse(input)
-      return pluginManager.restoreBundled(request.id)
+      return commandClient
+        ? runPluginCommand('plugin.restore', request)
+        : pluginManager.restoreBundled(request.id)
     })
   })
 

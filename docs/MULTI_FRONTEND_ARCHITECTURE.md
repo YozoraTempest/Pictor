@@ -101,6 +101,12 @@ Pictor Shell 只列出标记为 recovery-safe 的 Core 命令。它不复用 CLI
 暴露 `bash`、PowerShell、PTY、Pi Tool 或任意进程执行；CLI/TUI/Pictor Shell 的复用点是 Command
 Engine，而不是彼此的实现。
 
+Stage 4 的当前迁移切片建立 `src/commands` Headless Engine，并由 Application Host 在其生命周期内
+拥有和释放它。该切片已接通 `app.info`、`app.doctor` 与 Plugin Manager 的 Core commands，以及
+Electron GUI 的 Command transport；它不实现 CLI/TUI、GUI Host、Pictor Shell、Workbench 拆分或
+Manifest 0.4。Command Engine 的 registry、handler 和权限判定保持内部，Frontend 只接收稳定的
+`CommandClient` 与不可变、可序列化的 contract 值。
+
 ## Frontend 契约
 
 ### GUI Host 与 Pictor Shell
