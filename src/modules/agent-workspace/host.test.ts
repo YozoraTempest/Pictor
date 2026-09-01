@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 
 import { ModuleRouter, moduleHandlerContributions } from '../../kernel/contract.js'
 import { ModuleKernel } from '../../kernel/kernel.js'
-import { createAgentWorkspaceMainModule, type AgentWorkspaceMainHost } from './main.js'
+import { createAgentWorkspaceHostModule, type AgentWorkspaceHost } from './host.js'
 
 const sessionId = '22222222-2222-4222-8222-222222222222'
 
@@ -20,7 +20,7 @@ function unusedSync() {
   })
 }
 
-function createHost(): AgentWorkspaceMainHost {
+function createHost(): AgentWorkspaceHost {
   return {
     repository: {
       getSnapshot: vi.fn(async () => ({
@@ -71,13 +71,13 @@ function createHost(): AgentWorkspaceMainHost {
   }
 }
 
-async function createRouter(host: AgentWorkspaceMainHost): Promise<ModuleRouter> {
+async function createRouter(host: AgentWorkspaceHost): Promise<ModuleRouter> {
   const kernel = new ModuleKernel()
-  await kernel.start([createAgentWorkspaceMainModule(host)])
+  await kernel.start([createAgentWorkspaceHostModule(host)])
   return new ModuleRouter(kernel.getContributions(moduleHandlerContributions))
 }
 
-it('serves workspace state through the Agent Workspace Main Module', async () => {
+it('serves workspace state through the Agent Workspace Host Module', async () => {
   const host = createHost()
   const router = await createRouter(host)
 

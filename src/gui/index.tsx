@@ -7,7 +7,7 @@ import * as jsxRuntime from 'react/jsx-runtime'
 import { settingsSectionContributions } from '../modules/shell/settings.js'
 import type { PictorBridge } from '../shared/desktop-bridge.js'
 import { pluginBootstrapSchema, type PluginBootstrap } from '../shared/plugins.js'
-import { readPluginEntrypoint, type RendererPluginContext } from '../plugin/entry.js'
+import { readPluginEntrypoint, type GuiPluginContext } from '../plugin/entry.js'
 import { PluginHost, type PluginDefinition } from '../plugin/host.js'
 import { GuiHostView, validateGuiWorkbenchContributions } from './GuiHostView.js'
 import { sanitizeGuiDiagnostic } from './diagnostics.js'
@@ -68,7 +68,7 @@ export async function startGui(
       pictorVersion: appInfoResult.value.version,
       safeMode: bootstrap.safeMode,
     })
-    const statuses = await pluginHost.start(createRendererPluginDefinitions(bootstrap))
+    const statuses = await pluginHost.start(createGuiPluginDefinitions(bootstrap))
     const workbenches = validateGuiWorkbenchContributions(
       pluginHost.getContributions(guiWorkbenchContributions),
     )
@@ -79,7 +79,7 @@ export async function startGui(
           commandClient={bridge.commands}
           pluginPicker={bridge}
           settingsSections={pluginHost.getContributions(settingsSectionContributions)}
-          rendererPluginStatuses={statuses}
+          guiPluginStatuses={statuses}
           workbenches={workbenches}
           safeMode={bootstrap.safeMode}
         />
@@ -113,22 +113,22 @@ function validateGuiBridge(bridge: GuiBridge): void {
   }
 }
 
-export function createRendererPluginDefinitions(
+export function createGuiPluginDefinitions(
   bootstrap: PluginBootstrap,
 ): readonly PluginDefinition[] {
-  return bootstrap.plugins.map(({ manifest, desiredState, rendererEntryUrl }) => ({
+  return bootstrap.plugins.map(({ manifest, desiredState, guiEntryUrl }) => ({
     manifest,
     desiredState,
     async createModules() {
-      if (!rendererEntryUrl) return []
-      const namespace: unknown = await import(/* @vite-ignore */ rendererEntryUrl)
+      if (!guiEntryUrl) return []
+      const namespace: unknown = await import(/* @vite-ignore */ guiEntryUrl)
       if (!namespace || typeof namespace !== 'object') {
-        throw new Error(`Invalid Renderer Plugin entry: ${manifest.id}`)
+        throw new Error(`Invalid GUI Plugin entry: ${manifest.id}`)
       }
-      const entrypoint = readPluginEntrypoint<RendererPluginContext>(
+      const entrypoint = readPluginEntrypoint<GuiPluginContext>(
         namespace as Record<string, unknown>,
       )
-      return entrypoint({ process: 'renderer', pluginId: manifest.id })
+      return entrypoint({ process: 'gui', pluginId: manifest.id })
     },
   }))
 }

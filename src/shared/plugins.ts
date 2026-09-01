@@ -3,11 +3,13 @@ import { z } from 'zod'
 import { pluginManifestSchema } from '../plugin/manifest.js'
 import { pluginDesiredStateSchema } from '../plugin/registry.js'
 
-export const pluginBootstrapEntrySchema = z.object({
-  manifest: pluginManifestSchema,
-  desiredState: pluginDesiredStateSchema,
-  rendererEntryUrl: z.string().min(1).nullable(),
-})
+export const pluginBootstrapEntrySchema = z
+  .object({
+    manifest: pluginManifestSchema,
+    desiredState: pluginDesiredStateSchema,
+    guiEntryUrl: z.string().min(1).nullable(),
+  })
+  .strict()
 
 export const pluginBootstrapSchema = z.object({
   safeMode: z.boolean(),

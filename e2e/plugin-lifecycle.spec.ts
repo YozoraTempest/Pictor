@@ -5,10 +5,10 @@ import { join, resolve } from 'node:path'
 import { defaultPluginProfile } from '../src/main/plugins/default-profile.js'
 import { PluginStore } from '../src/main/plugins/plugin-store.js'
 
-async function writeDevelopmentRendererPlugin(
+async function writeDevelopmentGuiPlugin(
   root: string,
   id: string,
-  rendererSource: string,
+  guiSource: string,
 ): Promise<void> {
   await mkdir(join(root, 'dist'), { recursive: true })
   await writeFile(
@@ -16,14 +16,14 @@ async function writeDevelopmentRendererPlugin(
     `${JSON.stringify({
       id,
       name: id,
-      version: '0.3.0',
-      description: 'E2E development renderer plugin',
-      engines: { pictor: '^0.3.0' },
+      version: '0.4.0',
+      description: 'E2E development GUI plugin',
+      engines: { pictor: '^0.4.0' },
       dependencies: {},
-      modules: { renderer: './dist/renderer.js' },
+      modules: { gui: './dist/gui.js' },
     })}\n`,
   )
-  await writeFile(join(root, 'dist', 'renderer.js'), rendererSource)
+  await writeFile(join(root, 'dist', 'gui.js'), guiSource)
 }
 
 async function initializePluginStore(userDataDirectory: string): Promise<PluginStore> {
@@ -46,11 +46,11 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
   const firstApp = await launch()
   try {
     const window = await firstApp.firstWindow()
-    const rendererErrors: string[] = []
+    const guiErrors: string[] = []
     window.on('console', (message) => {
-      if (message.type() === 'error') rendererErrors.push(message.text())
+      if (message.type() === 'error') guiErrors.push(message.text())
     })
-    window.on('pageerror', (error) => rendererErrors.push(error.message))
+    window.on('pageerror', (error) => guiErrors.push(error.message))
     await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
     await window.getByRole('button', { name: '设置' }).click()
     await window.getByRole('button', { name: 'Plugins' }).click()
@@ -59,7 +59,7 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
     })
     const updaterRow = window.locator('.plugin-row').filter({ hasText: 'pictor.updater' })
     await expect(updaterRow.getByText('运行中')).toBeVisible()
-    expect(rendererErrors).toEqual([])
+    expect(guiErrors).toEqual([])
     const commandTransport = await window.evaluate(async () => {
       const client = (
         globalThis as typeof globalThis & {
@@ -112,7 +112,7 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
       ]),
     )
     expect(commandTransport.events).toEqual(['started', 'completed'])
-    const rendererImport = await window.evaluate(async () => {
+    const guiImport = await window.evaluate(async () => {
       const bridge = (
         globalThis as typeof globalThis & {
           pictor: { getPluginBootstrap: () => Promise<unknown> }
@@ -120,12 +120,10 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
       ).pictor
       const bootstrap = (await bridge.getPluginBootstrap()) as {
         ok: boolean
-        value?: { plugins: Array<{ rendererEntryUrl: string | null }> }
+        value?: { plugins: Array<{ guiEntryUrl: string | null }> }
       }
-      const url = bootstrap.value?.plugins.find(
-        (plugin) => plugin.rendererEntryUrl,
-      )?.rendererEntryUrl
-      if (!url) return { ok: false, error: 'missing renderer URL' }
+      const url = bootstrap.value?.plugins.find((plugin) => plugin.guiEntryUrl)?.guiEntryUrl
+      if (!url) return { ok: false, error: 'missing GUI URL' }
       try {
         const namespace = await import(url)
         return { ok: true, keys: Object.keys(namespace) }
@@ -133,7 +131,7 @@ test('removes and restores the Bundled Updater through the Core Plugin Manager',
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
     })
-    expect(rendererImport).toEqual({ ok: true, keys: ['default'] })
+    expect(guiImport).toEqual({ ok: true, keys: ['default'] })
     await window.getByRole('button', { name: '关于' }).click()
     await expect(window.getByRole('heading', { name: '应用更新' })).toBeVisible()
     await window.getByRole('button', { name: 'Plugins' }).click()
@@ -185,7 +183,7 @@ test('starts the Pictor Shell with all Plugins ignored in safe mode', async ({
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
     await expect(window.getByText('安全模式已忽略全部 Plugin')).toBeVisible()
-    await expect(window.getByText('已禁用')).toHaveCount(7)
+    await expect(window.getByText('已禁用')).toHaveCount(8)
     await expect(window.getByText('app.doctor', { exact: true })).toBeVisible()
     await window.getByRole('button', { name: '应用诊断' }).click()
     await expect(window.getByRole('heading', { name: 'app.doctor' })).toBeVisible()
@@ -213,11 +211,15 @@ test('starts the Pictor Shell after every Bundled Plugin is removed', async ({
   try {
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
-    await expect(window.getByRole('button', { name: '恢复' })).toHaveCount(7)
+    await expect(window.getByRole('button', { name: '恢复' })).toHaveCount(8)
     const workspaceRow = window
       .locator('.pictor-shell__plugin-row')
       .filter({ hasText: 'pictor.agent-workspace' })
     await workspaceRow.getByRole('button', { name: '恢复' }).click()
+    const workbenchRow = window
+      .locator('.pictor-shell__plugin-row')
+      .filter({ hasText: 'pictor.workbench.delegate' })
+    await workbenchRow.getByRole('button', { name: '恢复' }).click()
     await expect(window.getByText('操作已记录；重启 Pictor 后生效。')).toBeVisible()
   } finally {
     await electronApp.close()
@@ -237,11 +239,11 @@ test('shows all Workbench owners in a conflict Shell and can disable the conflic
 }, testInfo) => {
   const userDataDirectory = testInfo.outputPath('conflict-user-data')
   const pluginRoot = testInfo.outputPath('conflict-plugin')
-  await writeDevelopmentRendererPlugin(
+  await writeDevelopmentGuiPlugin(
     pluginRoot,
     'pictor.conflict-workbench',
     `export default ({ pluginId }) => [{
-      id: 'pictor.conflict-workbench.renderer',
+      id: 'pictor.conflict-workbench.gui',
       activate(context) {
         context.contribute({ id: 'gui.workbenches' }, {
           id: 'conflict-workbench',
@@ -262,7 +264,7 @@ test('shows all Workbench owners in a conflict Shell and can disable the conflic
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
     await expect(window.getByText('Workbench 冲突')).toBeVisible()
-    await expect(window.getByText('agent-workspace', { exact: true })).toBeVisible()
+    await expect(window.getByText('delegate', { exact: true })).toBeVisible()
     await expect(window.getByText('conflict-workbench', { exact: true })).toBeVisible()
     const pluginList = window.locator('.pictor-shell__plugin-list')
     await expect(
@@ -284,17 +286,17 @@ test('shows all Workbench owners in a conflict Shell and can disable the conflic
   }
 })
 
-test('isolates a failed Renderer Plugin and enters Shell without a Workbench', async ({
+test('isolates a failed GUI Plugin and enters Shell without a Workbench', async ({
   browserName: _browserName,
 }, testInfo) => {
-  const userDataDirectory = testInfo.outputPath('failed-renderer-user-data')
-  const pluginRoot = testInfo.outputPath('failed-renderer-plugin')
-  await writeDevelopmentRendererPlugin(
+  const userDataDirectory = testInfo.outputPath('failed-gui-user-data')
+  const pluginRoot = testInfo.outputPath('failed-gui-plugin')
+  await writeDevelopmentGuiPlugin(
     pluginRoot,
-    'pictor.failed-renderer',
+    'pictor.failed-gui',
     `export default () => [{
-      id: 'pictor.failed-renderer.renderer',
-      activate() { throw new Error('temporary Renderer activation failed') }
+      id: 'pictor.failed-gui.gui',
+      activate() { throw new Error('temporary GUI activation failed') }
     }]\n`,
   )
   const store = await initializePluginStore(userDataDirectory)
@@ -311,13 +313,11 @@ test('isolates a failed Renderer Plugin and enters Shell without a Workbench', a
   try {
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
-    await expect(window.getByText('Renderer Plugin 加载失败', { exact: true })).toBeVisible()
+    await expect(window.getByText('GUI Plugin 加载失败', { exact: true })).toBeVisible()
     await expect(
-      window.locator('.pictor-shell__plugin-row').filter({ hasText: 'pictor.failed-renderer' }),
+      window.locator('.pictor-shell__plugin-row').filter({ hasText: 'pictor.failed-gui' }),
     ).toBeVisible()
-    await expect(
-      window.getByText('temporary Renderer activation failed', { exact: true }),
-    ).toBeVisible()
+    await expect(window.getByText('temporary GUI activation failed', { exact: true })).toBeVisible()
   } finally {
     await electronApp.close()
   }

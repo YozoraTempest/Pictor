@@ -1,12 +1,11 @@
-import type { CommandClient } from '../commands/index.js'
 import type {
-  ApplicationHostServices,
   FrontendLock,
   FrontendLockLease,
   ProfileLockConflict,
   ProfileLockOwner,
   UserData,
 } from '../application/index.js'
+import type { CommandClient } from '../commands/index.js'
 
 export interface CliWriter {
   write(content: string): unknown
@@ -36,7 +35,7 @@ export interface CliApplicationHostOptions {
 }
 
 export interface CliApplicationHost {
-  start(): Promise<Pick<ApplicationHostServices, 'commandClient'>>
+  start(): Promise<{ commandClient: CommandClient }>
   stop(): Promise<void>
 }
 

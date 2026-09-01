@@ -23,7 +23,7 @@ const roots: string[] = []
 
 const appInfo: AppInfo = appInfoSchema.parse({
   name: 'Pictor',
-  version: '0.3.0',
+  version: '0.4.0',
   buildChannel: 'development',
   sourceCommit: null,
   platform: 'linux',
@@ -94,7 +94,7 @@ async function createOptions(overrides: Partial<ApplicationHostOptions> = {}): P
     runtimeHost: runtime,
     eventPublisher,
     frontendLock,
-    createMainPluginDefinitions: () => [],
+    createHostPluginDefinitions: () => [],
     ...overrides,
   }
   await mkdir(bundledPluginsDirectory, { recursive: true })
@@ -114,20 +114,20 @@ describe('ApplicationHost', () => {
       events: {},
     })
     const { options } = await createOptions({
-      createMainPluginDefinitions: () => [
+      createHostPluginDefinitions: () => [
         {
           manifest: pluginManifestSchema.parse({
             id: 'pictor.test',
             name: 'Test',
-            version: '0.3.0',
-            engines: { pictor: '^0.3.0' },
+            version: '0.4.0',
+            engines: { pictor: '^0.4.0' },
             dependencies: {},
             modules: {},
           }),
           desiredState: 'enabled',
           createModules: () => [
             defineModule({
-              id: 'pictor.test.main',
+              id: 'pictor.test.host',
               activate(context) {
                 context.onDispose({ dispose: () => void events.push('stopped') })
                 context.contribute(
@@ -184,7 +184,7 @@ describe('ApplicationHost', () => {
 
   it('cleans up the lock and Runtime when Plugin assembly fails', async () => {
     const { options, release, runtime } = await createOptions({
-      createMainPluginDefinitions: () => {
+      createHostPluginDefinitions: () => {
         throw new Error('plugin assembly failed')
       },
     })

@@ -1,8 +1,8 @@
 # Pictor 0.4 多 Frontend 架构
 
 本文是 Pictor 0.4 重构的目标契约，也是 `ASTRA-47` 下各阶段的共同输入。它基于
-`develop@eaf04f6` 的 0.3.0 代码和验证结果；[`ARCHITECTURE.md`](ARCHITECTURE.md) 在迁移完成前仍是
-当前实现的说明。某一阶段只能把自己负责的目标变为“当前”，不得提前实现或假定后续阶段。
+`develop@eaf04f6` 的 0.3.0 代码和验证结果；[`ARCHITECTURE.md`](ARCHITECTURE.md) 记录已落地的
+当前实现。某一阶段只能把自己负责的目标变为“当前”，不得提前实现或假定后续阶段。
 
 ## 决策摘要
 
@@ -52,7 +52,7 @@ Runtime utility process ──────────────────�
 | Command Engine   | `list`、`execute`、`cancel`、`subscribe`                                     | 命令注册、输入校验、执行上下文、取消、进度、结构化结果和错误            | IPC、CLI 格式化、GUI 组件、TUI 组件              |
 | Plugin System    | 现有安装、Registry、依赖计划、进程级激活 Interface                           | Store、Bundled 恢复、SemVer、故障隔离、每 Plugin 的 Module Kernel       | 产品 UI 选择、命令语法、Agent 会话语义           |
 | Agent Workspace  | Project、Session、Settings、Runtime intent 与 event                          | `data-v1` 协调、Session 事务、Pi identity 与投影                        | 文件选择器、GUI modal、CLI/TUI 展示              |
-| GUI Host         | Workbench Contribution、Shell 状态和 Host 级 overlay                         | Renderer Plugin 装载、Workbench 选择、无插件和失败恢复                  | Delegate 工作台、图形 Plugin Manager、设置业务页 |
+| GUI Host         | Workbench Contribution、Shell 状态和 Host 级 overlay                         | GUI Plugin 装载、Workbench 选择、无插件和失败恢复                       | Delegate 工作台、图形 Plugin Manager、设置业务页 |
 | TUI Host         | TUI Application Contribution                                                 | terminal 生命周期、退出与终态恢复                                       | 第二套 Agent Runtime、Pi 子进程、GUI Bridge      |
 
 Interface 是调用者和测试共同跨越的 seam。Application Host 只从装配根接收 `RuntimeHost`、

@@ -48,7 +48,7 @@ type AgentWorkspaceRuntime = Pick<
   | 'clearQueue'
 >
 
-export interface AgentWorkspaceMainHost {
+export interface AgentWorkspaceHost {
   repository: AgentWorkspaceRepository
   runtime: AgentWorkspaceRuntime
   connectionTester: Pick<ModelConnectionTester, 'test' | 'listModels'>
@@ -61,10 +61,10 @@ function requireAbsolutePath(path: string, extension: '.jsonl' | '.html', messag
   return path
 }
 
-export function createAgentWorkspaceMainModule(host: AgentWorkspaceMainHost) {
+export function createAgentWorkspaceHostModule(host: AgentWorkspaceHost) {
   const { repository, runtime, connectionTester } = host
   return defineModule({
-    id: 'pictor.agent-workspace.main',
+    id: 'pictor.agent-workspace.host',
     activate(context) {
       context.contribute(
         moduleHandlerContributions,

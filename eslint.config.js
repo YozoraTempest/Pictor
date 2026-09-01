@@ -252,4 +252,64 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['plugins/workbench-delegate/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'electron',
+              message: 'Delegate Workbench must use the public GUI bridge.',
+            },
+          ],
+          patterns: [
+            {
+              group: [
+                'node:*',
+                '**/src/main/**',
+                '**/src/preload/**',
+                '**/src/renderer',
+                '**/src/renderer/**',
+                '**/src/runtime/**',
+              ],
+              message:
+                'Delegate Workbench must use public GUI and Headless contracts instead of process implementations.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['plugins/*/host.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'electron',
+              message: 'Plugin Host entries must stay independent from Electron.',
+            },
+            {
+              name: 'react',
+              message: 'Plugin Host entries must stay independent from React.',
+            },
+            {
+              name: 'react-dom',
+              message: 'Plugin Host entries must stay independent from React.',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/src/renderer/**', '**/src/preload/**'],
+              message: 'Plugin Host entries cannot depend on GUI process implementations.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 )

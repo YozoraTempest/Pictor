@@ -28,13 +28,13 @@ export interface ApplicationHostPluginContext {
   readonly runtime: RuntimeCoordinator
 }
 
-export type MainPluginDefinitionsFactory = (
+export type HostPluginDefinitionsFactory = (
   snapshot: PluginStoreSnapshot,
   appInfo: AppInfo,
   context: ApplicationHostPluginContext,
 ) => readonly PluginDefinition[] | Promise<readonly PluginDefinition[]>
 
-export type RendererPluginUrlResolver = (
+export type GuiPluginUrlResolver = (
   rootPath: string,
   id: string,
   version: string,
@@ -52,7 +52,7 @@ export interface ApplicationHostOptions {
   readonly pluginActivationMode?: 'full' | 'headless'
   readonly safeMode?: boolean
   readonly secretStore?: SecretStore
-  readonly createMainPluginDefinitions?: MainPluginDefinitionsFactory
+  readonly createHostPluginDefinitions?: HostPluginDefinitionsFactory
 }
 
 export interface ApplicationHostServices {
@@ -64,7 +64,7 @@ export interface ApplicationHostServices {
   readonly pluginManager: PluginManager
   readonly runtime: RuntimeCoordinator
   readonly moduleRouter: ModuleRouter
-  getPluginBootstrap(resolveRendererEntryUrl?: RendererPluginUrlResolver): Promise<PluginBootstrap>
+  getPluginBootstrap(resolveGuiEntryUrl?: GuiPluginUrlResolver): Promise<PluginBootstrap>
   restoreSelectedContext(): Promise<void>
 }
 
@@ -159,7 +159,7 @@ export class ApplicationHost {
       })
       this.pluginHost = pluginHost
 
-      const createDefinitions = this.options.createMainPluginDefinitions ?? emptyPluginDefinitions
+      const createDefinitions = this.options.createHostPluginDefinitions ?? emptyPluginDefinitions
       const definitions = await createDefinitions(
         pluginStoreSnapshot,
         this.options.appInfo,
@@ -172,6 +172,7 @@ export class ApplicationHost {
         this.options.safeMode ?? false,
         pluginStoreSnapshot.registry.entries,
         this.options.pluginActivationMode ?? 'full',
+        pluginStoreSnapshot.blockedPlugins,
       )
       const commandEngine = new CommandEngine(
         createCoreCommandDefinitions(this.options.appInfo, pluginManager),
@@ -197,7 +198,7 @@ export class ApplicationHost {
         return restoreSelectedContextPromise
       }
       const getPluginBootstrap = async (
-        resolveRendererEntryUrl: RendererPluginUrlResolver = () => null,
+        resolveGuiEntryUrl: GuiPluginUrlResolver = () => null,
       ): Promise<PluginBootstrap> => {
         const snapshot = await pluginStore.getSnapshot()
         return pluginBootstrapSchema.parse({
@@ -205,13 +206,8 @@ export class ApplicationHost {
           plugins: snapshot.plugins.map(({ entry, manifest, rootPath }) => ({
             manifest,
             desiredState: entry.desiredState,
-            rendererEntryUrl: manifest.modules.renderer
-              ? resolveRendererEntryUrl(
-                  rootPath,
-                  manifest.id,
-                  manifest.version,
-                  manifest.modules.renderer,
-                )
+            guiEntryUrl: manifest.modules.gui
+              ? resolveGuiEntryUrl(rootPath, manifest.id, manifest.version, manifest.modules.gui)
               : null,
           })),
         })

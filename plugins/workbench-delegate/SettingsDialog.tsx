@@ -15,14 +15,14 @@ import {
   modelSettingsInputSchema,
   type ConnectionTestResult,
   type ModelSettings,
-} from '../../shared/model.js'
-import type { CommandClient } from '../../commands/index.js'
-import type { GuiPluginPicker } from '../../shared/desktop-bridge.js'
-import type { PluginStatus } from '../../plugin/host.js'
-import { PluginManager } from '../../renderer/settings/PluginManager.js'
-import { Modal } from '../../renderer/ui/Modal.js'
-import type { SettingsSection } from '../shell/settings.js'
-import type { AgentWorkspaceClient } from './shared.js'
+} from '../../src/shared/model.js'
+import type { CommandClient } from '../../src/commands/index.js'
+import type { GuiPluginPicker } from '../../src/shared/desktop-bridge.js'
+import type { PluginStatus } from '../../src/plugin/host.js'
+import { PluginManager } from './PluginManager.js'
+import { Modal } from './Modal.js'
+import type { SettingsSection } from '../../src/modules/shell/settings.js'
+import type { AgentWorkspaceClient } from '../../src/modules/agent-workspace/shared.js'
 
 interface SettingsDialogProps {
   client: AgentWorkspaceClient
@@ -30,7 +30,7 @@ interface SettingsDialogProps {
   initial: ModelSettings | null
   pluginPicker: GuiPluginPicker
   sections: readonly SettingsSection[]
-  rendererPluginStatuses: readonly PluginStatus[]
+  guiPluginStatuses: readonly PluginStatus[]
   onClose: () => void
   onSaved: (settings: ModelSettings) => void
 }
@@ -65,7 +65,7 @@ export function SettingsDialog({
   initial,
   pluginPicker,
   sections,
-  rendererPluginStatuses,
+  guiPluginStatuses,
   onClose,
   onSaved,
 }: SettingsDialogProps): React.JSX.Element {
@@ -454,7 +454,7 @@ export function SettingsDialog({
         <PluginManager
           commandClient={commandClient}
           pluginPicker={pluginPicker}
-          rendererPluginStatuses={rendererPluginStatuses}
+          guiPluginStatuses={guiPluginStatuses}
         />
       ) : null}
       {sections.find((section) => section.id === activeTab)?.render() ?? null}

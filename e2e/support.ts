@@ -17,7 +17,7 @@ export const bridgeKeys = [
   'commands',
   'getAppInfo',
   'getPluginBootstrap',
-  'notifyRendererReady',
+  'notifyGuiReady',
   'pickPlugin',
   'pickProjectDirectory',
   'pickSessionImport',

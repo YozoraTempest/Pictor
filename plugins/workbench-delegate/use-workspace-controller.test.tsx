@@ -6,8 +6,13 @@ import type {
   SessionHistoryView,
   SessionRecord,
   SessionSummary,
-} from '../../shared/domain.js'
-import type { AgentWorkspaceFilePicker, AppSnapshot, IpcResult, RuntimeEvent } from './shared.js'
+} from '../../src/shared/domain.js'
+import type {
+  AgentWorkspaceFilePicker,
+  AppSnapshot,
+  IpcResult,
+  RuntimeEvent,
+} from '../../src/modules/agent-workspace/shared.js'
 import { useWorkspaceController, type WorkspaceBridge } from './use-workspace-controller.js'
 
 const projectId = '11111111-1111-4111-8111-111111111111'

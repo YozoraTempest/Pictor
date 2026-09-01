@@ -87,7 +87,7 @@ describe('GuiHostView', () => {
           commandClient={commandClient}
           pluginPicker={pluginPicker}
           settingsSections={[]}
-          rendererPluginStatuses={[]}
+          guiPluginStatuses={[]}
           workbenches={[broken]}
           safeMode={false}
         />,

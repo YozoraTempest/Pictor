@@ -1,14 +1,14 @@
 {
   "id": "pictor.updater",
   "name": "Updater",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Pictor release information and selectable Stable or Nightly update checks",
   "engines": {
-    "pictor": "^0.3.0"
+    "pictor": "^0.4.0"
   },
   "dependencies": {},
   "modules": {
-    "main": "./dist/main.js",
-    "renderer": "./dist/renderer.js"
+    "host": "./dist/host.js",
+    "gui": "./dist/gui.js"
   }
 }
