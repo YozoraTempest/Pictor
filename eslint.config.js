@@ -221,4 +221,35 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['src/gui/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'electron',
+              message: 'GUI Host capabilities must come from the desktop bridge.',
+            },
+          ],
+          patterns: [
+            {
+              group: [
+                'node:*',
+                '**/main/**',
+                '**/preload/**',
+                '**/renderer/settings/**',
+                '**/plugin/registry*',
+                '**/plugin-manager*',
+                '**/plugin-store*',
+              ],
+              message:
+                'GUI Host must use CommandClient and public GUI contracts instead of process or Plugin Manager implementations.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 )

@@ -118,7 +118,6 @@ function installBridge(bridge: PictorBridge): void {
 }
 
 function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
-  const manager = { safeMode: false, restartRequired: false, items: [], issues: [] }
   return {
     commands: {
       list: async () => [],
@@ -142,10 +141,7 @@ function createCoreBridge(overrides: Partial<PictorBridge> = {}): PictorBridge {
         distribution: 'windows',
       }),
     getPluginBootstrap: async () => ok({ safeMode: false, plugins: [] }),
-    installLocalPlugin: async () => ok(manager),
-    installDevelopmentPlugin: async () => ok(manager),
-    installPiExtension: async () => ok(manager),
-    installPiPackage: async () => ok(manager),
+    pickPlugin: async (source) => ok({ source, path: null }),
     pickProjectDirectory: async () => ok(null),
     pickSessionImport: async () => ok(null),
     pickSessionExport: async () => ok(null),
@@ -189,11 +185,14 @@ function renderApp(
   coreBridgeOverrides: Partial<PictorBridge> = {},
   filePicker: AgentWorkspaceFilePicker = createFilePicker(),
 ) {
-  installBridge(createCoreBridge(coreBridgeOverrides))
+  const coreBridge = createCoreBridge(coreBridgeOverrides)
+  installBridge(coreBridge)
   return render(
     <AgentWorkspace
       client={client}
+      commandClient={coreBridge.commands}
       filePicker={filePicker}
+      pluginPicker={coreBridge}
       settingsSections={[
         {
           id: 'about',

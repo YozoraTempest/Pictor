@@ -19,6 +19,8 @@
   "include": [
     "src/renderer/**/*.ts",
     "src/renderer/**/*.tsx",
+    "src/gui/**/*.ts",
+    "src/gui/**/*.tsx",
     "src/kernel/**/*.ts",
     "src/commands/contract.ts",
     "src/commands/index.ts",

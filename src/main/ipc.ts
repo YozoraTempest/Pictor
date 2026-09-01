@@ -2,26 +2,22 @@ import { extname } from 'node:path'
 
 import { dialog, ipcMain, type WebFrameMain } from 'electron'
 
-import { executeCommandAndWait, type CommandClient } from '../commands/index.js'
 import { readMessageImages } from '../modules/agent-workspace/file-operations.js'
-import { sessionExportPickerRequestSchema } from '../shared/desktop-bridge.js'
+import {
+  guiPluginPickerRequestSchema,
+  sessionExportPickerRequestSchema,
+  type GuiPluginSource,
+} from '../shared/desktop-bridge.js'
 import type { AppInfo } from '../shared/app-info.js'
 import { ipcResult } from '../shared/ipc-result.js'
-import {
-  pluginManagerSnapshotSchema,
-  type PluginBootstrap,
-  type PluginManagerSnapshot,
-} from '../shared/plugins.js'
+import type { PluginBootstrap } from '../shared/plugins.js'
 import type { Disposable } from '../kernel/module.js'
 
 const IPC_CHANNELS = [
   'app:renderer-ready',
   'app:get-info',
   'plugin:get-bootstrap',
-  'plugin:install-local',
-  'plugin:install-development',
-  'plugin:install-pi-extension',
-  'plugin:install-pi-package',
+  'plugin:pick',
   'workspace:pick-project-directory',
   'workspace:pick-session-import',
   'workspace:pick-session-export',
@@ -33,33 +29,10 @@ interface IpcDependencies {
   onRendererReady: () => Promise<void>
   appInfo: AppInfo
   getPluginBootstrap: () => Promise<PluginBootstrap>
-  pluginManager: PluginManagerSnapshotPort
-  commandClient: CommandClient
-}
-
-interface PluginManagerSnapshotPort {
-  getSnapshot(): Promise<PluginManagerSnapshot>
 }
 
 export function registerIpc(dependencies: IpcDependencies): Disposable {
-  const {
-    validateSender,
-    onRendererReady,
-    appInfo,
-    getPluginBootstrap,
-    pluginManager,
-    commandClient,
-  } = dependencies
-
-  const runPluginCommand = (commandId: string, input: unknown): Promise<PluginManagerSnapshot> => {
-    return executeCommandAndWait(
-      commandClient,
-      commandId,
-      input,
-      { frontend: 'gui' },
-      pluginManagerSnapshotSchema,
-    )
-  }
+  const { validateSender, onRendererReady, appInfo, getPluginBootstrap } = dependencies
 
   ipcMain.handle('app:renderer-ready', (event) => {
     validateSender(event.senderFrame)
@@ -79,56 +52,13 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
     return ipcResult(getPluginBootstrap)
   })
 
-  ipcMain.handle('plugin:install-local', (event) => {
+  ipcMain.handle('plugin:pick', (event, input: unknown) => {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
-      const selection = await dialog.showOpenDialog({
-        title: '选择 Pictor Plugin 目录',
-        properties: ['openDirectory'],
-      })
+      const request = guiPluginPickerRequestSchema.parse(input)
+      const selection = await dialog.showOpenDialog(pluginPickerOptions(request.source))
       const path = selection.filePaths[0]
-      if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return runPluginCommand('plugin.install', { source: 'local', path })
-    })
-  })
-
-  ipcMain.handle('plugin:install-development', (event) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      const selection = await dialog.showOpenDialog({
-        title: '选择 Local Development Plugin 目录',
-        properties: ['openDirectory'],
-      })
-      const path = selection.filePaths[0]
-      if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return runPluginCommand('plugin.install', { source: 'development', path })
-    })
-  })
-
-  ipcMain.handle('plugin:install-pi-extension', (event) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      const selection = await dialog.showOpenDialog({
-        title: '选择 Pi Extension 文件或目录',
-        properties: ['openFile', 'openDirectory'],
-        filters: [{ name: 'Pi Extension', extensions: ['ts', 'js'] }],
-      })
-      const path = selection.filePaths[0]
-      if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return runPluginCommand('plugin.install', { source: 'pi-extension', path })
-    })
-  })
-
-  ipcMain.handle('plugin:install-pi-package', (event) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      const selection = await dialog.showOpenDialog({
-        title: '选择 Pi Package 目录',
-        properties: ['openDirectory'],
-      })
-      const path = selection.filePaths[0]
-      if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return runPluginCommand('plugin.install', { source: 'pi-package', path })
+      return { source: request.source, path: selection.canceled || !path ? null : path }
     })
   })
 
@@ -193,5 +123,31 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
     dispose: () => {
       for (const channel of IPC_CHANNELS) ipcMain.removeHandler(channel)
     },
+  }
+}
+
+function pluginPickerOptions(source: GuiPluginSource): Electron.OpenDialogOptions {
+  switch (source) {
+    case 'local':
+      return {
+        title: '选择 Pictor Plugin 目录',
+        properties: ['openDirectory'],
+      }
+    case 'development':
+      return {
+        title: '选择 Local Development Plugin 目录',
+        properties: ['openDirectory'],
+      }
+    case 'pi-extension':
+      return {
+        title: '选择 Pi Extension 文件或目录',
+        properties: ['openFile', 'openDirectory'],
+        filters: [{ name: 'Pi Extension', extensions: ['ts', 'js'] }],
+      }
+    case 'pi-package':
+      return {
+        title: '选择 Pi Package 目录',
+        properties: ['openDirectory'],
+      }
   }
 }

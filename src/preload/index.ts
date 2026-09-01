@@ -29,8 +29,9 @@ import {
 } from '../kernel/contract.js'
 import {
   appInfoResultSchema,
+  guiPluginPickerRequestSchema,
+  guiPluginPickerResultSchema,
   pluginBootstrapResultSchema,
-  pluginManagerResultSchema,
   sessionExportPickerRequestSchema,
   voidResultSchema,
   workspaceFilePathResultSchema,
@@ -159,14 +160,10 @@ const bridge = Object.freeze({
   getAppInfo: async () => appInfoResultSchema.parse(await ipcRenderer.invoke('app:get-info')),
   getPluginBootstrap: async () =>
     pluginBootstrapResultSchema.parse(await ipcRenderer.invoke('plugin:get-bootstrap')),
-  installLocalPlugin: async () =>
-    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-local')),
-  installPiExtension: async () =>
-    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-pi-extension')),
-  installPiPackage: async () =>
-    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-pi-package')),
-  installDevelopmentPlugin: async () =>
-    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-development')),
+  pickPlugin: async (source) =>
+    guiPluginPickerResultSchema.parse(
+      await ipcRenderer.invoke('plugin:pick', guiPluginPickerRequestSchema.parse({ source })),
+    ),
   pickProjectDirectory: async () =>
     workspaceFilePathResultSchema.parse(
       await ipcRenderer.invoke('workspace:pick-project-directory'),

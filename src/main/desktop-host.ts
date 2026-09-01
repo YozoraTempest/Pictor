@@ -266,8 +266,6 @@ export class DesktopHost {
         onRendererReady: services.restoreSelectedContext,
         appInfo: services.appInfo,
         getPluginBootstrap: () => services.getPluginBootstrap(rendererPluginUrl),
-        pluginManager: services.pluginManager,
-        commandClient: services.commandClient,
       })
       session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
         callback(false)

@@ -34,6 +34,9 @@ vi.mock('electron', () => ({
 import './index.js'
 
 const client = (mocks.exposed.get('pictor') as { commands: CommandClient }).commands
+const bridge = mocks.exposed.get('pictor') as {
+  pickPlugin: (source: 'local' | 'development') => Promise<unknown>
+}
 const now = new Date().toISOString()
 let nextExecutionNumber = 1
 
@@ -157,5 +160,20 @@ describe('preload CommandClient adapter', () => {
 
     expect(events.map((event) => event.type)).toEqual(['started', 'cancelled'])
     release()
+  })
+})
+
+describe('preload GUI Plugin picker adapter', () => {
+  it('passes only the picker source to IPC and returns its selection', async () => {
+    mocks.invoke.mockResolvedValueOnce({
+      ok: true,
+      value: { source: 'development', path: '/workspace/development-plugin' },
+    })
+
+    await expect(bridge.pickPlugin('development')).resolves.toEqual({
+      ok: true,
+      value: { source: 'development', path: '/workspace/development-plugin' },
+    })
+    expect(mocks.invoke).toHaveBeenCalledWith('plugin:pick', { source: 'development' })
   })
 })
