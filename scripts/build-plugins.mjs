@@ -7,14 +7,16 @@ import {
   readdir,
   readFile,
   rm,
+  stat,
   writeFile,
 } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
+import process from 'node:process'
 
 import { build } from 'vite'
 
 const sourceRoot = resolve('plugins')
-const outputRoot = resolve('.pictor', 'bundled-plugins')
+const outputRoot = resolve(process.env.PICTOR_BUNDLED_PLUGINS_OUTPUT ?? '.pictor/bundled-plugins')
 const processNames = ['host', 'gui', 'tui', 'runtime']
 
 function bundledPiExtensionModules() {
@@ -140,6 +142,8 @@ for (const directory of directories.toSorted((left, right) =>
     const exists = await readdir(source).catch(() => null)
     if (exists) await cp(source, join(packageRoot, resourceDirectory), { recursive: true })
   }
+
+  await verifyBundledPackage(packageRoot, manifest)
 }
 
 async function sourceEntryPath(pluginRoot, processName, manifestPath) {
@@ -154,4 +158,20 @@ async function sourceEntryPath(pluginRoot, processName, manifestPath) {
       return candidate
   }
   throw new Error(`Missing ${processName} entry for ${manifestPath}`)
+}
+
+async function verifyBundledPackage(packageRoot, manifest) {
+  for (const legacyEntry of ['main.js', 'renderer.js']) {
+    const entryPath = join(packageRoot, 'dist', legacyEntry)
+    if (await stat(entryPath).catch(() => null))
+      throw new Error(`Bundled Plugin contains a legacy dist entry: ${entryPath}`)
+  }
+  for (const [processName, manifestEntry] of Object.entries(manifest.modules ?? {})) {
+    if (typeof manifestEntry !== 'string') {
+      throw new Error(`Invalid ${processName} entry in ${join(packageRoot, 'manifest.json')}`)
+    }
+    const entryPath = join(packageRoot, manifestEntry)
+    const entryStat = await stat(entryPath).catch(() => null)
+    if (!entryStat?.isFile()) throw new Error(`Missing Bundled Plugin entry: ${entryPath}`)
+  }
 }

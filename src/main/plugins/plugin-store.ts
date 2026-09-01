@@ -123,13 +123,11 @@ export class PluginStore {
         source: { kind: 'bundled', reference: bundled.manifest.id },
         desiredState: existing?.kind === 'pictor-plugin' ? existing.desiredState : 'enabled',
       }
-      if (existing?.kind === 'pictor-plugin' && existing.version !== entry.version) {
-        this.issues.push({
-          source: bundled.rootPath,
-          message: `Installed Plugin ${existing.id}@${existing.version} is retained; install or restore ${existing.id}@${entry.version} explicitly to apply the 0.4 package.`,
-        })
+      if (
+        existing?.kind === 'pictor-plugin' &&
+        (await this.hasLegacyManifest(this.packagePath(existing)))
+      )
         continue
-      }
       const installed = await this.isPackageInstalled(entry)
       if (existing?.kind !== 'pictor-plugin' || existing.version !== entry.version || !installed) {
         try {
@@ -460,10 +458,19 @@ export class PluginStore {
       return {
         kind: 'blocked',
         reason:
-          'Installed Plugin uses the 0.3 Manifest (main/renderer); Pictor 0.4 blocks it without migration. Install a 0.4 package with explicit host/gui entries or restore its bundled 0.4 package.',
+          'Installed Plugin uses the legacy main/renderer Manifest; this Pictor version blocks it without migration. Install a package with explicit host/gui entries or restore the current bundled package.',
       }
     }
     throw parsed.error
+  }
+
+  private async hasLegacyManifest(rootPath: string): Promise<boolean> {
+    try {
+      const source = JSON.parse(await readFile(join(rootPath, MANIFEST_FILE), 'utf8')) as unknown
+      return isLegacyManifest(source)
+    } catch {
+      return false
+    }
   }
 
   private async copyPackage(sourcePath: string, entry: InstalledPictorPlugin): Promise<void> {

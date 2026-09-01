@@ -151,6 +151,41 @@ describe('PluginStore', () => {
     ).resolves.toContain('updated')
   })
 
+  it('updates a current Bundled Plugin version while preserving state and data', async () => {
+    const fixture = await createStoreFixture()
+    const bundledPlugin = join(fixture.bundled, 'example')
+    await writePlugin(bundledPlugin, 'pictor.example', '0.4.0')
+    const options = {
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    }
+    const firstStore = new PluginStore(options)
+    await firstStore.initialize()
+    const dataPath = join(fixture.userData, 'plugin-data', 'pictor.example')
+    await mkdir(dataPath, { recursive: true })
+    await writeFile(join(dataPath, 'state.json'), '{"keep":true}\n')
+    await firstStore.setEnabled('pictor.example', false)
+
+    await writePlugin(bundledPlugin, 'pictor.example', '0.4.1')
+    const restartedStore = new PluginStore(options)
+    await restartedStore.initialize()
+    const snapshot = await restartedStore.getSnapshot()
+
+    expect(snapshot.registry.entries).toEqual([
+      expect.objectContaining({
+        id: 'pictor.example',
+        version: '0.4.1',
+        desiredState: 'disabled',
+      }),
+    ])
+    expect(snapshot.issues).toEqual([])
+    expect(snapshot.plugins[0]).toMatchObject({
+      manifest: { id: 'pictor.example', version: '0.4.1' },
+      rootPath: join(fixture.userData, 'plugins', 'pictor.example', '0.4.1'),
+    })
+    await expect(readFile(join(dataPath, 'state.json'), 'utf8')).resolves.toBe('{"keep":true}\n')
+  })
+
   it('retains an installed 0.3 Plugin and blocks it without rewriting registry or data', async () => {
     const fixture = await createStoreFixture()
     await writePlugin(join(fixture.bundled, 'legacy'), 'pictor.legacy', '0.4.0')
@@ -203,7 +238,7 @@ describe('PluginStore', () => {
     })
     expect(snapshot.issues).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ message: expect.stringContaining('0.3') }),
+        expect.objectContaining({ message: expect.stringContaining('main/renderer') }),
       ]),
     )
     await expect(readFile(join(fixture.userData, 'plugin-registry.json'), 'utf8')).resolves.toBe(
