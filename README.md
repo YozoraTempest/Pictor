@@ -121,6 +121,19 @@ npm run dev
 设置 `PICTOR_PLUGIN_PROFILE=developer` 使用 Developer Profile；Plugin Manager 可以登记 live source
 Development Plugin，修改其已构建入口后重启 Pictor 即可生效，不需要重新打包 Pictor。
 
+Stage 5 的开发 CLI 不需要 Electron runtime。安装依赖后可直接构建并运行系统 Node 入口：
+
+```bash
+npm run build:cli
+node out/cli/src/cli/entry.js --help
+npm run cli -- --json doctor
+```
+
+CLI 默认使用与开发 GUI 相同的 `pictor-dev` user-data/profile；开发或测试时可用
+`--user-data-dir <path>` 指定目录。除 `help` 和 `version` 外的命令会获取共享 Profile 单写锁，
+支持 `doctor`、`plugin` 生命周期命令和映射到 `plugin.*` 的 `ui` 命令。JSON 模式只在 stdout 写入
+一个 JSON 文档，退出码为成功 `0`、失败 `1`、用法错误 `2`、Profile 冲突 `4`、取消 `130`。
+
 首次启动后，在“设置 > 模型”中完成以下配置，再添加本地项目并创建 Session：
 
 - 选择 **Chat Completions** 或 **Responses**。API Base URL 填 API 根地址，例如

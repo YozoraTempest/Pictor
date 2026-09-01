@@ -17,6 +17,7 @@ Updater 是首个真实 Bundled Plugin。尚未迁移的业务能力仍按纵向
 src/
 ├── application/ 无 Frontend 依赖的 Application Host、生命周期端口和服务装配
 ├── commands/   Headless Command Engine、稳定 Client contract 和 Core commands
+├── cli/        无 Electron 的 Node CLI Frontend、参数/输出/退出语义和 Headless adapters
 ├── kernel/     纯 TypeScript Module 生命周期、Token、Contribution 和 Contract Router
 ├── plugin/     Manifest、Registry、Plugin 依赖规划和进程级 Plugin Host
 ├── modules/    按 Feature 聚合的新代码及 Main/Renderer/Runtime 入口
@@ -37,6 +38,12 @@ React、TUI、Renderer 或 Preload 实现；它在获得 `FrontendLock` 后初�
 并通过 `RuntimeHost`、`EventPublisher`、`UserData` 和 `AppInfo` 端口连接 Frontend。Plugin Module
 定义由 Composition root 提供，使纯 Node 测试可以使用不依赖 Electron 的定义。
 
+`src/cli` 是 Stage 5 的 Node Frontend。`runCli(args, deps)` 只负责参数解析、Command Client 路由、
+text/JSON 输出、SIGINT 取消和退出码；Profile 锁、Host 工厂、IO 与信号均通过依赖注入。Node 装配
+使用 `HeadlessRuntimeHost` 和 `EventPublisher`，不加载 Electron，也不激活 GUI/Electron Plugin
+入口；Runtime-only 操作返回明确的不可用错误。`ProfileFileLock` 由 CLI 和 DesktopHost 共同使用，
+以 user-data/profile 路径为锁身份，并以原子文件创建和 owner token 证明释放权限。
+
 `commands` 是当前 Stage 4 已落地的 Headless Command Engine 边界。它只向调用者提供不可变的
 `CommandClient`（`list`、`execute`、`cancel`、`subscribe`）以及可序列化的 descriptor、event、
 result 和 error；registry、handler、调用上下文的权限判定和 `AbortSignal` 均为 Engine 内部实现。
@@ -49,7 +56,8 @@ execution identity 重放，取消和晚到完成只允许一个终态。
 `src/main/desktop-host.ts` 是当前 GUI 的 DesktopHost 适配器。它创建 Electron `RuntimeSupervisor`、
 safeStorage-backed `SecretStore`、`AppInfo` 和 Frontend lock，注册 App protocol、IPC、窗口与退出
 流程，再把这些端口交给 Application Host；`src/main/index.ts` 只负责 Electron scheme、sandbox、
-开发环境 userData 设置和 DesktopHost 装配。
+开发环境 userData 设置和 DesktopHost 装配。DesktopHost 的 Frontend lock 先获取 Electron 应用级
+single-instance lock，再获取共享 `ProfileFileLock`；释放时按相反顺序执行。
 
 `kernel` 不依赖 Electron、React、Pi 或业务模型。它只按 Token 依赖排序并激活一个 Plugin 在
 当前进程中的 Module，保存 Provider，收集 Contribution，并在关闭时逆序释放 Disposable。
@@ -84,6 +92,7 @@ interface 保持可见且范围明确。
 
 ```text
 Renderer -> Desktop bridge / Module contract / CommandClient -> Preload adapter -> IPC -> DesktopHost
+CLI -> Application Host ports -> Command Client
 DesktopHost -> Application Host ports -> RuntimeCoordinator / PluginHost / Repository
 Application Host -> Command Engine -> Core commands / Plugin command contributions
 Application Host -> RuntimeHost -> RuntimeSupervisor -> Runtime protocol -> Runtime Plugin Host

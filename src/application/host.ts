@@ -49,6 +49,7 @@ export interface ApplicationHostOptions {
   readonly eventPublisher: EventPublisher
   readonly frontendLock: FrontendLock
   readonly profile?: PluginProfile
+  readonly pluginActivationMode?: 'full' | 'headless'
   readonly safeMode?: boolean
   readonly secretStore?: SecretStore
   readonly createMainPluginDefinitions?: MainPluginDefinitionsFactory
@@ -170,6 +171,7 @@ export class ApplicationHost {
         statuses,
         this.options.safeMode ?? false,
         pluginStoreSnapshot.registry.entries,
+        this.options.pluginActivationMode ?? 'full',
       )
       const commandEngine = new CommandEngine(
         createCoreCommandDefinitions(this.options.appInfo, pluginManager),

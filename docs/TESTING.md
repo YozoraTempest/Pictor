@@ -35,6 +35,7 @@ Windows E2E 默认隐藏窗口；本地 Linux E2E 使用 `showInactive()` 显示
 | Module 测试    | `npm run test:module -- <name>`                     | 单个 Feature 目录                             | 对应 Feature 开发循环           |
 | Plugin 测试    | `npm run test:plugin -- <name>`                     | 单个 Plugin 或 `host` 底座                    | Plugin 开发循环                 |
 | 单元测试       | `npm run test:unit`                                 | 纯函数、组件、服务边界                        | 开发循环、每个 PR               |
+| CLI 测试       | `npx vitest run src/cli`                            | Node CLI 路由、text/JSON、取消、Profile 锁    | Stage 5 开发循环、每个 PR       |
 | 集成测试       | `npm run test:integration`                          | Pi adapter 与运行时协议集成                   | 修改运行时边界时、每个 PR       |
 | Vitest 全量    | `npm test`                                          | 单元与集成测试一次完成                        | 本地提交前、每个 PR             |
 | E2E Smoke      | `npm run test:e2e:smoke:run`                        | 桌面启动、Chat 委托闭环                       | Linux PR，复用 `out/`           |
@@ -58,6 +59,10 @@ npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台�
 ## 用例放置
 
 - 与实现同层的 `*.test.ts(x)` 默认属于单元测试。
+- CLI 测试调用 `runCli` 的公开 Interface，注入 IO、信号、Profile lock 和 Application Host 工厂；
+  必须覆盖 help/version 不启动 Host、text/JSON 成功与失败、参数错误、Command failure、`ui` 别名、
+  SIGINT 取消和稳定退出码。Profile lock 测试使用两个独立锁实例或子进程验证真实争用、owner 元数据、
+  释放和无法证明所有权时不删除现有锁；CLI 源码不得静态导入 Electron。
 - Kernel 测试通过公开 Interface 验证依赖排序、Provider、Contribution 和逆序释放；Feature 测试
   通过 Module Interface 或 contract router 验证，不读取 Kernel 内部状态。
 - Plugin 测试通过 Manifest、Registry、依赖规划、Plugin Host 或 Plugin Store 的公开 Interface

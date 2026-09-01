@@ -13,6 +13,7 @@ export class PluginManager {
     statuses: readonly PluginStatus[],
     private readonly safeMode: boolean,
     startupEntries: readonly InstalledExtension[],
+    private readonly activationMode: 'full' | 'headless' = 'full',
   ) {
     this.startupStatuses = new Map(statuses.map((status) => [status.id, status]))
     this.startupDesiredStates = new Map(
@@ -56,9 +57,7 @@ export class PluginManager {
 
       const installed = packages.get(entry.id)
       const startup = this.startupStatuses.get(entry.id)
-      const pending =
-        (!startup && entry.desiredState !== 'removed') ||
-        (startup !== undefined && startup.desiredState !== entry.desiredState)
+      const pending = this.isPending(entry, startup)
       restartRequired ||= pending
       return {
         kind: entry.kind,
@@ -69,8 +68,18 @@ export class PluginManager {
         desiredState: entry.desiredState,
         effectiveState: pending
           ? ('pending-restart' as const)
-          : (startup?.effectiveState ?? 'disabled'),
-        reason: pending ? 'Restart Pictor to apply this change' : (startup?.reason ?? null),
+          : this.safeMode && entry.desiredState === 'enabled'
+            ? ('disabled' as const)
+            : this.activationMode === 'headless' && entry.desiredState === 'enabled'
+              ? ('blocked' as const)
+              : (startup?.effectiveState ?? 'disabled'),
+        reason: pending
+          ? 'Restart Pictor to apply this change'
+          : this.safeMode && entry.desiredState === 'enabled'
+            ? 'Safe mode ignores all Plugins'
+            : this.activationMode === 'headless' && entry.desiredState === 'enabled'
+              ? 'CLI does not load GUI Plugin Modules'
+              : (startup?.reason ?? null),
         canRestore: entry.source.kind === 'bundled' && entry.desiredState === 'removed',
       }
     })
@@ -131,5 +140,18 @@ export class PluginManager {
   async restoreBundled(id: string): Promise<PluginManagerSnapshot> {
     await this.store.restoreBundled(id)
     return this.getSnapshot()
+  }
+
+  private isPending(entry: InstalledExtension, startup: PluginStatus | undefined): boolean {
+    if (this.activationMode === 'headless') {
+      const initialDesired = this.startupDesiredStates.get(`${entry.kind}:${entry.id}`)
+      return initialDesired === undefined
+        ? entry.desiredState !== 'removed'
+        : initialDesired !== entry.desiredState
+    }
+    return (
+      (!startup && entry.desiredState !== 'removed') ||
+      (startup !== undefined && startup.desiredState !== entry.desiredState)
+    )
   }
 }
