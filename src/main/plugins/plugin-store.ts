@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { cp, copyFile, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
+import process from 'node:process'
 
 import { z } from 'zod'
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent'
@@ -87,6 +88,7 @@ export class PluginStore {
   }
 
   async initialize(): Promise<void> {
+    startupDiagnostic('Plugin Store preparing directories')
     await Promise.all([
       mkdir(this.pluginsDirectory, { recursive: true }),
       mkdir(this.pluginDataDirectory, { recursive: true }),
@@ -98,7 +100,9 @@ export class PluginStore {
     this.issues = []
 
     let registryChanged = false
+    startupDiagnostic('Plugin Store discovering bundled plugins')
     const bundledPlugins = await this.discoverBundledPlugins()
+    startupDiagnostic(`Plugin Store discovered ${bundledPlugins.length} bundled plugins`)
     const selected = this.options.profile
       ? new Set(
           resolvePluginProfile(
@@ -131,6 +135,7 @@ export class PluginStore {
       const installed = await this.isPackageInstalled(entry)
       if (existing?.kind !== 'pictor-plugin' || existing.version !== entry.version || !installed) {
         try {
+          startupDiagnostic(`Plugin Store copying ${entry.id}`)
           await this.copyPackage(bundled.rootPath, entry)
           if (entryIndex >= 0) this.registry.entries[entryIndex] = entry
           else this.registry.entries.push(entry)
@@ -143,6 +148,7 @@ export class PluginStore {
 
     if (registryChanged) await this.persistRegistry()
     this.initialized = true
+    startupDiagnostic('Plugin Store initialized')
   }
 
   async getSnapshot(): Promise<PluginStoreSnapshot> {
@@ -552,6 +558,10 @@ export class PluginStore {
   private errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
   }
+}
+
+function startupDiagnostic(message: string): void {
+  if (process.env.PICTOR_STARTUP_DIAGNOSTICS === '1') console.error(`[pictor startup] ${message}`)
 }
 
 function isLegacyManifest(value: unknown): boolean {

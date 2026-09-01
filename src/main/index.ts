@@ -17,6 +17,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 app.enableSandbox()
+startupDiagnostic('main entry')
 
 const developmentData = developmentUserDataPath(
   app.getPath('appData'),
@@ -35,13 +36,20 @@ if (isRejectedPackagedNodeEntry()) {
 
   void app
     .whenReady()
-    .then(() => desktopHost.start())
+    .then(() => {
+      startupDiagnostic('Electron ready')
+      return desktopHost.start()
+    })
     .catch((error: unknown) => {
       console.error('Failed to start Desktop Host', error)
       app.quit()
     })
 
   app.on('window-all-closed', () => app.quit())
+}
+
+function startupDiagnostic(message: string): void {
+  if (process.env.PICTOR_STARTUP_DIAGNOSTICS === '1') console.error(`[pictor startup] ${message}`)
 }
 
 function isRejectedPackagedNodeEntry(): boolean {
