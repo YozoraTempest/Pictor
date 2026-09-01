@@ -54,13 +54,7 @@ jobs:
             case "$path" in
               .github/workflows/*.yml) workflow_changed=true; package_changed=true ;;
               electron.vite.config.ts | plugins/* | src/cli/* | src/node/* | src/tui/*) package_changed=true; app_changed=true ;;
-              package.json | package-lock.json |
-              packaging/* | scripts/after-pack.mjs | scripts/build-distribution.mjs |
-              scripts/distribution-contract.mjs | scripts/electron-fuses*.mjs |
-              scripts/launcher-contract.test.mjs | scripts/linux-after-*.sh |
-              scripts/linux-launch-readiness* | scripts/packaged-gui.mjs |
-              scripts/build-cli.mjs | scripts/build-plugins.mjs | scripts/build-tui.mjs |
-              scripts/verify-*.mjs) package_changed=true ;;
+              package.json|package-lock.json|packaging/*|scripts/after-pack.mjs|scripts/build-distribution.mjs|scripts/distribution-contract.mjs|scripts/electron-fuses*.mjs|scripts/launcher-contract.test.mjs|scripts/linux-after-*.sh|scripts/linux-launch-readiness*|scripts/packaged-gui.mjs|scripts/build-cli.mjs|scripts/build-plugins.mjs|scripts/build-tui.mjs|scripts/verify-*.mjs) package_changed=true ;;
               *.md | docs/* | .github/ISSUE_TEMPLATE/* | .github/PULL_REQUEST_TEMPLATE*) ;;
               *) app_changed=true ;;
             esac
