@@ -119,7 +119,7 @@ if (
 
 const archiveEntries = new Set(
   listPackage(artifacts.applicationArchive, { isPack: false }).map((entry) =>
-    entry.replace(/^\/+/, '').replace(/\/$/, ''),
+    entry.replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/$/, ''),
   ),
 )
 for (const entry of APP_ASAR_FRONTEND_ENTRIES) {

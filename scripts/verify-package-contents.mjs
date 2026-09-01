@@ -8,7 +8,7 @@ import { APP_ASAR_FRONTEND_ENTRIES, BUNDLED_PLUGIN_IDS } from './distribution-co
 export async function verifyApplicationArchive(archivePath, expectedVersion, label) {
   const entries = new Set(
     listPackage(archivePath, { isPack: false }).map((entry) =>
-      entry.replace(/^\/+/, '').replace(/\/$/, ''),
+      entry.replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/$/, ''),
     ),
   )
   for (const entry of APP_ASAR_FRONTEND_ENTRIES) {
