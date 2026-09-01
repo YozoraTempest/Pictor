@@ -9,14 +9,20 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
   const windowsBatchLauncher =
     process.platform === 'win32' && executablePath.toLowerCase().endsWith('.cmd')
   const command = windowsBatchLauncher ? (process.env.ComSpec ?? 'cmd.exe') : executablePath
+  const packagedGuiArguments = [
+    `--remote-debugging-port=${port}`,
+    '--no-sandbox',
+    ...(process.platform === 'win32' ? ['--disable-gpu'] : []),
+    ...arguments_,
+  ]
   const commandArguments = windowsBatchLauncher
     ? [
         '/d',
         '/s',
         '/c',
-        `call ${quoteForCmd(executablePath)} ${quoteForCmd(`--remote-debugging-port=${port}`)} ${quoteForCmd('--no-sandbox')} ${arguments_.map(quoteForCmd).join(' ')}`,
+        `call ${quoteForCmd(executablePath)} ${packagedGuiArguments.map(quoteForCmd).join(' ')}`,
       ]
-    : [`--remote-debugging-port=${port}`, '--no-sandbox', ...arguments_]
+    : packagedGuiArguments
   const child = spawn(command, commandArguments, {
     cwd: options.cwd,
     shell: windowsBatchLauncher ? false : (options.shell ?? false),
