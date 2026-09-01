@@ -1,10 +1,10 @@
 # 当前代码架构
 
-> 本文记录 `develop` 上运行的 0.4 Stage 9 架构。完整目标、兼容性边界和后续阶段门禁见
+> 本文记录 `develop` 上运行的 0.4 Stage 10 当前架构。完整目标、兼容性边界和阶段门禁见
 > [`MULTI_FRONTEND_ARCHITECTURE.md`](MULTI_FRONTEND_ARCHITECTURE.md)。GUI Plugin Manager、Updater、
 > Git Changes 和 Delegate Workbench 的产品 GUI 均由各自 Plugin 拥有；Core GUI 只保留 Host、Shell、
 > 诊断、公开 contract、bootstrap 与宿主样式。Node TUI Host、TUI Contribution 和 Delegate TUI
-> 已在 Stage 9 落地；Stage 10 才处理三种桌面包的多入口打包。
+> 已在 Stage 9 落地；Stage 10 现在也固定了三种桌面包的 distribution build、入口和发行门禁。
 
 本文描述 Pictor 当前已经实现的代码结构和依赖规则。Application Host 已从 Electron Main 的启动链
 路中提取，DesktopHost 是它的 Electron 适配器；GUI Renderer 由 `src/gui` 的 GUI Host 装配，
@@ -85,6 +85,55 @@ Bundled 恢复源和独立数据目录。第一版按重启应用生效，不实
 
 `e2e/` 保存 Electron 用户场景，`scripts/` 保存构建和发布验证，`tests/` 只保存 Vitest 全局
 测试基础设施。这些工程文件不属于应用源码，不迁入 `src/`。
+
+## Stage 10 distribution 与 Frontend launcher
+
+`npm run build:distribution` 是所有发布包的唯一前置构建。它从仓库根目录清理 `out/` 和本地
+`.pictor/bundled-plugins/`，依次构建 10 个 Bundled Plugin、`out/cli`、`out/tui` 和 Electron
+GUI，然后写入 `out/package-identity.json` 并验证完整产物。`build:app`、`build:cli`、`build:tui`
+仍保留为开发兼容 leaf command；`package:*`、Nightly 和 Release 不直接消费它们的部分结果，
+只消费完整 distribution build，因此 `app.asar` 中的 GUI Main/Renderer、CLI、TUI 与版本一致的
+10 个 Plugin source 是同一构建快照。
+
+发布包的运行时布局是：
+
+```text
+Linux Pacman: /opt/Pictor/pictor       POSIX launcher
+              /opt/Pictor/pictor-gui  Electron 43 x64 ELF
+              /opt/Pictor/resources/app.asar + bundled-plugins/
+              /usr/bin/pictor         post-install 精确 symlink -> /opt/Pictor/pictor
+AppImage:     AppRun -> $APPDIR/pictor -> $APPDIR/pictor-gui
+Windows:      bin/pictor.cmd          console launcher -> Pictor.exe
+              Pictor.exe              Electron 43 x64 PE
+```
+
+三个入口的公开语义固定为 `pictor`（GUI）、`pictor cli ...` 和 `pictor tui ...`。POSIX launcher
+从自身或 `$APPDIR` 推导资源路径，先校验 `app.asar` 与 `resources/bundled-plugins`，GUI 清除继承
+的 `ELECTRON_RUN_AS_NODE`，CLI/TUI 才显式设置它并执行包内固定 JS entry。Windows 的 `bin` launcher
+同样清除或设置该变量；NSIS 桌面/开始菜单快捷方式指向该 launcher，不修改用户 `PATH`，避免
+`Pictor.exe` 与 `pictor` 的 `PATHEXT` 混淆。Node adapter 只在开发模式允许 cwd；打包模式必须由
+launcher 提供 `PICTOR_PACKAGE_ROOT`、`PICTOR_BUNDLED_PLUGINS_DIRECTORY` 和构建 identity，
+不会读取 cwd 的 `package.json`/`.pictor` 或静默创建空 Profile。
+
+### Electron 43 Fuse policy
+
+`package.json` 的 `electronFuses` 与 `scripts/electron-fuses.mjs` 共同维护 V1 wire policy：
+`runAsNode`、Cookie encryption、embedded ASAR integrity validation、`onlyLoadAppFromAsar` 开启；
+`enableNodeOptionsEnvironmentVariable`、Node CLI inspect、process-specific V8 snapshot 和
+`grantFileProtocolExtraPrivileges` 关闭。构建后 `@electron/fuses.getCurrentFuseWire` 在 Windows
+PE 和 Linux ELF 上逐项断言；`package:verify:fuses` 还会复制 GUI binary、关闭 `runAsNode` 并证明
+该副本不能执行 CLI entry。`runAsNode` 保持 enabled 是为了不依赖系统 Node 的 CLI/TUI 例外；
+launcher 限制正常入口，但不构成沙箱，也不能消除该 fuse 扩大的本地代码执行面。依据和变量语义
+见 [Electron Fuses](https://www.electronjs.org/docs/latest/tutorial/fuses) 与
+[`ELECTRON_RUN_AS_NODE`](https://www.electronjs.org/docs/latest/api/environment-variables/#electron_run_as_node)。
+
+### Profile 与 recovery
+
+GUI、CLI、TUI 都通过 `ApplicationHost` 获取同一个 `ProfileFileLock`。CLI/TUI 在冲突时稳定返回
+退出码 `4`，持锁 Frontend 退出后锁可由下一个 Frontend 获取。Workbench 的 remove/disable 由
+packaged CLI 用户入口执行；GUI 随后只进入 Core Pictor Shell，Shell 通过 bundled source 恢复
+Workbench，重启后回到 Delegate 且 Project/Session/Pi JSONL 数据不变。`verify-profile-lock.mjs`
+和 `verify-packaged-plugin-recovery.mjs` 是包级真实 smoke，不直接改 Store。
 
 ## 共享协议
 

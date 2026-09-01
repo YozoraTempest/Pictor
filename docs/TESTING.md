@@ -29,36 +29,82 @@ Windows E2E 默认隐藏窗口；本地 Linux E2E 使用 `showInactive()` 显示
 
 ## 测试分层
 
-| 层级           | 命令                                                                                 | 覆盖范围                                             | 运行时机                        |
-| -------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------- |
-| 静态检查       | `npm run check:format`、`check:types`、`check:lint`                                  | 格式、类型、Lint                                     | 本地提交前、每个 PR             |
-| Module 测试    | `npm run test:module -- <name>`                                                      | 单个 Feature 目录                                    | 对应 Feature 开发循环           |
-| Plugin 测试    | `npm run test:plugin -- <name>`                                                      | 单个 Plugin 或 `host` 底座                           | Plugin 开发循环                 |
-| 单元测试       | `npm run test:unit`                                                                  | 纯函数、组件、服务边界                               | 开发循环、每个 PR               |
-| CLI 测试       | `npx vitest run src/cli`                                                             | Node CLI 路由、text/JSON、取消、Profile 锁           | Stage 5 开发循环、每个 PR       |
-| TUI 测试       | `npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs` | Host 生命周期、fake terminal、JSONL、Plugin boundary | Stage 9 开发循环、每个 PR       |
-| 集成测试       | `npm run test:integration`                                                           | Pi adapter 与运行时协议集成                          | 修改运行时边界时、每个 PR       |
-| Vitest 全量    | `npm test`                                                                           | 单元与集成测试一次完成                               | 本地提交前、每个 PR             |
-| E2E Smoke      | `npm run test:e2e:smoke:run`                                                         | 桌面启动、Chat 委托闭环                              | Linux PR，复用 `out/`           |
-| Windows Shell  | `npm run test:e2e:run -- e2e/shell.spec.ts`                                          | Main/Preload/Renderer、Bridge、沙箱与基础界面        | Windows 应用改动 CI             |
-| E2E Full       | `npm run test:e2e:run`                                                               | 全部桌面用户场景                                     | `develop`、正式发布、本地发布前 |
-| Windows 包验证 | `npm run package:verify:windows`                                                     | NSIS、ASAR、x64 PE                                   | 正式发布、本地发布前            |
-| Linux 包验证   | `npm run package:verify:linux`                                                       | Pacman/AppImage、桌面入口、ASAR、x64 ELF             | Nightly、正式发布、本地发布前   |
-| Linux 包启动   | `npm run package:verify:linux:launch`                                                | 打包后 Main、Preload、Renderer 终态与平台信息        | Nightly、正式发布、桌面验收     |
+| 层级            | 命令                                                                                 | 覆盖范围                                             | 运行时机                        |
+| --------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------- |
+| 静态检查        | `npm run check:format`、`check:types`、`check:lint`                                  | 格式、类型、Lint                                     | 本地提交前、每个 PR             |
+| Module 测试     | `npm run test:module -- <name>`                                                      | 单个 Feature 目录                                    | 对应 Feature 开发循环           |
+| Plugin 测试     | `npm run test:plugin -- <name>`                                                      | 单个 Plugin 或 `host` 底座                           | Plugin 开发循环                 |
+| 单元测试        | `npm run test:unit`                                                                  | 纯函数、组件、服务边界                               | 开发循环、每个 PR               |
+| CLI 测试        | `npx vitest run src/cli`                                                             | Node CLI 路由、text/JSON、取消、Profile 锁           | Stage 5 开发循环、每个 PR       |
+| TUI 测试        | `npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs` | Host 生命周期、fake terminal、JSONL、Plugin boundary | Stage 9 开发循环、每个 PR       |
+| 集成测试        | `npm run test:integration`                                                           | Pi adapter 与运行时协议集成                          | 修改运行时边界时、每个 PR       |
+| Vitest 全量     | `npm test`                                                                           | 单元与集成测试一次完成                               | 本地提交前、每个 PR             |
+| E2E Smoke       | `npm run test:e2e:smoke:run`                                                         | 桌面启动、Chat 委托闭环                              | Linux PR，复用 `out/`           |
+| Windows Shell   | `npm run test:e2e:run -- e2e/shell.spec.ts`                                          | Main/Preload/Renderer、Bridge、沙箱与基础界面        | Windows 应用改动 CI             |
+| E2E Full        | `npm run test:e2e:run`                                                               | 全部桌面用户场景                                     | `develop`、正式发布、本地发布前 |
+| Windows 包验证  | `npm run package:verify:windows`                                                     | NSIS、ASAR、x64 PE、快捷方式                         | Windows package acceptance      |
+| Linux 包验证    | `npm run package:verify:linux`                                                       | Pacman/AppImage、桌面入口、ASAR、x64 ELF、fuse wire  | Linux package acceptance        |
+| Fuse 验证       | `npm run package:verify:fuses`                                                       | Windows/Linux 实际 V1 fuse wire 与 runAsNode 探针    | 每次目标包构建                  |
+| Linux 包启动    | `npm run package:verify:linux:launch`                                                | 解包/AppImage GUI、CLI、TUI、cwd/空格/无 Node PATH   | Linux package acceptance        |
+| Profile lock    | `npm run package:verify:profile`                                                     | GUI/CLI/TUI 冲突、退出后重新获取                     | 每次目标包构建                  |
+| Plugin recovery | `npm run package:verify:recovery`                                                    | packaged CLI 移除、Shell 恢复、数据保留              | 每次目标包构建                  |
+| Windows 安装    | `npm run package:verify:windows:install`                                             | NSIS 安装/快捷方式/CLI/TUI/卸载及用户数据保留        | Windows package acceptance      |
 
 聚合命令：
 
 ```bash
 npm run verify:fast     # 静态检查 + Vitest 全量
-npm run verify:pr       # verify:fast + 一次构建 + E2E Smoke
-npm run verify:release  # verify:fast + 一次构建 + E2E Full + 当前平台打包校验
+npm run verify:pr       # verify:fast + 一次 distribution build + E2E Smoke
+npm run verify:release  # verify:fast + 一次 distribution build + E2E Full + 当前平台完整包 smoke
 ```
 
 `*:run` 是只消费已有产物的叶子命令，不负责构建。`test:e2e`、`test:e2e:smoke`、`package`
 等便捷命令会自行构建，适合独立调用。聚合命令必须调用叶子命令，避免重复构建或重复测试。
 
-`verify:fast` 和 `verify:pr` 的静态检查包含 `tsconfig.tui.json`；聚合验证还会执行
-`npm run build:tui`，以确认 TUI Node 入口和 Bundled Plugin 都能从干净产物启动。
+`verify:fast` 只执行静态检查和 Vitest，不构建桌面包。`verify:pr` 的 `build:distribution` 清理后
+一次构建 GUI、CLI、TUI 和 10 个 Bundled Plugins，再运行已有 E2E Smoke。`verify:release` 在
+同一个 distribution snapshot 上运行 Full E2E 和当前平台包验证：Linux 还直接执行解包应用与
+AppImage，验证 GUI/CLI/TUI、Profile lock、Workbench recovery 和 fuse；Windows 还执行 NSIS
+安装/卸载生命周期。它不会伪造另一平台或净机证据。
+
+### Stage 10 发行包 smoke
+
+所有 `package:*` 发布构建都从 `npm run build:distribution` 开始；它清理 `out/` 与 Bundled source，
+因此不能单独运行 `build:app` 后打包。`package:verify:*` 叶子命令消费已有包，不会重建 GUI。
+Linux launch smoke 会从带空格的 AppImage 路径和任意 cwd 启动，并把 `PATH` 限制为基础 POSIX
+工具；CLI/TUI 仍成功时证明不调用系统 `node`。Windows 使用安装目录的 `bin\pictor.cmd`，不
+假设全局 `pictor` 或修改用户 `PATH`。
+
+Fuse smoke 用 `@electron/fuses.getCurrentFuseWire` 读取真实 Windows PE/Linux ELF，而不是只读
+`package.json`。它检查 `runAsNode` 保持 enabled、Node options/inspect 与 file extra privileges
+disabled、`onlyLoadAppFromAsar` enabled，并在复制 binary 上关闭 `runAsNode` 后确认 CLI entry
+不会成功执行。该模式依赖 Electron 43 的 package-time fuse API；launcher 是入口约束，不是安全
+沙箱。
+
+Profile/recovery smoke 通过真实 packaged GUI 和 packaged CLI 用户入口操作，不直接修改 Store：
+GUI 持锁时 CLI/TUI 稳定返回 `4`，GUI 退出后下一个 Frontend 获取锁；CLI 移除 Workbench 后 GUI
+进入 Pictor Shell，Shell 展示 10 个 recovery source，用户恢复并重启后回到 Delegate，Project、
+Session 和 Pi JSONL identity 保留。
+
+### 本地与 CI 证据
+
+本地 Stage 10 最低命令为：
+
+```bash
+npm run check:format
+npm run check:types
+npm run check:lint
+npm test
+npm run build:distribution
+npm run verify:pr
+npm run verify:release
+git diff --check
+```
+
+Windows NSIS/安装卸载、Arch 容器内 pacman 生命周期，以及 hosted Ubuntu 的 AppImage/Xvfb 环境
+只能由 `package-desktop.yml` 的 Windows/Linux jobs 提供；本地 Linux 的结构与 AppImage smoke
+不替代这些证据。Nightly/Release 固定 source SHA、version、channel 后复用同一个 workflow，所有
+Frontend/package gate 成功后才由唯一 publish job 生成原有三个资产和 `SHA256SUMS`。
 
 ## 用例放置
 
@@ -207,15 +253,19 @@ Arch 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electro
 `Changes` job 使用 Pull Request 的三点 Diff 或 `develop` push 的两点 Diff 分类改动。只修改
 Markdown 或 `.github/workflows/*.yml` 时，Quality 执行格式检查，并在工作流变化时执行固定版本且
 校验摘要的 `actionlint`；Unit、Windows 和 Linux job 保留原 required check 名称但跳过应用步骤。
-分类失败会由四项 required checks 显式失败，不能形成绕过路径。
+分类失败会由四项 required checks 显式失败，不能形成绕过路径。触及
+`package.json`、electron-vite、packaging、distribution/launcher/fuse/package 验证脚本、CLI/TUI
+或 workflow 的改动还会设置 `package_changed`，条件启动 `Package acceptance (changed packaging
+surface)`。
 
 包含应用改动时，PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和
 `Linux acceptance` 四项必需检查。Quality 与全量 Vitest 在 Linux 运行，以覆盖大小写敏感文件系统
 及全部 POSIX 用例；Windows acceptance 构建应用并执行 `shell.spec.ts`，验证真实 Electron 的
 Main、Preload、Renderer、Bridge 暴露、沙箱和基础界面；Linux acceptance 构建应用并执行 E2E
-Smoke，不重复 Vitest，也不构建发行包。应用改动推送 `develop` 时仅 Linux 执行 E2E Full；发布
-资产构建、AppImage/Pacman 结构校验、AppImage 启动和 Arch 容器包生命周期由 Nightly 与正式
-Release 负责。原生 niri 桌面证据仍在发布前由 Arch 工作站补充。
+Smoke，不重复 Vitest。`package_changed` PR 额外在唯一 reusable workflow 中执行完整
+distribution build、NSIS/Pacman/AppImage 结构与入口 smoke、Fuse wire、Profile lock、Workbench
+recovery 和安装生命周期；普通小改动不构建发行包。应用改动推送 `develop` 时仅 Linux 执行 E2E
+Full；正式发布资产由 Nightly 与 Release 负责。原生 niri 桌面证据仍在发布前由 Arch 工作站补充。
 
 包含 `package.json` 或 `package-lock.json` 版本变化的合并进入 `main` 后，Release 调用与 Nightly
 共用的桌面打包工作流。Windows 生成并执行 NSIS/PE 结构校验；Linux 先执行完整源码验证，再生成
@@ -231,8 +281,8 @@ SHA 必须已有完成且成功的 `develop` push CI；缺少、运行中或失�
 源码 CI 已负责应用改动的静态检查、Vitest 和完整 E2E，因此 Nightly 不重复 `verify:fast` 或 E2E。
 Nightly 与 Release 通过 `package-desktop.yml` 的小接口传入固定源码 SHA、版本、artifact 前缀和是否
 执行发布复验；调用方还必须显式传入 `stable` 或 `nightly` 构建通道，打包应用把通道与固定源码
-SHA 暴露为只读构建身份。其余跨平台构建、结构校验、AppImage 启动与 Arch 容器生命周期集中在该
-工作流内。
+SHA 暴露为只读构建身份。其余跨平台 distribution 构建、结构/launcher/fuse 校验、GUI/CLI/TUI
+启动、Profile/recovery、AppImage 启动与 Arch 容器生命周期集中在该工作流内。
 各平台只把中间 workflow artifact 保留一天；全部平台成功后，唯一具有 `contents: write` 权限的
 publish job 才生成 `SHA256SUMS`，重建滚动的 `nightly` GitHub Pre-release。Nightly 不设为 Latest，
 不属于正式发布或支持基线。

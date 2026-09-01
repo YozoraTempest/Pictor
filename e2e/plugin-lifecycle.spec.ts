@@ -186,7 +186,7 @@ test('starts the Pictor Shell with all Plugins ignored in safe mode', async ({
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
     await expect(window.getByText('安全模式已忽略全部 Plugin')).toBeVisible()
-    await expect(window.getByText('已禁用')).toHaveCount(9)
+    await expect(window.getByText('已禁用')).toHaveCount(10)
     await expect(window.getByText('app.doctor', { exact: true })).toBeVisible()
     await window.getByRole('button', { name: '应用诊断' }).click()
     await expect(window.getByRole('heading', { name: 'app.doctor' })).toBeVisible()
@@ -326,7 +326,7 @@ test('starts the Pictor Shell after every Bundled Plugin is removed', async ({
   try {
     const window = await electronApp.firstWindow()
     await expect(window.getByRole('heading', { name: 'Pictor Shell' })).toBeVisible()
-    await expect(window.getByRole('button', { name: '恢复' })).toHaveCount(9)
+    await expect(window.getByRole('button', { name: '恢复' })).toHaveCount(10)
     const workspaceRow = window
       .locator('.pictor-shell__plugin-row')
       .filter({ hasText: 'pictor.agent-workspace' })

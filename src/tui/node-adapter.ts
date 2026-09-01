@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 
 import {
   ApplicationHost,
@@ -19,6 +18,7 @@ import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
 import type { UpdaterHostAdapter } from '../modules/updater/host.js'
 import { appInfoSchema, type AppInfo } from '../shared/app-info.js'
 import { PictorError } from '../shared/errors.js'
+import { resolveFrontendIdentity } from '../node/frontend-identity.js'
 import { InProcessRuntimeHost } from './runtime-host.js'
 import { resolveUserDataDirectory } from '../application/user-data.js'
 import type { TuiDependencies } from './run.js'
@@ -47,27 +47,34 @@ export function createNodeTuiDependencies(
   options: Omit<TuiNodeAdapterOptions, 'emit' | 'requestSessionReplacement'> = {},
 ): TuiDependencies {
   const environment = options.environment ?? process.env
-  const projectRoot = options.projectRoot ?? process.cwd()
-  const version =
-    options.version ?? environment.npm_package_version ?? readPackageVersion(projectRoot)
+  const identity = resolveFrontendIdentity({
+    environment,
+    ...(options.version ? { version: options.version } : {}),
+    ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
+    ...(options.bundledPluginsDirectory
+      ? { bundledPluginsDirectory: options.bundledPluginsDirectory }
+      : {}),
+  })
   const platform = options.platform ?? process.platform
   const homeDirectory = options.homeDirectory ?? homedir()
 
   return {
     io: { stdout: process.stdout, stderr: process.stderr },
-    version,
+    version: identity.version,
     resolveUserDataDirectory: (explicitDirectory) =>
       resolveTuiUserDataDirectory(explicitDirectory, {
         platform,
         homeDirectory,
         environment,
+        ...(identity.packaged ? { applicationName: 'pictor' } : {}),
       }),
     createProfileLock: createTuiProfileLock,
     createApplication: (hostOptions, context) =>
       createTuiNodeApplication(hostOptions, {
         ...options,
-        version,
-        projectRoot,
+        version: identity.version,
+        projectRoot: identity.packageRoot,
+        bundledPluginsDirectory: identity.bundledPluginsDirectory,
         environment,
         emit: context.emit,
         requestSessionReplacement: context.requestSessionReplacement,
@@ -107,27 +114,45 @@ async function createApplication(
   adapter: TuiNodeAdapterOptions,
 ): Promise<TuiNodeApplication> {
   const projectRoot = adapter.projectRoot ?? process.cwd()
-  const version =
-    adapter.version ?? adapter.environment?.npm_package_version ?? readPackageVersion(projectRoot)
+  const identity = resolveFrontendIdentity({
+    ...(adapter.version ? { version: adapter.version } : {}),
+    projectRoot,
+    ...(adapter.bundledPluginsDirectory
+      ? { bundledPluginsDirectory: adapter.bundledPluginsDirectory }
+      : {}),
+    ...(adapter.environment ? { environment: adapter.environment } : {}),
+  })
   const platform = adapter.platform ?? process.platform
   const configuredProfile =
     options.pluginProfile ??
     (adapter.environment?.PICTOR_PLUGIN_PROFILE === 'developer' ? 'developer' : 'default')
   const profile = configuredProfile === 'developer' ? developerPluginProfile : defaultPluginProfile
-  const bundledPluginsDirectory =
-    adapter.bundledPluginsDirectory ?? resolve(projectRoot, '.pictor', 'bundled-plugins')
-  const appInfo = createTuiAppInfo(version, platform)
+  const appInfo = createTuiAppInfo(
+    identity.version,
+    platform,
+    identity.buildChannel,
+    identity.sourceCommit,
+  )
   const runtimeHost = new InProcessRuntimeHost({
     emit: adapter.emit,
     ...(adapter.requestSessionReplacement
       ? { requestSessionReplacement: adapter.requestSessionReplacement }
       : {}),
   })
-  const useProfile = await hasCompleteBundledProfile(bundledPluginsDirectory, profile.plugins)
+  const useProfile = await hasCompleteBundledProfile(
+    identity.bundledPluginsDirectory,
+    profile.plugins,
+  )
+  if (identity.packaged && !useProfile) {
+    throw new PictorError(
+      'internal',
+      `Packaged Bundled Plugin profile is incomplete: ${identity.bundledPluginsDirectory}`,
+    )
+  }
   const applicationOptions: ApplicationHostOptions = {
     userData: options.userData,
     appInfo,
-    bundledPluginsDirectory,
+    bundledPluginsDirectory: identity.bundledPluginsDirectory,
     runtimeHost,
     eventPublisher: createHeadlessEventPublisher(),
     frontendLock: options.frontendLock,
@@ -177,15 +202,20 @@ async function hasCompleteBundledProfile(
   return manifests.every(Boolean)
 }
 
-function createTuiAppInfo(version: string, platform: NodeJS.Platform): AppInfo {
+function createTuiAppInfo(
+  version: string,
+  platform: NodeJS.Platform,
+  buildChannel: AppInfo['buildChannel'],
+  sourceCommit: AppInfo['sourceCommit'],
+): AppInfo {
   if (process.arch !== 'x64') {
     throw new Error(`TUI 仅支持 x64，当前架构为 ${process.arch}`)
   }
   return appInfoSchema.parse({
     name: 'Pictor',
     version,
-    buildChannel: 'development',
-    sourceCommit: null,
+    buildChannel,
+    sourceCommit,
     platform: platform === 'win32' ? 'win32' : 'linux',
     arch: 'x64',
     distribution: platform === 'win32' ? 'windows' : 'unsupported-linux',
@@ -194,20 +224,4 @@ function createTuiAppInfo(version: string, platform: NodeJS.Platform): AppInfo {
 
 function createHeadlessEventPublisher(): EventPublisher {
   return { publish: () => undefined }
-}
-
-function readPackageVersion(projectRoot: string): string {
-  const packageJson: unknown = JSON.parse(
-    readFileSync(resolve(projectRoot, 'package.json'), 'utf8'),
-  )
-  if (
-    !packageJson ||
-    typeof packageJson !== 'object' ||
-    !('version' in packageJson) ||
-    typeof packageJson.version !== 'string' ||
-    !packageJson.version
-  ) {
-    throw new PictorError('internal', 'package.json 缺少有效 version')
-  }
-  return packageJson.version
 }

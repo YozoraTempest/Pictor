@@ -6,7 +6,7 @@ export interface CliHelpDocument {
 }
 
 export const CLI_HELP: CliHelpDocument = Object.freeze({
-  usage: 'pictor [options] <command>',
+  usage: 'pictor cli [options] <command>',
   options: Object.freeze([
     '--json, --output <format>      输出 text 或一个 JSON 文档',
     '--user-data-dir <path>         使用指定的 user-data/profile 目录',

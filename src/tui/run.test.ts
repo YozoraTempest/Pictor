@@ -62,7 +62,7 @@ it('keeps help/version pure and maps a real Profile conflict to a stable exit co
     exitCode: TUI_EXIT_CODES.success,
   })
   expect(help.start).not.toHaveBeenCalled()
-  expect(help.stdout.join('')).toContain('pictor-tui')
+  expect(help.stdout.join('')).toContain('pictor tui')
 
   const conflict: ProfileLockConflict = {
     lockPath: '/tmp/pictor-tui/.pictor-profile.lock',

@@ -21,6 +21,7 @@
     "src/commands/**/*.ts",
     "src/cli/**/*.ts",
     "src/tui/**/*.ts",
+    "src/node/**/*.ts",
     "src/plugin/**/*.ts",
     "src/modules/**/shared.ts",
     "src/modules/**/host.ts",

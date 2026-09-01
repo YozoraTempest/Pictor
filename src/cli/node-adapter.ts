@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 
 import {
   ApplicationHost,
@@ -17,6 +16,7 @@ import { appInfoSchema, type AppInfo } from '../shared/app-info.js'
 import { PictorError } from '../shared/errors.js'
 import { defaultPluginProfile, developerPluginProfile } from '../main/plugins/default-profile.js'
 import { detectDesktopDistribution } from '../main/linux-distribution.js'
+import { resolveFrontendIdentity } from '../node/frontend-identity.js'
 
 import { HeadlessRuntimeHost } from './headless-runtime.js'
 import { resolveCliUserDataDirectory } from './profile.js'
@@ -34,28 +34,36 @@ export interface NodeCliAdapterOptions {
 
 export function createNodeCliDependencies(options: NodeCliAdapterOptions = {}): CliDependencies {
   const environment = options.environment ?? process.env
-  const projectRoot = options.projectRoot ?? process.cwd()
-  const version =
-    options.version ?? environment.npm_package_version ?? readPackageVersion(projectRoot)
+  const identity = resolveFrontendIdentity({
+    environment,
+    ...(options.version ? { version: options.version } : {}),
+    ...(options.projectRoot ? { projectRoot: options.projectRoot } : {}),
+    ...(options.bundledPluginsDirectory
+      ? { bundledPluginsDirectory: options.bundledPluginsDirectory }
+      : {}),
+  })
   const platform = options.platform ?? process.platform
   const homeDirectory = options.homeDirectory ?? homedir()
 
   return {
     io: { stdout: process.stdout, stderr: process.stderr },
-    version,
+    version: identity.version,
     resolveUserDataDirectory: (explicitDirectory) =>
       resolveCliUserDataDirectory(explicitDirectory, {
         platform,
         homeDirectory,
         environment,
+        ...(identity.packaged ? { applicationName: 'pictor' } : {}),
       }),
     createProfileLock: (profilePath) => new ProfileFileLock(profilePath, { frontend: 'cli' }),
     createApplicationHost: (hostOptions) =>
       createNodeApplicationHost(hostOptions, {
-        version,
+        version: identity.version,
+        buildChannel: identity.buildChannel,
+        sourceCommit: identity.sourceCommit,
         platform,
-        projectRoot,
-        bundledPluginsDirectory: options.bundledPluginsDirectory,
+        bundledPluginsDirectory: identity.bundledPluginsDirectory,
+        packaged: identity.packaged,
         environment,
       }),
     signals: {
@@ -69,25 +77,39 @@ async function createNodeApplicationHost(
   options: CliApplicationHostOptions,
   adapter: {
     version: string
+    buildChannel: AppInfo['buildChannel']
+    sourceCommit: AppInfo['sourceCommit']
     platform: NodeJS.Platform
-    projectRoot: string
-    bundledPluginsDirectory: string | undefined
+    bundledPluginsDirectory: string
+    packaged: boolean
     environment: NodeJS.ProcessEnv
   },
 ): Promise<ApplicationHost> {
-  const appInfo = await createNodeAppInfo(adapter.version, adapter.platform)
+  const appInfo = await createNodeAppInfo(
+    adapter.version,
+    adapter.platform,
+    adapter.buildChannel,
+    adapter.sourceCommit,
+  )
   const configuredProfile =
     options.pluginProfile ??
     (adapter.environment.PICTOR_PLUGIN_PROFILE === 'developer' ? 'developer' : 'default')
   const profile = configuredProfile === 'developer' ? developerPluginProfile : defaultPluginProfile
-  const bundledPluginsDirectory =
-    adapter.bundledPluginsDirectory ?? resolve(adapter.projectRoot, '.pictor', 'bundled-plugins')
-  const useProfile = await hasCompleteBundledProfile(bundledPluginsDirectory, profile.plugins)
+  const useProfile = await hasCompleteBundledProfile(
+    adapter.bundledPluginsDirectory,
+    profile.plugins,
+  )
+  if (adapter.packaged && !useProfile) {
+    throw new PictorError(
+      'internal',
+      `Packaged Bundled Plugin profile is incomplete: ${adapter.bundledPluginsDirectory}`,
+    )
+  }
 
   return new ApplicationHost({
     userData: options.userData,
     appInfo,
-    bundledPluginsDirectory,
+    bundledPluginsDirectory: adapter.bundledPluginsDirectory,
     runtimeHost: new HeadlessRuntimeHost(),
     eventPublisher: createHeadlessEventPublisher(),
     frontendLock: options.frontendLock,
@@ -132,7 +154,12 @@ async function hasCompleteBundledProfile(
   return manifests.every(Boolean)
 }
 
-async function createNodeAppInfo(version: string, platform: NodeJS.Platform): Promise<AppInfo> {
+async function createNodeAppInfo(
+  version: string,
+  platform: NodeJS.Platform,
+  buildChannel: AppInfo['buildChannel'],
+  sourceCommit: AppInfo['sourceCommit'],
+): Promise<AppInfo> {
   if (process.arch !== 'x64') {
     throw new Error(`CLI 仅支持 x64，当前架构为 ${process.arch}`)
   }
@@ -141,8 +168,8 @@ async function createNodeAppInfo(version: string, platform: NodeJS.Platform): Pr
   return appInfoSchema.parse({
     name: 'Pictor',
     version,
-    buildChannel: 'development',
-    sourceCommit: null,
+    buildChannel,
+    sourceCommit,
     platform: appPlatform,
     arch: 'x64',
     distribution,
@@ -151,20 +178,4 @@ async function createNodeAppInfo(version: string, platform: NodeJS.Platform): Pr
 
 function createHeadlessEventPublisher(): EventPublisher {
   return { publish: () => undefined }
-}
-
-function readPackageVersion(projectRoot: string): string {
-  const packageJson: unknown = JSON.parse(
-    readFileSync(resolve(projectRoot, 'package.json'), 'utf8'),
-  )
-  if (
-    !packageJson ||
-    typeof packageJson !== 'object' ||
-    !('version' in packageJson) ||
-    typeof packageJson.version !== 'string' ||
-    !packageJson.version
-  ) {
-    throw new Error('package.json 缺少有效 version')
-  }
-  return packageJson.version
 }

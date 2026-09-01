@@ -33,23 +33,44 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 ## 持续集成
 
 - `Changes` job 先按改动路径分类。只修改 Markdown 或工作流时，保留格式与 `actionlint` 等控制面
-  检查，跳过 Vitest、跨平台构建和 E2E；任一其他路径都按应用改动执行完整 PR 门禁。
-- 包含应用改动且指向 `develop` 或 `main` 的 Pull Request：在 Linux 并行执行格式、类型、lint、
-  全量 Vitest 和桌面 Smoke；Windows acceptance 构建应用并执行确定性的桌面 Shell Smoke。PR 不
-  构建发行包。
+  检查，跳过 Vitest、跨平台构建和 E2E；应用或 Frontend 改动按完整 PR 门禁执行。
+- 普通应用 Pull Request：在 Linux 并行执行格式、类型、lint、全量 Vitest 和桌面 Smoke；Windows
+  acceptance 构建应用并执行确定性的桌面 Shell Smoke。普通小改动不构建发行包。
+- 触及 `package.json`、electron-vite、packaging、distribution/launcher/fuse/package 验证脚本、
+  CLI/TUI 或工作流的 Pull Request：额外条件触发唯一的 `package-desktop.yml` reusable workflow，
+  在 Windows/Linux 构建完整 distribution 后执行 NSIS、Pacman、AppImage 结构、实际 launcher、
+  Fuse、GUI、Profile lock、Workbench recovery 和可安全自动化的安装生命周期。该条件门禁避免把
+  三包构建无条件塞入每个普通 PR，也避免发布流程重新实现一套打包逻辑。
 - 从 `develop` 或 `hotfix/*` 指向 `main` 的发布 Pull Request：额外校验版本一致性、发布说明和
   版本标签可用性。
 - 从 `ci/*` 指向 `main` 的非发布 Pull Request：只允许修改 `.github/workflows/*.yml`、根
   `README.md`、`CONTRIBUTING.md`、`docs/PROJECT_MANAGEMENT.md` 和 `docs/TESTING.md`；不执行
   发布元数据校验，也不得成为普通功能或文档变更绕过 `develop` 的入口。
-- 应用改动合并进入 `develop`：在上述检查之外仅由 Linux 执行全部桌面 E2E。发布资产构建、结构校验、
-  AppImage 启动和 Arch 包生命周期由 Nightly 与正式 Release 负责，不在源码 CI 中重复执行。
+- 应用改动合并进入 `develop`：在上述检查之外仅由 Linux 执行全部桌面 E2E。未触及打包面的提交
+  不构建发行资产；发布资产构建、结构校验、AppImage 启动和 Arch 包生命周期由 Nightly 与正式
+  Release 负责。打包面 PR 的条件 workflow 使用同一套发行实现并提供该 PR 的完整包证据。
 - 纯文档或控制面合并只运行路径分类、格式与工作流检查，为该固定提交产生 Nightly 可消费的绿色
   CI 结果。
 - CI 失败时不得合并。测试失败证据保留七天。
 
 必需检查为 `Quality`、`Unit and integration`、`Windows acceptance` 和独立的
-`Linux acceptance`。`main` 与 `develop` 均禁止强推和删除，并要求通过 Pull Request 合并。
+`Linux acceptance`。涉及打包面的 PR 另外必须通过 `Package acceptance (changed packaging surface)`；
+`main` 与 `develop` 均禁止强推和删除，并要求通过 Pull Request 合并。
+
+### Stage 10 打包门禁
+
+`npm run build:distribution` 是唯一完整发行前置：从干净 `out/`/Bundled source 构建 GUI、CLI、TUI
+和正好 10 个 0.4 Bundled Plugins，再进入 electron-builder。`package:*`、Nightly 和 Release 不
+允许只运行 `build:app`，也不允许把旧的 `out/cli` 或 `out/tui` 混入新 GUI。`package-desktop.yml`
+接收固定 source SHA、version、artifact prefix、channel 和 release-only validation 开关，Windows
+和 Linux job 共享同一个构建/验证实现。
+
+包级门禁区分真实对象：Windows 检查 x64 PE `Pictor.exe`、`bin\pictor.cmd`、NSIS 快捷方式和安装
+卸载；Pacman 检查 `/opt/Pictor/pictor-gui` ELF、`/opt/Pictor/pictor` launcher、`/usr/bin/pictor`
+安装脚本和原生生命周期；AppImage 检查 `AppRun -> $APPDIR/pictor`、GUI ELF 和任意 cwd/空格路径
+启动。三个入口统一为 `pictor`、`pictor cli ...`、`pictor tui ...`，发布包 CLI/TUI 不依赖系统
+Node。Electron 43 V1 fuse wire 必须与显式配置一致，`runAsNode` enabled 是该取舍而非默认继承；
+wrapper 不是沙箱，风险和验证见 `docs/MULTI_FRONTEND_ARCHITECTURE.md`。
 
 ### Nightly
 
@@ -58,9 +79,10 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 更旧提交。现有 `nightly` 标签已指向该提交时跳过定时重建；维护者可以手动启用 `force` 输入重新
 打包同一绿色提交，但不能绕过源码 CI 门禁。
 
-Nightly 不重复源码 CI 已完成的 `verify:fast` 或完整 E2E，通过与正式 Release 共用的桌面打包工作流
-在只读权限的 Windows 与 Linux job 中构建应用，并执行 NSIS/Pacman/AppImage 结构校验、AppImage
-启动和 Arch 包生命周期等产物验收。
+Nightly 不重复源码 CI 已完成的 `verify:fast` 或完整 E2E，通过与正式 Release 共用的
+`package-desktop.yml` 在只读权限的 Windows 与 Linux job 中构建完整 Frontend distribution，并执行
+NSIS/Pacman/AppImage 结构与 fuse 校验、三入口 GUI/CLI/TUI smoke、Profile/recovery smoke、AppImage
+启动和 Arch 包生命周期等产物验收。该 reusable workflow 是 Nightly/Release 唯一的跨平台打包实现。
 保留一天的 workflow artifact 向最终 publish job 传递安装包。只有全部平台成功后，publish job
 才获得 `contents: write` 权限，生成 `SHA256SUMS`，删除上一份滚动 Nightly Pre-release 与
 `nightly` 标签，再以固定源码 SHA 一次发布完整的新附件。Nightly 必须标记为 Pre-release 且不设为
@@ -92,10 +114,10 @@ Pictor-<version>-linux-x64.AppImage
 SHA256SUMS
 ```
 
-Windows 与 Linux 构建 job 只上传内部 workflow artifact。只有全部构建、结构校验和包生命周期
-验收成功，单一 publish job 才创建 `v<version>` 标签和 GitHub Release，并一次附加三端资产
-及 SHA-256。任一平台失败都不得创建部分 Release。若版本标签已经存在，工作流会失败并要求
-先提升版本，避免静默覆盖发布物。
+Windows 与 Linux 构建 job 只上传内部 workflow artifact。只有全部 Frontend、结构、launcher、
+fuse、GUI、Profile/recovery 和包生命周期验收成功，单一 publish job 才创建 `v<version>` 标签和
+GitHub Release，并一次附加三端资产及 SHA-256。任一门禁失败都不得创建 tag/Release 或部分资产。
+若版本标签已经存在，工作流会失败并要求先提升版本，避免静默覆盖发布物。
 
 不要手工创建正式版本标签或上传本地构建产物。发布失败时保留 `main` 现状，在 `develop` 修复
 并提升补丁版本后重新走发布 Pull Request；已经公开的版本和附件不得覆盖。
