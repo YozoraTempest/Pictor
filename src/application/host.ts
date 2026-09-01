@@ -57,7 +57,6 @@ export interface ApplicationHostServices {
   readonly pluginHost: PluginHost
   readonly pluginManager: PluginManager
   readonly runtime: RuntimeCoordinator
-  readonly runtimeCoordinator: RuntimeCoordinator
   readonly moduleRouter: ModuleRouter
   getPluginBootstrap(resolveRendererEntryUrl?: RendererPluginUrlResolver): Promise<PluginBootstrap>
   restoreSelectedContext(): Promise<void>
@@ -210,7 +209,6 @@ export class ApplicationHost {
         pluginHost,
         pluginManager,
         runtime,
-        runtimeCoordinator: runtime,
         moduleRouter,
         getPluginBootstrap,
         restoreSelectedContext,
