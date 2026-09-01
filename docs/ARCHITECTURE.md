@@ -42,7 +42,9 @@ React、TUI、Renderer 或 Preload 实现；它在获得 `FrontendLock` 后初�
 result 和 error；registry、handler、调用上下文的权限判定和 `AbortSignal` 均为 Engine 内部实现。
 ApplicationHost 在完成 Plugin Host 装配后拥有 Engine，并在停止时释放它；Core commands 复用
 现有 `PluginManager`，不复制 Plugin Store 或 Registry 业务逻辑。GUI 的 command transport 只负责
-IPC 适配，Renderer 不直接导入 Main、Repository 或 Plugin Manager。
+IPC 适配，Renderer 不直接导入 Main、Repository 或 Plugin Manager。执行事件保留有界历史：活动执行
+不会被终态保留驱逐，终态按进入终态的顺序从最旧记录开始驱逐；`execute` 返回前到达的事件可按
+execution identity 重放，取消和晚到完成只允许一个终态。
 
 `src/main/desktop-host.ts` 是当前 GUI 的 DesktopHost 适配器。它创建 Electron `RuntimeSupervisor`、
 safeStorage-backed `SecretStore`、`AppInfo` 和 Frontend lock，注册 App protocol、IPC、窗口与退出

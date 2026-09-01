@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { CommandFailure, type CommandClient, type CommandEvent } from '../../commands/index.js'
+import { CommandFailure, executeCommandAndWait } from '../../commands/index.js'
 import type { IpcResult } from '../../shared/desktop-bridge'
 import { pluginManagerSnapshotSchema, type PluginManagerSnapshot } from '../../shared/plugins'
 import type { PluginStatus } from '../../plugin/host'
@@ -31,11 +31,12 @@ async function executePluginCommand(
   input: unknown,
 ): Promise<IpcResult<PluginManagerSnapshot>> {
   try {
-    const execution = await window.pictor.commands.execute(commandId, input, { frontend: 'gui' })
-    const value = await waitForPluginCommand(
+    const value = await executeCommandAndWait(
       window.pictor.commands,
-      execution.executionId,
-      execution.commandId,
+      commandId,
+      input,
+      { frontend: 'gui' },
+      pluginManagerSnapshotSchema,
     )
     return {
       ok: true,
@@ -62,59 +63,6 @@ async function executePluginCommand(
   }
 }
 
-async function waitForPluginCommand(
-  client: CommandClient,
-  executionId: string,
-  commandId: string,
-): Promise<PluginManagerSnapshot> {
-  return new Promise<PluginManagerSnapshot>((resolve, reject) => {
-    let settled = false
-    let release: (() => void) | null = null
-
-    const finish = (callback: () => void): void => {
-      if (settled) return
-      settled = true
-      callback()
-      release?.()
-    }
-
-    const onEvent = (event: CommandEvent): void => {
-      if (event.type === 'completed') {
-        finish(() => {
-          try {
-            resolve(pluginManagerSnapshotSchema.parse(event.result.value))
-          } catch {
-            reject(
-              new CommandFailure({
-                code: 'invalid-output',
-                message: '命令输出无效',
-                commandId,
-                executionId,
-              }),
-            )
-          }
-        })
-      } else if (event.type === 'failed') {
-        finish(() => reject(new CommandFailure(event.error)))
-      } else if (event.type === 'cancelled') {
-        finish(() =>
-          reject(
-            new CommandFailure({
-              code: 'cancelled',
-              message: '命令已取消',
-              commandId,
-              executionId,
-            }),
-          ),
-        )
-      }
-    }
-
-    release = client.subscribe(executionId, onEvent)
-    if (settled) release()
-  })
-}
-
 export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<PluginManagerSnapshot | null>(null)
   const [busy, setBusy] = useState<string | null>('load')
@@ -134,10 +82,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
     }
   }, [])
 
-  const apply = async (
-    key: string,
-    operation: () => Promise<Awaited<ReturnType<typeof window.pictor.getPluginManagerSnapshot>>>,
-  ) => {
+  const apply = async (key: string, operation: () => Promise<IpcResult<PluginManagerSnapshot>>) => {
     setBusy(key)
     setError(null)
     const result = await operation()

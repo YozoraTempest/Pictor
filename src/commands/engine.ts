@@ -6,6 +6,8 @@ import { ContributionPoint } from '../kernel/module.js'
 import {
   commandContextSchema,
   commandCancelResultSchema,
+  COMMAND_EVENT_HISTORY_LIMIT,
+  COMMAND_TERMINAL_HISTORY_LIMIT,
   commandDescriptorSchema,
   commandErrorSchema,
   commandEventSchema,
@@ -83,6 +85,7 @@ export class CommandEngine {
   private readonly registry = new Map<string, RegisteredCommand>()
   private readonly coreCommandIds = new Set<string>()
   private readonly executions = new Map<string, ExecutionRecord>()
+  private readonly terminalExecutionIds = new Set<string>()
   private readonly subscriptions = new Set<Subscription>()
   private client: CommandClient | null = null
   private disposed = false
@@ -123,6 +126,8 @@ export class CommandEngine {
     this.subscriptions.clear()
     this.registry.clear()
     this.coreCommandIds.clear()
+    this.terminalExecutionIds.clear()
+    this.executions.clear()
   }
 
   private registerDefinitions(
@@ -136,17 +141,17 @@ export class CommandEngine {
     const pendingIds = new Set<string>()
     for (const definition of normalizedDefinitions) {
       const id = definition.descriptor.id
-      if (pendingIds.has(id) || this.registry.has(id) || this.coreCommandIds.has(id)) {
-        throw commandFailure({
-          code: 'registry-conflict',
-          message: '命令注册冲突',
-          commandId: id,
-        })
-      }
       if (!core && this.coreCommandIds.has(id)) {
         throw commandFailure({
           code: 'registry-conflict',
           message: 'Plugin 不能覆盖 Core command',
+          commandId: id,
+        })
+      }
+      if (pendingIds.has(id) || this.registry.has(id)) {
+        throw commandFailure({
+          code: 'registry-conflict',
+          message: '命令注册冲突',
           commandId: id,
         })
       }
@@ -327,7 +332,7 @@ export class CommandEngine {
     }
     if (parsedExecutionId !== undefined) {
       const execution = this.executions.get(parsedExecutionId)
-      for (const event of execution?.events ?? []) {
+      for (const event of [...(execution?.events ?? [])]) {
         if (released) break
         this.notify(subscription, event)
       }
@@ -368,6 +373,7 @@ export class CommandEngine {
   ): void {
     if (execution.terminal) return
     execution.terminal = true
+    this.terminalExecutionIds.add(execution.executionId)
     this.emit(execution, {
       type: 'completed',
       executionId: execution.executionId,
@@ -376,11 +382,13 @@ export class CommandEngine {
       at: new Date().toISOString(),
       result,
     })
+    this.trimTerminalHistory()
   }
 
   private failExecution(execution: ExecutionRecord, error: unknown): void {
     if (execution.terminal) return
     execution.terminal = true
+    this.terminalExecutionIds.add(execution.executionId)
     const commandError = toExecutionError(error, execution)
     this.emit(execution, {
       type: 'failed',
@@ -390,6 +398,7 @@ export class CommandEngine {
       at: new Date().toISOString(),
       error: commandError,
     })
+    this.trimTerminalHistory()
   }
 
   private cancelExecution(
@@ -398,6 +407,7 @@ export class CommandEngine {
   ): void {
     if (execution.terminal) return
     execution.terminal = true
+    this.terminalExecutionIds.add(execution.executionId)
     this.emit(execution, {
       type: 'cancelled',
       executionId: execution.executionId,
@@ -406,12 +416,20 @@ export class CommandEngine {
       at: new Date().toISOString(),
       reason,
     })
+    this.trimTerminalHistory()
   }
 
   private emit(execution: ExecutionRecord, event: unknown): void {
     const parsed = freezeCommandValue(commandEventSchema.parse(event))
     execution.sequence = parsed.sequence
     execution.events.push(parsed)
+    if (execution.events.length > COMMAND_EVENT_HISTORY_LIMIT) {
+      const started = execution.events[0]
+      const tail = execution.events.slice(-(COMMAND_EVENT_HISTORY_LIMIT - 1))
+      execution.events.length = 0
+      if (started?.type === 'started') execution.events.push(started)
+      execution.events.push(...tail)
+    }
     for (const subscription of [...this.subscriptions]) {
       if (
         subscription.executionId !== undefined &&
@@ -428,6 +446,15 @@ export class CommandEngine {
       subscription.listener(event)
     } catch {
       // A Frontend listener must not change command execution state.
+    }
+  }
+
+  private trimTerminalHistory(): void {
+    while (this.terminalExecutionIds.size > COMMAND_TERMINAL_HISTORY_LIMIT) {
+      const oldestExecutionId = this.terminalExecutionIds.values().next().value
+      if (!oldestExecutionId) return
+      this.terminalExecutionIds.delete(oldestExecutionId)
+      this.executions.delete(oldestExecutionId)
     }
   }
 

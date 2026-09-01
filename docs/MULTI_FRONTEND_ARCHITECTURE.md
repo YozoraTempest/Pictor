@@ -88,6 +88,9 @@ Command Engine 对 Frontend 暴露四个操作：
 命令结果必须可序列化，并能被 GUI、TUI 和 CLI 在不理解内部实现的情况下呈现。CLI 退出码从稳定错误
 分类映射，GUI/TUI 只渲染同一分类，不自行解释异常字符串。注册表是 Command Engine 的内部 seam；
 Plugin 通过 Host activation context 注册命令，不能取得可变注册表、覆盖 Core 命令或绕过输入校验。
+Engine 和 Preload 只保留有界执行事件历史；活动执行不会被终态保留驱逐，终态按进入终态的顺序
+从最旧记录开始驱逐。`execute` 返回前到达的事件必须可按 execution identity 重放，取消与晚到完成
+竞态仍只能产生一个终态。
 
 首批 Core 命令至少覆盖：
 

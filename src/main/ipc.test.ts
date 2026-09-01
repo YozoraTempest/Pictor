@@ -6,9 +6,8 @@ import { join } from 'node:path'
 
 import type { CommandClient } from '../commands/index.js'
 import type { AppInfo } from '../shared/app-info.js'
-import type { PluginBootstrap } from '../shared/plugins.js'
+import type { PluginBootstrap, PluginManagerSnapshot } from '../shared/plugins.js'
 import type { Disposable } from '../kernel/module.js'
-import type { PluginManager } from './plugins/plugin-manager.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
@@ -69,13 +68,13 @@ beforeEach(() => {
     appInfo: {} as AppInfo,
     getPluginBootstrap: vi.fn(async () => ({}) as PluginBootstrap),
     pluginManager: {
-      getSnapshot: vi.fn(async () => ({
+      getSnapshot: vi.fn(async (): Promise<PluginManagerSnapshot> => ({
         safeMode: false,
         restartRequired: false,
         items: [],
         issues: [],
       })),
-    } as unknown as PluginManager,
+    },
     commandClient,
   })
 })

@@ -57,19 +57,14 @@ function createBridge(commands: CommandClient): PictorBridge {
     notifyRendererReady: async () => ({ ok: true, value: null }),
     getAppInfo: async () => ({ ok: true, value: appInfo }),
     getPluginBootstrap: async () => ({ ok: true, value: { safeMode: false, plugins: [] } }),
-    getPluginManagerSnapshot: async () => ({ ok: true, value: snapshot }),
     installLocalPlugin: async () => ({ ok: true, value: snapshot }),
     installDevelopmentPlugin: async () => ({ ok: true, value: snapshot }),
     installPiExtension: async () => ({ ok: true, value: snapshot }),
     installPiPackage: async () => ({ ok: true, value: snapshot }),
-    installPiPackageSpec: async () => ({ ok: true, value: snapshot }),
     pickProjectDirectory: async () => ({ ok: true, value: null }),
     pickSessionImport: async () => ({ ok: true, value: null }),
     pickSessionExport: async () => ({ ok: true, value: null }),
     pickMessageImages: async () => ({ ok: true, value: null }),
-    setPluginEnabled: async () => ({ ok: true, value: snapshot }),
-    removePlugin: async () => ({ ok: true, value: snapshot }),
-    restoreBundledPlugin: async () => ({ ok: true, value: snapshot }),
   }
 }
 

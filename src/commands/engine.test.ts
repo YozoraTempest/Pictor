@@ -3,7 +3,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { commandDescriptorSchema, type CommandDescriptor, type CommandEvent } from './contract.js'
+import {
+  COMMAND_TERMINAL_HISTORY_LIMIT,
+  commandDescriptorSchema,
+  type CommandDescriptor,
+  type CommandEvent,
+} from './contract.js'
 import { CommandEngine, type CommandDefinition } from './engine.js'
 
 const context = { frontend: 'cli' as const }
@@ -73,7 +78,9 @@ describe('CommandEngine', () => {
     const plugin = command('app.info', z.null(), z.object({ ok: z.literal(false) }), () => ({
       ok: false as const,
     }))
-    expect(() => engine.registerPluginCommands('pictor.test', [plugin])).toThrow('命令注册冲突')
+    expect(() => engine.registerPluginCommands('pictor.test', [plugin])).toThrow(
+      'Plugin 不能覆盖 Core command',
+    )
     await expect(client.list()).resolves.toHaveLength(1)
     await engine.dispose()
   })
@@ -196,6 +203,44 @@ describe('CommandEngine', () => {
       result: { value: { executionId: second.executionId } },
     })
     expect(release).toHaveBeenCalledTimes(2)
+    await engine.dispose()
+  })
+
+  it('retains bounded terminal history without evicting an active execution', async () => {
+    const engine = new CommandEngine([
+      command(
+        'test.active',
+        z.null(),
+        z.string(),
+        () => new Promise<string>(() => undefined),
+        true,
+      ),
+      command('test.finished', z.null(), z.number(), () => 1),
+    ])
+    const client = engine.getClient()
+    const active = await client.execute('test.active', null, context)
+    let oldestFinished: string | null = null
+    let newestFinished: string | null = null
+
+    for (let index = 0; index < COMMAND_TERMINAL_HISTORY_LIMIT + 1; index += 1) {
+      const execution = await client.execute('test.finished', null, context)
+      if (oldestFinished === null) oldestFinished = execution.executionId
+      newestFinished = execution.executionId
+      await terminalEvents(client, execution.executionId)
+    }
+
+    expect(oldestFinished).not.toBeNull()
+    expect(() => client.subscribe(oldestFinished!, () => undefined)).toThrow('找不到命令执行')
+    expect(newestFinished).not.toBeNull()
+    await expect(terminalEvents(client, newestFinished!)).resolves.toHaveLength(2)
+
+    const activeEvents: CommandEvent[] = []
+    const release = client.subscribe(active.executionId, (event) => activeEvents.push(event))
+    expect(activeEvents.map((event) => event.type)).toEqual(['started'])
+    await expect(client.cancel(active.executionId)).resolves.toMatchObject({ accepted: true })
+    expect(activeEvents.map((event) => event.type)).toEqual(['started', 'cancelled'])
+    release()
+    await expect(terminalEvents(client, active.executionId)).resolves.toHaveLength(2)
     await engine.dispose()
   })
 

@@ -208,7 +208,6 @@ export default tseslint.config(
                 '**/preload/**',
                 '**/runtime/**',
                 '**/shared/runtime-protocol*',
-                '**/commands/await',
                 '**/commands/engine',
                 '**/commands/core',
                 '**/commands/registry',

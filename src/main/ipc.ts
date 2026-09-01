@@ -2,16 +2,9 @@ import { extname } from 'node:path'
 
 import { dialog, ipcMain, type WebFrameMain } from 'electron'
 
-import { executeCommandAndWait } from '../commands/await.js'
-import type { CommandClient } from '../commands/index.js'
+import { executeCommandAndWait, type CommandClient } from '../commands/index.js'
 import { readMessageImages } from '../modules/agent-workspace/file-operations.js'
-import {
-  packageSpecRequestSchema,
-  pluginIdRequestSchema,
-  removePluginRequestSchema,
-  sessionExportPickerRequestSchema,
-  setPluginEnabledRequestSchema,
-} from '../shared/desktop-bridge.js'
+import { sessionExportPickerRequestSchema } from '../shared/desktop-bridge.js'
 import type { AppInfo } from '../shared/app-info.js'
 import { ipcResult } from '../shared/ipc-result.js'
 import {
@@ -19,22 +12,16 @@ import {
   type PluginBootstrap,
   type PluginManagerSnapshot,
 } from '../shared/plugins.js'
-import type { PluginManager } from './plugins/plugin-manager.js'
 import type { Disposable } from '../kernel/module.js'
 
 const IPC_CHANNELS = [
   'app:renderer-ready',
   'app:get-info',
   'plugin:get-bootstrap',
-  'plugin:get-manager-snapshot',
   'plugin:install-local',
   'plugin:install-development',
   'plugin:install-pi-extension',
   'plugin:install-pi-package',
-  'plugin:install-pi-package-spec',
-  'plugin:set-enabled',
-  'plugin:remove',
-  'plugin:restore-bundled',
   'workspace:pick-project-directory',
   'workspace:pick-session-import',
   'workspace:pick-session-export',
@@ -46,17 +33,25 @@ interface IpcDependencies {
   onRendererReady: () => Promise<void>
   appInfo: AppInfo
   getPluginBootstrap: () => Promise<PluginBootstrap>
-  pluginManager: PluginManager
-  commandClient?: CommandClient
+  pluginManager: PluginManagerSnapshotPort
+  commandClient: CommandClient
+}
+
+interface PluginManagerSnapshotPort {
+  getSnapshot(): Promise<PluginManagerSnapshot>
 }
 
 export function registerIpc(dependencies: IpcDependencies): Disposable {
-  const { validateSender, onRendererReady, appInfo, getPluginBootstrap, pluginManager } =
-    dependencies
-  const commandClient = dependencies.commandClient
+  const {
+    validateSender,
+    onRendererReady,
+    appInfo,
+    getPluginBootstrap,
+    pluginManager,
+    commandClient,
+  } = dependencies
 
   const runPluginCommand = (commandId: string, input: unknown): Promise<PluginManagerSnapshot> => {
-    if (!commandClient) throw new Error('Command Engine is unavailable')
     return executeCommandAndWait(
       commandClient,
       commandId,
@@ -84,13 +79,6 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
     return ipcResult(getPluginBootstrap)
   })
 
-  ipcMain.handle('plugin:get-manager-snapshot', (event) => {
-    validateSender(event.senderFrame)
-    return ipcResult(() =>
-      commandClient ? runPluginCommand('plugin.list', null) : pluginManager.getSnapshot(),
-    )
-  })
-
   ipcMain.handle('plugin:install-local', (event) => {
     validateSender(event.senderFrame)
     return ipcResult(async () => {
@@ -100,9 +88,7 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
       })
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return commandClient
-        ? runPluginCommand('plugin.install', { source: 'local', path })
-        : pluginManager.installLocal(path)
+      return runPluginCommand('plugin.install', { source: 'local', path })
     })
   })
 
@@ -115,9 +101,7 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
       })
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return commandClient
-        ? runPluginCommand('plugin.install', { source: 'development', path })
-        : pluginManager.installDevelopment(path)
+      return runPluginCommand('plugin.install', { source: 'development', path })
     })
   })
 
@@ -131,9 +115,7 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
       })
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return commandClient
-        ? runPluginCommand('plugin.install', { source: 'pi-extension', path })
-        : pluginManager.installPiExtension(path)
+      return runPluginCommand('plugin.install', { source: 'pi-extension', path })
     })
   })
 
@@ -146,55 +128,7 @@ export function registerIpc(dependencies: IpcDependencies): Disposable {
       })
       const path = selection.filePaths[0]
       if (selection.canceled || !path) return pluginManager.getSnapshot()
-      return commandClient
-        ? runPluginCommand('plugin.install', { source: 'pi-package', path })
-        : pluginManager.installPiPackage(path)
-    })
-  })
-
-  ipcMain.handle('plugin:install-pi-package-spec', (event, input: unknown) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      const request = packageSpecRequestSchema.parse(input)
-      return commandClient
-        ? runPluginCommand('plugin.install', {
-            source: 'pi-package-spec',
-            spec: request.spec,
-          })
-        : pluginManager.installPiPackageSpec(request.spec)
-    })
-  })
-
-  ipcMain.handle('plugin:set-enabled', (event, input: unknown) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      const request = setPluginEnabledRequestSchema.parse(input)
-      return commandClient
-        ? runPluginCommand(request.enabled ? 'plugin.enable' : 'plugin.disable', {
-            kind: request.kind,
-            id: request.id,
-          })
-        : pluginManager.setEnabled(request.kind, request.id, request.enabled)
-    })
-  })
-
-  ipcMain.handle('plugin:remove', (event, input: unknown) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      const request = removePluginRequestSchema.parse(input)
-      return commandClient
-        ? runPluginCommand('plugin.remove', request)
-        : pluginManager.remove(request.kind, request.id, request.deleteData)
-    })
-  })
-
-  ipcMain.handle('plugin:restore-bundled', (event, input: unknown) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      const request = pluginIdRequestSchema.parse(input)
-      return commandClient
-        ? runPluginCommand('plugin.restore', request)
-        : pluginManager.restoreBundled(request.id)
+      return runPluginCommand('plugin.install', { source: 'pi-package', path })
     })
   })
 

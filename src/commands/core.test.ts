@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { executeCommandAndWait } from './await.js'
+import { executeCommandAndWait } from './index.js'
 import { appDoctorResultSchema, createCoreCommandDefinitions } from './core.js'
 import type { PluginManagerCommandPort } from './core.js'
 import { CommandEngine } from './engine.js'

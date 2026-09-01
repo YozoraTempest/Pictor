@@ -3,6 +3,9 @@ import { z } from 'zod'
 export const commandIdSchema = z.string().trim().min(1).max(200)
 export const executionIdSchema = z.uuid()
 
+export const COMMAND_TERMINAL_HISTORY_LIMIT = 64
+export const COMMAND_EVENT_HISTORY_LIMIT = 256
+
 export const commandFrontendSchema = z.enum(['gui', 'tui', 'cli', 'shell'])
 
 export const commandContextSchema = z.object({

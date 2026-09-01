@@ -2,8 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { z } from 'zod'
 
 import {
+  COMMAND_EVENT_HISTORY_LIMIT,
+  COMMAND_TERMINAL_HISTORY_LIMIT,
   commandCallResultSchema,
   commandCancelResultSchema,
+  commandContextSchema,
   commandDescriptorSchema,
   commandEventSchema,
   commandExecuteRequestSchema,
@@ -26,20 +29,20 @@ import {
 } from '../kernel/contract.js'
 import {
   appInfoResultSchema,
-  packageSpecRequestSchema,
   pluginBootstrapResultSchema,
-  pluginIdRequestSchema,
   pluginManagerResultSchema,
-  removePluginRequestSchema,
   sessionExportPickerRequestSchema,
-  setPluginEnabledRequestSchema,
   voidResultSchema,
   workspaceFilePathResultSchema,
   workspaceImagePickerResultSchema,
   type PictorBridge,
 } from '../shared/desktop-bridge.js'
 
-const commandEvents: CommandEvent[] = []
+const commandEventHistory = new Map<string, CommandEvent[]>()
+const terminalExecutionIds = new Set<string>()
+const trackedExecutionIds = new Set<string>()
+const pendingCorrelations = new Map<string, number>()
+const pendingExecutionIdsByCorrelation = new Map<string, Set<string>>()
 const commandSubscriptions = new Set<{
   executionId: string | undefined
   listener: (event: CommandEvent) => void
@@ -47,7 +50,28 @@ const commandSubscriptions = new Set<{
 
 ipcRenderer.on('command:event', (_event, input: unknown) => {
   const event = freezeCommandValue(commandEventSchema.parse(input))
-  commandEvents.push(event)
+  if (event.type === 'started' && event.context.correlationId) {
+    addPendingExecution(event.context.correlationId, event.executionId)
+  }
+  const isOwnedExecution =
+    trackedExecutionIds.has(event.executionId) || isPendingExecution(event.executionId)
+  if (!isOwnedExecution) {
+    notifySubscribers(event)
+    return
+  }
+  const events = commandEventHistory.get(event.executionId) ?? []
+  if (isTerminalEvent(events.at(-1))) return
+  if (!commandEventHistory.has(event.executionId)) {
+    commandEventHistory.set(event.executionId, events)
+  }
+  events.push(event)
+  trimEventHistory(events)
+  if (isTerminalEvent(event)) terminalExecutionIds.add(event.executionId)
+  notifySubscribers(event)
+  if (isTerminalEvent(event)) trimTerminalHistory()
+})
+
+function notifySubscribers(event: CommandEvent): void {
   for (const subscription of [...commandSubscriptions]) {
     if (subscription.executionId !== undefined && subscription.executionId !== event.executionId) {
       continue
@@ -58,7 +82,7 @@ ipcRenderer.on('command:event', (_event, input: unknown) => {
       // A renderer listener must not affect transport delivery.
     }
   }
-})
+}
 
 const commandClient: CommandClient = Object.freeze({
   list: async (filter: CommandListFilter | undefined) =>
@@ -66,14 +90,29 @@ const commandClient: CommandClient = Object.freeze({
       ipcRenderer.invoke('command:list', parseCommandInput(commandListFilterSchema, filter ?? {})),
       z.array(commandDescriptorSchema),
     ),
-  execute: async (commandId: string, input: unknown, context: CommandContext) =>
-    unwrapCommandCall(
-      ipcRenderer.invoke(
-        'command:execute',
-        parseCommandInput(commandExecuteRequestSchema, { commandId, input, context }),
-      ),
-      z.object({ executionId: z.uuid(), commandId: z.string().min(1) }),
-    ),
+  execute: async (commandId: string, input: unknown, context: CommandContext) => {
+    const parsedContext = parseCommandInput(commandContextSchema, context)
+    const correlationId = parsedContext.correlationId ?? globalThis.crypto.randomUUID()
+    const request = parseCommandInput(commandExecuteRequestSchema, {
+      commandId,
+      input,
+      context: { ...parsedContext, correlationId },
+    })
+    beginPendingCorrelation(correlationId)
+    let returnedExecutionId: string | undefined
+    try {
+      const execution = await unwrapCommandCall(
+        ipcRenderer.invoke('command:execute', request),
+        z.object({ executionId: z.uuid(), commandId: z.string().min(1) }),
+      )
+      returnedExecutionId = execution.executionId
+      trackedExecutionIds.add(execution.executionId)
+      return execution
+    } finally {
+      endPendingCorrelation(correlationId, returnedExecutionId)
+      trimTerminalHistory()
+    }
+  },
   cancel: async (executionId: string) =>
     unwrapCommandCall(
       ipcRenderer.invoke('command:cancel', {
@@ -84,6 +123,13 @@ const commandClient: CommandClient = Object.freeze({
   subscribe: (executionId: string | undefined, listener: CommandEventListener) => {
     const parsedExecutionId =
       executionId === undefined ? undefined : parseCommandInput(executionIdSchema, executionId)
+    if (parsedExecutionId !== undefined && !trackedExecutionIds.has(parsedExecutionId)) {
+      throw new CommandFailure({
+        code: 'execution-not-found',
+        message: '找不到命令执行',
+        executionId: parsedExecutionId,
+      })
+    }
     const subscription = { executionId: parsedExecutionId, listener }
     commandSubscriptions.add(subscription)
     let released = false
@@ -93,9 +139,8 @@ const commandClient: CommandClient = Object.freeze({
       commandSubscriptions.delete(subscription)
     }
     if (parsedExecutionId !== undefined) {
-      for (const event of commandEvents) {
+      for (const event of [...(commandEventHistory.get(parsedExecutionId) ?? [])]) {
         if (released) break
-        if (event.executionId !== parsedExecutionId) continue
         try {
           listener(event)
         } catch {
@@ -114,8 +159,6 @@ const bridge = Object.freeze({
   getAppInfo: async () => appInfoResultSchema.parse(await ipcRenderer.invoke('app:get-info')),
   getPluginBootstrap: async () =>
     pluginBootstrapResultSchema.parse(await ipcRenderer.invoke('plugin:get-bootstrap')),
-  getPluginManagerSnapshot: async () =>
-    pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:get-manager-snapshot')),
   installLocalPlugin: async () =>
     pluginManagerResultSchema.parse(await ipcRenderer.invoke('plugin:install-local')),
   installPiExtension: async () =>
@@ -140,25 +183,6 @@ const bridge = Object.freeze({
   pickMessageImages: async () =>
     workspaceImagePickerResultSchema.parse(
       await ipcRenderer.invoke('workspace:pick-message-images'),
-    ),
-  installPiPackageSpec: async (input) =>
-    pluginManagerResultSchema.parse(
-      await ipcRenderer.invoke(
-        'plugin:install-pi-package-spec',
-        packageSpecRequestSchema.parse(input),
-      ),
-    ),
-  setPluginEnabled: async (input) =>
-    pluginManagerResultSchema.parse(
-      await ipcRenderer.invoke('plugin:set-enabled', setPluginEnabledRequestSchema.parse(input)),
-    ),
-  removePlugin: async (input) =>
-    pluginManagerResultSchema.parse(
-      await ipcRenderer.invoke('plugin:remove', removePluginRequestSchema.parse(input)),
-    ),
-  restoreBundledPlugin: async (input) =>
-    pluginManagerResultSchema.parse(
-      await ipcRenderer.invoke('plugin:restore-bundled', pluginIdRequestSchema.parse(input)),
     ),
 } satisfies PictorBridge)
 
@@ -202,4 +226,67 @@ function parseCommandInput<TSchema extends z.ZodType>(
       ...(issue?.path.length ? { field: issue.path.join('.') } : {}),
     })
   }
+}
+
+function isTerminalEvent(event: CommandEvent | undefined): boolean {
+  return event?.type === 'completed' || event?.type === 'failed' || event?.type === 'cancelled'
+}
+
+function trimEventHistory(events: CommandEvent[]): void {
+  if (events.length <= COMMAND_EVENT_HISTORY_LIMIT) return
+  const started = events[0]
+  const tail = events.slice(-(COMMAND_EVENT_HISTORY_LIMIT - 1))
+  events.length = 0
+  if (started?.type === 'started') events.push(started)
+  events.push(...tail)
+}
+
+function trimTerminalHistory(): void {
+  while (terminalExecutionIds.size > COMMAND_TERMINAL_HISTORY_LIMIT) {
+    const pendingExecutionIdSet = new Set(
+      [...pendingExecutionIdsByCorrelation.values()].flatMap((ids) => [...ids]),
+    )
+    const executionId = [...terminalExecutionIds].find((id) => !pendingExecutionIdSet.has(id))
+    if (!executionId) return
+    terminalExecutionIds.delete(executionId)
+    commandEventHistory.delete(executionId)
+    trackedExecutionIds.delete(executionId)
+  }
+}
+
+function beginPendingCorrelation(correlationId: string): void {
+  pendingCorrelations.set(correlationId, (pendingCorrelations.get(correlationId) ?? 0) + 1)
+}
+
+function endPendingCorrelation(correlationId: string, executionId: string | undefined): void {
+  const count = pendingCorrelations.get(correlationId)
+  if (count === undefined) return
+  if (executionId) {
+    const executionIds = pendingExecutionIdsByCorrelation.get(correlationId)
+    executionIds?.delete(executionId)
+    if (executionIds?.size === 0) pendingExecutionIdsByCorrelation.delete(correlationId)
+  }
+  if (count > 1) {
+    pendingCorrelations.set(correlationId, count - 1)
+    return
+  }
+  pendingCorrelations.delete(correlationId)
+  const executionIds = pendingExecutionIdsByCorrelation.get(correlationId)
+  if (executionIds) {
+    for (const pendingExecutionId of executionIds) {
+      trackedExecutionIds.delete(pendingExecutionId)
+    }
+    pendingExecutionIdsByCorrelation.delete(correlationId)
+  }
+}
+
+function addPendingExecution(correlationId: string, executionId: string): void {
+  if (!pendingCorrelations.has(correlationId)) return
+  const executionIds = pendingExecutionIdsByCorrelation.get(correlationId) ?? new Set<string>()
+  executionIds.add(executionId)
+  pendingExecutionIdsByCorrelation.set(correlationId, executionIds)
+}
+
+function isPendingExecution(executionId: string): boolean {
+  return [...pendingExecutionIdsByCorrelation.values()].some((ids) => ids.has(executionId))
 }
