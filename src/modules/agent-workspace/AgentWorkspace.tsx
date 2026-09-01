@@ -1,8 +1,10 @@
 import { AlertTriangle, FolderOpen, LoaderCircle, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import type { CommandClient } from '../../commands/index.js'
 import type { PluginStatus } from '../../plugin/host'
 import type { AppInfo } from '../../shared/app-info'
+import type { GuiPluginPicker } from '../../shared/desktop-bridge.js'
 import type { Project, SessionSummary } from '../../shared/domain'
 import { Modal } from '../../renderer/ui/Modal'
 import type { SettingsSection } from '../shell/settings'
@@ -31,14 +33,18 @@ function errorMessage(error: unknown): string {
 
 interface AgentWorkspaceProps {
   client: AgentWorkspaceClient
+  commandClient: CommandClient
   filePicker: AgentWorkspaceFilePicker
+  pluginPicker: GuiPluginPicker
   settingsSections: readonly SettingsSection[]
   rendererPluginStatuses?: readonly PluginStatus[]
 }
 
 export function AgentWorkspace({
   client,
+  commandClient,
   filePicker,
+  pluginPicker,
   settingsSections,
   rendererPluginStatuses = [],
 }: AgentWorkspaceProps): React.JSX.Element {
@@ -473,7 +479,9 @@ export function AgentWorkspace({
       {settingsOpen ? (
         <SettingsDialog
           client={client}
+          commandClient={commandClient}
           initial={workspace.snapshot.settings}
+          pluginPicker={pluginPicker}
           sections={settingsSections}
           rendererPluginStatuses={rendererPluginStatuses}
           onClose={() => setSettingsOpen(false)}

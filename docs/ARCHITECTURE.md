@@ -5,9 +5,9 @@
 > 目标目录或 Interface 误写成当前已经实现的能力。
 
 本文描述 Pictor 当前已经实现的代码结构和依赖规则。Application Host 已从 Electron Main 的启动链
-路中提取，DesktopHost 是它的 Electron 适配器；Main 和 Renderer 仍由可安装 Plugin Host 装配，
-Updater 是首个真实 Bundled Plugin。尚未迁移的业务能力仍按纵向切片保留在现有模块中，不能把兼容
-代码误写成后续 Stage 的最终结构。
+路中提取，DesktopHost 是它的 Electron 适配器；GUI Renderer 由 `src/gui` 的 GUI Host 装配，
+Workbench 与恢复 Shell 通过公开 contract 组合，Updater 是首个真实 Bundled Plugin。尚未迁移的
+业务能力仍按纵向切片保留在现有模块中，不能把兼容代码误写成后续 Stage 的最终结构。
 
 ## 源码域
 
@@ -18,6 +18,7 @@ src/
 ├── application/ 无 Frontend 依赖的 Application Host、生命周期端口和服务装配
 ├── commands/   Headless Command Engine、稳定 Client contract 和 Core commands
 ├── cli/        无 Electron 的 Node CLI Frontend、参数/输出/退出语义和 Headless adapters
+├── gui/        GUI Host、Workbench slot、Pictor Shell 和 Renderer Plugin 装配
 ├── kernel/     纯 TypeScript Module 生命周期、Token、Contribution 和 Contract Router
 ├── plugin/     Manifest、Registry、Plugin 依赖规划和进程级 Plugin Host
 ├── modules/    按 Feature 聚合的新代码及 Main/Renderer/Runtime 入口
@@ -77,7 +78,8 @@ Bundled 恢复源和独立数据目录。第一版按重启应用生效，不实
 
 - `domain.ts`：Project、Session、Run、Message 和 Tool 等持久化模型。
 - `model.ts`：模型端点设置、连接测试和模型发现语义。
-- `desktop-bridge.ts`：Core Shell 启动与 Plugin Manager 使用的 `PictorBridge` interface。
+- `desktop-bridge.ts`：GUI Host、Plugin picker 和现有 Workbench 使用的 `PictorBridge` interface。
+- `app-doctor.ts`：`app.doctor` 的可序列化诊断输出 contract。
 - `runtime-protocol.ts`：Main 与 Runtime Host 之间的 command、host message 和 Runtime event。
 - `path-identity.ts`：Windows 与 Linux 的项目路径身份语义，不读取文件系统。
 - `errors.ts`：可跨进程表达的错误代码和 `PictorError`。
@@ -163,11 +165,13 @@ source 使用 `development`，启动时直接读取 live Manifest/入口；它�
 或重新打包 Pictor。`PICTOR_PLUGIN_PROFILE=developer` 选择独立 Developer Profile identity，Profile
 仍只推荐 Bundled roots，不覆盖用户删除选择。
 
-Core Renderer 只渲染不可卸载的 `CoreShell` 和 Plugin Manager。`pictor.agent-workspace` 的 Main
-Module 提供 Workspace contract，Renderer Module 通过 `shell.applications` Contribution 提供
-Project、Session 与 Conversation GUI；移除或阻塞该 Plugin 时，Main contract 与 Renderer
-application 同时缺席，CoreShell 显示空 Plugin Manager，而不是让 Renderer bootstrap 因缺少业务
-Provider 失败。设置页 Contribution 只在 Agent Workspace 存在时组合到该应用中。
+GUI Renderer 的 `src/gui` 只装配不可卸载的 `GuiHostView` 与 Pictor Shell。`pictor.agent-workspace`
+的 Main Module 提供 Workspace contract，Renderer Module 通过 `gui.workbenches` Contribution
+提供 Project、Session 与 Conversation GUI，并由 Renderer Plugin context 注入真实 `pluginId`；
+零个或多个 Workbench、Renderer Plugin 加载失败和 Workbench render throw 都回到 Shell，只有
+AppInfo、Plugin bootstrap 或 GUI Host 自身 contract 失败才进入 fatal state。完整图形 Plugin
+Manager 仍暂时属于当前 Agent Workspace 的设置页，Shell 仅通过 CommandClient 和窄 picker adapter
+完成恢复；设置页 Contribution 只在 Agent Workspace 存在时组合到该应用中。
 
 `pictor.git-changes` 是第二个跨进程 Bundled Plugin，并声明对 `pictor.agent-workspace` 的硬依赖。
 Main 入口通过 Module contract 提供当前项目的 `git status`，Renderer 入口贡献 Git 设置页；删除
@@ -309,6 +313,7 @@ Agent Workspace Renderer Module 的 `AgentWorkspace` 负责页面布局、Settin
 - Agent Run 的 Runtime Coordinator、监管、持久化和广播编排：`src/main/runtime/`，由 `ApplicationHost` 统一装配。
 - Pi SDK adapter、Runtime Host 和 Extension RPC UI：`src/runtime/`。
 - Agent Workspace、Session 视图与设置编排：`src/modules/agent-workspace/`。
+- GUI Host、Workbench slot、Pictor Shell 与 Renderer bootstrap：`src/gui/`。
 - Core Plugin Manager：`src/renderer/settings/`。
 - 无业务语义且可复用的视图元素：`src/renderer/ui/`。
 - 跨进程 schema 或类型：放入对应的 `src/shared/` 协议 module。

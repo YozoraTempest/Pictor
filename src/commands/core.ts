@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { appInfoSchema, type AppInfo } from '../shared/app-info.js'
+import { appDoctorResultSchema } from '../shared/app-doctor.js'
 import { pluginManagerSnapshotSchema, type PluginManagerSnapshot } from '../shared/plugins.js'
 import {
   commandInputSchemaSchema,
@@ -30,17 +31,11 @@ export const pluginRemoveRequestSchema = pluginIdentitySchema.extend({
 
 export const pluginRestoreRequestSchema = z.object({ id: z.string().trim().min(1) })
 
-export const appDoctorCheckSchema = z.object({
-  id: z.enum(['plugin-store', 'plugin-restart']),
-  status: z.enum(['ok', 'warning']),
-  message: z.string().min(1),
-})
-
-export const appDoctorResultSchema = z.object({
-  status: z.enum(['ok', 'degraded']),
-  checks: z.array(appDoctorCheckSchema),
-})
-export type AppDoctorResult = z.output<typeof appDoctorResultSchema>
+export {
+  appDoctorCheckSchema,
+  appDoctorResultSchema,
+  type AppDoctorResult,
+} from '../shared/app-doctor.js'
 
 type PluginIdentity = z.infer<typeof pluginIdentitySchema>
 type PluginInstallRequest = z.infer<typeof pluginInstallRequestSchema>

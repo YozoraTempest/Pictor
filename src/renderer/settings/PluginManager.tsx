@@ -9,8 +9,9 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { CommandFailure, executeCommandAndWait } from '../../commands/index.js'
-import type { IpcResult } from '../../shared/desktop-bridge'
+import { CommandFailure, executeCommandAndWait, type CommandClient } from '../../commands/index.js'
+import type { GuiPluginPicker, GuiPluginSource } from '../../shared/desktop-bridge.js'
+import type { IpcResult } from '../../shared/errors.js'
 import { pluginManagerSnapshotSchema, type PluginManagerSnapshot } from '../../shared/plugins'
 import type { PluginStatus } from '../../plugin/host'
 
@@ -23,16 +24,19 @@ const stateLabels = {
 } as const
 
 interface PluginManagerProps {
+  commandClient: CommandClient
+  pluginPicker: GuiPluginPicker
   rendererPluginStatuses: readonly PluginStatus[]
 }
 
 async function executePluginCommand(
+  commandClient: CommandClient,
   commandId: string,
   input: unknown,
 ): Promise<IpcResult<PluginManagerSnapshot>> {
   try {
     const value = await executeCommandAndWait(
-      window.pictor.commands,
+      commandClient,
       commandId,
       input,
       { frontend: 'gui' },
@@ -63,7 +67,11 @@ async function executePluginCommand(
   }
 }
 
-export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): React.JSX.Element {
+export function PluginManager({
+  commandClient,
+  pluginPicker,
+  rendererPluginStatuses,
+}: PluginManagerProps): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<PluginManagerSnapshot | null>(null)
   const [busy, setBusy] = useState<string | null>('load')
   const [error, setError] = useState<string | null>(null)
@@ -71,7 +79,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
 
   useEffect(() => {
     let active = true
-    void executePluginCommand('plugin.list', null).then((result) => {
+    void executePluginCommand(commandClient, 'plugin.list', null).then((result) => {
       if (!active) return
       setBusy(null)
       if (result.ok) setSnapshot(result.value)
@@ -80,15 +88,33 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
     return () => {
       active = false
     }
-  }, [])
+  }, [commandClient])
 
-  const apply = async (key: string, operation: () => Promise<IpcResult<PluginManagerSnapshot>>) => {
+  const apply = async (
+    key: string,
+    operation: () => Promise<IpcResult<PluginManagerSnapshot> | null>,
+  ) => {
     setBusy(key)
     setError(null)
     const result = await operation()
     setBusy(null)
-    if (result.ok) setSnapshot(result.value)
-    else setError(result.error.message)
+    if (result?.ok) setSnapshot(result.value)
+    else if (result) setError(result.error.message)
+  }
+
+  const pickAndInstall = async (
+    source: Extract<GuiPluginSource, 'local' | 'development' | 'pi-extension' | 'pi-package'>,
+  ): Promise<IpcResult<PluginManagerSnapshot> | null> => {
+    const selection = await pluginPicker.pickPlugin(source)
+    if (!selection.ok) return selection
+    if (!selection.value.path) return null
+    if (selection.value.source !== source) {
+      return { ok: false, error: { code: 'internal', message: 'Plugin 选择器返回了不匹配的来源' } }
+    }
+    return executePluginCommand(commandClient, 'plugin.install', {
+      source: selection.value.source,
+      path: selection.value.path,
+    })
   }
 
   if (!snapshot) {
@@ -111,7 +137,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
           className="secondary-button"
           type="button"
           disabled={busy !== null}
-          onClick={() => void apply('install', () => window.pictor.installLocalPlugin())}
+          onClick={() => void apply('install', () => pickAndInstall('local'))}
         >
           {busy === 'install' ? (
             <LoaderCircle className="spin" size={14} />
@@ -124,9 +150,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
           className="secondary-button"
           type="button"
           disabled={busy !== null}
-          onClick={() =>
-            void apply('install-development', () => window.pictor.installDevelopmentPlugin())
-          }
+          onClick={() => void apply('install-development', () => pickAndInstall('development'))}
         >
           <FolderPlus size={14} />
           Development Plugin
@@ -135,9 +159,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
           className="secondary-button"
           type="button"
           disabled={busy !== null}
-          onClick={() =>
-            void apply('install-pi-extension', () => window.pictor.installPiExtension())
-          }
+          onClick={() => void apply('install-pi-extension', () => pickAndInstall('pi-extension'))}
         >
           <FileCode2 size={14} />
           Pi Extension
@@ -146,7 +168,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
           className="secondary-button"
           type="button"
           disabled={busy !== null}
-          onClick={() => void apply('install-pi-package', () => window.pictor.installPiPackage())}
+          onClick={() => void apply('install-pi-package', () => pickAndInstall('pi-package'))}
         >
           <PackagePlus size={14} />
           Pi Package
@@ -166,7 +188,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
           disabled={busy !== null || !packageSpec.trim()}
           onClick={() =>
             void apply('install-pi-package-spec', async () => {
-              const result = await executePluginCommand('plugin.install', {
+              const result = await executePluginCommand(commandClient, 'plugin.install', {
                 source: 'pi-package-spec',
                 spec: packageSpec.trim(),
               })
@@ -230,7 +252,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
                       disabled={busy !== null}
                       onClick={() =>
                         void apply(item.id, () =>
-                          executePluginCommand('plugin.restore', { id: item.id }),
+                          executePluginCommand(commandClient, 'plugin.restore', { id: item.id }),
                         )
                       }
                     >
@@ -247,6 +269,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
                           onChange={(event) =>
                             void apply(item.id, () =>
                               executePluginCommand(
+                                commandClient,
                                 event.target.checked ? 'plugin.enable' : 'plugin.disable',
                                 {
                                   kind: item.kind,
@@ -266,7 +289,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
                         disabled={busy !== null}
                         onClick={() =>
                           void apply(item.id, () =>
-                            executePluginCommand('plugin.remove', {
+                            executePluginCommand(commandClient, 'plugin.remove', {
                               kind: item.kind,
                               id: item.id,
                               deleteData: false,
@@ -286,7 +309,7 @@ export function PluginManager({ rendererPluginStatuses }: PluginManagerProps): R
                           onClick={() => {
                             if (!window.confirm(`移除 ${item.name} 及其全部数据？`)) return
                             void apply(item.id, () =>
-                              executePluginCommand('plugin.remove', {
+                              executePluginCommand(commandClient, 'plugin.remove', {
                                 kind: item.kind,
                                 id: item.id,
                                 deleteData: true,

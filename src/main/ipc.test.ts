@@ -4,9 +4,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { CommandClient } from '../commands/index.js'
 import type { AppInfo } from '../shared/app-info.js'
-import type { PluginBootstrap, PluginManagerSnapshot } from '../shared/plugins.js'
+import type { PluginBootstrap } from '../shared/plugins.js'
 import type { Disposable } from '../kernel/module.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -38,19 +37,6 @@ import { registerIpc } from './ipc.js'
 
 const roots: string[] = []
 let registration: Disposable
-const commandClient: CommandClient = {
-  list: vi.fn(async () => []),
-  execute: mocks.commandExecute.mockImplementation(async (commandId: string) => ({
-    executionId: '00000000-0000-4000-8000-000000000001',
-    commandId,
-  })),
-  cancel: vi.fn(async () => ({
-    executionId: '00000000-0000-4000-8000-000000000001',
-    accepted: false,
-  })),
-  subscribe: vi.fn(() => () => undefined),
-}
-
 async function invoke(channel: string, input?: unknown): Promise<unknown> {
   const handler = mocks.handlers.get(channel)
   if (!handler) throw new Error(`Missing IPC handler: ${channel}`)
@@ -67,15 +53,6 @@ beforeEach(() => {
     onRendererReady: vi.fn(async () => undefined),
     appInfo: {} as AppInfo,
     getPluginBootstrap: vi.fn(async () => ({}) as PluginBootstrap),
-    pluginManager: {
-      getSnapshot: vi.fn(async (): Promise<PluginManagerSnapshot> => ({
-        safeMode: false,
-        restartRequired: false,
-        items: [],
-        issues: [],
-      })),
-    },
-    commandClient,
   })
 })
 
@@ -154,11 +131,31 @@ describe('Desktop Agent Workspace picker adapter', () => {
   })
 })
 
-describe('Plugin Manager command adapter', () => {
-  it('does not execute an install command when the picker is cancelled', async () => {
+describe('GUI Plugin picker adapter', () => {
+  it('only returns the selected source and path, without executing a Plugin command', async () => {
     mocks.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
 
-    await expect(invoke('plugin:install-local')).resolves.toMatchObject({ ok: true })
+    await expect(invoke('plugin:pick', { source: 'local' })).resolves.toEqual({
+      ok: true,
+      value: { source: 'local', path: null },
+    })
+    expect(mocks.commandExecute).not.toHaveBeenCalled()
+    expect(mocks.showOpenDialog).toHaveBeenCalledWith({
+      title: '选择 Pictor Plugin 目录',
+      properties: ['openDirectory'],
+    })
+  })
+
+  it('returns a Development Plugin path and leaves installation to the caller', async () => {
+    mocks.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: ['/workspace/development-plugin'],
+    })
+
+    await expect(invoke('plugin:pick', { source: 'development' })).resolves.toEqual({
+      ok: true,
+      value: { source: 'development', path: '/workspace/development-plugin' },
+    })
     expect(mocks.commandExecute).not.toHaveBeenCalled()
   })
 })

@@ -16,6 +16,8 @@ import {
   type ConnectionTestResult,
   type ModelSettings,
 } from '../../shared/model.js'
+import type { CommandClient } from '../../commands/index.js'
+import type { GuiPluginPicker } from '../../shared/desktop-bridge.js'
 import type { PluginStatus } from '../../plugin/host.js'
 import { PluginManager } from '../../renderer/settings/PluginManager.js'
 import { Modal } from '../../renderer/ui/Modal.js'
@@ -24,7 +26,9 @@ import type { AgentWorkspaceClient } from './shared.js'
 
 interface SettingsDialogProps {
   client: AgentWorkspaceClient
+  commandClient: CommandClient
   initial: ModelSettings | null
+  pluginPicker: GuiPluginPicker
   sections: readonly SettingsSection[]
   rendererPluginStatuses: readonly PluginStatus[]
   onClose: () => void
@@ -57,7 +61,9 @@ function createFormState(settings: ModelSettings | null): FormState {
 
 export function SettingsDialog({
   client,
+  commandClient,
   initial,
+  pluginPicker,
   sections,
   rendererPluginStatuses,
   onClose,
@@ -445,7 +451,11 @@ export function SettingsDialog({
         </>
       ) : null}
       {activeTab === 'plugins' ? (
-        <PluginManager rendererPluginStatuses={rendererPluginStatuses} />
+        <PluginManager
+          commandClient={commandClient}
+          pluginPicker={pluginPicker}
+          rendererPluginStatuses={rendererPluginStatuses}
+        />
       ) : null}
       {sections.find((section) => section.id === activeTab)?.render() ?? null}
     </Modal>

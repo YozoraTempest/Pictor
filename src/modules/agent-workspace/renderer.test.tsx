@@ -1,8 +1,8 @@
 import { ModuleKernel } from '../../kernel/kernel.js'
-import { shellApplicationContributions } from '../shell/application.js'
-import { agentWorkspaceRendererModule } from './renderer.js'
+import { guiWorkbenchContributions } from '../../gui/contract.js'
+import { createAgentWorkspaceRendererModule } from './renderer.js'
 
-it('contributes the Agent Workspace application through its Renderer Module', async () => {
+it('contributes the Agent Workspace Workbench through its Renderer Module', async () => {
   Object.defineProperty(window, 'pictorModules', {
     configurable: true,
     value: {
@@ -21,9 +21,13 @@ it('contributes the Agent Workspace application through its Renderer Module', as
   })
   const kernel = new ModuleKernel()
 
-  await kernel.start([agentWorkspaceRendererModule])
+  await kernel.start([createAgentWorkspaceRendererModule('pictor.agent-workspace')])
 
-  expect(kernel.getContributions(shellApplicationContributions)).toEqual([
-    expect.objectContaining({ id: 'agent-workspace', render: expect.any(Function) }),
+  expect(kernel.getContributions(guiWorkbenchContributions)).toEqual([
+    expect.objectContaining({
+      id: 'agent-workspace',
+      pluginId: 'pictor.agent-workspace',
+      render: expect.any(Function),
+    }),
   ])
 })

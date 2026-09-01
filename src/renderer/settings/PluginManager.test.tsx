@@ -2,8 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { CommandClient, CommandEvent } from '../../commands/index.js'
-import { appInfoSchema } from '../../shared/app-info.js'
-import type { PictorBridge } from '../../shared/desktop-bridge.js'
+import type { GuiPluginPicker } from '../../shared/desktop-bridge.js'
 import { pluginManagerSnapshotSchema } from '../../shared/plugins.js'
 import { PluginManager } from './PluginManager.js'
 
@@ -12,16 +11,6 @@ const snapshot = pluginManagerSnapshotSchema.parse({
   restartRequired: false,
   items: [],
   issues: [],
-})
-
-const appInfo = appInfoSchema.parse({
-  name: 'Pictor',
-  version: '0.3.0',
-  buildChannel: 'development',
-  sourceCommit: null,
-  platform: 'linux',
-  arch: 'x64',
-  distribution: 'unsupported-linux',
 })
 
 const now = new Date().toISOString()
@@ -51,23 +40,6 @@ function event(type: 'started' | 'completed', executionId: string): CommandEvent
   }
 }
 
-function createBridge(commands: CommandClient): PictorBridge {
-  return {
-    commands,
-    notifyRendererReady: async () => ({ ok: true, value: null }),
-    getAppInfo: async () => ({ ok: true, value: appInfo }),
-    getPluginBootstrap: async () => ({ ok: true, value: { safeMode: false, plugins: [] } }),
-    installLocalPlugin: async () => ({ ok: true, value: snapshot }),
-    installDevelopmentPlugin: async () => ({ ok: true, value: snapshot }),
-    installPiExtension: async () => ({ ok: true, value: snapshot }),
-    installPiPackage: async () => ({ ok: true, value: snapshot }),
-    pickProjectDirectory: async () => ({ ok: true, value: null }),
-    pickSessionImport: async () => ({ ok: true, value: null }),
-    pickSessionExport: async () => ({ ok: true, value: null }),
-    pickMessageImages: async () => ({ ok: true, value: null }),
-  }
-}
-
 describe('PluginManager command integration', () => {
   it('loads its production snapshot through the CommandClient transport', async () => {
     const executionId = '00000000-0000-4000-8000-000000000001'
@@ -83,15 +55,65 @@ describe('PluginManager command integration', () => {
       cancel: vi.fn(async () => ({ executionId, accepted: false })),
       subscribe,
     }
-    Object.defineProperty(window, 'pictor', {
-      configurable: true,
-      value: createBridge(commands),
-    })
+    const pluginPicker: GuiPluginPicker = {
+      pickPlugin: vi.fn(async (source) => ({
+        ok: true as const,
+        value: { source, path: null },
+      })),
+    }
 
-    render(<PluginManager rendererPluginStatuses={[]} />)
+    render(
+      <PluginManager
+        commandClient={commands}
+        pluginPicker={pluginPicker}
+        rendererPluginStatuses={[]}
+      />,
+    )
 
     await waitFor(() => expect(screen.getByText('0 个已登记扩展')).toBeVisible())
     expect(execute).toHaveBeenCalledWith('plugin.list', null, { frontend: 'gui' })
     expect(subscribe).toHaveBeenCalledWith(executionId, expect.any(Function))
+  })
+
+  it('keeps the picker as a selection adapter and sends the path through plugin.install', async () => {
+    const executionId = '00000000-0000-4000-8000-000000000002'
+    const execute = vi.fn(async () => ({ executionId, commandId: 'plugin.list' }))
+    const subscribe = vi.fn((_id: string | undefined, listener: (value: CommandEvent) => void) => {
+      listener(event('started', executionId))
+      listener(event('completed', executionId))
+      return vi.fn()
+    })
+    const commands: CommandClient = {
+      list: vi.fn(async () => []),
+      execute,
+      cancel: vi.fn(async () => ({ executionId, accepted: false })),
+      subscribe,
+    }
+    const pickPlugin = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        source: 'development' as const,
+        path: '/tmp/development-plugin',
+      },
+    }))
+
+    render(
+      <PluginManager
+        commandClient={commands}
+        pluginPicker={{ pickPlugin }}
+        rendererPluginStatuses={[]}
+      />,
+    )
+    await waitFor(() => expect(screen.getByText('0 个已登记扩展')).toBeVisible())
+
+    await screen.getByRole('button', { name: 'Development Plugin' }).click()
+    await waitFor(() =>
+      expect(execute).toHaveBeenCalledWith(
+        'plugin.install',
+        { source: 'development', path: '/tmp/development-plugin' },
+        { frontend: 'gui' },
+      ),
+    )
+    expect(pickPlugin).toHaveBeenCalledWith('development')
   })
 })
