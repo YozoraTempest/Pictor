@@ -42,7 +42,9 @@ React、TUI、Renderer 或 Preload 实现；它在获得 `FrontendLock` 后初�
 text/JSON 输出、SIGINT 取消和退出码；Profile 锁、Host 工厂、IO 与信号均通过依赖注入。Node 装配
 使用 `HeadlessRuntimeHost` 和 `EventPublisher`，不加载 Electron，也不激活 GUI/Electron Plugin
 入口；Runtime-only 操作返回明确的不可用错误。`ProfileFileLock` 由 CLI 和 DesktopHost 共同使用，
-以 user-data/profile 路径为锁身份，并以原子文件创建和 owner token 证明释放权限。
+以 user-data/profile 路径为锁身份，并以原子文件创建和 owner token 证明释放权限。崩溃后的锁仅在
+owner 元数据有效、本机 hostname 匹配且通过 `process.kill(pid, 0)` 明确证明 owner 已退出时恢复；
+外部主机、活动或无法判定的进程、损坏元数据和复核失败的锁都保留。
 
 `commands` 是当前 Stage 4 已落地的 Headless Command Engine 边界。它只向调用者提供不可变的
 `CommandClient`（`list`、`execute`、`cancel`、`subscribe`）以及可序列化的 descriptor、event、

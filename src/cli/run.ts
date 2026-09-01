@@ -179,7 +179,6 @@ async function executeCliCommand<T>(
   signals: CliDependencies['signals'],
   cancelTimeoutMs: number,
 ): Promise<T> {
-  const execution = await client.execute(commandId, input, { frontend: 'cli' })
   let resolveTerminal!: (event: CommandEvent) => void
   const terminalPromise = new Promise<CommandEvent>((resolve) => {
     resolveTerminal = resolve
@@ -193,17 +192,23 @@ async function executeCliCommand<T>(
   let cancelPromise: Promise<unknown> | null = null
   let terminal: CommandEvent | null = null
   let releaseSubscription: (() => void) | null = null
+  let executionId: string | null = null
+
+  const requestCancel = (id: string): void => {
+    if (cancelPromise !== null) return
+    cancelPromise = Promise.resolve()
+      .then(() => client.cancel(id))
+      .catch((error: unknown) => {
+        cancelError = error
+        return null
+      })
+  }
 
   const onInterrupt = (): void => {
     if (interrupted || terminal !== null) return
     interrupted = true
     resolveInterrupt()
-    cancelPromise = Promise.resolve()
-      .then(() => client.cancel(execution.executionId))
-      .catch((error: unknown) => {
-        cancelError = error
-        return null
-      })
+    if (executionId !== null) requestCancel(executionId)
   }
 
   const onEvent = (event: CommandEvent): void => {
@@ -217,8 +222,18 @@ async function executeCliCommand<T>(
 
   try {
     signals?.on('SIGINT', onInterrupt)
+    const execution = await client.execute(commandId, input, { frontend: 'cli' })
+    executionId = execution.executionId
+    if (interrupted) requestCancel(execution.executionId)
     releaseSubscription = client.subscribe(execution.executionId, onEvent)
-    if (terminal === null) {
+    if (interrupted) {
+      await waitForCancel(cancelPromise, cancelTimeoutMs)
+      terminal = await waitForTerminal(terminalPromise, cancelTimeoutMs)
+      if (terminal === null) {
+        const detail = cancelError instanceof Error ? `：${cancelError.message}` : ''
+        throw new CliCancelledError(`取消命令超时${detail}`, execution.executionId)
+      }
+    } else if (terminal === null) {
       const first = await Promise.race([
         terminalPromise.then((event) => ({ kind: 'terminal' as const, event })),
         interruptPromise.then(() => ({ kind: 'interrupt' as const })),
@@ -236,6 +251,9 @@ async function executeCliCommand<T>(
     }
 
     if (!terminal) terminal = await terminalPromise
+    if (interrupted && terminal.type !== 'cancelled') {
+      throw new CliCancelledError('命令未进入取消终态', execution.executionId)
+    }
     if (terminal.type === 'cancelled') {
       throw new CliCancelledError('命令已取消', terminal.executionId)
     }

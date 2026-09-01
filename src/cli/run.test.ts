@@ -16,6 +16,7 @@ import type {
   CliIo,
   CliProfileLock,
   CliSignals,
+  FrontendLockLease,
 } from './contract.js'
 import { CLI_EXIT_CODES } from './exit-codes.js'
 import { runCli } from './run.js'
@@ -42,18 +43,18 @@ const snapshot = pluginManagerSnapshotSchema.parse({
 })
 
 class TestSignals implements CliSignals {
-  private listener: (() => void) | null = null
+  private readonly listeners = new Set<() => void>()
 
   on(_signal: 'SIGINT', listener: () => void): void {
-    this.listener = listener
+    this.listeners.add(listener)
   }
 
   off(_signal: 'SIGINT', listener: () => void): void {
-    if (this.listener === listener) this.listener = null
+    this.listeners.delete(listener)
   }
 
   emitSigint(): void {
-    this.listener?.()
+    for (const listener of this.listeners) listener()
   }
 }
 
@@ -108,6 +109,7 @@ function createDependencies(
     lock?: CliProfileLock
     signals?: CliSignals
     host?: CliApplicationHost
+    createApplicationHost?: CliDependencies['createApplicationHost']
     cancelTimeoutMs?: number
   } = {},
 ): {
@@ -140,7 +142,7 @@ function createDependencies(
       version: '0.3.0',
       resolveUserDataDirectory: vi.fn(() => '/tmp/pictor-cli-test'),
       createProfileLock: vi.fn(() => lock),
-      createApplicationHost: vi.fn(async () => host),
+      createApplicationHost: options.createApplicationHost ?? vi.fn(async () => host),
       ...(options.signals ? { signals: options.signals } : {}),
       ...(options.cancelTimeoutMs ? { cancelTimeoutMs: options.cancelTimeoutMs } : {}),
     },
@@ -332,5 +334,64 @@ describe('runCli', () => {
       ok: false,
       error: { code: 'cancelled', executionId },
     })
+  })
+
+  it('cancels when SIGINT arrives while execute is still pending', async () => {
+    const signals = new TestSignals()
+    let resolveExecute!: (value: ReturnType<typeof execution>) => void
+    const execute = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof execution>>((resolve) => {
+          resolveExecute = resolve
+        }),
+    )
+    let eventListener: ((event: CommandEvent) => void) | null = null
+    const cancel = vi.fn(async () => {
+      eventListener?.(cancelled('plugin.list'))
+      return { executionId, accepted: true }
+    })
+    const client: CommandClient = {
+      list: vi.fn(async () => []),
+      execute,
+      cancel,
+      subscribe: vi.fn((_id, listener) => {
+        eventListener = listener
+        listener(started('plugin.list'))
+        return vi.fn()
+      }),
+    }
+    const leaseRelease = vi.fn(async () => undefined)
+    const lock = {
+      acquire: vi.fn(async () => ({ release: leaseRelease })),
+    } satisfies CliProfileLock
+    let hostLease: FrontendLockLease | null = null
+    const host: CliApplicationHost = {
+      start: vi.fn(async () => ({ commandClient: client })),
+      stop: vi.fn(async () => {
+        await hostLease?.release()
+      }),
+    }
+    const createApplicationHost = vi.fn(async (options) => {
+      hostLease = await options.frontendLock.acquire()
+      return host
+    })
+    const test = createDependencies(client, {
+      lock,
+      signals,
+      host,
+      createApplicationHost,
+      cancelTimeoutMs: 100,
+    })
+
+    const runPromise = runCli(['plugin', 'list'], test.dependencies)
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce())
+    signals.emitSigint()
+    expect(cancel).not.toHaveBeenCalled()
+
+    resolveExecute(execution('plugin.list'))
+    await expect(runPromise).resolves.toMatchObject({ exitCode: CLI_EXIT_CODES.cancelled })
+    expect(cancel).toHaveBeenCalledWith(executionId)
+    expect(host.stop).toHaveBeenCalledOnce()
+    expect(leaseRelease).toHaveBeenCalledOnce()
   })
 })

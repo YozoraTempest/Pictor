@@ -30,37 +30,67 @@ export interface ProfileFileLockOptions {
   readonly frontend: ProfileLockOwner['frontend']
   readonly pid?: number
   readonly hostname?: string
+  readonly localHostname?: string
   readonly now?: () => Date
   readonly createToken?: () => string
+  readonly fileSystem?: ProfileLockFileSystem
+}
+
+export interface ProfileLockFileHandle {
+  writeFile(content: string, encoding: 'utf8'): Promise<void>
+  sync(): Promise<void>
+  close(): Promise<void>
+}
+
+export interface ProfileLockFileSystem {
+  mkdir(path: string): Promise<void>
+  open(path: string, flags: string, mode?: number): Promise<ProfileLockFileHandle>
+  readFile(path: string, encoding: 'utf8'): Promise<string>
+  unlink(path: string): Promise<void>
+}
+
+const defaultFileSystem: ProfileLockFileSystem = {
+  mkdir: async (path) => {
+    await mkdir(path, { recursive: true })
+  },
+  open: (path, flags, mode) => open(path, flags, mode),
+  readFile: (path, encoding) => readFile(path, encoding),
+  unlink: (path) => unlink(path),
 }
 
 /**
  * An exclusive lock for a Pictor user-data directory.
  *
- * The lock is intentionally conservative: an existing or malformed lock is
- * reported as a conflict and is never removed by a new owner. Release only
- * unlinks a file whose token still proves that this instance owns it.
+ * The lock is intentionally conservative: only valid local owner metadata
+ * whose process is proven absent can be recovered. Release only unlinks a
+ * file whose token still proves that this instance owns it.
  */
 export class ProfileFileLock implements FrontendLock {
   readonly profilePath: string
   readonly lockPath: string
 
   private readonly options: Required<
-    Pick<ProfileFileLockOptions, 'frontend' | 'pid' | 'hostname' | 'now' | 'createToken'>
+    Pick<
+      ProfileFileLockOptions,
+      'frontend' | 'pid' | 'hostname' | 'localHostname' | 'now' | 'createToken' | 'fileSystem'
+    >
   >
   private leaseToken: string | null = null
-  private lockHandle: Awaited<ReturnType<typeof open>> | null = null
+  private lockHandle: ProfileLockFileHandle | null = null
   private lastConflict: ProfileLockConflict | null = null
 
   constructor(profilePath: string, options: ProfileFileLockOptions) {
     this.profilePath = resolve(profilePath)
     this.lockPath = join(this.profilePath, PROFILE_LOCK_FILE)
+    const localHostname = options.localHostname ?? hostname()
     this.options = {
       frontend: options.frontend,
       pid: options.pid ?? process.pid,
-      hostname: options.hostname ?? hostname(),
+      hostname: options.hostname ?? localHostname,
+      localHostname,
       now: options.now ?? (() => new Date()),
       createToken: options.createToken ?? randomUUID,
+      fileSystem: options.fileSystem ?? defaultFileSystem,
     }
   }
 
@@ -69,7 +99,7 @@ export class ProfileFileLock implements FrontendLock {
       throw new Error('Profile lock has already been acquired by this instance')
     }
     this.lastConflict = null
-    await mkdir(this.profilePath, { recursive: true })
+    await this.options.fileSystem.mkdir(this.profilePath)
 
     const owner = profileLockOwnerSchema.parse({
       schemaVersion: 1,
@@ -81,17 +111,8 @@ export class ProfileFileLock implements FrontendLock {
       acquiredAt: this.options.now().toISOString(),
     })
 
-    let handle
-    try {
-      handle = await open(this.lockPath, 'wx', 0o600)
-    } catch (error) {
-      if (!isNodeError(error) || error.code !== 'EEXIST') throw error
-      this.lastConflict = {
-        lockPath: this.lockPath,
-        owner: await readLockOwner(this.lockPath),
-      }
-      return null
-    }
+    const handle = await this.openLockFile()
+    if (!handle) return null
 
     try {
       await handle.writeFile(`${JSON.stringify(owner)}\n`, 'utf8')
@@ -100,7 +121,7 @@ export class ProfileFileLock implements FrontendLock {
       this.leaseToken = owner.token
     } catch (error) {
       await handle.close().catch(() => undefined)
-      await unlink(this.lockPath).catch(() => undefined)
+      await this.options.fileSystem.unlink(this.lockPath).catch(() => undefined)
       throw error
     }
 
@@ -116,6 +137,54 @@ export class ProfileFileLock implements FrontendLock {
 
   getConflict(): ProfileLockConflict | null {
     return this.lastConflict
+  }
+
+  private async openLockFile(): Promise<ProfileLockFileHandle | null> {
+    try {
+      return await this.options.fileSystem.open(this.lockPath, 'wx', 0o600)
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== 'EEXIST') throw error
+
+      const existingOwner = await readLockOwner(this.lockPath, this.options.fileSystem)
+      if (!(await this.tryRemoveStaleLock(existingOwner))) {
+        this.lastConflict = { lockPath: this.lockPath, owner: existingOwner }
+        return null
+      }
+
+      try {
+        return await this.options.fileSystem.open(this.lockPath, 'wx', 0o600)
+      } catch (retryError) {
+        if (!isNodeError(retryError) || retryError.code !== 'EEXIST') throw retryError
+        this.lastConflict = {
+          lockPath: this.lockPath,
+          owner: await readLockOwner(this.lockPath, this.options.fileSystem),
+        }
+        return null
+      }
+    }
+  }
+
+  private async tryRemoveStaleLock(owner: ProfileLockOwner | null): Promise<boolean> {
+    if (!owner) return false
+    if (owner.hostname !== this.options.localHostname) return false
+    if (owner.profilePath !== this.profilePath) return false
+    if (!isProcessAbsent(owner.pid)) return false
+
+    const currentOwner = await readLockOwner(this.lockPath, this.options.fileSystem)
+    if (
+      !currentOwner ||
+      currentOwner.token !== owner.token ||
+      currentOwner.profilePath !== owner.profilePath
+    ) {
+      return false
+    }
+
+    try {
+      await this.options.fileSystem.unlink(this.lockPath)
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== 'ENOENT') throw error
+    }
+    return true
   }
 
   private async release(owner: ProfileLockOwner): Promise<void> {
@@ -134,9 +203,9 @@ export class ProfileFileLock implements FrontendLock {
 
     if (!firstError) {
       try {
-        const current = await readLockOwner(this.lockPath)
+        const current = await readLockOwner(this.lockPath, this.options.fileSystem)
         if (current?.token === owner.token && current.profilePath === owner.profilePath) {
-          await unlink(this.lockPath).catch((error: unknown) => {
+          await this.options.fileSystem.unlink(this.lockPath).catch((error: unknown) => {
             if (!isNodeError(error) || error.code !== 'ENOENT') throw error
           })
         }
@@ -149,13 +218,25 @@ export class ProfileFileLock implements FrontendLock {
   }
 }
 
-async function readLockOwner(path: string): Promise<ProfileLockOwner | null> {
+async function readLockOwner(
+  path: string,
+  fileSystem: ProfileLockFileSystem,
+): Promise<ProfileLockOwner | null> {
   try {
-    return profileLockOwnerSchema.parse(JSON.parse(await readFile(path, 'utf8')))
+    return profileLockOwnerSchema.parse(JSON.parse(await fileSystem.readFile(path, 'utf8')))
   } catch (error) {
-    if (isNodeError(error)) return null
+    if (isNodeError(error) && error.code === 'ENOENT') return null
     if (error instanceof z.ZodError || error instanceof SyntaxError) return null
     throw error
+  }
+}
+
+function isProcessAbsent(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return false
+  } catch (error) {
+    return isNodeError(error) && error.code === 'ESRCH'
   }
 }
 

@@ -17,6 +17,8 @@ export type {
 export {
   PROFILE_LOCK_FILE,
   ProfileFileLock,
+  type ProfileLockFileHandle,
+  type ProfileLockFileSystem,
   type ProfileFileLockOptions,
   type ProfileLockConflict,
   type ProfileLockOwner,

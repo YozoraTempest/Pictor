@@ -1,5 +1,3 @@
-import type { z } from 'zod'
-
 import type { CommandClient } from '../commands/index.js'
 import type {
   ApplicationHostServices,
@@ -90,12 +88,5 @@ export interface CliRunResult {
   readonly exitCode: import('./exit-codes.js').CliExitCode
   readonly error?: CliError
 }
-
-export interface CliCommandResult<T> {
-  readonly commandId: string
-  readonly value: T
-}
-
-export type CliOutputSchema<T> = z.ZodType<T>
 
 export type { CommandClient, FrontendLock, FrontendLockLease }
