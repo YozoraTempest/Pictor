@@ -125,7 +125,7 @@ function context(options: {
   }
 }
 
-it('runs Pi through the TUI runtime seam and re-reads the authoritative JSONL projection', async () => {
+it('runs Pi through the TUI runtime seam without owning a second history', async () => {
   const modules = await entrypoint({ process: 'tui', pluginId: manifest.id })
   const kernel = new ModuleKernel()
   await kernel.start(modules)
@@ -136,10 +136,11 @@ it('runs Pi through the TUI runtime seam and re-reads the authoritative JSONL pr
   await contribution.run(fixture.context)
 
   expect(runner.run).toHaveBeenCalledOnce()
-  expect(fixture.invoke).toHaveBeenCalledWith('pictor.agent-workspace', 'inspectSessionHistory', {
-    sessionId,
-    entryId: null,
-  })
+  expect(fixture.invoke).not.toHaveBeenCalledWith(
+    'pictor.agent-workspace',
+    'inspectSessionHistory',
+    expect.anything(),
+  )
   await kernel.stop()
 })
 

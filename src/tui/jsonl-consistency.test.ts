@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -11,7 +11,7 @@ import { ModuleRouter, moduleHandlerContributions } from '../kernel/contract.js'
 import { ModuleKernel } from '../kernel/kernel.js'
 import { createAgentWorkspaceHostModule } from '../modules/agent-workspace/host.js'
 import { createAgentWorkspaceClient } from '../modules/agent-workspace/shared.js'
-import { ModelConnectionTester } from '../application/model-connection.js'
+import { ModelConnectionTester } from '../application/index.js'
 import { AppRepository } from '../main/persistence/app-repository.js'
 import { SecretStore } from '../main/persistence/secret-store.js'
 import { RuntimeCoordinator } from '../main/runtime/coordinator.js'
@@ -127,7 +127,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-it('keeps TUI execution and inspectSessionHistory on the same Pi JSONL authority', async () => {
+it('persists TUI session-level Pi events before exposing the same JSONL projection', async () => {
   const root = await mkdtemp(join(tmpdir(), 'pictor-tui-jsonl-'))
   roots.push(root)
   const projectRoot = join(root, 'project')
@@ -141,37 +141,18 @@ it('keeps TUI execution and inspectSessionHistory on the same Pi JSONL authority
   const session = await repository.createSession(project.id)
   const piPath = join(dataDirectory, 'pi', project.id, session.id, 'session.jsonl')
   await mkdir(join(dataDirectory, 'pi', project.id, session.id), { recursive: true })
-  const piContent = [
-    JSON.stringify({
+  await writeFile(
+    piPath,
+    `${JSON.stringify({
       type: 'session',
       version: 3,
       id: 'pi-session',
       timestamp: now,
       cwd: projectRoot,
-    }),
-    JSON.stringify({
-      type: 'message',
-      id: 'user-entry',
-      parentId: null,
-      timestamp: now,
-      message: { role: 'user', content: 'TUI task' },
-    }),
-    JSON.stringify({
-      type: 'message',
-      id: 'assistant-entry',
-      parentId: 'user-entry',
-      timestamp: now,
-      message: {
-        role: 'assistant',
-        content: [{ type: 'text', text: 'TUI answer' }],
-        stopReason: 'stop',
-      },
-    }),
-    '',
-  ].join('\n')
-  await writeFile(piPath, piContent)
+    })}\n`,
+  )
   await repository.bindPiSession(session.id, { id: 'pi-session', path: piPath })
-  await repository.rebuildSessionProjection(session.id)
+  expect((await repository.getSession(session.id)).messages).toEqual([])
   await repository.saveSettings({
     apiProtocol: 'responses',
     baseUrl: 'https://example.test/v1',
@@ -183,9 +164,16 @@ it('keeps TUI execution and inspectSessionHistory on the same Pi JSONL authority
   })
 
   const runtime = new NoopRuntimeHost()
-  const coordinator = new RuntimeCoordinator(repository, runtime, (event) =>
-    runtime.events.push(event),
-  )
+  let resolveProjection!: () => void
+  const projectionPersisted = new Promise<void>((resolve) => {
+    resolveProjection = resolve
+  })
+  const coordinator = new RuntimeCoordinator(repository, runtime, (event) => {
+    runtime.events.push(event)
+    if (event.type === 'session.activeLeafChanged' && event.activeLeafId === 'assistant-entry') {
+      resolveProjection()
+    }
+  })
   const kernel = new ModuleKernel()
   await kernel.start([
     createAgentWorkspaceHostModule({
@@ -199,7 +187,45 @@ it('keeps TUI execution and inspectSessionHistory on the same Pi JSONL authority
     invoke: (moduleId, method, input) => router.invoke(moduleId, method, input),
     onEvent: () => () => undefined,
   })
-  const runner = { run: async () => undefined }
+  const notifyActiveLeaf = (activeLeafId: string): void => {
+    coordinator.handleEvent({
+      type: 'session.activeLeafChanged',
+      runId: null,
+      sessionId: session.id,
+      activeLeafId,
+      at: now,
+    })
+  }
+  const runner = {
+    run: async () => {
+      await appendFile(
+        piPath,
+        `${JSON.stringify({
+          type: 'message',
+          id: 'user-entry',
+          parentId: null,
+          timestamp: now,
+          message: { role: 'user', content: 'TUI task' },
+        })}\n`,
+      )
+      notifyActiveLeaf('user-entry')
+      await appendFile(
+        piPath,
+        `${JSON.stringify({
+          type: 'message',
+          id: 'assistant-entry',
+          parentId: 'user-entry',
+          timestamp: now,
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'TUI answer' }],
+            stopReason: 'stop',
+          },
+        })}\n`,
+      )
+      notifyActiveLeaf('assistant-entry')
+    },
+  }
   const output: string[] = []
   const context: TuiApplicationContext = {
     terminal: {
@@ -226,16 +252,21 @@ it('keeps TUI execution and inspectSessionHistory on the same Pi JSONL authority
   const delegateKernel = new ModuleKernel()
   await delegateKernel.start(modules)
   const contribution = delegateKernel.getContributions(tuiApplicationContributions)[0]!
-  const before = await readFile(piPath, 'utf8')
 
   await contribution.run(context)
+  await projectionPersisted
 
   const projected = await workspace.inspectSessionHistory({ sessionId: session.id, entryId: null })
-  const direct = await repository.inspectSessionHistory(session.id, null)
-  expect(projected).toMatchObject({ ok: true, value: direct })
-  expect(direct.session.messages.map(({ content }) => content)).toEqual(['TUI task', 'TUI answer'])
-  expect(direct.tree?.activeLeafId).toBe('assistant-entry')
-  expect(await readFile(piPath, 'utf8')).toBe(before)
+  expect(projected).toMatchObject({ ok: true })
+  if (!projected.ok) throw new Error(projected.error.message)
+  const stored = await repository.getSession(session.id)
+  expect(stored.messages).toEqual(projected.value.session.messages)
+  expect(stored.messages.map(({ content }) => content)).toEqual(['TUI task', 'TUI answer'])
+  expect(repository.getSessionHistory(session.id).activeLeafId).toBe('assistant-entry')
+  expect(projected.value.tree?.activeLeafId).toBe('assistant-entry')
+  expect(runtime.events.filter((event) => event.type === 'session.activeLeafChanged')).toHaveLength(
+    2,
+  )
   expect(output).toEqual([])
   await delegateKernel.stop()
   await kernel.stop()

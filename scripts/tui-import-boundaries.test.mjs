@@ -89,6 +89,44 @@ async function sourceFiles(root) {
   )
 }
 
+async function resolveLocalSource(file, specifier) {
+  const target = relativeTarget(file, specifier)
+  if (!target) return null
+  const candidates = [
+    target,
+    target.replace(/\.js$/, '.ts'),
+    target.replace(/\.js$/, '.tsx'),
+    `${target}.ts`,
+    `${target}.tsx`,
+  ]
+  for (const candidate of candidates) {
+    try {
+      await readFile(candidate)
+      return candidate
+    } catch {
+      // Keep resolving the source graph without requiring emitted JavaScript.
+    }
+  }
+  return null
+}
+
+async function transitiveProductionSources() {
+  const pending = await sourceFiles(tuiRoot)
+  const visited = new Map(pending.map(({ file, source }) => [file, source]))
+  while (pending.length > 0) {
+    const current = pending.pop()
+    if (!current) continue
+    for (const specifier of importsOf(current.source)) {
+      const target = await resolveLocalSource(current.file, specifier)
+      if (!target || !isWithin(srcRoot, target) || visited.has(target)) continue
+      const source = await readFile(target, 'utf8')
+      visited.set(target, source)
+      pending.push({ file: target, source })
+    }
+  }
+  return visited
+}
+
 it('keeps TUI Core and Delegate Plugin on public non-GUI boundaries', async () => {
   const violations = []
   for (const { file, source } of await sourceFiles(tuiRoot)) {
@@ -111,4 +149,18 @@ it('keeps the production Pi composition on the public InteractiveMode runner sea
   expect(source).toContain('new InteractiveMode(runtime, modeOptions)')
   expect(source).toContain('return this.mode.run()')
   expect(source).not.toMatch(/as\s+any/)
+})
+
+it('keeps ModelConnectionTester in the Application boundary transitively', async () => {
+  const applicationSource = await readFile(resolve('src/application/model-connection.ts'), 'utf8')
+  const mainSource = await readFile(resolve('src/main/model-connection.ts'), 'utf8')
+  const tuiConfig = JSON.parse(await readFile(resolve('tsconfig.tui.json'), 'utf8'))
+  const graph = await transitiveProductionSources()
+
+  expect(applicationSource).not.toMatch(/(?:from|import)\s+['"][^'"]*(?:src\/main|\.\.\/main)/)
+  expect(mainSource).toContain(
+    "export { ModelConnectionTester } from '../application/model-connection.js'",
+  )
+  expect(tuiConfig.include).not.toContain('src/main/model-connection.ts')
+  expect(graph.has(resolve('src/main/model-connection.ts'))).toBe(false)
 })

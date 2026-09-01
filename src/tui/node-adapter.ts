@@ -5,16 +5,18 @@ import { join, resolve } from 'node:path'
 
 import {
   ApplicationHost,
+  ModelConnectionTester,
   ProfileFileLock,
   type ApplicationHostOptions,
   type EventPublisher,
   type FrontendLock,
   type UserData,
 } from '../application/index.js'
-import { ModelConnectionTester } from '../application/model-connection.js'
+import type { AgentWorkspaceHost } from '../modules/agent-workspace/host.js'
 import { createHostPluginDefinitions } from '../plugin/loader.js'
 import { defaultPluginProfile, developerPluginProfile } from '../plugin/default-profile.js'
 import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
+import type { UpdaterHostAdapter } from '../modules/updater/host.js'
 import { appInfoSchema, type AppInfo } from '../shared/app-info.js'
 import { PictorError } from '../shared/errors.js'
 import { InProcessRuntimeHost } from './runtime-host.js'
@@ -133,17 +135,31 @@ async function createApplication(
     pluginActivationMode: 'headless',
     safeMode: options.safeMode,
     createHostPluginDefinitions: (snapshot, currentAppInfo, context) => {
-      const agentWorkspaceHost = {
+      const agentWorkspaceHost: AgentWorkspaceHost = {
         repository: context.repository,
         runtime: context.runtime,
         connectionTester: new ModelConnectionTester(),
       }
+      const updaterHost = createTuiUpdaterHostAdapter()
       return createHostPluginDefinitions(snapshot, currentAppInfo, (pluginId) =>
-        pluginId === agentWorkspaceContract.id ? agentWorkspaceHost : undefined,
+        pluginId === agentWorkspaceContract.id
+          ? agentWorkspaceHost
+          : pluginId === 'pictor.updater'
+            ? updaterHost
+            : undefined,
       )
     },
   }
   return { applicationHost: new ApplicationHost(applicationOptions), runtimeHost }
+}
+
+export function createTuiUpdaterHostAdapter(): UpdaterHostAdapter {
+  return {
+    fetch: globalThis.fetch,
+    openExternal: async () => {
+      throw new PictorError('internal', 'TUI 不支持打开外部更新链接，请在 GUI 中操作')
+    },
+  }
 }
 
 async function hasCompleteBundledProfile(

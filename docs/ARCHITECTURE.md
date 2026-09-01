@@ -155,8 +155,10 @@ Runtime，再逆序停止 Plugin Kernel，最后释放 lock；DesktopHost 另外
 TUI 的 `InProcessRuntimeHost` 在 ApplicationHost 组装完成的 Runtime bootstrap 上加载 Runtime
 Plugin Host；它调用 Runtime public contribution，不启动 Electron utility process。`PiAgentRuntime`
 通过 `InteractiveRuntimeRunner` 封装已打开的 Pi `AgentSessionRuntime`，生产路径实际执行
-`new InteractiveMode(...).run()`。TUI 不保存 transcript 或第二份 history，退出后通过现有
-`inspectSessionHistory`/Projection 读取 Pi JSONL。
+`new InteractiveMode(...).run()`。TUI 不保存 transcript 或第二份 history；Pi InteractiveMode 的
+session-level entry/leaf event 经 RuntimeCoordinator persistence queue 先保存 active leaf，再从
+同一个 JSONL 重建并持久化 Session Projection。`inspectSessionHistory` 仍是同一 authority 的只读
+Projection view。
 
 `RuntimeCoordinator` 拥有自身需要的窄 persistence 和 Runtime host interface。现有
 `AppRepository` 与注入的 `RuntimeHost` 直接满足它们；测试使用 in-memory adapter，不依赖具体

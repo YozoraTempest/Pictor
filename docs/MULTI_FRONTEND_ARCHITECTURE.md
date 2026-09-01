@@ -254,7 +254,8 @@ Plugin Host 直接装配相同的 Runtime bootstrap；Pi adapter 使用已安装
 
 `npm run build:tui` 构建 Plugin Store snapshot 和 `out/tui`，`npm run tui -- ...` 运行开发入口；
 `verify:fast` 与 `verify:pr` 都覆盖 TUI types/build/unit。Stage 9 新增 fake terminal、JSONL
-projection consistency、Plugin disabled/removed、锁冲突、dispose 和 import-boundary 测试，并
+session-level event queue/projection consistency、Plugin disabled/removed、锁冲突、dispose 和
+import-boundary 测试，并
 保留 Stage 8 GUI/style boundary。
 
 已安装 Pi 版本的 `InteractiveMode` 尚未公开 terminal 注入和可异步接管的退出钩子，包根也未导出

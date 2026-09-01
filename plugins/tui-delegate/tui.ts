@@ -62,14 +62,6 @@ async function runDelegateTui(context: TuiApplicationContext): Promise<void> {
     tuiMode: context.launchTarget.tuiMode,
   })
   await runner.run()
-
-  // The Pi JSONL remains authoritative. This read intentionally asks the
-  // existing Workspace projection to rebuild/inspect the same history instead
-  // of maintaining a TUI-owned transcript.
-  unwrap(
-    await context.workspace.inspectSessionHistory({ sessionId: session.id, entryId: null }),
-    '检查 TUI Session Projection',
-  )
 }
 
 interface ResolvedTarget {

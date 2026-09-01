@@ -16,7 +16,6 @@
     "src/kernel/**/*.ts",
     "src/main/persistence/**/*.ts",
     "src/main/runtime/coordinator.ts",
-    "src/main/model-connection.ts",
     "src/main/plugins/plugin-loader.ts",
     "src/main/plugins/plugin-manager.ts",
     "src/main/plugins/plugin-store.ts",
