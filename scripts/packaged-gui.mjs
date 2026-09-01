@@ -63,9 +63,10 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
       },
     }
   } catch (error) {
+    const output = JSON.stringify({ stdout, stderr })
     await stopProcess(child.pid)
     await waitForExit(child, 2_000)
-    throw error
+    throw new Error(`${String(error)}\nPackaged GUI output: ${output}`, { cause: error })
   }
 }
 
