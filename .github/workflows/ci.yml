@@ -53,9 +53,9 @@ jobs:
           for path in "${changed_paths[@]}"; do
             case "$path" in
               .github/workflows/*.yml) workflow_changed=true; package_changed=true ;;
-              electron.vite.config.ts | plugins/* | src/cli/* | src/node/* | src/tui/*) package_changed=true; app_changed=true ;;
-              package.json|package-lock.json|packaging/*|scripts/after-pack.mjs|scripts/build-distribution.mjs|scripts/distribution-contract.mjs|scripts/electron-fuses*.mjs|scripts/launcher-contract.test.mjs|scripts/linux-after-*.sh|scripts/linux-launch-readiness*|scripts/packaged-gui.mjs|scripts/build-cli.mjs|scripts/build-plugins.mjs|scripts/build-tui.mjs|scripts/verify-*.mjs) package_changed=true ;;
-              *.md | docs/* | .github/ISSUE_TEMPLATE/* | .github/PULL_REQUEST_TEMPLATE*) ;;
+              electron.vite.config.ts|plugins/*|src/cli/*|src/node/*|src/tui/*) package_changed=true; app_changed=true ;;
+              package.json|package-lock.json|packaging/*|scripts/after-pack.mjs|scripts/build-distribution.mjs|scripts/distribution-contract.mjs|scripts/electron-fuses*.mjs|scripts/launcher-contract.test.mjs|scripts/linux-after-*.sh|scripts/linux-launch-readiness*|scripts/packaged-gui.mjs|scripts/build-cli.mjs|scripts/build-plugins.mjs|scripts/build-tui.mjs|scripts/verify-*.mjs) package_changed=true; app_changed=true ;;
+              *.md|docs/*|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE*) ;;
               *) app_changed=true ;;
             esac
           done
@@ -68,7 +68,7 @@ jobs:
               invalid_paths=''
               for path in "${changed_paths[@]}"; do
                 case "$path" in
-                  .github/workflows/*.yml | README.md | CONTRIBUTING.md | docs/PROJECT_MANAGEMENT.md | docs/TESTING.md) ;;
+                  .github/workflows/*.yml|README.md|CONTRIBUTING.md|docs/PROJECT_MANAGEMENT.md|docs/TESTING.md) ;;
                   *) invalid_paths+="$path"$'\n' ;;
                 esac
               done

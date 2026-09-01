@@ -9,12 +9,7 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
   const windowsBatchLauncher =
     process.platform === 'win32' && executablePath.toLowerCase().endsWith('.cmd')
   const command = windowsBatchLauncher ? (process.env.ComSpec ?? 'cmd.exe') : executablePath
-  const packagedGuiArguments = [
-    `--remote-debugging-port=${port}`,
-    '--no-sandbox',
-    ...(process.platform === 'win32' ? ['--disable-gpu'] : []),
-    ...arguments_,
-  ]
+  const packagedGuiArguments = [`--remote-debugging-port=${port}`, '--no-sandbox', ...arguments_]
   const commandArguments = windowsBatchLauncher
     ? [
         '/d',
@@ -37,7 +32,6 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
   })
   let stdout = ''
   let stderr = ''
-  let cdpTargets = []
   child.stdout.on('data', (chunk) => {
     stdout += chunk.toString()
   })
@@ -46,23 +40,12 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
   })
 
   try {
-    await waitForCdp(
-      port,
-      child,
-      () => ({ stdout, stderr, cdpTargets }),
-      (targets) => {
-        cdpTargets = targets
-      },
-    )
-    const cdpProbe = await probeCdpTarget(cdpTargets.find((target) => target?.type === 'page'))
-    if (cdpProbe) cdpTargets = cdpTargets.map((target) => ({ ...target, cdpProbe }))
-    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
-      timeout: 120_000,
-    })
+    await waitForCdp(port, child, () => ({ stdout, stderr }))
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
     const applicationPid =
       (await findProcessByArgument(`--remote-debugging-port=${port}`)) ?? child.pid
     return {
-      firstWindow: () => firstPage(browser, () => ({ stdout, stderr })),
+      firstWindow: () => firstPage(browser),
       close: async () => {
         await withTimeout(
           browser.close().catch(() => undefined),
@@ -79,10 +62,9 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
       },
     }
   } catch (error) {
-    const output = JSON.stringify({ stdout, stderr, cdpTargets })
     await stopProcess(child.pid)
     await waitForExit(child, 2_000)
-    throw new Error(`${String(error)}\nPackaged GUI output: ${output}`, { cause: error })
+    throw error
   }
 }
 
@@ -98,9 +80,8 @@ async function findFreePort() {
   return address.port
 }
 
-async function waitForCdp(port, child, readOutput, updateTargets) {
-  const deadline = Date.now() + 120_000
-  let browserReady = false
+async function waitForCdp(port, child, readOutput) {
+  const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       throw new Error(
@@ -108,18 +89,8 @@ async function waitForCdp(port, child, readOutput, updateTargets) {
       )
     }
     try {
-      if (!browserReady) {
-        const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/version`)
-        browserReady = response.ok
-      }
-      if (browserReady) {
-        const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/list`)
-        if (response.ok) {
-          const targets = await response.json()
-          if (Array.isArray(targets)) updateTargets(targets)
-          if (Array.isArray(targets) && targets.some((target) => target?.type === 'page')) return
-        }
-      }
+      const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/version`)
+      if (response.ok) return
     } catch {
       // Electron may need a few cycles to bind the port.
     }
@@ -130,59 +101,6 @@ async function waitForCdp(port, child, readOutput, updateTargets) {
 
 async function findProcessByArgument(argument) {
   return (await findProcessesByArgument(argument))[0] ?? null
-}
-
-async function probeCdpTarget(target) {
-  if (!target?.webSocketDebuggerUrl) return { ok: false, reason: 'missing page target' }
-  const websocket = new globalThis.WebSocket(target.webSocketDebuggerUrl)
-  try {
-    await new Promise((resolve, reject) => {
-      const timer = globalThis.setTimeout(() => reject(new Error('open timeout')), 10_000)
-      websocket.addEventListener(
-        'open',
-        () => {
-          globalThis.clearTimeout(timer)
-          resolve()
-        },
-        { once: true },
-      )
-      websocket.addEventListener(
-        'error',
-        (event) => {
-          globalThis.clearTimeout(timer)
-          reject(event.error ?? new Error('websocket error'))
-        },
-        { once: true },
-      )
-    })
-    const response = await new Promise((resolve, reject) => {
-      const timer = globalThis.setTimeout(() => reject(new Error('evaluate timeout')), 10_000)
-      const listener = (event) => {
-        const message = JSON.parse(event.data)
-        if (message.id !== 1) return
-        websocket.removeEventListener('message', listener)
-        globalThis.clearTimeout(timer)
-        resolve(message)
-      }
-      websocket.addEventListener('message', listener)
-      websocket.send(
-        JSON.stringify({
-          id: 1,
-          method: 'Runtime.evaluate',
-          params: {
-            expression:
-              'JSON.stringify({url: location.href, title: document.title, readyState: document.readyState})',
-            returnByValue: true,
-          },
-        }),
-      )
-    })
-    return { ok: true, response }
-  } catch (error) {
-    return { ok: false, reason: String(error) }
-  } finally {
-    websocket.close()
-  }
 }
 
 async function findProcessesByArgument(argument) {
@@ -253,21 +171,14 @@ async function withTimeout(promise, timeoutMs) {
   await Promise.race([promise, new Promise((resolve) => globalThis.setTimeout(resolve, timeoutMs))])
 }
 
-async function firstPage(browser, readOutput) {
-  const deadline = Date.now() + 90_000
+async function firstPage(browser) {
+  const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     const page = browser.contexts().flatMap((context) => context.pages())[0]
     if (page) return page
     await new Promise((resolve) => globalThis.setTimeout(resolve, 100))
   }
-  const pages = browser.contexts().flatMap((context) => context.pages())
-  throw new Error(
-    `Packaged GUI did not create a renderer page: ${JSON.stringify({
-      pageCount: pages.length,
-      pages: pages.map((page) => ({ url: page.url() })),
-      ...readOutput(),
-    })}`,
-  )
+  throw new Error('Packaged GUI did not create a renderer page')
 }
 
 function waitForExit(child, timeoutMs) {

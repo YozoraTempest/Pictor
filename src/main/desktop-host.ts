@@ -59,7 +59,6 @@ function registerAppProtocol(pluginStore: PluginStore): void {
 
   protocol.handle(APP_SCHEME, async (request) => {
     const requestUrl = new URL(request.url)
-    startupDiagnostic(`App protocol request ${request.url}`)
     const requestedPath =
       decodeURIComponent(requestUrl.pathname).replace(/^\/+/, '') || 'index.html'
     if (requestUrl.host !== APP_HOST) return new Response('Not found', { status: 404 })
@@ -75,26 +74,15 @@ function registerAppProtocol(pluginStore: PluginStore): void {
       if (!isPathWithin(plugin.rootPath, pluginFile)) {
         return new Response('Not found', { status: 404 })
       }
-      return localFileResponse(pluginFile, request.url)
+      return net.fetch(pathToFileURL(pluginFile).toString())
     }
 
     const filePath = resolve(guiRoot, requestedPath)
     if (!isPathWithin(guiRoot, filePath)) {
       return new Response('Not found', { status: 404 })
     }
-    return localFileResponse(filePath, request.url)
+    return net.fetch(pathToFileURL(filePath).toString())
   })
-}
-
-async function localFileResponse(filePath: string, requestUrl: string): Promise<Response> {
-  try {
-    const response = await net.fetch(pathToFileURL(filePath).toString())
-    startupDiagnostic(`App protocol response ${requestUrl} ${filePath} ${response.status}`)
-    return response
-  } catch {
-    startupDiagnostic(`App protocol missing ${requestUrl} ${filePath}`)
-    return new Response('Not found', { status: 404 })
-  }
 }
 
 function bundledPluginsDirectory(): string {
@@ -134,25 +122,11 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
     title: 'Pictor',
     webPreferences: {
       ...getSecureWebPreferences(),
-      backgroundThrottling: false,
       preload: join(__dirname, '../preload/index.cjs'),
     },
   })
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  window.webContents.on('did-start-loading', () => startupDiagnostic('Renderer started loading'))
-  window.webContents.on('did-stop-loading', () => startupDiagnostic('Renderer stopped loading'))
-  window.webContents.on('dom-ready', () => startupDiagnostic('Renderer DOM ready'))
-  window.webContents.on('did-finish-load', () => startupDiagnostic('Renderer finished loading'))
-  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    startupDiagnostic(`Renderer failed to load (${errorCode} ${errorDescription}) ${validatedURL}`)
-  })
-  window.webContents.on('render-process-gone', (_event, details) => {
-    startupDiagnostic(`Renderer process gone (${details.reason}) ${details.exitCode}`)
-  })
-  window.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
-    startupDiagnostic(`Renderer console ${sourceId}:${line} ${message}`)
-  })
   window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedRendererUrl(url, developmentUrl)) event.preventDefault()
   })
@@ -183,11 +157,8 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
     }
   })
 
-  const loadUrl = developmentUrl ? developmentUrl : `${APP_SCHEME}://${APP_HOST}/index.html`
-  startupDiagnostic(`Renderer loading ${loadUrl}`)
-  void window.loadURL(loadUrl).catch((error: unknown) => {
-    startupDiagnostic(`Renderer loadURL rejected for ${loadUrl}: ${String(error)}`)
-  })
+  if (developmentUrl) void window.loadURL(developmentUrl)
+  else void window.loadURL(`${APP_SCHEME}://${APP_HOST}/index.html`)
 
   return window
 }
@@ -233,6 +204,7 @@ export class ElectronFrontendLock implements FrontendLock {
 export class DesktopHost {
   private applicationHost: ApplicationHost | null = null
   private services: ApplicationHostServices | null = null
+  private mainWindow: BrowserWindow | null = null
   private ipc: Disposable | null = null
   private commandIpc: Disposable | null = null
   private moduleIpc: Disposable | null = null
@@ -289,13 +261,9 @@ export class DesktopHost {
       const services = await applicationHost.start()
       coordinatorReference.current = services.runtime
       this.services = services
-      startupDiagnostic('Desktop Host registering protocol')
       registerAppProtocol(services.pluginStore)
-      startupDiagnostic('Desktop Host registering command IPC')
       this.commandIpc = registerCommandIpc(services.commandClient, validateSender)
-      startupDiagnostic('Desktop Host registering module IPC')
       this.moduleIpc = registerModuleIpc(services.moduleRouter, validateSender)
-      startupDiagnostic('Desktop Host registering app IPC')
       this.ipc = registerIpc({
         validateSender,
         onGuiReady: services.restoreSelectedContext,
@@ -306,9 +274,7 @@ export class DesktopHost {
         callback(false)
       })
 
-      startupDiagnostic('Desktop Host creating main window')
-      createMainWindow(services.runtime)
-      startupDiagnostic('Desktop Host main window created')
+      this.setMainWindow(createMainWindow(services.runtime))
       app.on('activate', this.handleActivate)
       this.activationRegistered = true
       app.on('before-quit', this.handleBeforeQuit)
@@ -333,6 +299,7 @@ export class DesktopHost {
       app.removeListener('before-quit', this.handleBeforeQuit)
       this.beforeQuitRegistered = false
     }
+    this.mainWindow = null
 
     let firstError: Error | null = null
     const dispose = async (resource: Disposable | null): Promise<void> => {
@@ -365,7 +332,14 @@ export class DesktopHost {
   private readonly handleActivate = (): void => {
     const runtime = this.services?.runtime
     if (!runtime || BrowserWindow.getAllWindows().length > 0) return
-    createMainWindow(runtime)
+    this.setMainWindow(createMainWindow(runtime))
+  }
+
+  private setMainWindow(window: BrowserWindow): void {
+    this.mainWindow = window
+    window.once('closed', () => {
+      if (this.mainWindow === window) this.mainWindow = null
+    })
   }
 
   private readonly handleBeforeQuit = (event: Event): void => {
@@ -408,8 +382,4 @@ const createDesktopHostPluginDefinitions: HostPluginDefinitionsFactory = (
         ? updaterHost
         : undefined,
   )
-}
-
-function startupDiagnostic(message: string): void {
-  if (process.env.PICTOR_STARTUP_DIAGNOSTICS === '1') console.error(`[pictor startup] ${message}`)
 }

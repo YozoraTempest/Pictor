@@ -1,5 +1,4 @@
 import { join } from 'node:path'
-import process from 'node:process'
 
 import { createCoreCommandDefinitions } from '../commands/core.js'
 import { CommandEngine } from '../commands/engine.js'
@@ -116,7 +115,6 @@ export class ApplicationHost {
     let pluginHost: PluginHost | null = null
 
     try {
-      startupDiagnostic('Application Host acquiring lock')
       const lease = await this.options.frontendLock.acquire()
       if (!lease) throw new Error('当前 Profile 已被另一个 Frontend 使用')
       this.lockLease = lease
@@ -133,7 +131,6 @@ export class ApplicationHost {
       }
       const pluginStore = new PluginStore(pluginStoreOptions)
 
-      startupDiagnostic('Application Host initializing repository and plugins')
       const initialization = await Promise.allSettled([
         repository.initialize(),
         pluginStore.initialize(),
@@ -143,7 +140,6 @@ export class ApplicationHost {
       )
       if (initializationFailure) throw initializationFailure.reason
 
-      startupDiagnostic('Application Host reading plugin snapshot')
       const pluginStoreSnapshot = await pluginStore.getSnapshot()
       this.options.runtimeHost.configurePluginBootstrap?.(
         createRuntimePluginBootstrap(
@@ -154,7 +150,6 @@ export class ApplicationHost {
       )
       await this.options.runtimeHost.initialize?.()
 
-      startupDiagnostic('Application Host starting host plugins')
       const runtime = new RuntimeCoordinator(repository, this.options.runtimeHost, (event) =>
         this.options.eventPublisher.publish(event),
       )
@@ -233,7 +228,6 @@ export class ApplicationHost {
       }
       this.services = services
       this.state = 'started'
-      startupDiagnostic('Application Host started')
       return services
     } catch (error) {
       const cleanupError = await this.cleanup(pluginHost)
@@ -277,8 +271,4 @@ export class ApplicationHost {
 
 function emptyPluginDefinitions(): readonly PluginDefinition[] {
   return []
-}
-
-function startupDiagnostic(message: string): void {
-  if (process.env.PICTOR_STARTUP_DIAGNOSTICS === '1') console.error(`[pictor startup] ${message}`)
 }

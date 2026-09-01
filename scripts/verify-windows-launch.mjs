@@ -31,11 +31,7 @@ try {
   electronApp = await launchPackagedGui(launcher, [`--user-data-dir=${profile}`], {
     cwd: commandCwd,
     shell: true,
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-      PICTOR_STARTUP_DIAGNOSTICS: '1',
-    },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   })
   const window = await electronApp.firstWindow()
   await window.waitForSelector('.app-shell', { timeout: 30_000 })
