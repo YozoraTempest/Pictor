@@ -59,6 +59,7 @@ function registerAppProtocol(pluginStore: PluginStore): void {
 
   protocol.handle(APP_SCHEME, async (request) => {
     const requestUrl = new URL(request.url)
+    startupDiagnostic(`App protocol request ${request.url}`)
     const requestedPath =
       decodeURIComponent(requestUrl.pathname).replace(/^\/+/, '') || 'index.html'
     if (requestUrl.host !== APP_HOST) return new Response('Not found', { status: 404 })
@@ -74,23 +75,26 @@ function registerAppProtocol(pluginStore: PluginStore): void {
       if (!isPathWithin(plugin.rootPath, pluginFile)) {
         return new Response('Not found', { status: 404 })
       }
-      return localFileResponse(pluginFile)
+      return localFileResponse(pluginFile, request.url)
     }
 
     const filePath = resolve(guiRoot, requestedPath)
     if (!isPathWithin(guiRoot, filePath)) {
       return new Response('Not found', { status: 404 })
     }
-    return localFileResponse(filePath)
+    return localFileResponse(filePath, request.url)
   })
 }
 
-async function localFileResponse(filePath: string): Promise<Response> {
+async function localFileResponse(filePath: string, requestUrl: string): Promise<Response> {
   try {
-    return new Response(await readFile(filePath), {
+    const body = await readFile(filePath)
+    startupDiagnostic(`App protocol response ${requestUrl} ${filePath} ${body.byteLength} bytes`)
+    return new Response(body, {
       headers: { 'content-type': contentTypeFor(filePath) },
     })
   } catch {
+    startupDiagnostic(`App protocol missing ${requestUrl} ${filePath}`)
     return new Response('Not found', { status: 404 })
   }
 }
@@ -169,6 +173,9 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
   })
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('did-start-loading', () => startupDiagnostic('Renderer started loading'))
+  window.webContents.on('did-stop-loading', () => startupDiagnostic('Renderer stopped loading'))
+  window.webContents.on('dom-ready', () => startupDiagnostic('Renderer DOM ready'))
   window.webContents.on('did-finish-load', () => startupDiagnostic('Renderer finished loading'))
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     startupDiagnostic(`Renderer failed to load (${errorCode} ${errorDescription}) ${validatedURL}`)
@@ -210,6 +217,7 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
   })
 
   const loadUrl = developmentUrl ? developmentUrl : `${APP_SCHEME}://${APP_HOST}/index.html`
+  startupDiagnostic(`Renderer loading ${loadUrl}`)
   void window.loadURL(loadUrl).catch((error: unknown) => {
     startupDiagnostic(`Renderer loadURL rejected for ${loadUrl}: ${String(error)}`)
   })
