@@ -127,6 +127,16 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
   })
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('did-finish-load', () => startupDiagnostic('Renderer finished loading'))
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    startupDiagnostic(`Renderer failed to load (${errorCode} ${errorDescription}) ${validatedURL}`)
+  })
+  window.webContents.on('render-process-gone', (_event, details) => {
+    startupDiagnostic(`Renderer process gone (${details.reason}) ${details.exitCode}`)
+  })
+  window.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
+    startupDiagnostic(`Renderer console ${sourceId}:${line} ${message}`)
+  })
   window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedRendererUrl(url, developmentUrl)) event.preventDefault()
   })
@@ -157,8 +167,10 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
     }
   })
 
-  if (developmentUrl) void window.loadURL(developmentUrl)
-  else void window.loadURL(`${APP_SCHEME}://${APP_HOST}/index.html`)
+  const loadUrl = developmentUrl ? developmentUrl : `${APP_SCHEME}://${APP_HOST}/index.html`
+  void window.loadURL(loadUrl).catch((error: unknown) => {
+    startupDiagnostic(`Renderer loadURL rejected for ${loadUrl}: ${String(error)}`)
+  })
 
   return window
 }
