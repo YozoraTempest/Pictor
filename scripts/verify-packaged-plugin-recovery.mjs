@@ -167,6 +167,7 @@ function runFrontend(arguments_) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, commandArguments, {
       cwd: commandCwd,
+      windowsVerbatimArguments: isWindows,
       env: {
         ...process.env,
         ...(launcher.toLowerCase().endsWith('.appimage') ? { APPIMAGE_EXTRACT_AND_RUN: '1' } : {}),

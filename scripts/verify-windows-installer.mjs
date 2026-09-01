@@ -154,6 +154,7 @@ function runLauncher(launcher, arguments_) {
   const commandLine = `${quoteForCmd(launcher)} ${arguments_.map(quoteForCmd).join(' ')}`
   return execute(command, ['/d', '/s', '/c', commandLine], {
     cwd: commandCwd,
+    windowsVerbatimArguments: true,
     env: {
       ...withoutRunAsNode(process.env),
       PATH: `${systemRoot}\\System32`,

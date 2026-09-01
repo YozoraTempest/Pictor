@@ -20,6 +20,7 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
   const child = spawn(command, commandArguments, {
     cwd: options.cwd,
     shell: windowsBatchLauncher ? false : (options.shell ?? false),
+    windowsVerbatimArguments: windowsBatchLauncher,
     env: {
       ...(options.env ?? process.env),
       ...(executablePath.toLowerCase().endsWith('.appimage')

@@ -89,6 +89,7 @@ function runLauncher(arguments_) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, ['/d', '/s', '/c', commandLine], {
       cwd: commandCwd,
+      windowsVerbatimArguments: true,
       env: {
         ...process.env,
         PATH: `${systemRoot}\\System32`,
