@@ -70,11 +70,10 @@ async function launchPackagedGuiWithElectron(executablePath, arguments_, options
     const electronApp = await electron.launch({
       executablePath: playwrightRuntime.executable,
       args: [
-        '--no-sandbox',
         '-r',
         playwrightElectronLoader,
-        join(playwrightRuntime.directory, 'resources', 'app.asar'),
         ...arguments_,
+        join(playwrightRuntime.directory, 'resources', 'app.asar'),
       ],
       cwd: options.cwd,
       timeout: 30_000,
