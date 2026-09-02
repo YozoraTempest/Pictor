@@ -15,3 +15,10 @@
   ClearErrors
   WinShell::SetLnkAUMI "$newStartMenuLink" "${APP_ID}"
 !macroend
+
+!macro customUnInstall
+  WinShell::UninstShortcut "$newDesktopLink"
+  Delete "$newDesktopLink"
+  WinShell::UninstShortcut "$newStartMenuLink"
+  Delete "$newStartMenuLink"
+!macroend

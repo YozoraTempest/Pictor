@@ -112,7 +112,10 @@ const installerInclude = await readFile(
 )
 if (
   !installerInclude.includes('!macro customInstall') ||
-  !installerInclude.includes('bin\\pictor.cmd')
+  !installerInclude.includes('bin\\pictor.cmd') ||
+  !installerInclude.includes('!macro customUnInstall') ||
+  !installerInclude.includes('WinShell::UninstShortcut "$newDesktopLink"') ||
+  !installerInclude.includes('WinShell::UninstShortcut "$newStartMenuLink"')
 ) {
   throw new Error('Windows installer shortcuts do not enter the environment-clearing GUI launcher')
 }
