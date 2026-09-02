@@ -32,7 +32,7 @@ jobs:
   windows-package:
     name: Build Windows x64
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,12 +51,16 @@ jobs:
       - run: npm ci
       - run: npm run deps:prepare
       - run: npm run deps:verify
-      - run: npm run build:app
+      - run: npm run build:distribution
         env:
           PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
           PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}
-      - run: npm run package:windows:build
+      - run: npm run package:windows:target
       - run: npm run package:verify:windows
+      - run: npm run package:verify:windows:launch
+      - run: npm run package:verify:windows:install
+      - run: npm run package:verify:profile
+      - run: npm run package:verify:recovery
       - name: Stage Windows package
         uses: actions/upload-artifact@v7
         with:
@@ -68,7 +72,7 @@ jobs:
   linux-packages:
     name: Build Linux x64
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
         with:
@@ -95,14 +99,14 @@ jobs:
       - name: Run release source validation
         if: inputs.run_source_validation
         run: npm run verify:fast
-      - run: npm run build:app
+      - run: npm run build:distribution
         env:
           PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
           PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}
       - name: Run release desktop tests
         if: inputs.run_source_validation
         run: xvfb-run --auto-servernum npm run test:e2e:run
-      - run: npm run package:linux:build
+      - run: npm run package:linux:target
       - run: npm run package:verify:linux
       - name: Verify portable AppImage launch
         env:
@@ -116,6 +120,14 @@ jobs:
             PICTOR_USER_DATA_DIR="$user_data" \
             PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
             xvfb-run --auto-servernum npm run package:verify:linux:launch
+      - name: Verify Profile lock across packaged Frontends
+        env:
+          PICTOR_GUI_EXECUTABLE: ./dist/Pictor-${{ inputs.version }}-linux-x64.AppImage
+        run: xvfb-run --auto-servernum npm run package:verify:profile
+      - name: Verify packaged Workbench recovery
+        env:
+          PICTOR_GUI_EXECUTABLE: ./dist/Pictor-${{ inputs.version }}-linux-x64.AppImage
+        run: xvfb-run --auto-servernum npm run package:verify:recovery
       - name: Verify Arch package lifecycle in a native container
         env:
           RELEASE_VERSION: ${{ inputs.version }}

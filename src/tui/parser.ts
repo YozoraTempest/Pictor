@@ -24,7 +24,7 @@ export class TuiUsageError extends Error {
 }
 
 export const TUI_HELP = Object.freeze({
-  usage: 'pictor-tui [options]',
+  usage: 'pictor tui [options]',
   options: Object.freeze([
     '--user-data-dir <path>       使用指定的 user-data/profile 目录',
     '--profile <default|developer> 选择 Plugin Profile',

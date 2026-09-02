@@ -25,14 +25,30 @@ const developmentData = developmentUserDataPath(
 )
 if (developmentData) app.setPath('userData', developmentData)
 
-const desktopHost = new DesktopHost()
+if (isRejectedPackagedNodeEntry()) {
+  console.error(
+    'Packaged Pictor CLI/TUI entry requires the runAsNode fuse; refusing to start the GUI process',
+  )
+  app.exit(1)
+} else {
+  const desktopHost = new DesktopHost()
 
-void app
-  .whenReady()
-  .then(() => desktopHost.start())
-  .catch((error: unknown) => {
-    console.error('Failed to start Desktop Host', error)
-    app.quit()
-  })
+  void app
+    .whenReady()
+    .then(() => desktopHost.start())
+    .catch((error: unknown) => {
+      console.error('Failed to start Desktop Host', error)
+      app.quit()
+    })
 
-app.on('window-all-closed', () => app.quit())
+  app.on('window-all-closed', () => app.quit())
+}
+
+function isRejectedPackagedNodeEntry(): boolean {
+  if (process.env.PICTOR_PACKAGED !== '1' || process.env.ELECTRON_RUN_AS_NODE !== '1') {
+    return false
+  }
+  return process.argv.some((argument) =>
+    /out[\\/]((?:cli[\\/]src[\\/]cli)|(?:tui[\\/]src[\\/]tui))[\\/]entry\.js/.test(argument),
+  )
+}

@@ -71,7 +71,8 @@ Pi 原生工具和 OpenAI 兼容模型配置。
 Arch 的 Wayland 会话可以由 Electron 使用 XWayland，不承诺强制原生 Wayland。Arch 衍生版和
 其他 Linux 发行版不属于正式支持范围，即使 AppImage 可能可以运行。所有平台还需要：
 
-- Node.js 22.22.2 或更新版本，仅本地开发需要；Pi 会按当前平台解析原生 Shell；
+- Node.js 22.22.2 或更新版本，仅本地开发和构建需要；已安装/便携包的 CLI、TUI 使用包内 Electron
+  Node adapter，不调用系统 `node`；Pi 会按当前平台解析原生 Shell；
 - 一个兼容 OpenAI Chat Completions 或 Responses、SSE 流式响应和函数工具调用的模型端点。
 
 Pictor 不再预探测、替换或审批 Bash。`bash` 工具由 Pi 原生实现，以当前用户权限和当前 Session
@@ -109,6 +110,21 @@ Pictor 自身不会调用 `sudo`、`pkexec` 或 `pacman`；安装和卸载始终
 `%APPDATA%\pictor`，或 Linux 默认的 `~/.config/pictor`；设置了 `XDG_CONFIG_HOME` 时，Linux
 数据目录位于 `$XDG_CONFIG_HOME/pictor`。
 
+### 三个 Frontend 入口
+
+正式包统一使用三个入口：`pictor` 启动 GUI，`pictor cli ...` 启动 CLI，`pictor tui ...` 启动
+TUI。Arch 安装后的 `/usr/bin/pictor` 是由包安装脚本创建的精确符号链接，AppImage 的 `AppRun`
+和它都进入同一个 POSIX launcher；两者都以自身或 `$APPDIR` 推导路径，支持带空格的安装目录和任意
+当前工作目录。Windows 不修改用户 `PATH`，请使用安装目录中的
+`<安装目录>\bin\pictor.cmd`；桌面和开始菜单快捷方式也指向这个清除环境变量的 GUI 入口，避免
+与 `Pictor.exe` 的 `PATHEXT` 优先级混淆。
+
+GUI 默认会清除继承的 `ELECTRON_RUN_AS_NODE`；只有 `cli`/`tui` 明确设置它，并把固定的
+`out/cli/src/cli/entry.js` 或 `out/tui/src/tui/entry.js` 传给包内 Electron。入口向 Node adapter
+提供 `app.asar`、包版本、构建通道、源码提交和 `resources/bundled-plugins`，因此不会从启动 cwd
+读取 `package.json`、`.pictor`，也不会因身份缺失静默回退到空 Profile。默认 user-data 仍为当前
+平台既有的 `data-v1` 路径；`--user-data-dir` 可显式选择共享 Profile。
+
 发布包和解包可执行文件均未签名，且仍使用 Electron 默认图标。请只从 Pictor 官方 GitHub
 Release 获取文件，并通过同一 Release 的 `SHA256SUMS` 核对摘要；组织策略要求签名时暂缓部署。
 
@@ -127,7 +143,8 @@ npm run dev
 设置 `PICTOR_PLUGIN_PROFILE=developer` 使用 Developer Profile；Plugin Manager 可以登记 live source
 Development Plugin，修改其已构建入口后重启 Pictor 即可生效，不需要重新打包 Pictor。
 
-Stage 5 的开发 CLI 不需要 Electron runtime。安装依赖后可直接构建并运行系统 Node 入口：
+开发 CLI 不需要 Electron runtime。安装依赖后可直接构建并运行系统 Node 入口；这只属于开发命令，
+不代表发布包要求系统 Node：
 
 ```bash
 npm run build:cli
@@ -140,7 +157,8 @@ CLI 默认使用与开发 GUI 相同的 `pictor-dev` user-data/profile；开发�
 支持 `doctor`、`plugin` 生命周期命令和映射到 `plugin.*` 的 `ui` 命令。JSON 模式只在 stdout 写入
 一个 JSON 文档，退出码为成功 `0`、失败 `1`、用法错误 `2`、Profile 冲突 `4`、取消 `130`。
 
-TUI 使用独立 Node 入口，不依赖 Electron：
+开发 TUI 使用独立 Node 入口，不依赖 Electron；发布包通过上述 `pictor tui ...` launcher 复用
+随包 Electron：
 
 ```bash
 npm run build:tui
@@ -171,7 +189,9 @@ Profile 冲突、无可用 TUI、Plugin 失败和取消退出码分别为 `0`、
 
 ## 验证
 
-日常提交前运行快速验证；PR 级验证会额外构建一次桌面应用并执行核心 E2E Smoke：
+日常提交前运行快速验证；PR 级验证会额外执行一次干净的 GUI/CLI/TUI/Plugin distribution build
+并执行核心 E2E Smoke。只有 packaging/launcher/fuse/workflow 相关改动才会在 CI 条件触发完整
+Windows NSIS、Pacman 和 AppImage acceptance：
 
 ```bash
 npm run test:module -- updater
@@ -182,7 +202,9 @@ npm run verify:pr
 npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs
 ```
 
-发布前运行 `npm run verify:release`，然后在目标平台构建并验证发布包：
+发布前运行 `npm run verify:release`。该命令只在当前主机执行当前平台的 Full E2E、NSIS 或
+Pacman/AppImage 构建，以及对应结构、fuse、launcher、Profile lock 和 Workbench recovery smoke；
+Windows 净机、Arch 原生安装生命周期和 hosted CI 的另一个平台证据由 `package-desktop.yml` 提供：
 
 ```bash
 npm run package:windows:build
@@ -190,13 +212,18 @@ npm run package:verify:windows
 
 npm run package:linux:build
 npm run package:verify:linux
-PICTOR_EXPECTED_DISTRIBUTION=arch npm run package:verify:linux:launch
+npm run package:verify:linux:launch
+npm run package:verify:profile
+npm run package:verify:recovery
+npm run package:verify:fuses
 ```
 
 `npm run package:dir` 按当前平台生成解包应用，`npm run package` 按当前平台生成正式发布包并
-执行对应结构校验。Windows 校验 NSIS、`app.asar` 和 x64 PE；Linux 校验 Pacman 元数据、
-AppImage 内容、桌面入口、`app.asar` 和 x64 ELF。结构校验不代替安装生命周期、桌面启动、
-签名或外部服务商兼容性验收。
+执行对应结构校验。`npm run build:distribution` 会先清理并一次构建全部 GUI、CLI、TUI 和 10 个
+Bundled Plugins；所有 `package:*` 发布构建都消费这一产物，不会把陈旧的 `out/cli` 或 `out/tui`
+带入包。Windows 校验 NSIS、`app.asar`、x64 PE、快捷方式和 Windows launcher；Linux 校验
+Pacman 元数据、AppImage 内容、桌面入口、`app.asar`、fuse wire 和 x64 ELF。结构校验不代替
+Windows 净机安装、Arch 原生桌面、签名或外部服务商兼容性验收。
 
 Electron E2E 使用本地确定性 OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、
 原生工具与 Extension、取消、凭据重启、活动运行关闭确认和中断恢复，不需要外部模型凭据。完整分层、
@@ -210,6 +237,24 @@ Pictor 0.4 的 Headless Application Host、Command Engine、GUI/TUI/CLI Frontend
 Workbench Plugin 迁移契约见
 [`docs/MULTI_FRONTEND_ARCHITECTURE.md`](docs/MULTI_FRONTEND_ARCHITECTURE.md)。
 
+## 打包安全模式
+
+Stage 10 对 Electron 43 的 V1 fuse 逐项显式配置：`runAsNode` 保持启用，是为了让 CLI/TUI 使用
+随包 Electron 而不依赖系统 Node 的有意识例外；`NODE_OPTIONS` 和 Node CLI inspect 参数关闭，
+`onlyLoadAppFromAsar` 开启，`file://` extra privileges 关闭，其他支持的项也固定在
+`electronFuses` 中并在打包后读取实际 wire。Windows/Linux GUI binary 的 wire 必须与配置一致，
+并由 `package:verify:fuses` 及 launcher smoke 验证；禁用 `runAsNode` 的副本不会执行 CLI 入口。
+
+launcher 只缩小正常调用入口，不是安全沙箱，也不能消除保持 `runAsNode` fuse 所带来的本地代码
+执行面。该取舍同时保留了不安装系统 Node 的 CLI/TUI 体验；请只运行可信的 Pictor 包和 Plugin。
+参考 [Electron Fuses](https://www.electronjs.org/docs/latest/tutorial/fuses) 与
+[`ELECTRON_RUN_AS_NODE` 文档](https://www.electronjs.org/docs/latest/api/environment-variables/#electron_run_as_node)。
+
+删除或禁用 `pictor.workbench.delegate` 后，GUI 会进入 Pictor Shell；Shell 列出随包的 10 个
+recovery source，用户恢复 Workbench 后重启回到 Delegate。CLI/TUI 与 GUI 共用 Profile 排他锁：
+冲突稳定退出码为 `4`，持锁 Frontend 退出后下一个 Frontend 才能获取；恢复 smoke 通过公开入口
+执行，不直接改 Store。
+
 日常开发从 `develop` 创建短期分支并通过 Pull Request 合回；包含版本提升的 `develop` 合并到
 `main` 时自动创建正式版本。默认分支定时工作流等控制面维护使用路径受限的 `ci/*` Pull Request，
 不触发正式发布。分支、Issue、Pull Request 和发布规则见
@@ -222,10 +267,11 @@ Workbench Plugin 迁移契约见
 ## 已知限制
 
 - Windows、Arch 和 AppImage 发布物及应用可执行文件未签名，应用图标仍使用 Electron 默认图标。
-- Windows CI 验证桌面构建、确定性的 Electron Shell Smoke 和发布包结构，但不执行完整 Electron
-  E2E；Chat、Runtime、安装与卸载等 Windows 桌面行为仍需独立验收。
-- Windows 安装验收尚未取得净机证据；AppImage 只执行结构与启动 Smoke，不构成其他 Linux
-  发行版兼容承诺。
+- 普通 Windows CI 只执行确定性的 Electron Shell Smoke；触及打包面的 PR、Nightly 和 Release
+  还由 `package-desktop.yml` 执行 NSIS、shortcut、CLI/TUI、安装/卸载和用户数据保留验收，但不
+  代替完整 Electron E2E 或额外的真实净机/人工桌面证据。
+- AppImage 只执行结构与启动 Smoke，不构成其他 Linux 发行版兼容承诺；Arch 容器生命周期与
+  本机 niri 桌面证据仍按发布门禁分别记录。
 - Arch 是滚动发行版，正式支持以发布说明记录的快照日期为验收基线，不承诺未来系统更新永不
   影响已发布版本。
 - Chat Completions 和 Responses 均由本地确定性 OpenAI 兼容端点覆盖。尚未用真实第三方

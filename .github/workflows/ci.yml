@@ -24,6 +24,8 @@ jobs:
     outputs:
       app_changed: ${{ steps.classify.outputs.app_changed }}
       workflow_changed: ${{ steps.classify.outputs.workflow_changed }}
+      package_changed: ${{ steps.classify.outputs.package_changed }}
+      source_version: ${{ steps.classify.outputs.source_version }}
       release_pr: ${{ steps.classify.outputs.release_pr }}
     steps:
       - uses: actions/checkout@v7
@@ -47,10 +49,13 @@ jobs:
 
           app_changed=false
           workflow_changed=false
+          package_changed=false
           for path in "${changed_paths[@]}"; do
             case "$path" in
-              .github/workflows/*.yml) workflow_changed=true ;;
-              *.md | docs/* | .github/ISSUE_TEMPLATE/* | .github/PULL_REQUEST_TEMPLATE*) ;;
+              .github/workflows/*.yml) workflow_changed=true; package_changed=true ;;
+              electron.vite.config.ts|plugins/*|src/cli/*|src/node/*|src/tui/*) package_changed=true; app_changed=true ;;
+              package.json|package-lock.json|packaging/*|scripts/after-pack.mjs|scripts/build-distribution.mjs|scripts/distribution-contract.mjs|scripts/electron-fuses*.mjs|scripts/launcher-contract.test.mjs|scripts/linux-after-*.sh|scripts/linux-launch-readiness*|scripts/packaged-gui.mjs|scripts/build-cli.mjs|scripts/build-plugins.mjs|scripts/build-tui.mjs|scripts/verify-*.mjs) package_changed=true; app_changed=true ;;
+              *.md|docs/*|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE*) ;;
               *) app_changed=true ;;
             esac
           done
@@ -63,7 +68,7 @@ jobs:
               invalid_paths=''
               for path in "${changed_paths[@]}"; do
                 case "$path" in
-                  .github/workflows/*.yml | README.md | CONTRIBUTING.md | docs/PROJECT_MANAGEMENT.md | docs/TESTING.md) ;;
+                  .github/workflows/*.yml|README.md|CONTRIBUTING.md|docs/PROJECT_MANAGEMENT.md|docs/TESTING.md) ;;
                   *) invalid_paths+="$path"$'\n' ;;
                 esac
               done
@@ -83,6 +88,8 @@ jobs:
           {
             echo "app_changed=$app_changed"
             echo "workflow_changed=$workflow_changed"
+            echo "package_changed=$package_changed"
+            echo "source_version=$(node --print "require('./package.json').version")"
             echo "release_pr=$release_pr"
           } >> "$GITHUB_OUTPUT"
 
@@ -194,32 +201,32 @@ jobs:
         shell: pwsh
         run: throw 'Change classification failed; refusing to bypass Windows acceptance.'
       - uses: actions/checkout@v7
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - uses: actions/setup-node@v7
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         with:
           node-version-file: .nvmrc
           cache: npm
       - name: Install pinned npm without replacing the runner copy
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         shell: pwsh
         run: |
           $npmPrefix = Join-Path $env:RUNNER_TEMP 'pictor-npm'
           npm install --global --prefix $npmPrefix npm@11.17.0
           $npmPrefix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: npm ci
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run deps:prepare
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run deps:verify
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run build:app
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - name: Run Windows desktop shell smoke
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         run: npm run test:e2e:run -- e2e/shell.spec.ts
       - name: Upload failure evidence
-        if: ${{ failure() && needs.changes.outputs.app_changed == 'true' }}
+        if: ${{ failure() && needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: windows-playwright-evidence
@@ -240,40 +247,52 @@ jobs:
           echo 'Change classification failed; refusing to bypass Linux acceptance.' >&2
           exit 1
       - uses: actions/checkout@v7
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - uses: actions/setup-node@v7
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         with:
           node-version-file: .nvmrc
           cache: npm
       - name: Install pinned npm without replacing the runner copy
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         run: |
           npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
           echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
       - run: npm --version
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm ci
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run deps:prepare
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         env:
           ELECTRON_GET_USE_PROXY: 'true'
       - run: npm run deps:verify
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run build:app
-        if: needs.changes.outputs.app_changed == 'true'
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - name: Run pull-request smoke tests
-        if: ${{ needs.changes.outputs.app_changed == 'true' && github.event_name == 'pull_request' }}
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' && github.event_name == 'pull_request' }}
         run: xvfb-run --auto-servernum npm run test:e2e:smoke:run
       - name: Run full desktop tests
-        if: ${{ needs.changes.outputs.app_changed == 'true' && github.event_name == 'push' }}
+        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' && github.event_name == 'push' }}
         run: xvfb-run --auto-servernum npm run test:e2e:run
       - name: Upload failure evidence
-        if: ${{ failure() && needs.changes.outputs.app_changed == 'true' }}
+        if: ${{ failure() && needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: linux-playwright-evidence
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  package-acceptance:
+    name: Package acceptance (changed packaging surface)
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.package_changed == 'true' }}
+    uses: ./.github/workflows/package-desktop.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha }}
+      version: ${{ needs.changes.outputs.source_version }}
+      artifact_prefix: pr-${{ github.event.pull_request.number }}
+      build_channel: development
+      run_source_validation: false

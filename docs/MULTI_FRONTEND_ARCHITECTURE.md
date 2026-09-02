@@ -1,8 +1,9 @@
 # Pictor 0.4 多 Frontend 架构
 
-本文是 Pictor 0.4 重构的目标契约，也是 `ASTRA-47` 下各阶段的共同输入。它基于
-`develop@eaf04f6` 的 0.3.0 代码和验证结果；[`ARCHITECTURE.md`](ARCHITECTURE.md) 记录已落地的
-当前实现。某一阶段只能把自己负责的目标变为“当前”，不得提前实现或假定后续阶段。
+本文是 Pictor 0.4 重构的目标契约，也是 `ASTRA-47` 下各阶段的共同输入。历史基线为
+`develop@eaf04f6` 的 0.3.0 代码；[`ARCHITECTURE.md`](ARCHITECTURE.md) 记录当前实现。Stage 10
+已将本文件中的 distribution build、三 Frontend launcher、Fuse policy 和包级验收落地；后续阶段
+不得把这些入口重新分叉或绕过发行门禁。
 
 ## 决策摘要
 
@@ -19,6 +20,13 @@
 - 0.4 不增加常驻 daemon。除 `--help`、`--version` 等不打开 Profile 的纯查询外，一个 Profile
   同时只允许一个 Frontend 持有写锁。
 - 0.4 保持 `data-v1`、Pi JSONL、凭据、Plugin Registry、支持平台及 Stable/Nightly 发布语义。
+- 正式入口统一为 `pictor`（GUI）、`pictor cli ...` 和 `pictor tui ...`；发布包只使用随包
+  Electron 执行 CLI/TUI，不依赖系统 Node。
+- 每次发行构建必须先清理并完成 GUI、CLI、TUI、10 个 Bundled Plugins 和 package identity，
+  再交给 electron-builder；任何只构建 GUI 的路径都不能成为发布入口。
+- Electron 43 V1 fuses 必须显式写入并读取实际 wire。`runAsNode` 为 CLI/TUI 的有意识 enabled
+  例外；Node options/inspect、file extra privileges 等不需要的能力关闭，`onlyLoadAppFromAsar`
+  开启。
 
 这些决定由 [ADR-0006](adr/0006-headless-application-host-and-multi-frontend.md) 记录。
 
@@ -73,8 +81,40 @@ port 连接，CLI/TUI 可以直接调用同一组路径接口。
 | Agent Runtime | Electron utility process | 不运行                                                                           | 现有 Runtime protocol                             | `modules.runtime`                                |
 
 Electron Main 仍是 GUI 的 Composition root，但不再等同于 Application Host。`src/main/index.ts` 最终只
-负责 Electron 协议、窗口、安全策略、原生选择器和 Desktop Adapter 装配。CLI/TUI 的正式打包入口由
-Stage 10 决定；在安全评估完成前，不预设必须开启 `ELECTRON_RUN_AS_NODE`。
+负责 Electron 协议、窗口、安全策略、原生选择器和 Desktop Adapter 装配。Stage 10 的 POSIX launcher
+从自身/AppDir 推导 `app.asar` 和 `resources/bundled-plugins`，GUI 清除继承的
+`ELECTRON_RUN_AS_NODE`；`cli`/`tui` 才设置该变量，并执行 `app.asar` 内固定 Node entry。Windows
+`bin\pictor.cmd` 采用相同语义，NSIS 快捷方式进入该 launcher 且不修改用户 `PATH`。打包入口提供
+`PICTOR_PACKAGE_ROOT`、`PICTOR_BUNDLED_PLUGINS_DIRECTORY`、版本、通道和源码提交；Node adapter
+在 packaged mode 拒绝 cwd identity、cwd `package.json`/`.pictor` 和空 Profile fallback。
+
+### Stage 10 包布局与安全决策
+
+`npm run build:distribution` 清理 `out/` 与本地 Bundled source，依次构建 `out/cli`、`out/tui`、
+GUI 和正好 10 个 0.4 Bundled Plugins，最后写入并校验 `out/package-identity.json`。所有
+`package:*`、Nightly 和 Release 都消费这一个完整快照；`build:app`、`build:cli`、`build:tui` 仅
+作为开发兼容命令保留。
+
+| 包格式       | GUI 与 launcher                                                                 | CLI/TUI 入口                                                    | 安装行为                                        |
+| ------------ | ------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------- |
+| Windows NSIS | `Pictor.exe` + `bin\pictor.cmd`；桌面/开始菜单快捷方式进入 cmd                  | `app.asar\out\cli\src\cli\entry.js`、`out\tui\src\tui\entry.js` | 不修改 PATH；卸载精确移除安装目录并保留用户数据 |
+| Arch Pacman  | `/opt/Pictor/pictor-gui` + `/opt/Pictor/pictor`；`/usr/bin/pictor` 精确 symlink | 同一 POSIX launcher                                             | afterInstall/afterRemove 只管理该 symlink       |
+| AppImage     | `AppRun` -> `$APPDIR/pictor` -> `pictor-gui`                                    | 同一 POSIX launcher                                             | 直接运行；不假设解压目录                        |
+
+Fuse 配置固定为：`runAsNode`、Cookie encryption、embedded ASAR integrity validation 和
+`onlyLoadAppFromAsar` enabled；`enableNodeOptionsEnvironmentVariable`、Node CLI inspect、
+process-specific V8 snapshot 和 `grantFileProtocolExtraPrivileges` disabled。`@electron/fuses`
+在 Windows PE 与 Linux ELF 上读取 V1 wire 逐项断言。复制 GUI binary 后关闭 `runAsNode` 的探针
+不能执行 CLI entry，说明 CLI/TUI 对该 Fuse 的实际依赖。保持 enabled 是“不依赖系统 Node”的
+评估后取舍；launcher 缩小正常入口但不是沙箱，不能消除 `runAsNode` 带来的本地代码执行面。
+依据为 [Electron Fuses](https://www.electronjs.org/docs/latest/tutorial/fuses)、
+[`ELECTRON_RUN_AS_NODE`](https://www.electronjs.org/docs/latest/api/environment-variables/#electron_run_as_node)
+和 VS Code 的 [Windows launcher](https://github.com/microsoft/vscode/blob/main/resources/win32/bin/code.cmd)。
+
+GUI、CLI、TUI 仍共用同一个 Profile 排他锁；冲突返回稳定退出码 `4`，持锁 Frontend 退出后下一个
+Frontend 获取锁。packaged CLI 通过公开 `plugin remove` 移除 Workbench 后，GUI 进入 Core Pictor
+Shell；Shell 展示 10 个 recovery source，恢复操作写入 Registry，重启后回到 Delegate，Project、
+Session、凭据和 Pi JSONL 不丢失。包级 profile/recovery smoke 不直接改 Store。
 
 ## Command Engine 契约
 
@@ -271,6 +311,23 @@ TUI 因此通过公开方法 Proxy 保留 Pictor binding，并在调用底层 Ru
 replacement prepare/commit/abort 路由需要独立的上游 public composition seam，与 terminal/exit
 适配是两个独立限制。
 
+### Stage 10 当前实现
+
+Stage 10 已把三 Frontend 的运行入口和发行构建固定为可审计的包契约：
+`npm run build:distribution` 清理并构建 GUI、CLI、TUI、10 个 0.4 Bundled Plugins 和
+`package-identity`，所有 `package:*`、Nightly、Release 都在 electron-builder 前消费该快照。包内
+入口是 `pictor`、`pictor cli ...`、`pictor tui ...`；POSIX 的 Pacman/AppImage launcher 与
+Windows `bin\pictor.cmd` 都从自身/安装目录解析 identity 和资源，不调用系统 Node。Windows shortcut
+也进入环境清理后的 GUI launcher，且本阶段不修改用户 `PATH`。
+
+Electron 43 V1 fuse wire 由 `@electron/fuses` 在 Windows PE 与 Linux ELF 上读取，并与
+`electronFuses` 显式配置逐项一致；`runAsNode` enabled 是随包 CLI/TUI 的已评估例外，Node
+options/inspect、file extra privileges 关闭，`onlyLoadAppFromAsar` 开启。复制 binary 关闭
+`runAsNode` 的探针不会执行 CLI entry。包级 smoke 已覆盖真实 GUI shell、CLI/TUI help/doctor/
+non-interactive、带空格的 AppImage/cwd、Profile lock、Workbench remove -> Pictor Shell -> restore
+-> Delegate 和 10 个 recovery source。Windows 净机/NSIS 与 Arch 容器生命周期以 hosted CI 证据为准，
+本地 Linux 结果不替代它们。
+
 ### 各阶段最低门禁
 
 | Stage | Multica Issue | 独立分支                                   | 合并前新增证据                                             |
@@ -294,7 +351,11 @@ replacement prepare/commit/abort 路由需要独立的上游 public composition 
 - [Electron Process Model](https://www.electronjs.org/docs/latest/tutorial/process-model)：Main、Renderer
   与 Utility Process 的职责和隔离。
 - [Electron Fuses](https://www.electronjs.org/docs/latest/tutorial/fuses)：`runAsNode` 的打包期安全
-  取舍，必须在 Stage 10 实证后决定。
+  取舍与实际 wire 验证。
+- [`ELECTRON_RUN_AS_NODE`](https://www.electronjs.org/docs/latest/api/environment-variables/#electron_run_as_node)：
+  GUI/CLI/TUI launcher 的环境变量语义。
+- [VS Code Windows launcher](https://github.com/microsoft/vscode/blob/main/resources/win32/bin/code.cmd)：
+  随包 Electron 执行受控 CLI JavaScript 的成熟参考。
 - [Visual Studio Code Extension Host](https://code.visualstudio.com/api/advanced-topics/extension-host)：
   可安装能力按 UI、Workspace 和运行位置选择 Host 的成熟模式。
 - [Eclipse Theia Architecture](https://theia-ide.org/docs/architecture/)：同一产品以 Headless Backend

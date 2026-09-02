@@ -31,8 +31,10 @@ export async function collectLaunchEvidence(window) {
     )
   }
 
-  const appInfo = await window.evaluate(async () =>
-    globalThis.pictorModules.invoke('pictor.updater', 'getAppInfo', null),
-  )
+  const appInfo = await window.evaluate(async () => {
+    const result = await globalThis.pictor.getAppInfo()
+    if (!result.ok) throw new Error(result.error.message)
+    return result.value
+  })
   return { ...renderer, appInfo }
 }

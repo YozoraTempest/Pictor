@@ -204,6 +204,7 @@ export class ElectronFrontendLock implements FrontendLock {
 export class DesktopHost {
   private applicationHost: ApplicationHost | null = null
   private services: ApplicationHostServices | null = null
+  private mainWindow: BrowserWindow | null = null
   private ipc: Disposable | null = null
   private commandIpc: Disposable | null = null
   private moduleIpc: Disposable | null = null
@@ -273,7 +274,7 @@ export class DesktopHost {
         callback(false)
       })
 
-      createMainWindow(services.runtime)
+      this.setMainWindow(createMainWindow(services.runtime))
       app.on('activate', this.handleActivate)
       this.activationRegistered = true
       app.on('before-quit', this.handleBeforeQuit)
@@ -298,6 +299,7 @@ export class DesktopHost {
       app.removeListener('before-quit', this.handleBeforeQuit)
       this.beforeQuitRegistered = false
     }
+    this.mainWindow = null
 
     let firstError: Error | null = null
     const dispose = async (resource: Disposable | null): Promise<void> => {
@@ -330,7 +332,14 @@ export class DesktopHost {
   private readonly handleActivate = (): void => {
     const runtime = this.services?.runtime
     if (!runtime || BrowserWindow.getAllWindows().length > 0) return
-    createMainWindow(runtime)
+    this.setMainWindow(createMainWindow(runtime))
+  }
+
+  private setMainWindow(window: BrowserWindow): void {
+    this.mainWindow = window
+    window.once('closed', () => {
+      if (this.mainWindow === window) this.mainWindow = null
+    })
   }
 
   private readonly handleBeforeQuit = (event: Event): void => {
