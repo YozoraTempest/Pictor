@@ -1,8 +1,12 @@
+import { randomUUID } from 'node:crypto'
 import { _electron as electron, chromium } from '@playwright/test'
 import { spawn, spawnSync } from 'node:child_process'
-import { readdir, readFile } from 'node:fs/promises'
+import { copyFile, readdir, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
+import { dirname, join } from 'node:path'
 import process from 'node:process'
+
+import { flipFuses, FuseV1Options, FuseVersion } from '@electron/fuses'
 
 export const PACKAGED_GUI_LAUNCH_MODES = Object.freeze({
   ELECTRON: 'electron',
@@ -36,17 +40,48 @@ export function windowsProcessTreeKillArguments(pid) {
 export async function launchPackagedGui(executablePath, arguments_, options = {}) {
   const launchMode = selectPackagedGuiLaunchMode(executablePath)
   if (launchMode === PACKAGED_GUI_LAUNCH_MODES.ELECTRON) {
-    return electron.launch({
-      executablePath,
-      args: ['--no-sandbox', ...arguments_],
-      cwd: options.cwd,
-      env: options.env ?? process.env,
-    })
+    return launchPackagedGuiWithElectron(executablePath, arguments_, options)
   }
   if (launchMode === PACKAGED_GUI_LAUNCH_MODES.WINDOWS_LAUNCHER_HTTP) {
     throw new Error('Windows pictor.cmd GUI verification must use launchWindowsLauncherGui()')
   }
   return launchPackagedGuiOverCdp(executablePath, arguments_, options)
+}
+
+async function launchPackagedGuiWithElectron(executablePath, arguments_, options) {
+  const playwrightExecutable = join(
+    dirname(executablePath),
+    `.pictor-playwright-${randomUUID()}.exe`,
+  )
+  await copyFile(executablePath, playwrightExecutable)
+  try {
+    await flipFuses(playwrightExecutable, {
+      version: FuseVersion.V1,
+      [FuseV1Options.EnableNodeCliInspectArguments]: true,
+    })
+    const electronApp = await electron.launch({
+      executablePath: playwrightExecutable,
+      args: ['--no-sandbox', ...arguments_],
+      cwd: options.cwd,
+      env: options.env ?? process.env,
+    })
+    const originalClose = electronApp.close.bind(electronApp)
+    let closePromise
+    electronApp.close = () => {
+      closePromise ??= (async () => {
+        try {
+          await originalClose()
+        } finally {
+          await rm(playwrightExecutable, { force: true })
+        }
+      })()
+      return closePromise
+    }
+    return electronApp
+  } catch (error) {
+    await rm(playwrightExecutable, { force: true })
+    throw error
+  }
 }
 
 export async function launchWindowsLauncherGui(launcherPath, arguments_, options = {}) {

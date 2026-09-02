@@ -82,8 +82,10 @@ disabled、`onlyLoadAppFromAsar` enabled，并在复制 binary 上关闭 `runAsN
 沙箱。
 
 Windows GUI 验收按自动化能力拆分：`verify-windows-launch`、NSIS installer、Profile lock 与
-Workbench recovery 对真实 `Pictor.exe` 使用 Playwright `_electron.launch`，因此 DOM 断言保留完整
-`Page`/`Locator` API。该脚本另用子进程执行 `bin\\pictor.cmd`，在继承
+Workbench recovery 以真实 `Pictor.exe` 为 payload 使用 Playwright `_electron.launch`，因此 DOM 断言
+保留完整 `Page`/`Locator` API。由于生产包关闭 `enableNodeCliInspectArguments`，helper 只在同目录
+临时副本上打开 Playwright 控制通道所需的该 fuse，生产 binary 的 fuse wire 不变且副本在关闭时
+清理。该脚本另用子进程执行 `bin\\pictor.cmd`，在继承
 `ELECTRON_RUN_AS_NODE=1` 的 hostile 环境下只通过远程调试 HTTP `/json/list` 确认
 `app://bundle/index.html` page target 出现且进程仍存活；结束时按 cmd 根 PID 的完整 process tree
 清理。CLI/TUI 仍经 `pictor.cmd` 执行。Linux 可执行文件和 AppImage 继续使用现有 CDP 路径。
