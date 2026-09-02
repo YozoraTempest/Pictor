@@ -72,9 +72,7 @@ try {
   const uninstaller = join(installationDirectory, 'Uninstall Pictor.exe')
   await requireFile(uninstaller)
   await execute(uninstaller, ['/S'], { cwd: installationDirectory, maxBuffer: 2 * 1024 * 1024 })
-  if (await stat(installationDirectory).catch(() => null)) {
-    throw new Error(`NSIS uninstall left the installation directory: ${installationDirectory}`)
-  }
+  await waitForPathRemoval(installationDirectory)
   if (await readDesktopShortcut()) {
     throw new Error('NSIS uninstall left the Pictor desktop shortcut')
   }
@@ -111,9 +109,10 @@ try {
     const uninstaller = join(installationDirectory, 'Uninstall Pictor.exe')
     if (await stat(uninstaller).catch(() => null)) {
       await execute(uninstaller, ['/S'], { cwd: installationDirectory }).catch(() => undefined)
+      await waitForPathRemoval(installationDirectory).catch(() => undefined)
     }
   }
-  await rm(testRoot, { recursive: true, force: true })
+  await rm(testRoot, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 })
 }
 
 async function readDesktopShortcut() {
@@ -146,6 +145,15 @@ async function readUserPath() {
 async function requireFile(path) {
   const metadata = await stat(path).catch(() => null)
   if (!metadata?.isFile() || metadata.size === 0) throw new Error(`Missing file: ${path}`)
+}
+
+async function waitForPathRemoval(path, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (!(await stat(path).catch(() => null))) return
+    await new Promise((resolvePromise) => globalThis.setTimeout(resolvePromise, 100))
+  }
+  throw new Error(`NSIS uninstall left the installation directory: ${path}`)
 }
 
 function runLauncher(launcher, arguments_) {
