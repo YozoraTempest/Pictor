@@ -102,7 +102,7 @@ try {
 
 function runLauncher(arguments_) {
   const command = process.env.ComSpec ?? 'cmd.exe'
-  const commandLine = `${quoteForCmd(launcher)} ${arguments_.map(quoteForCmd).join(' ')}`
+  const commandLine = `call ${quoteForCmd(launcher)} ${arguments_.map(quoteForCmd).join(' ')}`
   const systemRoot = process.env.SystemRoot ?? 'C:\\Windows'
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, ['/d', '/s', '/c', commandLine], {

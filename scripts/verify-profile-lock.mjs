@@ -88,7 +88,7 @@ function runFrontend(arguments_) {
   const environment = { ...process.env }
   const command = isWindows ? (process.env.ComSpec ?? 'cmd.exe') : launcher
   const commandArguments = isWindows
-    ? ['/d', '/s', '/c', `${quoteForCmd(launcher)} ${arguments_.map(quoteForCmd).join(' ')}`]
+    ? ['/d', '/s', '/c', `call ${quoteForCmd(launcher)} ${arguments_.map(quoteForCmd).join(' ')}`]
     : arguments_
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, commandArguments, {

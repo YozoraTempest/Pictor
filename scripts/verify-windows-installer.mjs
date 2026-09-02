@@ -151,7 +151,7 @@ async function requireFile(path) {
 function runLauncher(launcher, arguments_) {
   const command = process.env.ComSpec ?? 'cmd.exe'
   const systemRoot = process.env.SystemRoot ?? 'C:\\Windows'
-  const commandLine = `${quoteForCmd(launcher)} ${arguments_.map(quoteForCmd).join(' ')}`
+  const commandLine = `call ${quoteForCmd(launcher)} ${arguments_.map(quoteForCmd).join(' ')}`
   return execute(command, ['/d', '/s', '/c', commandLine], {
     cwd: commandCwd,
     windowsVerbatimArguments: true,
