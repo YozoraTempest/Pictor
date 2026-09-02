@@ -118,7 +118,9 @@ async function launchGui() {
   return launchPackagedGui(
     guiExecutable,
     [`--user-data-dir=${profile}`],
-    isWindows ? {} : { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
+    isWindows
+      ? { env: withoutRunAsNode(process.env) }
+      : { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
   )
 }
 
@@ -189,6 +191,12 @@ function runFrontend(arguments_) {
 
 function quoteForCmd(argument) {
   return `"${String(argument).replaceAll('"', '\\"')}"`
+}
+
+function withoutRunAsNode(environment) {
+  const clean = { ...environment }
+  delete clean.ELECTRON_RUN_AS_NODE
+  return clean
 }
 
 function assertCommand(result, label, expectedOutput) {

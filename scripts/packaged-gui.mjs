@@ -1,27 +1,122 @@
-import { chromium } from '@playwright/test'
+import { _electron as electron, chromium } from '@playwright/test'
 import { spawn, spawnSync } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import process from 'node:process'
 
+export const PACKAGED_GUI_LAUNCH_MODES = Object.freeze({
+  ELECTRON: 'electron',
+  CDP: 'cdp',
+  WINDOWS_LAUNCHER_HTTP: 'windows-launcher-http',
+})
+
+const PACKAGED_PAGE_URL = 'app://bundle/index.html'
+
+export function selectPackagedGuiLaunchMode(executablePath, platform = process.platform) {
+  const normalizedPath = executablePath.toLowerCase()
+  if (platform === 'win32' && normalizedPath.endsWith('.exe')) {
+    return PACKAGED_GUI_LAUNCH_MODES.ELECTRON
+  }
+  if (platform === 'win32' && normalizedPath.endsWith('.cmd')) {
+    return PACKAGED_GUI_LAUNCH_MODES.WINDOWS_LAUNCHER_HTTP
+  }
+  return PACKAGED_GUI_LAUNCH_MODES.CDP
+}
+
+export function findWindowsPackagedPageTarget(targets) {
+  return (
+    targets.find((target) => target?.type === 'page' && target?.url === PACKAGED_PAGE_URL) ?? null
+  )
+}
+
+export function windowsProcessTreeKillArguments(pid) {
+  return ['/d', '/c', 'taskkill.exe', '/PID', String(pid), '/T', '/F']
+}
+
 export async function launchPackagedGui(executablePath, arguments_, options = {}) {
+  const launchMode = selectPackagedGuiLaunchMode(executablePath)
+  if (launchMode === PACKAGED_GUI_LAUNCH_MODES.ELECTRON) {
+    return electron.launch({
+      executablePath,
+      args: ['--no-sandbox', ...arguments_],
+      cwd: options.cwd,
+      env: options.env ?? process.env,
+    })
+  }
+  if (launchMode === PACKAGED_GUI_LAUNCH_MODES.WINDOWS_LAUNCHER_HTTP) {
+    throw new Error('Windows pictor.cmd GUI verification must use launchWindowsLauncherGui()')
+  }
+  return launchPackagedGuiOverCdp(executablePath, arguments_, options)
+}
+
+export async function launchWindowsLauncherGui(launcherPath, arguments_, options = {}) {
+  if (
+    selectPackagedGuiLaunchMode(launcherPath) !== PACKAGED_GUI_LAUNCH_MODES.WINDOWS_LAUNCHER_HTTP
+  ) {
+    throw new Error('launchWindowsLauncherGui() requires a Windows .cmd launcher')
+  }
+
   const port = await findFreePort()
-  const windowsBatchLauncher =
-    process.platform === 'win32' && executablePath.toLowerCase().endsWith('.cmd')
-  const command = windowsBatchLauncher ? (process.env.ComSpec ?? 'cmd.exe') : executablePath
+  const command = process.env.ComSpec ?? 'cmd.exe'
   const packagedGuiArguments = [`--remote-debugging-port=${port}`, '--no-sandbox', ...arguments_]
-  const commandArguments = windowsBatchLauncher
-    ? [
-        '/d',
-        '/s',
-        '/c',
-        `call ${quoteForCmd(executablePath)} ${packagedGuiArguments.map(quoteForCmd).join(' ')}`,
-      ]
-    : packagedGuiArguments
+  const commandArguments = [
+    '/d',
+    '/s',
+    '/c',
+    `call ${quoteForCmd(launcherPath)} ${packagedGuiArguments.map(quoteForCmd).join(' ')}`,
+  ]
   const child = spawn(command, commandArguments, {
     cwd: options.cwd,
-    shell: windowsBatchLauncher ? false : (options.shell ?? false),
-    windowsVerbatimArguments: windowsBatchLauncher,
+    windowsVerbatimArguments: true,
+    env: {
+      ...(options.env ?? process.env),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let stdout = ''
+  let stderr = ''
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk.toString()
+  })
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString()
+  })
+
+  try {
+    await waitForWindowsPageTarget(port, child, () => ({ stdout, stderr }))
+    if (child.exitCode !== null) {
+      throw new Error(`Windows launcher exited after creating its page target: ${child.exitCode}`)
+    }
+    const confirmedPageTarget = findWindowsPackagedPageTarget(await readJsonTargets(port))
+    if (!confirmedPageTarget) {
+      throw new Error('Windows launcher page target disappeared before cleanup')
+    }
+    let closed = false
+    return {
+      port,
+      pid: child.pid,
+      pageTarget: confirmedPageTarget,
+      close: async () => {
+        if (closed) return
+        closed = true
+        await stopProcessTree(child.pid)
+        await waitForExit(child, 2_000)
+      },
+    }
+  } catch (error) {
+    await stopProcessTree(child.pid)
+    await waitForExit(child, 2_000)
+    throw error
+  }
+}
+
+async function launchPackagedGuiOverCdp(executablePath, arguments_, options) {
+  const port = await findFreePort()
+  const packagedGuiArguments = [`--remote-debugging-port=${port}`, '--no-sandbox', ...arguments_]
+  const child = spawn(executablePath, packagedGuiArguments, {
+    cwd: options.cwd,
+    shell: options.shell ?? false,
+    windowsVerbatimArguments: false,
     env: {
       ...(options.env ?? process.env),
       ...(executablePath.toLowerCase().endsWith('.appimage')
@@ -99,6 +194,34 @@ async function waitForCdp(port, child, readOutput) {
   throw new Error(`Packaged GUI CDP did not become ready: ${JSON.stringify(readOutput())}`)
 }
 
+async function waitForWindowsPageTarget(port, child, readOutput) {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      throw new Error(
+        `Windows launcher exited before its page target was ready: ${JSON.stringify(readOutput())}`,
+      )
+    }
+    const target = findWindowsPackagedPageTarget(await readJsonTargets(port))
+    if (target) return target
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 100))
+  }
+  throw new Error(
+    `Windows launcher page target did not become ready: ${JSON.stringify(readOutput())}`,
+  )
+}
+
+async function readJsonTargets(port) {
+  try {
+    const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/list`)
+    if (!response.ok) return []
+    const targets = await response.json()
+    return Array.isArray(targets) ? targets : []
+  } catch {
+    return []
+  }
+}
+
 async function findProcessByArgument(argument) {
   return (await findProcessesByArgument(argument))[0] ?? null
 }
@@ -129,12 +252,24 @@ async function stopProcess(pid) {
   await signalProcess(pid, 'KILL')
 }
 
+async function stopProcessTree(pid) {
+  if (!pid || pid === process.pid) return
+  await signalProcess(pid, 'TERM')
+  await waitForPidExit(pid, 2_000)
+  try {
+    process.kill(pid, 0)
+  } catch {
+    return
+  }
+  await signalProcess(pid, 'KILL')
+}
+
 async function signalProcess(pid, signal) {
   const nodeSignal = signal === 'TERM' ? 'SIGTERM' : 'SIGKILL'
   if (process.platform === 'win32') {
     const result = spawnSync(
       process.env.ComSpec ?? 'cmd.exe',
-      ['/d', '/c', 'taskkill.exe', '/PID', String(pid), '/T', '/F'],
+      windowsProcessTreeKillArguments(pid),
       { stdio: 'ignore' },
     )
     if (!result.error && result.status === 0) return
@@ -168,7 +303,17 @@ async function waitForPidExit(pid, timeoutMs) {
 }
 
 async function withTimeout(promise, timeoutMs) {
-  await Promise.race([promise, new Promise((resolve) => globalThis.setTimeout(resolve, timeoutMs))])
+  let timer
+  try {
+    await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timer = globalThis.setTimeout(resolve, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) globalThis.clearTimeout(timer)
+  }
 }
 
 async function firstPage(browser) {

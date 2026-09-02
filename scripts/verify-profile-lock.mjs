@@ -33,7 +33,9 @@ try {
   electronApp = await launchPackagedGui(
     guiExecutable,
     [`--user-data-dir=${profile}`],
-    isWindows ? {} : { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
+    isWindows
+      ? { env: withoutRunAsNode(process.env) }
+      : { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
   )
   const window = await electronApp.firstWindow()
   await window.waitForSelector('.app-shell', { timeout: 30_000 })
@@ -113,6 +115,12 @@ function runFrontend(arguments_) {
 
 function quoteForCmd(argument) {
   return `"${String(argument).replaceAll('"', '\\"')}"`
+}
+
+function withoutRunAsNode(environment) {
+  const clean = { ...environment }
+  delete clean.ELECTRON_RUN_AS_NODE
+  return clean
 }
 
 function assertConflict(result, label) {

@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-import { launchPackagedGui } from './packaged-gui.mjs'
+import { launchPackagedGui, launchWindowsLauncherGui } from './packaged-gui.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageMetadata = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'))
@@ -27,18 +27,30 @@ const launcher = resolve(
 )
 
 let electronApp = null
+let launcherGui = null
 try {
-  electronApp = await launchPackagedGui(launcher, [`--user-data-dir=${profile}`], {
+  electronApp = await launchPackagedGui(executablePath, [`--user-data-dir=${profile}`], {
     cwd: commandCwd,
-    shell: true,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    env: withoutRunAsNode(process.env),
   })
   const window = await electronApp.firstWindow()
-  await window.waitForSelector('.app-shell', { timeout: 30_000 })
+  await window.locator('.app-shell').waitFor({ state: 'visible', timeout: 30_000 })
+  await window.getByRole('heading', { name: '选择一个项目开始' }).waitFor({ state: 'visible' })
   if ((await window.title()) !== 'Pictor')
     throw new Error('Windows packaged GUI title is not Pictor')
   await electronApp.close()
   electronApp = null
+
+  launcherGui = await launchWindowsLauncherGui(launcher, [`--user-data-dir=${profile}`], {
+    cwd: commandCwd,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  })
+  const launcherPageTarget = launcherGui.pageTarget
+  if (launcherPageTarget.url !== 'app://bundle/index.html') {
+    throw new Error(`Windows launcher opened an unexpected page: ${launcherPageTarget.url}`)
+  }
+  await launcherGui.close()
+  launcherGui = null
 
   const cliHelp = await runLauncher(['cli', '--help'])
   assertCommand(cliHelp, 'Windows CLI help', 'Usage: pictor cli')
@@ -65,6 +77,11 @@ try {
         launcher,
         cwd: commandCwd,
         gui: { title: 'Pictor', terminalState: 'app-shell' },
+        launcherGui: {
+          transport: 'remote-debugging-http',
+          pageTarget: launcherPageTarget.url,
+          processTreeClosed: true,
+        },
         frontends: {
           cliHelp: summarize(cliHelp),
           cliDoctor: summarize(cliDoctor),
@@ -79,6 +96,7 @@ try {
   )
 } finally {
   if (electronApp) await electronApp.close().catch(() => undefined)
+  if (launcherGui) await launcherGui.close().catch(() => undefined)
   await rm(testRoot, { recursive: true, force: true })
 }
 
@@ -112,6 +130,12 @@ function runLauncher(arguments_) {
 
 function quoteForCmd(argument) {
   return `"${String(argument).replaceAll('"', '\\"')}"`
+}
+
+function withoutRunAsNode(environment) {
+  const clean = { ...environment }
+  delete clean.ELECTRON_RUN_AS_NODE
+  return clean
 }
 
 function assertCommand(result, label, expectedOutput) {

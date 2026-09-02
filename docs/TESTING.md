@@ -81,6 +81,13 @@ disabled、`onlyLoadAppFromAsar` enabled，并在复制 binary 上关闭 `runAsN
 不会成功执行。该模式依赖 Electron 43 的 package-time fuse API；launcher 是入口约束，不是安全
 沙箱。
 
+Windows GUI 验收按自动化能力拆分：`verify-windows-launch`、NSIS installer、Profile lock 与
+Workbench recovery 对真实 `Pictor.exe` 使用 Playwright `_electron.launch`，因此 DOM 断言保留完整
+`Page`/`Locator` API。该脚本另用子进程执行 `bin\\pictor.cmd`，在继承
+`ELECTRON_RUN_AS_NODE=1` 的 hostile 环境下只通过远程调试 HTTP `/json/list` 确认
+`app://bundle/index.html` page target 出现且进程仍存活；结束时按 cmd 根 PID 的完整 process tree
+清理。CLI/TUI 仍经 `pictor.cmd` 执行。Linux 可执行文件和 AppImage 继续使用现有 CDP 路径。
+
 Profile/recovery smoke 通过真实 packaged GUI 和 packaged CLI 用户入口操作，不直接修改 Store：
 GUI 持锁时 CLI/TUI 稳定返回 `4`，GUI 退出后下一个 Frontend 获取锁；CLI 移除 Workbench 后 GUI
 进入 Pictor Shell，Shell 展示 10 个 recovery source，用户恢复并重启后回到 Delegate，Project、
