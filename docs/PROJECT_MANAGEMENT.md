@@ -32,7 +32,7 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 
 ## 持续集成
 
-- 每个 Pull Request 都运行格式、类型、lint、全量 Vitest、Linux 桌面 Full E2E 和 Windows Shell
+- 每个 Pull Request 都运行格式、类型、lint、全量 Vitest、单一 Linux 委托 Smoke 和 Windows Shell
   Smoke，不再用手写路径分类改变四项必需检查的行为。
 - 触及 `package.json`、electron-vite、packaging、Frontend、构建脚本或工作流的 Pull Request，
   由独立且非 required 的 `Package CI` 按粗粒度路径过滤触发 `package-desktop.yml`。它在
@@ -43,8 +43,8 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 - 从 `ci/*` 指向 `main` 的非发布 Pull Request：只允许修改 `.github/workflows/*.yml`、根
   `README.md`、`CONTRIBUTING.md`、`docs/PROJECT_MANAGEMENT.md` 和 `docs/TESTING.md`；不执行
   发布元数据校验，也不得成为普通功能或文档变更绕过 `develop` 的入口。
-- 合并进入 `develop` 后由 Linux 重跑全部桌面 E2E。基础 CI 不构建发行资产；发布资产构建、
-  结构校验、AppImage 启动和 Arch 包生命周期由 Package CI、Nightly 与正式 Release 负责。
+- 合并进入 `develop` 后重跑相同基础门禁，不执行扩展 E2E 或构建发行资产；保留的七个 E2E、
+  发布资产构建、AppImage 启动和 Arch 包生命周期由 Nightly 与正式 Release 负责。
 - CI 失败时不得合并。测试失败证据保留七天。
 
 必需检查为 `Quality`、`Unit and integration`、`Windows acceptance` 和独立的
@@ -56,7 +56,7 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 `npm run build:distribution` 是唯一完整发行前置：从干净 `out/`/Bundled source 构建 GUI、CLI、TUI
 和正好 10 个 0.4 Bundled Plugins，再进入 electron-builder。`package:*`、Nightly 和 Release 不
 允许只运行 `build:app`，也不允许把旧的 `out/cli` 或 `out/tui` 混入新 GUI。`package-desktop.yml`
-接收固定 source SHA、artifact prefix、channel 和 release-only validation 开关，Windows
+接收固定 source SHA、artifact prefix、channel、release-only validation 与 E2E 开关，Windows
 和 Linux job 共享同一个构建/验证实现。
 
 包级门禁区分真实对象：Windows 检查 x64 PE `Pictor.exe`、`bin\pictor.cmd`、NSIS 快捷方式和安装
@@ -73,9 +73,9 @@ wrapper 不是沙箱，风险和验证见 `docs/MULTI_FRONTEND_ARCHITECTURE.md`�
 更旧提交。现有 `nightly` 标签已指向该提交时跳过定时重建；维护者可以手动启用 `force` 输入重新
 打包同一绿色提交，但不能绕过源码 CI 门禁。
 
-Nightly 不重复源码 CI 已完成的 `verify:fast` 或完整 E2E，通过与正式 Release 共用的
-`package-desktop.yml` 在只读权限的 Windows 与 Linux job 中构建完整 Frontend distribution，并执行
-NSIS/Pacman/AppImage 结构与 fuse 校验、三入口 GUI/CLI/TUI smoke、Profile lock、AppImage
+Nightly 不重复源码 CI 已完成的 `verify:fast`，通过与正式 Release 共用的 `package-desktop.yml`
+运行保留的七个 E2E，并在只读权限的 Windows 与 Linux job 中构建完整 Frontend distribution，
+执行 NSIS/Pacman/AppImage 结构与 fuse 校验、三入口 GUI/CLI/TUI smoke、Profile lock、AppImage
 启动和 Arch 包生命周期等产物验收。该 reusable workflow 是 Nightly/Release 唯一的跨平台打包实现。
 保留一天的 workflow artifact 向最终 publish job 传递安装包。只有全部平台成功后，publish job
 才获得 `contents: write` 权限，生成 `SHA256SUMS`，删除上一份滚动 Nightly Pre-release 与

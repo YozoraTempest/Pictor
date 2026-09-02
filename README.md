@@ -220,9 +220,10 @@ Pacman 元数据、AppImage 内容、桌面入口、`app.asar`、fuse wire 和 x
 空格路径启动真实 GUI/CLI/TUI，验证 page target、Profile 排他锁和平台安装生命周期；它不重复
 普通 E2E 已覆盖的富 DOM 与 Plugin 恢复场景。
 
-Electron E2E 使用本地确定性 OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、
-原生工具与 Extension、取消、凭据重启、活动运行关闭确认和中断恢复，不需要外部模型凭据。完整分层、
-CI 门禁和发行版验收见 [`docs/TESTING.md`](docs/TESTING.md)。
+Electron E2E 只保留跨模块组装证据：PR 验证一次真实 Pi SDK/utility process 委托和 Windows Shell；
+Nightly/Release 额外验证中断恢复、启动恢复、原生 Extension Tool/RPC 与两个 Plugin 重启场景。
+业务规则、协议变体和持久化边界由 Vitest 在对应 seam 验证，不需要外部模型凭据。完整分层、CI
+门禁和发行版验收见 [`docs/TESTING.md`](docs/TESTING.md)。
 
 应用源码统一位于 `src/`。`kernel/` 保存最小 Module Kernel，`modules/` 按 Feature 聚合新增
 功能；既有代码继续按 Electron Main、Preload、Renderer、Agent Runtime 和共享协议划分，

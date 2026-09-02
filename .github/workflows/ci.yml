@@ -163,8 +163,8 @@ jobs:
           ELECTRON_GET_USE_PROXY: 'true'
       - run: npm run deps:verify
       - run: npm run build:app
-      - name: Run full desktop tests
-        run: xvfb-run --auto-servernum npm run test:e2e:run
+      - name: Run delegated smoke test
+        run: xvfb-run --auto-servernum npm run test:e2e:smoke:run
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@v7

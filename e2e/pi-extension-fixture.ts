@@ -1,54 +1,27 @@
 import {
   _electron as electron,
-  test as base,
   expect,
+  test as base,
   type ElectronApplication,
   type Page,
   type TestInfo,
 } from '@playwright/test'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { createServer, type Server, type ServerResponse } from 'node:http'
-import { basename, resolve } from 'node:path'
+import { resolve } from 'node:path'
 
-import type { ModuleTransport } from '../src/kernel/contract.js'
 import { defaultPluginProfile } from '../src/main/plugins/default-profile.js'
 import { PluginStore } from '../src/main/plugins/plugin-store.js'
-import { agentWorkspaceContract } from '../src/modules/agent-workspace/shared.js'
 import { closeElectronApp } from './electron-cleanup.js'
 import { credentialFixtures, invokeAgentWorkspace } from './support.js'
 
 type ExtensionTool = 'hello' | 'ask_gui'
 
-interface SessionMetadata {
-  path: string
-  history: {
-    piSessionPath: string
-    activeLeafId?: string | null
-    runtimePreferences?: Record<string, unknown>
-  }
-}
-
-export interface ImportedSessionContext extends SessionMetadata {
-  sessionId: string
-}
-
-export interface PiExtensionHarness {
+interface PiExtensionHarness {
   electronApp: ElectronApplication
   window: Page
-  userDataDirectory: string
-  projectRoot: string
-  projectName: string
-  sessionId: string
-  imageFixture: string
-  importSource: string
-  importedJsonl: string
   queueToolCall(tool: ExtensionTool): void
   startSelectedRun(prompt: string): Promise<unknown>
-  importSession(): Promise<ImportedSessionContext>
-  selectedSessionMetadata(): Promise<SessionMetadata>
-  recordRuntimeEvents(sessionId: string): Promise<void>
-  clearRuntimeEvents(): Promise<void>
-  runtimeEvents(): Promise<Array<Record<string, unknown>>>
 }
 
 function writeToolCall(response: ServerResponse, tool: ExtensionTool): void {
@@ -123,146 +96,6 @@ async function closeServer(server: Server): Promise<void> {
   )
 }
 
-function importedSessionJsonl(): string {
-  const assistantMessage = (content: string) => ({
-    role: 'assistant',
-    content: [{ type: 'text', text: content }],
-    api: 'openai-completions',
-    provider: 'pictor-openai-compatible',
-    model: 'pictor-e2e-model',
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: 'stop',
-    timestamp: Date.now(),
-  })
-  return [
-    JSON.stringify({
-      type: 'session',
-      version: 3,
-      id: 'imported-pi-session',
-      timestamp: new Date().toISOString(),
-      cwd: '/missing/import-project',
-    }),
-    JSON.stringify({
-      type: 'message',
-      id: 'imported-user',
-      parentId: null,
-      timestamp: new Date().toISOString(),
-      message: { role: 'user', content: 'Imported root task' },
-    }),
-    JSON.stringify({
-      type: 'custom_message',
-      id: 'imported-large-context',
-      parentId: 'imported-user',
-      timestamp: new Date().toISOString(),
-      customType: 'e2e-large-context',
-      content: 'context '.repeat(12_000),
-      display: false,
-    }),
-    JSON.stringify({
-      type: 'message',
-      id: 'imported-original',
-      parentId: 'imported-large-context',
-      timestamp: new Date().toISOString(),
-      message: assistantMessage('Imported original answer'),
-    }),
-    JSON.stringify({
-      type: 'message',
-      id: 'imported-branch-user',
-      parentId: 'imported-large-context',
-      timestamp: new Date().toISOString(),
-      message: { role: 'user', content: 'Imported branch task' },
-    }),
-    JSON.stringify({
-      type: 'message',
-      id: 'imported-branch-answer',
-      parentId: 'imported-branch-user',
-      timestamp: new Date().toISOString(),
-      message: assistantMessage('Imported branch answer'),
-    }),
-    '',
-  ].join('\n')
-}
-
-async function writeExtensions(projectRoot: string, outputPath: (name: string) => string) {
-  const projectExtensionDirectory = resolve(projectRoot, '.pi', 'extensions')
-  await mkdir(projectExtensionDirectory, { recursive: true })
-  await writeFile(
-    resolve(projectExtensionDirectory, 'project-note.ts'),
-    `export default function (pi) {
-  pi.registerCommand('project-note', {
-    description: 'Project Extension command',
-    handler: async () => pi.sendMessage({ customType: 'project-note', content: 'Project Extension loaded', display: true, details: {} }),
-  })
-}
-`,
-  )
-
-  const guiExtension = outputPath('gui-extension.ts')
-  await writeFile(
-    guiExtension,
-    `import { Type } from 'typebox'
-export default function (pi) {
-  pi.registerTool({
-    name: 'ask_gui',
-    label: 'Ask GUI',
-    description: 'Ask through the Pictor GUI',
-    parameters: Type.Object({}),
-    async execute(_id, _params, _signal, _update, ctx) {
-      const value = await ctx.ui.input('Enter a value', 'type something...')
-      await new Promise((resolve) => setTimeout(resolve, 1_000))
-      return { content: [{ type: 'text', text: String(value ?? 'cancelled') }], details: {} }
-    },
-  })
-}
-`,
-  )
-
-  const lifecycleExtension = outputPath('fork-lifecycle-extension.ts')
-  await writeFile(
-    lifecycleExtension,
-    `import { appendFileSync } from 'node:fs'
-import { join } from 'node:path'
-export default function (pi) {
-  pi.registerCommand('e2e-note', {
-    description: 'Append a visible Extension note',
-    handler: async (args) => {
-      pi.sendMessage({ customType: 'e2e-note', content: 'Extension note: ' + args, display: true, details: {} })
-      pi.appendEntry('e2e-command-state', { args })
-    },
-  })
-  pi.registerCommand('e2e-user', {
-    description: 'Send a User Message from an Extension',
-    handler: async () => pi.sendUserMessage('Extension-originated user message'),
-  })
-  const record = (ctx, value) => appendFileSync(join(ctx.cwd, 'fork-lifecycle.log'), value + '\\n')
-  pi.on('session_before_fork', (event, ctx) => record(ctx, 'before_fork:' + event.entryId + ':' + event.position))
-  pi.on('session_before_switch', (_event, ctx) => record(ctx, 'before_switch'))
-  pi.on('session_before_tree', (event, ctx) => {
-    record(ctx, 'before_tree:' + event.preparation.targetId + ':' + event.preparation.oldLeafId + ':' + (event.preparation.customInstructions || ''))
-    if (event.preparation.userWantsSummary) return { summary: { summary: 'E2E branch summary' } }
-  })
-  pi.on('session_tree', (event, ctx) => record(ctx, 'tree:' + event.oldLeafId + ':' + event.newLeafId))
-  pi.on('session_before_compact', (event, ctx) => {
-    record(ctx, 'before_compact:' + event.reason + ':' + (event.customInstructions || ''))
-    if (event.customInstructions === 'Cancel E2E compaction') return { cancel: true }
-    return { compaction: { summary: 'E2E compacted context', firstKeptEntryId: event.preparation.firstKeptEntryId, tokensBefore: event.preparation.tokensBefore } }
-  })
-  pi.on('session_compact', (event, ctx) => record(ctx, 'compact:' + event.reason + ':' + event.compactionEntry.summary))
-  pi.on('session_shutdown', (event, ctx) => record(ctx, 'shutdown:' + event.reason))
-  pi.on('session_start', (event, ctx) => record(ctx, 'start:' + event.reason))
-}
-`,
-  )
-  return { guiExtension, lifecycleExtension }
-}
-
 async function createHarness(testInfo: TestInfo) {
   const queuedToolCalls: ExtensionTool[] = []
   const server = createServer(async (request, response) => {
@@ -282,23 +115,28 @@ async function createHarness(testInfo: TestInfo) {
 
   const userDataDirectory = testInfo.outputPath('user-data')
   const projectRoot = testInfo.outputPath('project')
-  const projectName = basename(projectRoot)
-  const imageFixture = testInfo.outputPath('fixture.png')
-  const importSource = testInfo.outputPath('import-source.jsonl')
-  const importedJsonl = importedSessionJsonl()
+  const guiExtension = testInfo.outputPath('gui-extension.ts')
   let electronApp: ElectronApplication | null = null
 
   try {
     await mkdir(projectRoot, { recursive: true })
-    const extensions = await writeExtensions(projectRoot, (name) => testInfo.outputPath(name))
     await writeFile(
-      imageFixture,
-      Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z6i0AAAAASUVORK5CYII=',
-        'base64',
-      ),
+      guiExtension,
+      `import { Type } from 'typebox'
+export default function (pi) {
+  pi.registerTool({
+    name: 'ask_gui',
+    label: 'Ask GUI',
+    description: 'Ask through the Pictor GUI',
+    parameters: Type.Object({}),
+    async execute(_id, _params, _signal, _update, ctx) {
+      const value = await ctx.ui.input('Enter a value', 'type something...')
+      return { content: [{ type: 'text', text: String(value ?? 'cancelled') }], details: {} }
+    },
+  })
+}
+`,
     )
-    await writeFile(importSource, importedJsonl)
 
     const store = new PluginStore({
       userDataDirectory,
@@ -309,8 +147,7 @@ async function createHarness(testInfo: TestInfo) {
     await store.installPiExtension(
       resolve('node_modules/@earendil-works/pi-coding-agent/examples/extensions/hello.ts'),
     )
-    await store.installPiExtension(extensions.guiExtension)
-    await store.installPiExtension(extensions.lifecycleExtension)
+    await store.installPiExtension(guiExtension)
 
     electronApp = await electron.launch({
       args: [resolve('out/main/index.js'), `--user-data-dir=${userDataDirectory}`],
@@ -340,106 +177,24 @@ async function createHarness(testInfo: TestInfo) {
     await window.reload()
     await expect
       .poll(
-        async () =>
-          (
-            await invokeAgentWorkspace(window, 'selectContext', {
-              projectId: project.value.id,
-              sessionId: session.value.id,
-            })
-          ).ok,
+        () =>
+          invokeAgentWorkspace(window, 'selectContext', {
+            projectId: project.value.id,
+            sessionId: session.value.id,
+          }).then((selection) => selection.ok),
         { timeout: 30_000 },
       )
       .toBe(true)
 
-    const selectedSessionMetadata = async (): Promise<SessionMetadata> => {
-      const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
-      if (!snapshot.ok || !snapshot.value.selectedSessionId) {
-        throw new Error('No selected Pictor Session')
-      }
-      const path = resolve(
-        userDataDirectory,
-        'data-v1',
-        'sessions',
-        `${snapshot.value.selectedSessionId}.json`,
-      )
-      const metadata = JSON.parse(await readFile(path, 'utf8')) as Omit<SessionMetadata, 'path'>
-      if (!metadata.history.piSessionPath) throw new Error('Selected Session has no Pi authority')
-      return { path, history: metadata.history }
-    }
-
     const harness: PiExtensionHarness = {
       electronApp,
       window,
-      userDataDirectory,
-      projectRoot,
-      projectName,
-      sessionId: session.value.id,
-      imageFixture,
-      importSource,
-      importedJsonl,
       queueToolCall: (tool) => queuedToolCalls.push(tool),
-      startSelectedRun: async (prompt) => {
-        const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
-        if (!snapshot.ok || !snapshot.value.selectedSessionId) return null
-        return invokeAgentWorkspace(window, 'startRun', {
-          sessionId: snapshot.value.selectedSessionId,
+      startSelectedRun: (prompt) =>
+        invokeAgentWorkspace(window, 'startRun', {
+          sessionId: session.value.id,
           prompt,
-        })
-      },
-      importSession: async () => {
-        await electronApp?.evaluate(({ dialog }, sourcePath) => {
-          dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sourcePath] })
-        }, importSource)
-        await window.getByLabel(`${projectName} 项目操作`).click()
-        await window.getByRole('button', { name: '导入 Pi Session' }).click()
-        await window.getByRole('heading', { name: 'import-source (Import)' }).waitFor()
-        const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
-        if (!snapshot.ok || !snapshot.value.selectedSessionId) {
-          throw new Error('Imported Pictor Session is not selected')
-        }
-        const metadata = await selectedSessionMetadata()
-        return { ...metadata, sessionId: snapshot.value.selectedSessionId }
-      },
-      selectedSessionMetadata,
-      recordRuntimeEvents: (sessionId) =>
-        window.evaluate(
-          ({ eventName, moduleId, selectedSessionId }) => {
-            const target = globalThis as typeof globalThis & {
-              pictorModules: ModuleTransport
-              __pictorRuntimeEvents?: unknown[]
-            }
-            target.__pictorRuntimeEvents = []
-            target.pictorModules.onEvent(moduleId, eventName, (event) => {
-              if (
-                event &&
-                typeof event === 'object' &&
-                Reflect.get(event, 'sessionId') === selectedSessionId
-              ) {
-                target.__pictorRuntimeEvents?.push(event)
-              }
-            })
-          },
-          {
-            eventName: 'runtimeEvent',
-            moduleId: agentWorkspaceContract.id,
-            selectedSessionId: sessionId,
-          },
-        ),
-      clearRuntimeEvents: () =>
-        window.evaluate(() => {
-          ;(
-            globalThis as typeof globalThis & { __pictorRuntimeEvents?: unknown[] }
-          ).__pictorRuntimeEvents = []
         }),
-      runtimeEvents: () =>
-        window.evaluate(
-          () =>
-            (
-              globalThis as typeof globalThis & {
-                __pictorRuntimeEvents?: Array<Record<string, unknown>>
-              }
-            ).__pictorRuntimeEvents ?? [],
-        ),
     }
     return { harness, server }
   } catch (error) {
@@ -457,7 +212,7 @@ export const test = base.extend<{ piExtension: PiExtensionHarness }>({
       await provide(harness)
     } catch (error) {
       businessFailed = true
-      return Promise.reject(error)
+      throw error
     } finally {
       try {
         await closeElectronApp(harness.electronApp, {

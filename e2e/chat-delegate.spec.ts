@@ -1,162 +1,26 @@
 import { _electron as electron, expect, test } from '@playwright/test'
-import { appendFile, mkdir, readFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 
 import {
-  bridgeKeys,
   credentialFixtures,
   invokeAgentWorkspace,
-  moduleBridgeKeys,
   readSelectedRunStatus,
+  writeChatText,
 } from './support.js'
 import { closeElectronApp } from './electron-cleanup.js'
 
-test('@smoke completes the delegate flow through the GUI and utility-process boundary', async ({
+test('@smoke completes one delegated response through the real runtime', async ({
   browserName: _browserName,
 }, testInfo) => {
-  test.setTimeout(120_000)
-  let modelRequestCount = 0
+  let requestCount = 0
   const server = createServer(async (request, response) => {
     for await (const chunk of request) void chunk
-    modelRequestCount += 1
-    response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-    if (modelRequestCount === 1) {
-      response.write(
-        `data: ${JSON.stringify({
-          id: 'chatcmpl-e2e-write',
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: 'pictor-e2e-model',
-          choices: [
-            {
-              index: 0,
-              delta: {
-                role: 'assistant',
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: 'call-write-e2e',
-                    type: 'function',
-                    function: {
-                      name: 'write',
-                      arguments: JSON.stringify({
-                        path: 'agent-created.txt',
-                        content: 'created by Pictor',
-                      }),
-                    },
-                  },
-                ],
-              },
-              finish_reason: null,
-            },
-          ],
-        })}\n\n`,
-      )
-      response.write(
-        `data: ${JSON.stringify({
-          id: 'chatcmpl-e2e-write',
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: 'pictor-e2e-model',
-          choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
-        })}\n\n`,
-      )
-      response.end('data: [DONE]\n\n')
-      return
-    }
-    if (modelRequestCount === 2) {
-      response.write(
-        `data: ${JSON.stringify({
-          id: 'chatcmpl-e2e-command',
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: 'pictor-e2e-model',
-          choices: [
-            {
-              index: 0,
-              delta: {
-                role: 'assistant',
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: 'call-command-e2e',
-                    type: 'function',
-                    function: {
-                      name: 'bash',
-                      arguments: JSON.stringify({
-                        command: 'printf approved > command-approved.txt',
-                      }),
-                    },
-                  },
-                ],
-              },
-              finish_reason: null,
-            },
-          ],
-        })}\n\n`,
-      )
-      response.write(
-        `data: ${JSON.stringify({
-          id: 'chatcmpl-e2e-command',
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: 'pictor-e2e-model',
-          choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
-        })}\n\n`,
-      )
-      response.end('data: [DONE]\n\n')
-      return
-    }
-    if (modelRequestCount === 4) {
-      response.write(
-        `data: ${JSON.stringify({
-          id: 'chatcmpl-e2e-stoppable',
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: 'pictor-e2e-model',
-          choices: [
-            {
-              index: 0,
-              delta: { role: 'assistant', content: 'Working until stopped' },
-              finish_reason: null,
-            },
-          ],
-        })}\n\n`,
-      )
-      return
-    }
-    response.write(
-      `data: ${JSON.stringify({
-        id: 'chatcmpl-e2e',
-        object: 'chat.completion.chunk',
-        created: Math.floor(Date.now() / 1000),
-        model: 'pictor-e2e-model',
-        choices: [
-          {
-            index: 0,
-            delta: {
-              role: 'assistant',
-              content:
-                'Task completed.\n\nChanged files:\n- `agent-created.txt`\n- `command-approved.txt`\n\nVerification:\n- Native Pi tools completed.\n\nRemaining work: none.',
-            },
-            finish_reason: null,
-          },
-        ],
-      })}\n\n`,
-    )
-    response.write(
-      `data: ${JSON.stringify({
-        id: 'chatcmpl-e2e',
-        object: 'chat.completion.chunk',
-        created: Math.floor(Date.now() / 1000),
-        model: 'pictor-e2e-model',
-        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-      })}\n\n`,
-    )
-    response.end('data: [DONE]\n\n')
+    requestCount += 1
+    writeChatText(response, 'Delegated response completed.')
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('E2E model server failed to bind')
 
@@ -179,236 +43,52 @@ test('@smoke completes the delegate flow through the GUI and utility-process bou
 
   try {
     const window = await electronApp.firstWindow()
-    await window.waitForLoadState('domcontentloaded')
-    await expect(window).toHaveTitle('Pictor')
-    await expect(window.getByRole('heading', { name: '选择一个项目开始' })).toBeVisible()
-    const rendererGlobals = await window.evaluate(() => ({
-      bodyTextLength: document.body.innerText.length,
-      bridgeKeys: Object.keys((globalThis as typeof globalThis & { pictor: object }).pictor),
-      moduleBridgeKeys: Object.keys(
-        (globalThis as typeof globalThis & { pictorModules: object }).pictorModules,
-      ),
-      nodeProcessType: typeof Reflect.get(globalThis, 'process'),
-    }))
-    expect(rendererGlobals.bodyTextLength).toBeGreaterThan(0)
-    expect(rendererGlobals.bridgeKeys.sort()).toEqual(bridgeKeys.toSorted())
-    expect(rendererGlobals.moduleBridgeKeys.sort()).toEqual(moduleBridgeKeys.toSorted())
-    expect(rendererGlobals.nodeProcessType).toBe('undefined')
-
-    await window.getByRole('button', { name: '设置' }).click()
-    await expect(window.getByRole('button', { name: 'Chat Completions' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    await window.getByLabel('API Base URL').fill(`http://127.0.0.1:${address.port}/v1`)
-    await window.getByRole('textbox', { name: '模型', exact: true }).fill('pictor-e2e-model')
-    await window.getByLabel('API Key').fill(credentialFixtures.localRuntime)
-    await window.getByLabel('最大输出 Token').fill('64')
-    await window.getByRole('button', { name: 'Responses' }).click()
-    await window.screenshot({ path: testInfo.outputPath('model-settings.png') })
-    await window.getByRole('button', { name: 'Chat Completions' }).click()
-    await window.getByRole('button', { name: '保存设置' }).click()
-    await expect(window.getByRole('dialog')).toBeHidden()
-
+    const settings = await invokeAgentWorkspace(window, 'saveSettings', {
+      apiProtocol: 'chat-completions',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      modelId: 'pictor-e2e-model',
+      reasoningEffort: null,
+      temperature: null,
+      maxOutputTokens: 64,
+      apiKey: { action: 'replace', value: credentialFixtures.localRuntime },
+    })
     const project = await invokeAgentWorkspace(window, 'registerProject', {
       rootPath: projectRoot,
       trusted: true,
     })
-    expect(project.ok).toBe(true)
-    await window.reload()
-    await window.waitForLoadState('domcontentloaded')
-
-    await window.getByRole('button', { name: '新建 Session' }).first().click()
-    await expect(window.getByRole('heading', { name: '新建会话' })).toBeVisible({ timeout: 30_000 })
-    await window.getByRole('textbox', { name: '任务描述' }).fill('Say hello.')
-    await window.getByRole('button', { name: '发送任务' }).click()
-
-    await expect(window.getByText('agent-created.txt').first()).toBeVisible()
-    expect(await readFile(join(projectRoot, 'agent-created.txt'), 'utf8')).toBe('created by Pictor')
-    await expect
-      .poll(() => readFile(join(projectRoot, 'command-approved.txt'), 'utf8'))
-      .toBe('approved')
-    await window.screenshot({ path: testInfo.outputPath('delegate-native-tools.png') })
-    await expect
-      .poll(() => modelRequestCount, {
-        message: 'the Agent should continue with a model request after native bash execution',
-        timeout: 30_000,
+    const session = project.ok
+      ? await invokeAgentWorkspace(window, 'createSession', { projectId: project.value.id })
+      : null
+    if (project.ok && session?.ok) {
+      await invokeAgentWorkspace(window, 'selectContext', {
+        projectId: project.value.id,
+        sessionId: session.value.id,
       })
-      .toBeGreaterThanOrEqual(3)
-    await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
-    await expect(window.getByText('Task completed.')).toBeVisible()
-    await expect(window.getByText('Changed files:')).toBeVisible()
-    await expect(window.getByText(/tokens/)).toBeVisible()
-    expect(await readSelectedRunStatus(window)).toBe('completed')
-
-    await window.setViewportSize({ width: 900, height: 620 })
-    await expect
-      .poll(() => window.evaluate(() => globalThis.innerWidth), { timeout: 10_000 })
-      .toBe(900)
-    const layout = await window.evaluate(() => ({
-      bodyWidth: document.body.scrollWidth,
-      viewportWidth: globalThis.innerWidth,
-      composer: document.querySelector('.composer')?.getBoundingClientRect().toJSON(),
-      sidebar: document.querySelector('.sidebar')?.getBoundingClientRect().toJSON(),
-    }))
-    expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewportWidth)
-    expect(layout.composer?.width).toBeGreaterThan(300)
-    expect(layout.sidebar?.width).toBeGreaterThanOrEqual(230)
-    await window.screenshot({ path: testInfo.outputPath('delegate-constrained.png') })
-
-    await window.getByRole('textbox', { name: '任务描述' }).fill('Keep working until stopped.')
-    await window.getByRole('button', { name: '发送任务' }).click()
-    await expect
-      .poll(() => modelRequestCount, {
-        message: 'the utility process should enter the fourth in-flight model request',
-        timeout: 20_000,
-      })
-      .toBe(4)
-    await window.getByRole('button', { name: '停止', exact: true }).click()
-    await expect(window.getByText('已停止').last()).toBeVisible({ timeout: 20_000 })
-    expect(await readSelectedRunStatus(window)).toBe('stopped')
-
-    const snapshot = await invokeAgentWorkspace(window, 'getSnapshot', null)
-    const evidence =
-      snapshot.ok && snapshot.value.sessions[0]
-        ? await invokeAgentWorkspace(window, 'getSession', {
-            sessionId: snapshot.value.sessions[0].id,
-          })
-        : null
-
-    expect(await readFile(join(projectRoot, 'command-approved.txt'), 'utf8')).toBe('approved')
-    if (!evidence?.ok) throw new Error('Session evidence is unavailable')
-    expect(evidence.value.messages).toContainEqual(
-      expect.objectContaining({
-        role: 'assistant',
-        content: expect.stringContaining('Remaining work: none.'),
-      }),
-    )
-    const projectedTools = evidence.value.runs.flatMap((run) => run.toolEvents)
-    expect(projectedTools).toContainEqual(
-      expect.objectContaining({
-        kind: 'write',
-        path: 'agent-created.txt',
-        status: 'completed',
-      }),
-    )
-    expect(projectedTools).toContainEqual(
-      expect.objectContaining({
-        kind: 'command',
-        status: 'completed',
-        output: '(no output)',
-      }),
-    )
-    expect(evidence.value.runs).toContainEqual(expect.objectContaining({ status: 'stopped' }))
-    const persistedSession = JSON.parse(
-      await readFile(
-        join(userDataDirectory, 'data-v1', 'sessions', `${evidence.value.id}.json`),
-        'utf8',
-      ),
-    )
-    expect(persistedSession).toMatchObject({
-      schemaVersion: 2,
-      history: {
-        authority: 'pi-jsonl',
-        piSessionId: expect.any(String),
-        piSessionPath: expect.stringMatching(/\.jsonl$/),
-      },
-      projection: {
-        usage: {
-          tokens: {
-            input: expect.any(Number),
-            output: expect.any(Number),
-            cacheRead: expect.any(Number),
-            cacheWrite: expect.any(Number),
-            total: expect.any(Number),
-          },
-          cost: expect.any(Number),
-          context: null,
-        },
-        messages: expect.arrayContaining([
-          expect.objectContaining({ content: expect.stringContaining('Remaining work: none.') }),
-        ]),
-      },
-    })
-
-    const transcriptPath = resolve(persistedSession.history.piSessionPath)
-    const transcriptEntries = (await readFile(transcriptPath, 'utf8'))
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => JSON.parse(line))
-    const rootUser = transcriptEntries.find(
-      (entry) => entry.type === 'message' && entry.message?.role === 'user',
-    )
-    if (!rootUser?.id) throw new Error('Pi Session root user entry is unavailable')
-    const alternateEntry = {
-      type: 'message',
-      id: 'e2e-alternate-branch',
-      parentId: rootUser.id,
-      timestamp: new Date().toISOString(),
-      message: {
-        role: 'assistant',
-        content: [{ type: 'text', text: 'Historical branch from JSONL' }],
-        api: 'openai-completions',
-        provider: 'pictor-openai-compatible',
-        model: 'pictor-e2e-model',
-        usage: {
-          input: 1,
-          output: 1,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 2,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: 'stop',
-        timestamp: Date.now(),
-      },
     }
-    await appendFile(transcriptPath, `${JSON.stringify(alternateEntry)}\n`, 'utf8')
+    expect(settings.ok).toBe(true)
+    expect(project.ok).toBe(true)
+    expect(session?.ok).toBe(true)
+
     await window.reload()
-    await window.waitForLoadState('domcontentloaded')
+    const composer = window.getByRole('textbox', { name: '任务描述' })
+    await composer.fill('Return one delegated response.')
+    await window.getByRole('button', { name: '发送任务' }).click()
 
-    await window.getByRole('button', { name: 'Session Tree' }).click()
-    const tree = window.getByRole('complementary', { name: 'Session Tree' })
-    await expect(tree).toBeVisible()
-    await expect(tree.getByRole('button', { name: 'Historical branch from JSONL' })).toBeVisible()
-    await tree.getByRole('button', { name: /Task completed/ }).click()
-    await expect(window.locator('.timeline').getByText('Task completed.')).toBeVisible()
-    await expect(window.getByText(/正在查看历史分支/)).toBeVisible()
-    await expect(window.getByRole('textbox', { name: '任务描述' })).toBeDisabled()
-    await expect(window.getByRole('button', { name: '发送任务' })).toBeDisabled()
-    const treeLayout = await window.evaluate(() => ({
-      bodyWidth: document.body.scrollWidth,
-      viewportWidth: globalThis.innerWidth,
-      tree: document.querySelector('.session-tree-panel')?.getBoundingClientRect().toJSON(),
-      timeline: document.querySelector('.timeline')?.getBoundingClientRect().toJSON(),
-    }))
-    expect(treeLayout.bodyWidth).toBeLessThanOrEqual(treeLayout.viewportWidth)
-    expect(treeLayout.tree?.width).toBeGreaterThanOrEqual(220)
-    expect(treeLayout.tree?.width).toBeLessThanOrEqual(280)
-    expect(treeLayout.timeline?.width).toBeGreaterThan(300)
-    await window.screenshot({ path: testInfo.outputPath('session-tree.png') })
-
-    await tree.getByRole('button', { name: '返回当前节点' }).click()
-    await expect(window.locator('.timeline').getByText('Task completed.')).toBeVisible()
-    await expect(window.locator('.timeline').getByText('Historical branch from JSONL')).toHaveCount(
-      0,
-    )
-    await expect(window.getByText(/正在查看历史分支/)).toBeHidden()
-    expect(
-      await readFile(
-        join(userDataDirectory, 'data-v1', 'sessions', `${evidence.value.id}.json`),
-        'utf8',
-      ),
-    ).not.toContain('Historical branch from JSONL')
+    await expect(window.getByText('Delegated response completed.')).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(window.getByText('已完成').last()).toBeVisible({ timeout: 30_000 })
+    expect(await readSelectedRunStatus(window)).toBe('completed')
+    expect(requestCount).toBe(1)
   } catch (error) {
     businessFailed = true
-    return Promise.reject(error)
+    throw error
   } finally {
     try {
       await closeElectronApp(electronApp, { mode: businessFailed ? 'suppress' : 'strict' })
     } finally {
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
+      await new Promise<void>((resolveClose, reject) =>
+        server.close((error) => (error ? reject(error) : resolveClose())),
       )
     }
   }
