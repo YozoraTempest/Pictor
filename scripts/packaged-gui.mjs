@@ -27,6 +27,10 @@ const electronRuntimeDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../node_modules/electron/dist',
 )
+const playwrightElectronLoader = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../node_modules/playwright-core/lib/server/electron/loader.js',
+)
 
 export function selectPackagedGuiLaunchMode(executablePath, platform = process.platform) {
   const normalizedPath = executablePath.toLowerCase()
@@ -67,6 +71,8 @@ async function launchPackagedGuiWithElectron(executablePath, arguments_, options
       executablePath: playwrightRuntime.executable,
       args: [
         '--no-sandbox',
+        '-r',
+        playwrightElectronLoader,
         join(playwrightRuntime.directory, 'resources', 'app.asar'),
         ...arguments_,
       ],
