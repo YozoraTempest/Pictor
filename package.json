@@ -19,6 +19,9 @@
   "desktopName": "pictor.desktop",
   "main": "out/main/index.js",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "packageManager": "npm@11.17.0",
   "engines": {
     "node": ">=22.22.2"
@@ -36,6 +39,7 @@
     "format": "prettier --write .",
     "format:check": "npm run check:format",
     "test": "vitest run",
+    "test:sdk": "npm test --workspace @pictor/plugin-sdk",
     "test:unit": "vitest run --exclude **/*.integration.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
@@ -83,6 +87,7 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
+    "@pictor/plugin-sdk": "0.0.0",
     "@electron/asar": "^3.4.1",
     "@electron/fuses": "^1.8.0",
     "@eslint/js": "^10.0.0",

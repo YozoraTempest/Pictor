@@ -2,8 +2,8 @@ import { Blocks } from 'lucide-react'
 import { createElement } from 'react'
 
 import { guiSettingsSectionContributions } from '../../src/gui/contract.js'
-import { defineModule } from '../../src/kernel/module.js'
-import { pluginEntrypoint, type GuiPluginContext } from '../../src/plugin/entry.js'
+import { defineModule } from '@pictor/plugin-sdk/module'
+import { pluginEntrypoint, type GuiPluginContext } from '@pictor/plugin-sdk/plugin'
 
 import { PluginManager } from './PluginManager.js'
 import { installPluginManagerStyles } from './styles.js'

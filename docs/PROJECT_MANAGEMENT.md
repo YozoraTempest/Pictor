@@ -34,7 +34,7 @@ Request；准备合并时必须保证范围可审查，避免把无关重构塞�
 
 - 每个 Pull Request 都运行格式、类型、lint、全量 Vitest、单一 Linux 委托 Smoke 和 Windows Shell
   Smoke，不再用手写路径分类改变四项必需检查的行为。
-- 触及 `package.json`、electron-vite、packaging、Frontend、构建脚本或工作流的 Pull Request，
+- 触及 `package.json`、Plugin SDK、Plugin、electron-vite、packaging、Frontend、构建脚本或工作流的 Pull Request，
   由独立且非 required 的 `Package CI` 按粗粒度路径过滤触发 `package-desktop.yml`。它在
   Windows/Linux 构建完整 distribution 后执行 NSIS、Pacman、AppImage 结构、Fuse、真实 launcher、
   GUI/CLI/TUI、Profile lock 和安装生命周期；富 DOM 与 Plugin recovery 不按平台重复执行。

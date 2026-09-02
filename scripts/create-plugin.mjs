@@ -32,9 +32,9 @@ const manifest = {
 }
 const files = {
   'manifest.json': `${JSON.stringify(manifest, null, 2)}\n`,
-  'host.ts': `import { defineModule } from '../../src/kernel/module.js'\nimport { pluginEntrypoint, type HostPluginContext } from '../../src/plugin/entry.js'\n\nexport default pluginEntrypoint<HostPluginContext>(() => [\n  defineModule({ id: '${pluginId}.host', activate() {} }),\n])\n`,
-  'gui.ts': `import { createElement } from 'react'\nimport { defineModule } from '../../src/kernel/module.js'\nimport { pluginEntrypoint, type GuiPluginContext } from '../../src/plugin/entry.js'\n\nexport default pluginEntrypoint<GuiPluginContext>(() => [\n  defineModule({ id: '${pluginId}.gui', activate() {\n    createElement('div', null)\n  } }),\n])\n`,
-  [`${name}.test.ts`]: `// @vitest-environment node\n\nimport { expect, it } from 'vitest'\n\nimport { pluginManifestSchema } from '../../src/plugin/manifest.js'\nimport manifest from './manifest.json'\n\nit('defines the ${name} Plugin package', () => {\n  expect(pluginManifestSchema.parse(manifest).id).toBe('${pluginId}')\n})\n`,
+  'host.ts': `import { defineModule } from '@pictor/plugin-sdk/module'\nimport { pluginEntrypoint, type HostPluginContext } from '@pictor/plugin-sdk/plugin'\n\nexport default pluginEntrypoint<HostPluginContext>(() => [\n  defineModule({ id: '${pluginId}.host', activate() {} }),\n])\n`,
+  'gui.ts': `import { createElement } from 'react'\nimport { defineModule } from '@pictor/plugin-sdk/module'\nimport { pluginEntrypoint, type GuiPluginContext } from '@pictor/plugin-sdk/plugin'\n\nexport default pluginEntrypoint<GuiPluginContext>(() => [\n  defineModule({ id: '${pluginId}.gui', activate() {\n    createElement('div', null)\n  } }),\n])\n`,
+  [`${name}.test.ts`]: `// @vitest-environment node\n\nimport { expect, it } from 'vitest'\n\nimport { pluginManifestSchema } from '@pictor/plugin-sdk/manifest'\nimport manifest from './manifest.json'\n\nit('defines the ${name} Plugin package', () => {\n  expect(pluginManifestSchema.parse(manifest).id).toBe('${pluginId}')\n})\n`,
 }
 
 await mkdir(directory, { recursive: true })

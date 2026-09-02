@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 
 import { expect, it } from 'vitest'
 
-import { pluginManifestSchema } from '../../src/plugin/manifest.js'
+import { pluginManifestSchema } from '@pictor/plugin-sdk/manifest'
 
 it('declares the Agent Workspace dependency', async () => {
   const manifest = pluginManifestSchema.parse(

@@ -2,6 +2,11 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
+import {
+  ContributionPoint as SdkContributionPoint,
+  Token as SdkToken,
+  defineModule as defineSdkModule,
+} from '@pictor/plugin-sdk/module'
 import { ModuleKernel } from './kernel.js'
 import { ContributionPoint, Token, defineModule } from './module.js'
 
@@ -66,11 +71,11 @@ describe('ModuleKernel', () => {
   })
 
   it('matches Tokens and Contribution Points by stable ID across bundled SDK copies', async () => {
-    const provided = new Token<number>('portable.value')
+    const provided = new SdkToken<number>('portable.value')
     const required = new Token<number>('portable.value')
-    const contributed = new ContributionPoint<string>('portable.labels')
+    const contributed = new SdkContributionPoint<string>('portable.labels')
     const queried = new ContributionPoint<string>('portable.labels')
-    const provider = defineModule({ id: 'provider', provides: provided, activate: () => 42 })
+    const provider = defineSdkModule({ id: 'provider', provides: provided, activate: () => 42 })
     const consumer = defineModule({
       id: 'consumer',
       requires: [required] as const,

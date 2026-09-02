@@ -34,6 +34,7 @@ Windows E2E 默认隐藏窗口；本地 Linux E2E 使用 `showInactive()` 显示
 | 静态检查      | `npm run check:format`、`check:types`、`check:lint`                                  | 格式、类型、Lint                                     | 本地提交前、每个 PR          |
 | Module 测试   | `npm run test:module -- <name>`                                                      | 单个 Feature 目录                                    | 对应 Feature 开发循环        |
 | Plugin 测试   | `npm run test:plugin -- <name>`                                                      | 单个 Plugin 或 `host` 底座                           | Plugin 开发循环              |
+| Plugin SDK    | `npm run test:sdk`                                                                   | 可移植 Interface、schema 与稳定 ID                   | SDK/Plugin Interface 变更时  |
 | 单元测试      | `npm run test:unit`                                                                  | 纯函数、组件、服务边界                               | 开发循环、每个 PR            |
 | CLI 测试      | `npx vitest run src/cli`                                                             | Node CLI 路由、text/JSON、取消、Profile 锁           | Stage 5 开发循环、每个 PR    |
 | TUI 测试      | `npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs` | Host 生命周期、fake terminal、JSONL、Plugin boundary | Stage 9 开发循环、每个 PR    |
@@ -122,6 +123,9 @@ Frontend/package gate 成功后才由唯一 publish job 生成原有三个资产
 - Plugin 测试通过 Manifest、Registry、依赖规划、Plugin Host 或 Plugin Store 的公开 Interface
   验证。必须覆盖拓扑顺序、完整循环链、缺失/禁用/版本不兼容依赖、激活失败隔离、零 Plugin、
   安全模式、Bundled 删除后不自动恢复，以及代码与数据的独立删除语义。
+- Plugin SDK 测试直接验证 Module、contract、entrypoint 和 Manifest Interface；Core 测试必须使用
+  真实 SDK 副本验证稳定 ID、handler registration 和 Manifest schema 兼容。导入防线禁止生产 Plugin
+  回退到 `src/kernel` 或 `src/plugin`，并要求首个试点 `pictor.pi-extension-host` 完全不导入 `src/`。
 - GUI Plugin 测试通过公开 GUI Settings Section contract 验证 `owner`、稳定 identity、确定性排序与
   冲突过滤；Delegate、Updater、Git Changes 和 GUI Plugin Manager 必须分别验证 GUI Module 样式
   的安装/释放、稳定 data scope 与无全局 selector。Shell、fatal/workbench fallback 的诊断归 GUI Host，

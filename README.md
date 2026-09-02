@@ -140,6 +140,9 @@ npm run dev
 `npm run dev` 先构建本地 Bundled Plugin，再启动 electron-vite watch/HMR，并使用独立的
 `pictor-dev` userData，不会读取或修改正式安装的数据。新建可安装能力使用
 `npm run plugin:new -- <name>`；只新增 Plugin 内部执行单元时使用 `npm run module:new -- <name>`。
+新 Plugin 的 Module、contract、entrypoint 和 Manifest 从内部 `@pictor/plugin-sdk` workspace 的
+显式子路径导入；该 SDK 会进入 Plugin bundle，不要求发布应用在运行时提供 workspace `node_modules`。
+SDK 当前为私有开发 Interface，不是已发布 npm 包，也不形成第三方兼容承诺。
 设置 `PICTOR_PLUGIN_PROFILE=developer` 使用 Developer Profile；Plugin Manager 可以登记 live source
 Development Plugin，修改其已构建入口后重启 Pictor 即可生效，不需要重新打包 Pictor。
 
@@ -196,6 +199,7 @@ AppImage，不在基础 CI 中维护条件分支：
 ```bash
 npm run test:module -- updater
 npm run test:plugin -- host
+npm run test:sdk
 npm run test:watch
 npm run verify:fast
 npm run verify:pr
@@ -229,6 +233,8 @@ Nightly/Release 额外验证中断恢复、启动恢复、原生 Extension Tool/
 功能；既有代码继续按 Electron Main、Preload、Renderer、Agent Runtime 和共享协议划分，
 `tui/` 是不导入 Electron/GUI 私有实现的 Node Frontend。目录职责、跨进程协议和允许依赖方向见
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+Plugin 作者使用的可移植 Interface 位于 [`packages/plugin-sdk`](packages/plugin-sdk)，Bundled Plugin
+源码继续位于 `plugins/` 并与应用保持同仓库、同版本、同发布快照。
 Pictor 0.4 的 Headless Application Host、Command Engine、GUI/TUI/CLI Frontend、Pictor Shell 和
 Workbench Plugin 迁移契约见
 [`docs/MULTI_FRONTEND_ARCHITECTURE.md`](docs/MULTI_FRONTEND_ARCHITECTURE.md)。

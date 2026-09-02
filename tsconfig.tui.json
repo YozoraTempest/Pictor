@@ -21,9 +21,7 @@
     "src/main/plugins/plugin-store.ts",
     "src/plugin/**/*.ts",
     "src/runtime/**/*.ts",
-    "src/shared/**/*.ts",
-    "plugins/agent-workspace/host.ts",
-    "plugins/tui-delegate/tui.ts"
+    "src/shared/**/*.ts"
   ],
   "exclude": [
     "**/*.test.ts",
