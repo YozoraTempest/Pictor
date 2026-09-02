@@ -66,8 +66,8 @@ async function launchPackagedGuiWithElectron(executablePath, arguments_, options
     const electronApp = await electron.launch({
       executablePath: playwrightRuntime.executable,
       args: [
-        join(playwrightRuntime.directory, 'resources', 'app.asar'),
         '--no-sandbox',
+        join(playwrightRuntime.directory, 'resources', 'app.asar'),
         ...arguments_,
       ],
       cwd: options.cwd,
@@ -117,6 +117,11 @@ async function stagePlaywrightRuntime(executablePath) {
     const targetResources = join(directory, 'resources')
     await rm(join(targetResources, 'app.asar'), { force: true })
     await cloneFileTree(join(sourceResources, 'app.asar'), join(targetResources, 'app.asar'))
+    const sourceUnpacked = join(sourceResources, 'app.asar.unpacked')
+    await rm(join(targetResources, 'app.asar.unpacked'), { recursive: true, force: true })
+    if (await pathExists(sourceUnpacked)) {
+      await cloneFileTree(sourceUnpacked, join(targetResources, 'app.asar.unpacked'))
+    }
     await rm(join(targetResources, 'bundled-plugins'), { recursive: true, force: true })
     await cloneFileTree(
       join(sourceResources, 'bundled-plugins'),
@@ -141,6 +146,13 @@ async function findRuntimeExecutable(directory) {
       return candidate
   }
   throw new Error(`Electron runtime executable is missing from ${directory}`)
+}
+
+async function pathExists(path) {
+  return access(path).then(
+    () => true,
+    () => false,
+  )
 }
 
 async function cloneFileTree(source, target) {

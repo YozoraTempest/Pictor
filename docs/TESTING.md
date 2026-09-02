@@ -85,7 +85,8 @@ Windows GUI 验收按自动化能力拆分：`verify-windows-launch`、NSIS inst
 Workbench recovery 以真实 `Pictor.exe` 为 payload 使用 Playwright `_electron.launch`，因此 DOM 断言
 保留完整 `Page`/`Locator` API。由于生产包关闭 `enableNodeCliInspectArguments`，helper 只在临时
 测试目录中使用同版本未修改的 Electron runtime，并复用该 `Pictor.exe` 的 `app.asar` 与
-`bundled-plugins` payload；生产 binary 的 fuse wire 不变且测试目录在关闭时清理。该脚本另用
+`app.asar.unpacked` 与 `bundled-plugins` payload；生产 binary 的 fuse wire 不变且测试目录在关闭时清理。
+该脚本另用
 子进程执行 `bin\\pictor.cmd`，在继承
 `ELECTRON_RUN_AS_NODE=1` 的 hostile 环境下只通过远程调试 HTTP `/json/list` 确认
 `app://bundle/index.html` page target 出现且进程仍存活；结束时按 cmd 根 PID 的完整 process tree
