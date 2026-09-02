@@ -13,6 +13,7 @@ const expectedPlugins = BUNDLED_PLUGIN_IDS
 const requiredFiles = APP_ASAR_FRONTEND_ENTRIES.map((file) => file.replace(/^out\//, ''))
 
 for (const file of requiredFiles) await requireFile(join(outputRoot, file))
+await requireNoWorkspaceSdkImports(outputRoot)
 
 const identity = JSON.parse(await readFile(join(outputRoot, 'package-identity.json'), 'utf8'))
 if (identity.version !== packageMetadata.version) {
@@ -76,5 +77,22 @@ async function requireFile(path) {
   const metadata = await stat(path).catch(() => null)
   if (!metadata?.isFile() || metadata.size === 0) {
     throw new Error(`Expected a non-empty distribution file: ${relative(repositoryRoot, path)}`)
+  }
+}
+
+async function requireNoWorkspaceSdkImports(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) {
+      await requireNoWorkspaceSdkImports(path)
+      continue
+    }
+    if (!entry.isFile() || !/\.(?:c?js|mjs)$/.test(entry.name)) continue
+    const source = await readFile(path, 'utf8')
+    if (/['"]@pictor\/plugin-sdk(?:\/|['"])/.test(source)) {
+      throw new Error(
+        `Distribution contains an unresolved Plugin SDK import: ${relative(repositoryRoot, path)}`,
+      )
+    }
   }
 }

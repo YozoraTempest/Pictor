@@ -3,7 +3,6 @@
 import { expect, it, vi } from 'vitest'
 
 import { CommandEngine } from '../../src/commands/engine.js'
-import type { ModuleTransport } from '../../src/kernel/contract.js'
 import { ModuleKernel } from '../../src/kernel/kernel.js'
 import {
   createAgentWorkspaceClient,
@@ -11,6 +10,7 @@ import {
 } from '../../src/modules/agent-workspace/shared.js'
 import { tuiApplicationContributions, type TuiApplicationContext } from '../../src/tui/contract.js'
 import type { SessionHistoryView } from '../../src/shared/domain.js'
+import type { ModuleTransport } from '@pictor/plugin-sdk/contract'
 import entrypoint from './tui.js'
 import manifest from './manifest.json'
 

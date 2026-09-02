@@ -1,11 +1,11 @@
-import { defineModule } from '../../src/kernel/module.js'
-import { pluginEntrypoint, type TuiPluginContext } from '../../src/plugin/entry.js'
 import {
   tuiApplicationContributions,
   type TuiApplicationContext,
   type TuiApplicationContribution,
 } from '../../src/tui/contract.js'
 import type { IpcResult } from '../../src/shared/errors.js'
+import { defineModule } from '@pictor/plugin-sdk/module'
+import { pluginEntrypoint, type TuiPluginContext } from '@pictor/plugin-sdk/plugin'
 
 const delegateContribution: TuiApplicationContribution = {
   owner: 'pictor.tui.delegate',

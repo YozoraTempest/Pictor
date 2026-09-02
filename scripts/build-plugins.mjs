@@ -173,5 +173,9 @@ async function verifyBundledPackage(packageRoot, manifest) {
     const entryPath = join(packageRoot, manifestEntry)
     const entryStat = await stat(entryPath).catch(() => null)
     if (!entryStat?.isFile()) throw new Error(`Missing Bundled Plugin entry: ${entryPath}`)
+    const entrySource = await readFile(entryPath, 'utf8')
+    if (/['"]@pictor\/plugin-sdk(?:\/|['"])/.test(entrySource)) {
+      throw new Error(`Bundled Plugin contains an unresolved Plugin SDK import: ${entryPath}`)
+    }
   }
 }

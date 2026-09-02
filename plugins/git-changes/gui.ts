@@ -5,9 +5,9 @@ import {
   guiSettingsSectionContributions,
   type GuiSettingsSectionContext,
 } from '../../src/gui/contract.js'
-import { defineModule } from '../../src/kernel/module.js'
 import { createAgentWorkspaceClient } from '../../src/modules/agent-workspace/shared.js'
-import { pluginEntrypoint, type GuiPluginContext } from '../../src/plugin/entry.js'
+import { defineModule } from '@pictor/plugin-sdk/module'
+import { pluginEntrypoint, type GuiPluginContext } from '@pictor/plugin-sdk/plugin'
 import { createGitChangesClient, type GitChangesClient } from './shared.js'
 import { installGitChangesStyles } from './styles.js'
 

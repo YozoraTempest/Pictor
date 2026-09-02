@@ -83,6 +83,13 @@ Pi 资源；Registry 保存用户期望状态；依赖规划计算拓扑顺序�
 Bundled 恢复源和独立数据目录。第一版按重启应用生效，不实现热卸载、复杂依赖求解、签名链或
 细粒度权限矩阵。
 
+`packages/plugin-sdk` 是 Plugin 作者使用的私有 workspace Interface，提供 Module、contract、
+entrypoint、Manifest 和少量稳定 Contribution Point。SDK 实现随每个 Plugin bundle 内联，Core
+持有 Host 端 Adapter；两侧按稳定 Token、Contribution Point 和 contract ID 互操作，不依赖同一份
+class identity。SDK 不导入 `src/`、Electron、React 或 Pi 实现，也不提供汇总所有能力的根入口。
+当前 SDK 固定为私有开发版本并随 Pictor 的同一源码快照构建，只用于建立未来可独立消费的 seam，
+不形成 npm 发布承诺或额外版本编排。
+
 `e2e/` 保存 Electron 用户场景，`scripts/` 保存构建和发布验证，`tests/` 只保存 Vitest 全局
 测试基础设施。这些工程文件不属于应用源码，不迁入 `src/`。
 
@@ -159,6 +166,7 @@ Workbench slot、带 `owner` 与稳定 `id` 的 Settings Section，以及 Sectio
 
 ```text
 Renderer -> Desktop bridge / Module contract / CommandClient -> Preload adapter -> IPC -> DesktopHost
+Bundled Plugin -> Plugin SDK / 明确的产品 contract
 CLI -> Application Host ports -> Command Client
 TUI -> Application Host ports / ModuleTransport -> TUI Contribution
 DesktopHost -> Application Host ports -> RuntimeCoordinator / PluginHost / Repository
@@ -167,6 +175,7 @@ Application Host -> RuntimeHost -> RuntimeSupervisor -> Runtime protocol -> Runt
 Main / Preload / Renderer / Runtime -> Shared
 Main / Renderer / Runtime -> Plugin Host -> per-plugin Kernel
 Kernel -X-> Electron / React / Pi / 业务实现
+Plugin SDK -X-> src / Electron / React / Pi / 产品实现
 Shared -X-> 任何进程实现
 Runtime -X-> Main / Preload / Renderer
 Renderer -X-> Electron / Node / 其他进程实现
@@ -394,6 +403,8 @@ Delegate Workbench GUI Plugin 的 `AgentWorkspace` 负责页面布局、Settings
 - Application Host、Headless 生命周期端口和服务装配：`src/application/`。
 - Command Engine、Core commands 和 Frontend transport contract：`src/commands/`。
 - Plugin Manifest、Registry schema、依赖规划与隔离 Host：`src/plugin/`。
+- Plugin 作者可移植的 Module、contract、entrypoint、Manifest 与稳定 Contribution Interface：
+  `packages/plugin-sdk/`；不得从该包反向导入 `src/` 或产品 Plugin。
 - Plugin Store、安装副本和 Bundled 恢复：`src/main/plugins/`。
 - 新增 Headless 业务 Feature：`src/modules/<feature>/`，按需要创建 `shared.ts`、`host.ts`、
   `preferences.ts`、`update-service.ts` 或 `runtime.ts`；产品 GUI 放入对应 `plugins/<plugin>/`。
@@ -414,7 +425,7 @@ Delegate Workbench GUI Plugin 的 `AgentWorkspace` 负责页面布局、Settings
   RuntimeCoordinator、`src/main` 或 GUI 私有实现。
 - 跨进程 schema 或类型：放入对应的 `src/shared/` 协议 module。
 
-使用 `npm run plugin:new -- <name>` 生成 Manifest、Host/GUI 入口和测试骨架；
+使用 `npm run plugin:new -- <name>` 生成 Manifest、使用 `@pictor/plugin-sdk` 的 Host/GUI 入口和测试骨架；
 `npm run build:plugins` 将 `plugins/` 中的包构建到本地 Bundled 恢复源。`npm run module:new --
 <name>` 只用于已有 Plugin 内部尚未迁移的 Module 源码，不会安装或登记 Plugin。
 

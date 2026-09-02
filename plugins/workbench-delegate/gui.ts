@@ -1,10 +1,10 @@
 import { createElement } from 'react'
 
-import { defineModule } from '../../src/kernel/module.js'
 import { guiWorkbenchContributions } from '../../src/gui/contract.js'
 import { createAgentWorkspaceClient } from '../../src/modules/agent-workspace/shared.js'
-import { pluginEntrypoint, type GuiPluginContext } from '../../src/plugin/entry.js'
 import type { GuiWorkbenchContext } from '../../src/gui/contract.js'
+import { defineModule } from '@pictor/plugin-sdk/module'
+import { pluginEntrypoint, type GuiPluginContext } from '@pictor/plugin-sdk/plugin'
 
 import { AgentWorkspace } from './AgentWorkspace.js'
 import { installWorkbenchStyles } from './styles.js'

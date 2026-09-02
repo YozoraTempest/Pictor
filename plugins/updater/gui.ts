@@ -2,9 +2,9 @@ import { Info } from 'lucide-react'
 import { createElement } from 'react'
 
 import { guiSettingsSectionContributions } from '../../src/gui/contract.js'
-import { defineModule } from '../../src/kernel/module.js'
-import { pluginEntrypoint, type GuiPluginContext } from '../../src/plugin/entry.js'
 import { createUpdaterClient } from '../../src/modules/updater/shared.js'
+import { defineModule } from '@pictor/plugin-sdk/module'
+import { pluginEntrypoint, type GuiPluginContext } from '@pictor/plugin-sdk/plugin'
 
 import { AboutSettings } from './AboutSettings.js'
 import { installUpdaterStyles } from './styles.js'

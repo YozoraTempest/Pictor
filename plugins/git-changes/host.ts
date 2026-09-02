@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
-import { moduleHandlerContributions, registerModuleHandlers } from '../../src/kernel/contract.js'
-import { defineModule } from '../../src/kernel/module.js'
-import { pluginEntrypoint, type HostPluginContext } from '../../src/plugin/entry.js'
+import { moduleHandlerContributions, registerModuleHandlers } from '@pictor/plugin-sdk/contract'
+import { defineModule } from '@pictor/plugin-sdk/module'
+import { pluginEntrypoint, type HostPluginContext } from '@pictor/plugin-sdk/plugin'
 import { gitChangesContract } from './shared.js'
 
 const execFileAsync = promisify(execFile)
