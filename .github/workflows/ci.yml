@@ -17,94 +17,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  changes:
-    name: Changes
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      app_changed: ${{ steps.classify.outputs.app_changed }}
-      workflow_changed: ${{ steps.classify.outputs.workflow_changed }}
-      package_changed: ${{ steps.classify.outputs.package_changed }}
-      source_version: ${{ steps.classify.outputs.source_version }}
-      release_pr: ${{ steps.classify.outputs.release_pr }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Classify changed paths and pull request kind
-        id: classify
-        env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          BASE_BRANCH: ${{ github.base_ref }}
-          PR_HEAD: ${{ github.head_ref }}
-        run: |
-          set -euo pipefail
-
-          mapfile -t changed_paths < <(git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA")
-          if [ "${#changed_paths[@]}" -eq 0 ]; then
-            echo 'Unable to classify a change with no changed paths.' >&2
-            exit 1
-          fi
-
-          app_changed=false
-          workflow_changed=false
-          package_changed=false
-          for path in "${changed_paths[@]}"; do
-            case "$path" in
-              .github/workflows/*.yml) workflow_changed=true; package_changed=true ;;
-              electron.vite.config.ts|plugins/*|src/cli/*|src/node/*|src/tui/*) package_changed=true; app_changed=true ;;
-              package.json|package-lock.json|packaging/*|scripts/after-pack.mjs|scripts/build-distribution.mjs|scripts/distribution-contract.mjs|scripts/electron-fuses*.mjs|scripts/launcher-contract.test.mjs|scripts/linux-after-*.sh|scripts/linux-launch-readiness*|scripts/packaged-gui.mjs|scripts/build-cli.mjs|scripts/build-plugins.mjs|scripts/build-tui.mjs|scripts/verify-*.mjs) package_changed=true; app_changed=true ;;
-              *.md|docs/*|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE*) ;;
-              *) app_changed=true ;;
-            esac
-          done
-
-          release_pr=false
-          if [ "$GITHUB_EVENT_NAME" = 'pull_request' ] && [ "$BASE_BRANCH" = 'main' ]; then
-            if [ "$PR_HEAD" = 'develop' ] || [[ "$PR_HEAD" == hotfix/* ]]; then
-              release_pr=true
-            elif [[ "$PR_HEAD" == ci/* ]]; then
-              invalid_paths=''
-              for path in "${changed_paths[@]}"; do
-                case "$path" in
-                  .github/workflows/*.yml|README.md|CONTRIBUTING.md|docs/PROJECT_MANAGEMENT.md|docs/TESTING.md) ;;
-                  *) invalid_paths+="$path"$'\n' ;;
-                esac
-              done
-              if [ -n "$invalid_paths" ]; then
-                echo 'Non-release ci/* pull requests to main contain disallowed paths:' >&2
-                printf '%s' "$invalid_paths" >&2
-                exit 1
-              fi
-            else
-              echo 'Pull requests to main must come from develop, hotfix/*, or a path-restricted ci/* branch.' >&2
-              exit 1
-            fi
-          fi
-
-          printf 'Changed paths:\n'
-          printf '  %s\n' "${changed_paths[@]}"
-          {
-            echo "app_changed=$app_changed"
-            echo "workflow_changed=$workflow_changed"
-            echo "package_changed=$package_changed"
-            echo "source_version=$(node --print "require('./package.json').version")"
-            echo "release_pr=$release_pr"
-          } >> "$GITHUB_OUTPUT"
-
   quality:
     name: Quality
-    needs: changes
-    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Require successful change classification
-        if: needs.changes.result != 'success'
-        run: |
-          echo 'Change classification failed; refusing to bypass Quality.' >&2
-          exit 1
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -117,8 +34,7 @@ jobs:
           npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
           echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
       - run: npm ci
-      - name: Validate changed workflows
-        if: needs.changes.outputs.workflow_changed == 'true'
+      - name: Validate workflows
         env:
           ACTIONLINT_VERSION: 1.7.12
           GH_TOKEN: ${{ github.token }}
@@ -137,96 +53,88 @@ jobs:
             (cd "$install_dir" && sha256sum --check)
           tar --extract --gzip --file "$install_dir/$archive" --directory "$install_dir"
           "$install_dir/actionlint" .github/workflows/*.yml
-      - name: Validate release metadata
-        if: needs.changes.outputs.release_pr == 'true'
-        id: release-metadata
-        run: node scripts/prepare-release.mjs
-      - name: Validate release version is unused
-        if: needs.changes.outputs.release_pr == 'true'
-        shell: pwsh
+      - name: Validate pull requests to main
+        if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
         env:
-          RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
+          PR_HEAD: ${{ github.head_ref }}
         run: |
-          $remoteTag = git ls-remote --tags origin "refs/tags/$env:RELEASE_TAG"
+          set -euo pipefail
+          case "$PR_HEAD" in
+            develop|hotfix/*)
+              node scripts/prepare-release.mjs
+              ;;
+            ci/*)
+              invalid_paths="$(
+                git diff --name-only --no-renames '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}' |
+                  grep -Ev '^(\.github/workflows/.*\.yml|README\.md|CONTRIBUTING\.md|docs/(PROJECT_MANAGEMENT|TESTING)\.md)$' || true
+              )"
+              if [ -n "$invalid_paths" ]; then
+                printf 'Non-release ci/* pull requests to main contain disallowed paths:\n%s\n' "$invalid_paths" >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo 'Pull requests to main must come from develop, hotfix/*, or a path-restricted ci/* branch.' >&2
+              exit 1
+              ;;
+          esac
+      - name: Validate release version is unused
+        if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && (github.head_ref == 'develop' || startsWith(github.head_ref, 'hotfix/')) }}
+        shell: pwsh
+        run: |
+          $tag = "v$((Get-Content package.json | ConvertFrom-Json).version)"
+          $remoteTag = git ls-remote --tags origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to query remote tags"
           }
           if ($remoteTag) {
-            throw "Release tag $env:RELEASE_TAG already exists. Bump the version before merging to main."
+            throw "Release tag $tag already exists. Bump the version before merging to main."
           }
       - run: npm run check:format
       - run: npm run check:types
-        if: needs.changes.outputs.app_changed == 'true'
       - run: npm run check:lint
-        if: needs.changes.outputs.app_changed == 'true'
 
   tests:
     name: Unit and integration
-    needs: changes
-    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Require successful change classification
-        if: needs.changes.result != 'success'
-        run: |
-          echo 'Change classification failed; refusing to bypass Unit and integration.' >&2
-          exit 1
       - uses: actions/checkout@v7
-        if: needs.changes.outputs.app_changed == 'true'
       - uses: actions/setup-node@v7
-        if: needs.changes.outputs.app_changed == 'true'
         with:
           node-version-file: .nvmrc
           cache: npm
       - name: Install pinned npm without replacing the runner copy
-        if: needs.changes.outputs.app_changed == 'true'
         run: |
           npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
           echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
       - run: npm ci
-        if: needs.changes.outputs.app_changed == 'true'
       - run: npm test
-        if: needs.changes.outputs.app_changed == 'true'
 
   windows-acceptance:
     name: Windows acceptance
-    needs: changes
-    if: always()
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - name: Require successful change classification
-        if: needs.changes.result != 'success'
-        shell: pwsh
-        run: throw 'Change classification failed; refusing to bypass Windows acceptance.'
       - uses: actions/checkout@v7
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - uses: actions/setup-node@v7
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         with:
           node-version-file: .nvmrc
           cache: npm
       - name: Install pinned npm without replacing the runner copy
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         shell: pwsh
         run: |
           $npmPrefix = Join-Path $env:RUNNER_TEMP 'pictor-npm'
           npm install --global --prefix $npmPrefix npm@11.17.0
           $npmPrefix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: npm ci
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run deps:prepare
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run deps:verify
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run build:app
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - name: Run Windows desktop shell smoke
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         run: npm run test:e2e:run -- e2e/shell.spec.ts
       - name: Upload failure evidence
-        if: ${{ failure() && needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: windows-playwright-evidence
@@ -236,63 +144,32 @@ jobs:
 
   linux-acceptance:
     name: Linux acceptance
-    needs: changes
-    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Require successful change classification
-        if: needs.changes.result != 'success'
-        run: |
-          echo 'Change classification failed; refusing to bypass Linux acceptance.' >&2
-          exit 1
       - uses: actions/checkout@v7
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - uses: actions/setup-node@v7
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         with:
           node-version-file: .nvmrc
           cache: npm
       - name: Install pinned npm without replacing the runner copy
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         run: |
           npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
           echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
       - run: npm --version
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm ci
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run deps:prepare
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
         env:
           ELECTRON_GET_USE_PROXY: 'true'
       - run: npm run deps:verify
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
       - run: npm run build:app
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
-      - name: Run pull-request smoke tests
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' && github.event_name == 'pull_request' }}
-        run: xvfb-run --auto-servernum npm run test:e2e:smoke:run
       - name: Run full desktop tests
-        if: ${{ needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' && github.event_name == 'push' }}
         run: xvfb-run --auto-servernum npm run test:e2e:run
       - name: Upload failure evidence
-        if: ${{ failure() && needs.changes.outputs.app_changed == 'true' && needs.changes.outputs.package_changed != 'true' }}
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: linux-playwright-evidence
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
-
-  package-acceptance:
-    name: Package acceptance (changed packaging surface)
-    needs: changes
-    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.package_changed == 'true' }}
-    uses: ./.github/workflows/package-desktop.yml
-    with:
-      source_sha: ${{ github.event.pull_request.head.sha }}
-      version: ${{ needs.changes.outputs.source_version }}
-      artifact_prefix: pr-${{ github.event.pull_request.number }}
-      build_channel: development
-      run_source_validation: false

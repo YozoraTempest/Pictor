@@ -190,8 +190,8 @@ Profile 冲突、无可用 TUI、Plugin 失败和取消退出码分别为 `0`、
 ## 验证
 
 日常提交前运行快速验证；PR 级验证会额外执行一次干净的 GUI/CLI/TUI/Plugin distribution build
-并执行核心 E2E Smoke。只有 packaging/launcher/fuse/workflow 相关改动才会在 CI 条件触发完整
-Windows NSIS、Pacman 和 AppImage acceptance：
+并执行核心 E2E Smoke。打包相关改动由独立 Package CI 构建并验收 Windows NSIS、Pacman 和
+AppImage，不在基础 CI 中维护条件分支：
 
 ```bash
 npm run test:module -- updater
@@ -202,28 +202,23 @@ npm run verify:pr
 npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs
 ```
 
-发布前运行 `npm run verify:release`。该命令只在当前主机执行当前平台的 Full E2E、NSIS 或
-Pacman/AppImage 构建，以及对应结构、fuse、launcher、Profile lock 和 Workbench recovery smoke；
-Windows 净机、Arch 原生安装生命周期和 hosted CI 的另一个平台证据由 `package-desktop.yml` 提供：
+发布前运行 `npm run verify:release`。该命令在当前主机执行当前平台的 Full E2E、包构建和统一
+黑盒验收；Windows 净机、Arch 原生安装生命周期和 hosted CI 的另一个平台证据由
+`package-desktop.yml` 提供：
 
 ```bash
 npm run package:windows:build
-npm run package:verify:windows
-
 npm run package:linux:build
-npm run package:verify:linux
-npm run package:verify:linux:launch
-npm run package:verify:profile
-npm run package:verify:recovery
-npm run package:verify:fuses
+npm run package:verify
 ```
 
 `npm run package:dir` 按当前平台生成解包应用，`npm run package` 按当前平台生成正式发布包并
 执行对应结构校验。`npm run build:distribution` 会先清理并一次构建全部 GUI、CLI、TUI 和 10 个
 Bundled Plugins；所有 `package:*` 发布构建都消费这一产物，不会把陈旧的 `out/cli` 或 `out/tui`
 带入包。Windows 校验 NSIS、`app.asar`、x64 PE、快捷方式和 Windows launcher；Linux 校验
-Pacman 元数据、AppImage 内容、桌面入口、`app.asar`、fuse wire 和 x64 ELF。结构校验不代替
-Windows 净机安装、Arch 原生桌面、签名或外部服务商兼容性验收。
+Pacman 元数据、AppImage 内容、桌面入口、`app.asar`、fuse wire 和 x64 ELF。统一验收还从带
+空格路径启动真实 GUI/CLI/TUI，验证 page target、Profile 排他锁和平台安装生命周期；它不重复
+普通 E2E 已覆盖的富 DOM 与 Plugin 恢复场景。
 
 Electron E2E 使用本地确定性 OpenAI 兼容服务验证完整 GUI、真实 Pi SDK、utility process、
 原生工具与 Extension、取消、凭据重启、活动运行关闭确认和中断恢复，不需要外部模型凭据。完整分层、
@@ -243,7 +238,7 @@ Stage 10 对 Electron 43 的 V1 fuse 逐项显式配置：`runAsNode` 保持启�
 随包 Electron 而不依赖系统 Node 的有意识例外；`NODE_OPTIONS` 和 Node CLI inspect 参数关闭，
 `onlyLoadAppFromAsar` 开启，`file://` extra privileges 关闭，其他支持的项也固定在
 `electronFuses` 中并在打包后读取实际 wire。Windows/Linux GUI binary 的 wire 必须与配置一致，
-并由 `package:verify:fuses` 及 launcher smoke 验证；禁用 `runAsNode` 的副本不会执行 CLI 入口。
+并由 `package:verify` 验证；禁用 `runAsNode` 的副本不会执行 CLI 入口。
 
 launcher 只缩小正常调用入口，不是安全沙箱，也不能消除保持 `runAsNode` fuse 所带来的本地代码
 执行面。该取舍同时保留了不安装系统 Node 的 CLI/TUI 体验；请只运行可信的 Pictor 包和 Plugin。
@@ -251,9 +246,9 @@ launcher 只缩小正常调用入口，不是安全沙箱，也不能消除保�
 [`ELECTRON_RUN_AS_NODE` 文档](https://www.electronjs.org/docs/latest/api/environment-variables/#electron_run_as_node)。
 
 删除或禁用 `pictor.workbench.delegate` 后，GUI 会进入 Pictor Shell；Shell 列出随包的 10 个
-recovery source，用户恢复 Workbench 后重启回到 Delegate。CLI/TUI 与 GUI 共用 Profile 排他锁：
-冲突稳定退出码为 `4`，持锁 Frontend 退出后下一个 Frontend 才能获取；恢复 smoke 通过公开入口
-执行，不直接改 Store。
+recovery source，用户恢复 Workbench 后重启回到 Delegate。该行为由普通 E2E 与包内容检查共同
+覆盖，不在每个平台重复同一富 UI 场景。CLI/TUI 与 GUI 共用 Profile 排他锁：冲突稳定退出码为
+`4`，持锁 Frontend 退出后下一个 Frontend 才能获取。
 
 日常开发从 `develop` 创建短期分支并通过 Pull Request 合回；包含版本提升的 `develop` 合并到
 `main` 时自动创建正式版本。默认分支定时工作流等控制面维护使用路径受限的 `ci/*` Pull Request，

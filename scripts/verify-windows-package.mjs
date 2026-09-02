@@ -1,33 +1,260 @@
 import { Buffer } from 'node:buffer'
-import { access, open, readFile, readdir, stat } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
-import { stdout } from 'node:process'
+import process, { stdout } from 'node:process'
+import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
-import { extractFile, listPackage } from '@electron/asar'
-
-import { APP_ASAR_FRONTEND_ENTRIES, BUNDLED_PLUGIN_IDS } from './distribution-contract.mjs'
 import { assertFuseWire } from './electron-fuses.mjs'
+import {
+  assertCommand,
+  launchPackagedGui,
+  runPackagedFrontend,
+  summarizeCommand,
+} from './package-harness.mjs'
+import {
+  requireNonEmptyFile,
+  verifyApplicationArchive,
+  verifyBundledPlugins,
+} from './verify-package-contents.mjs'
 
+const execute = promisify(execFile)
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageMetadata = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'))
 const outputDirectory = resolve(repositoryRoot, 'dist')
-const installerName = `Pictor-${packageMetadata.version}-windows-x64-setup.exe`
 const artifacts = {
-  installer: resolve(outputDirectory, installerName),
+  installer: resolve(outputDirectory, `Pictor-${packageMetadata.version}-windows-x64-setup.exe`),
   executable: resolve(outputDirectory, 'win-unpacked', 'Pictor.exe'),
   launcher: resolve(outputDirectory, 'win-unpacked', 'bin', 'pictor.cmd'),
   applicationArchive: resolve(outputDirectory, 'win-unpacked', 'resources', 'app.asar'),
   bundledPlugins: resolve(outputDirectory, 'win-unpacked', 'resources', 'bundled-plugins'),
 }
 
-async function requireNonEmptyFile(path) {
-  await access(path)
-  const metadata = await stat(path)
-  if (!metadata.isFile() || metadata.size === 0) {
-    throw new Error(`Expected a non-empty file: ${relative(repositoryRoot, path)}`)
+const structure = await verifyStructure()
+const runtime = await verifyRuntime(artifacts.executable, artifacts.launcher)
+const installer = await verifyInstaller()
+
+stdout.write(
+  `${JSON.stringify(
+    {
+      verified: true,
+      version: packageMetadata.version,
+      architecture: 'x64',
+      structure,
+      runtime,
+      installer,
+    },
+    null,
+    2,
+  )}\n`,
+)
+
+async function verifyStructure() {
+  const sizes = Object.fromEntries(
+    await Promise.all(
+      Object.entries(artifacts)
+        .filter(([name]) => name !== 'bundledPlugins')
+        .map(async ([name, path]) => [name, await requireNonEmptyFile(path, name)]),
+    ),
+  )
+  const executableMachine = await readPeMachine(artifacts.executable)
+  if (executableMachine !== 0x8664) {
+    throw new Error(
+      `Expected an x64 unpacked executable (PE machine 0x8664), received 0x${executableMachine.toString(16)}`,
+    )
   }
-  return metadata.size
+
+  const launcher = await readFile(artifacts.launcher, 'utf8')
+  for (const fragment of [
+    '@echo off',
+    'ELECTRON_RUN_AS_NODE=1',
+    'ELECTRON_RUN_AS_NODE=',
+    'PICTOR_PACKAGE_ROOT',
+    'PICTOR_BUNDLED_PLUGINS_DIRECTORY',
+    'out\\cli\\src\\cli\\entry.js',
+    'out\\tui\\src\\tui\\entry.js',
+    'Pictor.exe',
+  ]) {
+    if (!launcher.includes(fragment)) {
+      throw new Error(`Windows pictor.cmd misses launcher fragment ${fragment}`)
+    }
+  }
+
+  const installerInclude = await readFile(
+    resolve(repositoryRoot, 'packaging', 'windows', 'installer.nsh'),
+    'utf8',
+  )
+  for (const fragment of [
+    '!macro customInstall',
+    'bin\\pictor.cmd',
+    '!macro customUnInstall',
+    'WinShell::UninstShortcut "$newDesktopLink"',
+    'WinShell::UninstShortcut "$newStartMenuLink"',
+  ]) {
+    if (!installerInclude.includes(fragment)) {
+      throw new Error(`Windows installer misses shortcut contract ${fragment}`)
+    }
+  }
+
+  return {
+    guiBinary: 'PE x64 Pictor.exe',
+    launcher: 'bin/pictor.cmd',
+    appAsar: await verifyApplicationArchive(
+      artifacts.applicationArchive,
+      packageMetadata.version,
+      'Windows app.asar',
+    ),
+    fuses: await assertFuseWire(artifacts.executable, 'Windows Pictor.exe'),
+    bundledPlugins: await verifyBundledPlugins(
+      artifacts.bundledPlugins,
+      packageMetadata.version,
+      'Windows bundled plugins',
+    ),
+    artifacts: Object.fromEntries(
+      Object.entries(sizes).map(([name, bytes]) => [
+        name,
+        { path: relative(repositoryRoot, artifacts[name]).replaceAll('\\', '/'), bytes },
+      ]),
+    ),
+  }
+}
+
+async function verifyRuntime(executable, launcher) {
+  const testRoot = await mkdtemp(join(process.env.TEMP ?? tmpdir(), 'pictor-windows-package-'))
+  const profile = join(testRoot, 'shared profile')
+  const tuiProfile = join(testRoot, 'tui profile')
+  const commandCwd = join(testRoot, 'cwd with spaces')
+  await mkdir(profile, { recursive: true })
+  await mkdir(commandCwd, { recursive: true })
+  await writeFile(join(commandCwd, 'package.json'), '{"version":"99.99.99"}\n', 'utf8')
+
+  let gui = null
+  try {
+    gui = await launchPackagedGui(executable, [`--user-data-dir=${profile}`], {
+      launcherPath: launcher,
+      cwd: commandCwd,
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    })
+    const pageTarget = gui.pageTarget.url
+    const conflict = await runFrontend(launcher, ['cli', '--user-data-dir', profile, 'doctor'], {
+      cwd: commandCwd,
+    })
+    assertCommand(conflict, 'Windows CLI profile conflict', 'Profile 已被占用', 4)
+    await gui.close()
+    gui = null
+
+    const cli = await runFrontend(launcher, ['cli', '--user-data-dir', profile, 'doctor'], {
+      cwd: commandCwd,
+    })
+    assertCommand(cli, 'Windows CLI doctor', 'Doctor:')
+    const tui = await runFrontend(
+      launcher,
+      ['tui', '--non-interactive', '--user-data-dir', tuiProfile],
+      { cwd: commandCwd },
+    )
+    assertCommand(tui, 'Windows TUI non-interactive', 'Pictor TUI 首次使用')
+
+    return {
+      pageTarget,
+      profileConflict: summarizeCommand(conflict),
+      cli: summarizeCommand(cli),
+      tui: summarizeCommand(tui),
+    }
+  } finally {
+    if (gui) await gui.close().catch(() => undefined)
+    await rm(testRoot, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 })
+  }
+}
+
+async function verifyInstaller() {
+  const testRoot = await mkdtemp(join(process.env.TEMP ?? tmpdir(), 'pictor-windows-installer-'))
+  const installationDirectory = join(testRoot, 'Installed Pictor')
+  const profile = join(testRoot, 'user data preserved')
+  const marker = join(profile, 'keep-after-uninstall')
+  const userPathBefore = await readUserPath()
+  await mkdir(profile, { recursive: true })
+  await writeFile(marker, 'user data\n', 'utf8')
+
+  let installed = false
+  let gui = null
+  try {
+    await execute(artifacts.installer, ['/S', `/D=${installationDirectory}`], {
+      cwd: repositoryRoot,
+      maxBuffer: 2 * 1024 * 1024,
+    })
+    installed = true
+    if ((await readUserPath()) !== userPathBefore) {
+      throw new Error('NSIS installation unexpectedly changed the user PATH')
+    }
+
+    const executable = join(installationDirectory, 'Pictor.exe')
+    const launcher = join(installationDirectory, 'bin', 'pictor.cmd')
+    await requireNonEmptyFile(executable, 'installed Pictor.exe')
+    await requireNonEmptyFile(launcher, 'installed pictor.cmd')
+    const desktopShortcut = await readDesktopShortcut()
+    if (!desktopShortcut.toLowerCase().endsWith('\\bin\\pictor.cmd')) {
+      throw new Error(
+        `Windows desktop shortcut does not target bin\\pictor.cmd: ${desktopShortcut}`,
+      )
+    }
+
+    gui = await launchPackagedGui(executable, [`--safe-mode`, `--user-data-dir=${profile}`], {
+      launcherPath: launcher,
+      cwd: installationDirectory,
+    })
+    const pageTarget = gui.pageTarget.url
+    await gui.close()
+    gui = null
+    const cli = await runFrontend(launcher, ['cli', '--help'], { cwd: installationDirectory })
+    assertCommand(cli, 'installed Windows CLI help', 'Usage: pictor cli')
+
+    const uninstaller = join(installationDirectory, 'Uninstall Pictor.exe')
+    await requireNonEmptyFile(uninstaller, 'Windows uninstaller')
+    await execute(uninstaller, ['/S'], {
+      cwd: installationDirectory,
+      maxBuffer: 2 * 1024 * 1024,
+    })
+    await waitForPathRemoval(installationDirectory)
+    installed = false
+    if (await readDesktopShortcut()) {
+      throw new Error('NSIS uninstall left the Pictor desktop shortcut')
+    }
+    if ((await readUserPath()) !== userPathBefore) {
+      throw new Error('NSIS uninstall changed the user PATH')
+    }
+    await requireNonEmptyFile(marker, 'preserved user data marker')
+
+    return {
+      installedGuiTarget: pageTarget,
+      cli: summarizeCommand(cli),
+      removedInstallation: true,
+      preservedUserData: true,
+      pathMutation: 'none',
+    }
+  } finally {
+    if (gui) await gui.close().catch(() => undefined)
+    if (installed && (await stat(installationDirectory).catch(() => null))) {
+      const uninstaller = join(installationDirectory, 'Uninstall Pictor.exe')
+      if (await stat(uninstaller).catch(() => null)) {
+        await execute(uninstaller, ['/S'], { cwd: installationDirectory }).catch(() => undefined)
+        await waitForPathRemoval(installationDirectory).catch(() => undefined)
+      }
+    }
+    await rm(testRoot, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 })
+  }
+}
+
+async function runFrontend(launcher, arguments_, options) {
+  const systemRoot = process.env.SystemRoot ?? 'C:\\Windows'
+  return runPackagedFrontend(launcher, arguments_, {
+    ...options,
+    env: {
+      PATH: `${systemRoot}\\System32`,
+      ELECTRON_RUN_AS_NODE: '1',
+    },
+  })
 }
 
 async function readPeMachine(path) {
@@ -38,7 +265,6 @@ async function readPeMachine(path) {
     if (dosHeader.toString('ascii', 0, 2) !== 'MZ') {
       throw new Error(`Expected a PE executable: ${relative(repositoryRoot, path)}`)
     }
-
     const peOffset = dosHeader.readUInt32LE(0x3c)
     const peHeader = Buffer.alloc(6)
     await handle.read(peHeader, 0, peHeader.length, peOffset)
@@ -51,135 +277,38 @@ async function readPeMachine(path) {
   }
 }
 
-async function verifyBundledPlugins(root) {
-  const directories = (await readdir(root, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .toSorted()
-  if (JSON.stringify(directories) !== JSON.stringify([...BUNDLED_PLUGIN_IDS].toSorted())) {
-    throw new Error(`Expected 10 Windows Bundled Plugins, received ${directories.join(', ')}`)
+async function readDesktopShortcut() {
+  const script = [
+    "$desktop = [Environment]::GetFolderPath('Desktop')",
+    "$link = Join-Path $desktop 'Pictor.lnk'",
+    'if (-not (Test-Path -LiteralPath $link)) { exit 0 }',
+    '$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($link)',
+    'Write-Output $shortcut.TargetPath',
+  ].join('; ')
+  const { stdout: result } = await execute('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    script,
+  ])
+  return result.trim()
+}
+
+async function readUserPath() {
+  const { stdout: result } = await execute('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    "[Environment]::GetEnvironmentVariable('Path', 'User')",
+  ])
+  return result.trim()
+}
+
+async function waitForPathRemoval(path, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (!(await stat(path).catch(() => null))) return
+    await new Promise((resolvePromise) => globalThis.setTimeout(resolvePromise, 100))
   }
-
-  const pluginSizes = {}
-  for (const id of BUNDLED_PLUGIN_IDS) {
-    const packageRoot = join(root, id)
-    const manifest = JSON.parse(await readFile(join(packageRoot, 'manifest.json'), 'utf8'))
-    if (manifest.id !== id || manifest.version !== packageMetadata.version) {
-      throw new Error(`Bundled Plugin identity mismatch: ${relative(repositoryRoot, packageRoot)}`)
-    }
-    pluginSizes[id] = await requireNonEmptyFile(join(packageRoot, 'manifest.json'))
-    await requireNonEmptyFile(join(packageRoot, 'package.json'))
-    for (const [processName, entry] of Object.entries(manifest.modules ?? {})) {
-      if (!['host', 'gui', 'tui', 'runtime'].includes(processName) || typeof entry !== 'string') {
-        throw new Error(`Invalid Bundled Plugin entry ${id}:${processName}`)
-      }
-      await requireNonEmptyFile(join(packageRoot, entry))
-    }
-  }
-  return pluginSizes
+  throw new Error(`NSIS uninstall left the installation directory: ${path}`)
 }
-
-const sizes = Object.fromEntries(
-  await Promise.all(
-    Object.entries(artifacts)
-      .filter(([name]) => name !== 'bundledPlugins')
-      .map(async ([name, path]) => [name, await requireNonEmptyFile(path)]),
-  ),
-)
-const executableMachine = await readPeMachine(artifacts.executable)
-if (executableMachine !== 0x8664) {
-  throw new Error(
-    `Expected an x64 unpacked executable (PE machine 0x8664), received 0x${executableMachine.toString(16)}`,
-  )
-}
-
-const launcher = await readFile(artifacts.launcher, 'utf8')
-if (
-  !launcher.startsWith('@echo off') ||
-  !launcher.includes('ELECTRON_RUN_AS_NODE=1') ||
-  !launcher.includes('ELECTRON_RUN_AS_NODE=') ||
-  !launcher.includes('PICTOR_PACKAGE_ROOT') ||
-  !launcher.includes('PICTOR_BUNDLED_PLUGINS_DIRECTORY') ||
-  !launcher.includes('out\\cli\\src\\cli\\entry.js') ||
-  !launcher.includes('out\\tui\\src\\tui\\entry.js') ||
-  !launcher.includes('Pictor.exe')
-) {
-  throw new Error('Windows pictor.cmd does not expose the required GUI/CLI/TUI launcher contract')
-}
-const installerInclude = await readFile(
-  resolve(repositoryRoot, 'packaging', 'windows', 'installer.nsh'),
-  'utf8',
-)
-if (
-  !installerInclude.includes('!macro customInstall') ||
-  !installerInclude.includes('bin\\pictor.cmd') ||
-  !installerInclude.includes('!macro customUnInstall') ||
-  !installerInclude.includes('WinShell::UninstShortcut "$newDesktopLink"') ||
-  !installerInclude.includes('WinShell::UninstShortcut "$newStartMenuLink"')
-) {
-  throw new Error('Windows installer shortcuts do not enter the environment-clearing GUI launcher')
-}
-
-const archiveEntries = new Set(
-  listPackage(artifacts.applicationArchive, { isPack: false }).map((entry) =>
-    entry.replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/$/, ''),
-  ),
-)
-for (const entry of APP_ASAR_FRONTEND_ENTRIES) {
-  if (!archiveEntries.has(entry)) throw new Error(`Missing app.asar frontend entry: ${entry}`)
-}
-const archivePackage = JSON.parse(
-  extractFile(artifacts.applicationArchive, 'package.json').toString(),
-)
-const archiveIdentity = JSON.parse(
-  extractFile(artifacts.applicationArchive, 'out/package-identity.json').toString(),
-)
-if (
-  archivePackage.version !== packageMetadata.version ||
-  archiveIdentity.version !== packageMetadata.version
-) {
-  throw new Error('Windows app.asar version identity is inconsistent')
-}
-if (
-  archiveIdentity.buildChannel !== 'development' &&
-  !/^[0-9a-f]{40}$/.test(archiveIdentity.sourceCommit ?? '')
-) {
-  throw new Error('Windows app.asar packaged identity has no exact source commit')
-}
-
-const pluginSizes = await verifyBundledPlugins(artifacts.bundledPlugins)
-const fuses = await assertFuseWire(artifacts.executable, 'Windows Pictor.exe')
-if (
-  packageMetadata.build?.nsis?.createDesktopShortcut !== true ||
-  packageMetadata.build?.nsis?.createStartMenuShortcut !== true
-) {
-  throw new Error('NSIS desktop and Start Menu shortcuts must remain enabled')
-}
-
-stdout.write(
-  `${JSON.stringify(
-    {
-      verified: true,
-      version: packageMetadata.version,
-      architecture: 'x64',
-      guiBinary: 'PE x64 Pictor.exe',
-      launcher: 'bin/pictor.cmd',
-      appAsar: {
-        entries: APP_ASAR_FRONTEND_ENTRIES,
-        buildChannel: archiveIdentity.buildChannel,
-        sourceCommit: archiveIdentity.sourceCommit,
-      },
-      fuses,
-      bundledPlugins: { count: BUNDLED_PLUGIN_IDS.length, manifestBytes: pluginSizes },
-      artifacts: Object.fromEntries(
-        Object.entries(sizes).map(([name, bytes]) => [
-          name,
-          { path: relative(repositoryRoot, artifacts[name]).replaceAll('\\', '/'), bytes },
-        ]),
-      ),
-      shortcuts: { desktop: true, startMenu: true },
-    },
-    null,
-    2,
-  )}\n`,
-)

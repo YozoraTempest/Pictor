@@ -1,7 +1,18 @@
 import { execFile } from 'node:child_process'
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { stdout } from 'node:process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +23,12 @@ import {
   verifyBundledPlugins,
 } from './verify-package-contents.mjs'
 import { assertFuseWire } from './electron-fuses.mjs'
+import {
+  assertCommand,
+  launchPackagedGui,
+  runPackagedFrontend,
+  summarizeCommand,
+} from './package-harness.mjs'
 
 const execute = promisify(execFile)
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -223,6 +240,7 @@ try {
     arch: await verifyInstalledPayload(archData, 'Pacman payload'),
     appImage: await verifyAppImage(temporaryRoot),
   }
+  const runtime = await verifyRuntime(temporaryRoot)
   stdout.write(
     `${JSON.stringify(
       {
@@ -239,6 +257,7 @@ try {
           ]),
         ),
         payloads,
+        runtime,
       },
       null,
       2,
@@ -246,4 +265,72 @@ try {
   )
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true })
+}
+
+async function verifyRuntime(temporaryRoot) {
+  const executable = join(temporaryRoot, 'AppImage path with spaces', 'Pictor.AppImage')
+  const commandPath = join(temporaryRoot, 'node-free-bin')
+  const commandCwd = join(temporaryRoot, 'cwd with spaces')
+  const profile = join(temporaryRoot, 'shared profile')
+  const tuiProfile = join(temporaryRoot, 'tui profile')
+  await mkdir(dirname(executable), { recursive: true })
+  await copyFile(artifacts.appImage, executable)
+  await chmod(executable, 0o755)
+  await mkdir(commandPath, { recursive: true })
+  await mkdir(commandCwd, { recursive: true })
+  await mkdir(profile, { recursive: true })
+  await writeFile(join(commandCwd, 'package.json'), '{"version":"99.99.99"}\n', 'utf8')
+
+  for (const command of ['bash', 'dirname', 'env', 'readlink', 'true', 'unshare']) {
+    const candidate = resolve('/usr/bin', command)
+    try {
+      await symlink(candidate, join(commandPath, command))
+    } catch {
+      // AppRun treats a missing unshare probe as the no-sandbox case.
+    }
+  }
+
+  const environment = {
+    PATH: commandPath,
+    ELECTRON_RUN_AS_NODE: '1',
+  }
+  let gui = null
+  try {
+    gui = await launchPackagedGui(executable, [`--user-data-dir=${profile}`], {
+      cwd: commandCwd,
+      env: environment,
+    })
+    const pageTarget = gui.pageTarget.url
+    const conflict = await runPackagedFrontend(
+      executable,
+      ['cli', '--user-data-dir', profile, 'doctor'],
+      { cwd: commandCwd, env: environment },
+    )
+    assertCommand(conflict, 'AppImage CLI profile conflict', 'Profile 已被占用', 4)
+    await gui.close()
+    gui = null
+
+    const cli = await runPackagedFrontend(
+      executable,
+      ['cli', '--user-data-dir', profile, 'doctor'],
+      { cwd: commandCwd, env: environment },
+    )
+    assertCommand(cli, 'AppImage CLI doctor', 'Doctor:')
+    const tui = await runPackagedFrontend(
+      executable,
+      ['tui', '--non-interactive', '--user-data-dir', tuiProfile],
+      { cwd: commandCwd, env: environment },
+    )
+    assertCommand(tui, 'AppImage TUI non-interactive', 'Pictor TUI 首次使用')
+
+    return {
+      pageTarget,
+      nodeFreePath: commandPath,
+      profileConflict: summarizeCommand(conflict),
+      cli: summarizeCommand(cli),
+      tui: summarizeCommand(tui),
+    }
+  } finally {
+    if (gui) await gui.close().catch(() => undefined)
+  }
 }
