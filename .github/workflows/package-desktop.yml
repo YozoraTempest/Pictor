@@ -7,10 +7,6 @@ on:
         description: Exact source commit to package
         type: string
         required: true
-      version:
-        description: Package version from the source commit
-        type: string
-        required: true
       artifact_prefix:
         description: Prefix for intermediate workflow artifacts
         type: string
@@ -51,21 +47,16 @@ jobs:
       - run: npm ci
       - run: npm run deps:prepare
       - run: npm run deps:verify
-      - run: npm run build:distribution
+      - run: npm run package:windows:build
         env:
           PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
           PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}
-      - run: npm run package:windows:target
-      - run: npm run package:verify:windows
-      - run: npm run package:verify:windows:launch
-      - run: npm run package:verify:windows:install
-      - run: npm run package:verify:profile
-      - run: npm run package:verify:recovery
+      - run: npm run package:verify
       - name: Stage Windows package
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact_prefix }}-windows-x64
-          path: dist/Pictor-${{ inputs.version }}-windows-x64-setup.exe
+          path: dist/Pictor-*-windows-x64-setup.exe
           if-no-files-found: error
           retention-days: 1
 
@@ -99,46 +90,24 @@ jobs:
       - name: Run release source validation
         if: inputs.run_source_validation
         run: npm run verify:fast
-      - run: npm run build:distribution
+      - run: npm run package:linux:build
         env:
           PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
           PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}
       - name: Run release desktop tests
         if: inputs.run_source_validation
         run: xvfb-run --auto-servernum npm run test:e2e:run
-      - run: npm run package:linux:target
-      - run: npm run package:verify:linux
-      - name: Verify portable AppImage launch
-        env:
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          lifecycle_root="$(mktemp -d)"
-          user_data="$lifecycle_root/Pictor"
-          chmod +x "./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage"
-          PICTOR_LINUX_EXECUTABLE="./dist/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
-            PICTOR_EXPECTED_DISTRIBUTION=unsupported-linux \
-            PICTOR_USER_DATA_DIR="$user_data" \
-            PICTOR_SCREENSHOT_PATH="$GITHUB_WORKSPACE/test-results/linux-package-launch.png" \
-            xvfb-run --auto-servernum npm run package:verify:linux:launch
-      - name: Verify Profile lock across packaged Frontends
-        env:
-          PICTOR_GUI_EXECUTABLE: ./dist/Pictor-${{ inputs.version }}-linux-x64.AppImage
-        run: xvfb-run --auto-servernum npm run package:verify:profile
-      - name: Verify packaged Workbench recovery
-        env:
-          PICTOR_GUI_EXECUTABLE: ./dist/Pictor-${{ inputs.version }}-linux-x64.AppImage
-        run: xvfb-run --auto-servernum npm run package:verify:recovery
+      - name: Verify Linux packages
+        run: xvfb-run --auto-servernum npm run package:verify
       - name: Verify Arch package lifecycle in a native container
-        env:
-          RELEASE_VERSION: ${{ inputs.version }}
         run: bash scripts/verify-arch-package-lifecycle.sh
       - name: Stage Linux packages
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact_prefix }}-linux-x64
           path: |
-            dist/Pictor-${{ inputs.version }}-arch-x64.pacman
-            dist/Pictor-${{ inputs.version }}-linux-x64.AppImage
+            dist/Pictor-*-arch-x64.pacman
+            dist/Pictor-*-linux-x64.AppImage
           if-no-files-found: error
           retention-days: 1
       - name: Upload failure evidence

@@ -58,7 +58,7 @@
     "build": "npm run build:app",
     "verify:fast": "npm run check:format && npm run check:types && npm run check:lint && npm test",
     "verify:pr": "npm run verify:fast && npm run build:distribution && npm run test:e2e:smoke:run",
-    "verify:release": "npm run verify:fast && npm run build:distribution && npm run test:e2e:run && npm run package:build:target && node scripts/verify-release-package.mjs",
+    "verify:release": "npm run verify:fast && npm run build:distribution && npm run test:e2e:run && npm run package:build:target && npm run package:verify",
     "package:dir:target": "electron-builder --dir --x64",
     "package:build:target": "electron-builder --x64 --publish never",
     "package:windows:target": "electron-builder --win nsis --x64 --publish never",
@@ -69,14 +69,6 @@
     "package:linux:build": "npm run build:distribution && npm run package:linux:target",
     "package:dir": "npm run package:dir:build",
     "package:verify": "node scripts/verify-package.mjs",
-    "package:verify:windows": "node scripts/verify-windows-package.mjs",
-    "package:verify:windows:launch": "node scripts/verify-windows-launch.mjs",
-    "package:verify:windows:install": "node scripts/verify-windows-installer.mjs",
-    "package:verify:linux": "node scripts/verify-linux-packages.mjs",
-    "package:verify:linux:launch": "node scripts/verify-linux-launch.mjs",
-    "package:verify:profile": "node scripts/verify-profile-lock.mjs",
-    "package:verify:recovery": "node scripts/verify-packaged-plugin-recovery.mjs",
-    "package:verify:fuses": "node scripts/verify-fuses.mjs",
     "package": "npm run package:build && npm run package:verify"
   },
   "dependencies": {

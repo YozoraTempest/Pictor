@@ -121,7 +121,7 @@ launcher 提供 `PICTOR_PACKAGE_ROOT`、`PICTOR_BUNDLED_PLUGINS_DIRECTORY` 和�
 `runAsNode`、Cookie encryption、embedded ASAR integrity validation、`onlyLoadAppFromAsar` 开启；
 `enableNodeOptionsEnvironmentVariable`、Node CLI inspect、process-specific V8 snapshot 和
 `grantFileProtocolExtraPrivileges` 关闭。构建后 `@electron/fuses.getCurrentFuseWire` 在 Windows
-PE 和 Linux ELF 上逐项断言；`package:verify:fuses` 还会复制 GUI binary、关闭 `runAsNode` 并证明
+PE 和 Linux ELF 上逐项断言；`package:verify` 还会复制 GUI binary、关闭 `runAsNode` 并证明
 该副本不能执行 CLI entry。`runAsNode` 保持 enabled 是为了不依赖系统 Node 的 CLI/TUI 例外；
 launcher 限制正常入口，但不构成沙箱，也不能消除该 fuse 扩大的本地代码执行面。依据和变量语义
 见 [Electron Fuses](https://www.electronjs.org/docs/latest/tutorial/fuses) 与
@@ -130,10 +130,9 @@ launcher 限制正常入口，但不构成沙箱，也不能消除该 fuse 扩�
 ### Profile 与 recovery
 
 GUI、CLI、TUI 都通过 `ApplicationHost` 获取同一个 `ProfileFileLock`。CLI/TUI 在冲突时稳定返回
-退出码 `4`，持锁 Frontend 退出后锁可由下一个 Frontend 获取。Workbench 的 remove/disable 由
-packaged CLI 用户入口执行；GUI 随后只进入 Core Pictor Shell，Shell 通过 bundled source 恢复
-Workbench，重启后回到 Delegate 且 Project/Session/Pi JSONL 数据不变。`verify-profile-lock.mjs`
-和 `verify-packaged-plugin-recovery.mjs` 是包级真实 smoke，不直接改 Store。
+退出码 `4`，持锁 Frontend 退出后锁可由下一个 Frontend 获取。包级黑盒验收通过同一真实 Profile
+验证跨 Frontend 争用。Workbench remove/recovery 与数据保留由普通 E2E 通过公开入口验证，发布包
+验收只确认同一 `app.asar` 与 bundled recovery source 已进入产物，不重复富 UI 场景。
 
 ## 共享协议
 

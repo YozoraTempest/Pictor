@@ -7,6 +7,7 @@ export default defineConfig({
     environment: 'jsdom',
     exclude: ['e2e/**', 'node_modules/**'],
     globals: true,
+    maxWorkers: 4,
     setupFiles: ['./tests/setup.ts'],
     coverage: {
       reporter: ['text', 'html'],
