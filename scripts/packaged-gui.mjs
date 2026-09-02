@@ -1,12 +1,20 @@
-import { randomUUID } from 'node:crypto'
 import { _electron as electron, chromium } from '@playwright/test'
 import { spawn, spawnSync } from 'node:child_process'
-import { copyFile, readdir, readFile, rm } from 'node:fs/promises'
+import {
+  access,
+  copyFile,
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+} from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
-
-import { flipFuses, FuseV1Options, FuseVersion } from '@electron/fuses'
+import { fileURLToPath } from 'node:url'
 
 export const PACKAGED_GUI_LAUNCH_MODES = Object.freeze({
   ELECTRON: 'electron',
@@ -15,6 +23,10 @@ export const PACKAGED_GUI_LAUNCH_MODES = Object.freeze({
 })
 
 const PACKAGED_PAGE_URL = 'app://bundle/index.html'
+const electronRuntimeDirectory = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../node_modules/electron/dist',
+)
 
 export function selectPackagedGuiLaunchMode(executablePath, platform = process.platform) {
   const normalizedPath = executablePath.toLowerCase()
@@ -49,21 +61,29 @@ export async function launchPackagedGui(executablePath, arguments_, options = {}
 }
 
 async function launchPackagedGuiWithElectron(executablePath, arguments_, options) {
-  const playwrightExecutable = join(
-    dirname(executablePath),
-    `.pictor-playwright-${randomUUID()}.exe`,
-  )
-  await copyFile(executablePath, playwrightExecutable)
+  const playwrightRuntime = await stagePlaywrightRuntime(executablePath)
   try {
-    await flipFuses(playwrightExecutable, {
-      version: FuseVersion.V1,
-      [FuseV1Options.EnableNodeCliInspectArguments]: true,
-    })
     const electronApp = await electron.launch({
-      executablePath: playwrightExecutable,
-      args: ['--no-sandbox', ...arguments_],
+      executablePath: playwrightRuntime.executable,
+      args: [
+        join(playwrightRuntime.directory, 'resources', 'app.asar'),
+        '--no-sandbox',
+        ...arguments_,
+      ],
       cwd: options.cwd,
-      env: options.env ?? process.env,
+      timeout: 30_000,
+      env: {
+        ...(options.env ?? process.env),
+        PICTOR_PACKAGED: '1',
+        PICTOR_INSTALLATION_ROOT: playwrightRuntime.directory,
+        PICTOR_PACKAGE_ROOT: join(playwrightRuntime.directory, 'resources', 'app.asar'),
+        PICTOR_BUNDLED_PLUGINS_DIRECTORY: join(
+          playwrightRuntime.directory,
+          'resources',
+          'bundled-plugins',
+        ),
+        PICTOR_FRONTEND: 'gui',
+      },
     })
     const originalClose = electronApp.close.bind(electronApp)
     let closePromise
@@ -72,15 +92,75 @@ async function launchPackagedGuiWithElectron(executablePath, arguments_, options
         try {
           await originalClose()
         } finally {
-          await rm(playwrightExecutable, { force: true })
+          await rm(playwrightRuntime.directory, { recursive: true, force: true })
         }
       })()
       return closePromise
     }
     return electronApp
   } catch (error) {
-    await rm(playwrightExecutable, { force: true })
+    await rm(playwrightRuntime.directory, { recursive: true, force: true })
     throw error
+  }
+}
+
+async function stagePlaywrightRuntime(executablePath) {
+  const directory = await mkdtemp(join(dirname(executablePath), '.pictor-playwright-'))
+  try {
+    await cloneFileTree(electronRuntimeDirectory, directory)
+    const runtimeExecutable = await findRuntimeExecutable(directory)
+    const executable = join(directory, 'Pictor.exe')
+    await linkOrCopy(runtimeExecutable, executable)
+    await rm(runtimeExecutable, { force: true })
+
+    const sourceResources = join(dirname(executablePath), 'resources')
+    const targetResources = join(directory, 'resources')
+    await rm(join(targetResources, 'app.asar'), { force: true })
+    await cloneFileTree(join(sourceResources, 'app.asar'), join(targetResources, 'app.asar'))
+    await rm(join(targetResources, 'bundled-plugins'), { recursive: true, force: true })
+    await cloneFileTree(
+      join(sourceResources, 'bundled-plugins'),
+      join(targetResources, 'bundled-plugins'),
+    )
+    return { directory, executable }
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true })
+    throw error
+  }
+}
+
+async function findRuntimeExecutable(directory) {
+  for (const name of ['electron.exe', 'electron']) {
+    const candidate = join(directory, name)
+    if (
+      await access(candidate).then(
+        () => true,
+        () => false,
+      )
+    )
+      return candidate
+  }
+  throw new Error(`Electron runtime executable is missing from ${directory}`)
+}
+
+async function cloneFileTree(source, target) {
+  const metadata = await lstat(source)
+  if (metadata.isDirectory()) {
+    await mkdir(target, { recursive: true })
+    for (const entry of await readdir(source)) {
+      await cloneFileTree(join(source, entry), join(target, entry))
+    }
+    return
+  }
+  await mkdir(dirname(target), { recursive: true })
+  await linkOrCopy(source, target)
+}
+
+async function linkOrCopy(source, target) {
+  try {
+    await link(source, target)
+  } catch {
+    await copyFile(source, target)
   }
 }
 
