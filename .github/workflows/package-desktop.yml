@@ -20,6 +20,11 @@ on:
         type: boolean
         required: false
         default: false
+      run_e2e:
+        description: Run the retained desktop E2E suite against this source
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -95,7 +100,7 @@ jobs:
           PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
           PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}
       - name: Run release desktop tests
-        if: inputs.run_source_validation
+        if: inputs.run_e2e
         run: xvfb-run --auto-servernum npm run test:e2e:run
       - name: Verify Linux packages
         run: xvfb-run --auto-servernum npm run package:verify

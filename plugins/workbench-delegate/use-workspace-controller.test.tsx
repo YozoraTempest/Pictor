@@ -46,6 +46,7 @@ function createSession(
   options: {
     title?: string
     runStatus?: SessionRecord['runs'][number]['status']
+    runError?: string | null
     messageContent?: string
     toolOutput?: string | null
     usage?: {
@@ -86,7 +87,7 @@ function createSession(
           {
             id: runId,
             status: runStatus,
-            error: null,
+            error: options.runError ?? null,
             toolEvents:
               options.toolOutput === undefined
                 ? []
@@ -947,5 +948,32 @@ describe('useWorkspaceController', () => {
     await act(async () => result.current.stopRun(runId))
     expect(result.current.activeRun?.status).toBe('stopping')
     expect(result.current.actionError).toBe('停止失败')
+  })
+
+  it('starts a new Run after the previous Run failed', async () => {
+    const failed = createSession(firstSessionId, {
+      runStatus: 'failed',
+      runError: '模型认证失败',
+    })
+    const running = createSession(firstSessionId, { runStatus: 'running' })
+    const bridge = createBridge({
+      snapshot: createSnapshot(firstSessionId, 'failed'),
+      sessions: { [firstSessionId]: failed },
+    })
+    bridge.getSession.mockResolvedValueOnce(ok(failed)).mockResolvedValue(ok(running))
+    const { result } = renderWorkspaceHook(bridge)
+    await waitFor(() => expect(result.current.activeRun?.status).toBe('failed'))
+
+    act(() => result.current.setDraft('retry after failure'))
+    await act(async () => result.current.startRun())
+
+    expect(bridge.startRun).toHaveBeenCalledWith({
+      sessionId: firstSessionId,
+      prompt: 'retry after failure',
+      images: [],
+    })
+    expect(result.current.actionError).toBeNull()
+    expect(result.current.draft).toBe('')
+    expect(result.current.activeRun?.status).toBe('running')
   })
 })

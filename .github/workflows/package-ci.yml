@@ -34,3 +34,4 @@ jobs:
       artifact_prefix: pr-${{ github.event.pull_request.number }}
       build_channel: development
       run_source_validation: false
+      run_e2e: false
