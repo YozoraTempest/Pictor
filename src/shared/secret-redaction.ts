@@ -76,13 +76,6 @@ export class SecretRedactor {
       case 'tool.updated':
       case 'tool.completed':
         return { ...event, output: this.redactText(event.output) }
-      case 'approval.requested':
-        return {
-          ...event,
-          command: this.redactText(event.command),
-          cwd: this.redactText(event.cwd),
-          purpose: this.redactText(event.purpose),
-        }
       case 'runtime.error':
         return { ...event, message: this.redactText(event.message) }
       case 'runtime.diagnostic':
@@ -101,6 +94,15 @@ export class SecretRedactor {
         return { ...event, message: this.redactText(event.message) }
       case 'extension.ui.status':
         return { ...event, text: event.text === null ? null : this.redactText(event.text) }
+      case 'extension.ui.widget':
+        return {
+          ...event,
+          lines: event.lines === null ? null : event.lines.map((line) => this.redactText(line)),
+        }
+      case 'extension.ui.title':
+        return { ...event, title: this.redactText(event.title) }
+      case 'extension.composer.changed':
+        return { ...event, text: this.redactText(event.text) }
       case 'queue.updated':
         return {
           ...event,
@@ -113,9 +115,11 @@ export class SecretRedactor {
       case 'compaction.stateChanged':
         return { ...event, error: event.error === null ? null : this.redactText(event.error) }
       case 'session.bound':
+      case 'session.infoChanged':
+      case 'session.thinkingLevelChanged':
+      case 'session.replaced':
         return event
       case 'message.started':
-      case 'approval.resolved':
         return event
     }
   }

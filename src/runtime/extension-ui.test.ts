@@ -46,4 +46,35 @@ describe('ExtensionUiBroker', () => {
       error: 'TUI themes are unavailable in Pictor RPC mode',
     })
   })
+
+  it('maps text widgets, titles, and Composer edits to serializable events', () => {
+    const events: Array<Record<string, unknown>> = []
+    const broker = new ExtensionUiBroker((event) => events.push(event))
+    const context = broker.createContext()
+
+    context.setWidget('status', ['working', 'step 1'], { placement: 'belowEditor' })
+    context.setTitle('Pictor · Working')
+    context.setEditorText('draft')
+    context.pasteToEditor(' + more')
+    context.setWidget('status', undefined)
+
+    expect(events).toEqual([
+      {
+        type: 'extension.ui.widget',
+        key: 'status',
+        lines: ['working', 'step 1'],
+        placement: 'belowEditor',
+      },
+      { type: 'extension.ui.title', title: 'Pictor · Working' },
+      { type: 'extension.composer.changed', text: 'draft' },
+      { type: 'extension.composer.changed', text: 'draft + more' },
+      {
+        type: 'extension.ui.widget',
+        key: 'status',
+        lines: null,
+        placement: 'aboveEditor',
+      },
+    ])
+    expect(context.getEditorText()).toBe('draft + more')
+  })
 })

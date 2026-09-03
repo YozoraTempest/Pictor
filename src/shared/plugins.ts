@@ -3,11 +3,13 @@ import { z } from 'zod'
 import { pluginManifestSchema } from '../plugin/manifest.js'
 import { pluginDesiredStateSchema } from '../plugin/registry.js'
 
-export const pluginBootstrapEntrySchema = z.object({
-  manifest: pluginManifestSchema,
-  desiredState: pluginDesiredStateSchema,
-  rendererEntryUrl: z.string().min(1).nullable(),
-})
+export const pluginBootstrapEntrySchema = z
+  .object({
+    manifest: pluginManifestSchema,
+    desiredState: pluginDesiredStateSchema,
+    guiEntryUrl: z.string().min(1).nullable(),
+  })
+  .strict()
 
 export const pluginBootstrapSchema = z.object({
   safeMode: z.boolean(),
@@ -43,17 +45,6 @@ export const pluginManagerSnapshotSchema = z.object({
   issues: z.array(z.string()),
 })
 
-export const pluginIdRequestSchema = z.object({ id: z.string().min(1) })
-export const extensionIdentitySchema = pluginIdRequestSchema.extend({
-  kind: z.enum(['pictor-plugin', 'pi-extension', 'pi-package']),
-})
-export const setPluginEnabledRequestSchema = extensionIdentitySchema.extend({
-  enabled: z.boolean(),
-})
-export const removePluginRequestSchema = extensionIdentitySchema.extend({
-  deleteData: z.boolean().default(false),
-})
-
 export type PluginManagerSnapshot = z.infer<typeof pluginManagerSnapshotSchema>
 
 export const runtimePluginBootstrapSchema = z.object({
@@ -71,6 +62,8 @@ export const runtimePluginBootstrapSchema = z.object({
     z.object({
       kind: z.enum(['pi-extension', 'pi-package']),
       id: z.string().min(1),
+      // A file/directory/package root is resolved by Pi's own
+      // DefaultPackageManager and ResourceLoader.
       path: z.string().min(1),
     }),
   ),

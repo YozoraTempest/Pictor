@@ -8,11 +8,14 @@ import type {
   RuntimeImportConfig,
   RuntimeLabelConfig,
   RuntimeNavigateConfig,
+  RuntimeSessionOpenConfig,
   RuntimeStartConfig,
+  RuntimeSessionReplacementRequest,
+  RuntimeControlsSnapshot,
 } from '../shared/runtime-protocol.js'
 
 export type AgentRuntimeForkResult =
-  { outcome: 'completed'; piSessionId: string; piSessionFile: string } | { outcome: 'cancelled' }
+  { outcome: 'completed'; piSessionId: string; piSessionPath: string } | { outcome: 'cancelled' }
 
 export type AgentRuntimeImportResult = AgentRuntimeForkResult
 
@@ -38,6 +41,24 @@ export type AgentRuntimeCompactResult =
 
 export type AgentRuntimeLabelResult = { outcome: 'completed'; activeLeafId: string }
 
+/**
+ * Small public seam used by a Node TUI frontend.  The Pi AgentSessionRuntime
+ * and InteractiveMode instances remain private to the Runtime Plugin adapter.
+ */
+export interface InteractiveRuntimeOptions {
+  readonly initialMessage?: string
+  readonly initialMessages?: readonly string[]
+  readonly verbose?: boolean
+  readonly tuiMode?: 'regular' | 'fullscreen'
+}
+
+export interface InteractiveRuntimeRunner {
+  run(): Promise<void>
+  cancel?(): void | Promise<void>
+  handleInput?(data: string): void
+  handleResize?(): void
+}
+
 export interface ModelRuntimeProvider {
   id: string
   register(
@@ -52,11 +73,18 @@ export interface AgentRuntimeResources {
   skillPaths: readonly string[]
   promptPaths: readonly string[]
   modelProviders: readonly ModelRuntimeProvider[]
+  requestSessionReplacement?: (
+    request: RuntimeSessionReplacementRequest,
+  ) => Promise<{ accepted: boolean; targetSessionId?: string; message?: string }>
 }
 
 export interface AgentRuntimeProvider {
   id: string
   configure(resources: AgentRuntimeResources): void
+  isActive?(): boolean
+  createInteractiveRunner?(options?: InteractiveRuntimeOptions): InteractiveRuntimeRunner
+  openSession(config: RuntimeSessionOpenConfig): Promise<void>
+  closeSession(): Promise<void>
   start(config: RuntimeStartConfig): Promise<void>
   fork(config: RuntimeForkConfig): Promise<AgentRuntimeForkResult>
   importSession(config: RuntimeImportConfig): Promise<AgentRuntimeImportResult>
@@ -64,12 +92,18 @@ export interface AgentRuntimeProvider {
   navigateSession(config: RuntimeNavigateConfig): Promise<AgentRuntimeNavigateResult>
   compactSession(config: RuntimeCompactConfig): Promise<AgentRuntimeCompactResult>
   labelSessionEntry(config: RuntimeLabelConfig): Promise<AgentRuntimeLabelResult>
+  reloadResources(sessionId: string): Promise<void>
+  getRuntimeControls(sessionId: string): RuntimeControlsSnapshot | null
+  setRuntimeControls(
+    sessionId: string,
+    controls: Omit<RuntimeControlsSnapshot, 'type' | 'sessionId' | 'availableTools'>,
+  ): Promise<void>
   abortSessionOperation(operationId: string): void
-  resolveApproval(runId: string, callId: string, allowed: boolean): void
   abort(runId: string): Promise<void>
   queueMessage(runId: string, mode: 'steer' | 'follow-up', message: string): Promise<void>
   clearQueue(runId: string): void
   respondToExtensionUi(requestId: string, value: string | boolean | null): void
+  updateComposerText(sessionId: string, text: string): void
   dispose(): Promise<void>
 }
 

@@ -95,9 +95,10 @@ jobs:
     uses: ./.github/workflows/package-desktop.yml
     with:
       source_sha: ${{ needs.source.outputs.sha }}
-      version: ${{ needs.source.outputs.version }}
       artifact_prefix: nightly
+      build_channel: nightly
       run_source_validation: false
+      run_e2e: true
 
   publish:
     name: Publish rolling Nightly

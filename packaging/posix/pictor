@@ -1,0 +1,68 @@
+#!/bin/sh
+
+set -eu
+
+if [ -n "${APPDIR:-}" ] && [ -f "$APPDIR/pictor" ]; then
+  launcher_path="$APPDIR/pictor"
+else
+  launcher_path="$0"
+fi
+
+resolved_launcher_path="$(readlink -f -- "$launcher_path")"
+launcher_directory="$(dirname -- "$resolved_launcher_path")"
+resources_directory="$launcher_directory/resources"
+gui_binary="$launcher_directory/pictor-gui"
+package_root="$resources_directory/app.asar"
+bundled_plugins_directory="$resources_directory/bundled-plugins"
+
+if [ ! -x "$gui_binary" ]; then
+  echo "Pictor GUI binary is missing: $gui_binary" >&2
+  exit 1
+fi
+if [ ! -f "$package_root" ]; then
+  echo "Pictor package archive is missing: $package_root" >&2
+  exit 1
+fi
+if [ ! -d "$bundled_plugins_directory" ]; then
+  echo "Pictor Bundled Plugin directory is missing: $bundled_plugins_directory" >&2
+  exit 1
+fi
+
+export PICTOR_PACKAGED=1
+export PICTOR_PACKAGE_ROOT="$package_root"
+export PICTOR_BUNDLED_PLUGINS_DIRECTORY="$bundled_plugins_directory"
+export PICTOR_INSTALLATION_ROOT="$launcher_directory"
+export PICTOR_APPDIR="${APPDIR:-$launcher_directory}"
+
+mode="gui"
+if [ "${1:-}" = "--no-sandbox" ] && [ "${2:-}" = "cli" -o "${2:-}" = "tui" ]; then
+  shift
+fi
+if [ "${1:-}" = "cli" ] || [ "${1:-}" = "tui" ]; then
+  mode="$1"
+  shift
+fi
+
+case "$mode" in
+  cli)
+    entry="$package_root/out/cli/src/cli/entry.js"
+    export PICTOR_FRONTEND=cli
+    export ELECTRON_RUN_AS_NODE=1
+    exec "$gui_binary" "$entry" "$@"
+    ;;
+  tui)
+    entry="$package_root/out/tui/src/tui/entry.js"
+    export PICTOR_FRONTEND=tui
+    export ELECTRON_RUN_AS_NODE=1
+    exec "$gui_binary" "$entry" "$@"
+    ;;
+  gui)
+    export PICTOR_FRONTEND=gui
+    unset ELECTRON_RUN_AS_NODE
+    exec "$gui_binary" "$@"
+    ;;
+  *)
+    echo "Unsupported Pictor frontend: $mode" >&2
+    exit 2
+    ;;
+esac

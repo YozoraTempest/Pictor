@@ -7,3 +7,5 @@ if (platform === 'win32') {
 } else {
   throw new Error(`Package verification is not supported on ${platform}`)
 }
+
+await import('./verify-fuses.mjs')

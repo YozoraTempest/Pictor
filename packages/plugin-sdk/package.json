@@ -1,0 +1,22 @@
+{
+  "name": "@pictor/plugin-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Portable interfaces for authoring Pictor Plugins",
+  "type": "module",
+  "scripts": {
+    "check:types": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. packages/plugin-sdk"
+  },
+  "exports": {
+    "./contract": "./src/contract.ts",
+    "./manifest": "./src/manifest.ts",
+    "./module": "./src/module.ts",
+    "./pi-extension": "./src/pi-extension.ts",
+    "./plugin": "./src/plugin.ts"
+  },
+  "dependencies": {
+    "semver": "^7.8.5",
+    "zod": "^4.1.11"
+  }
+}

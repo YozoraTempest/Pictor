@@ -3,6 +3,7 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -40,13 +41,13 @@ describe('PluginStore', () => {
         id,
         name: id,
         version,
-        engines: { pictor: '^0.2.0' },
+        engines: { pictor: '^0.4.0' },
         dependencies: {},
-        modules: { main: './dist/main.js' },
+        modules: { host: './dist/host.js' },
       })}\n`,
     )
     await mkdir(join(directory, 'dist'), { recursive: true })
-    await writeFile(join(directory, 'dist', 'main.js'), 'export default []\n')
+    await writeFile(join(directory, 'dist', 'host.js'), 'export default []\n')
   }
 
   it('installs Bundled Plugins into the user Store and creates all registry roots', async () => {
@@ -67,7 +68,7 @@ describe('PluginStore', () => {
       manifest: { id: 'pictor.example', version: '1.0.0' },
     })
     await expect(
-      readFile(join(snapshot.plugins[0]!.rootPath, 'dist', 'main.js'), 'utf8'),
+      readFile(join(snapshot.plugins[0]!.rootPath, 'dist', 'host.js'), 'utf8'),
     ).resolves.toContain('export default')
     for (const directory of ['plugins', 'plugin-data', 'pi-extensions', 'pi-packages']) {
       expect((await stat(join(fixture.userData, directory))).isDirectory()).toBe(true)
@@ -139,15 +140,114 @@ describe('PluginStore', () => {
       kind: 'development',
       reference: developmentPlugin,
     })
-    await writeFile(join(developmentPlugin, 'dist', 'main.js'), 'export default ["updated"]\n')
+    await writeFile(join(developmentPlugin, 'dist', 'host.js'), 'export default ["updated"]\n')
 
     const restarted = new PluginStore(options)
     await restarted.initialize()
     const snapshot = await restarted.getSnapshot()
     expect(snapshot.plugins[0]?.rootPath).toBe(developmentPlugin)
     await expect(
-      readFile(join(snapshot.plugins[0]!.rootPath, 'dist', 'main.js'), 'utf8'),
+      readFile(join(snapshot.plugins[0]!.rootPath, 'dist', 'host.js'), 'utf8'),
     ).resolves.toContain('updated')
+  })
+
+  it('updates a current Bundled Plugin version while preserving state and data', async () => {
+    const fixture = await createStoreFixture()
+    const bundledPlugin = join(fixture.bundled, 'example')
+    await writePlugin(bundledPlugin, 'pictor.example', '0.4.0')
+    const options = {
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    }
+    const firstStore = new PluginStore(options)
+    await firstStore.initialize()
+    const dataPath = join(fixture.userData, 'plugin-data', 'pictor.example')
+    await mkdir(dataPath, { recursive: true })
+    await writeFile(join(dataPath, 'state.json'), '{"keep":true}\n')
+    await firstStore.setEnabled('pictor.example', false)
+
+    await writePlugin(bundledPlugin, 'pictor.example', '0.4.1')
+    const restartedStore = new PluginStore(options)
+    await restartedStore.initialize()
+    const snapshot = await restartedStore.getSnapshot()
+
+    expect(snapshot.registry.entries).toEqual([
+      expect.objectContaining({
+        id: 'pictor.example',
+        version: '0.4.1',
+        desiredState: 'disabled',
+      }),
+    ])
+    expect(snapshot.issues).toEqual([])
+    expect(snapshot.plugins[0]).toMatchObject({
+      manifest: { id: 'pictor.example', version: '0.4.1' },
+      rootPath: join(fixture.userData, 'plugins', 'pictor.example', '0.4.1'),
+    })
+    await expect(readFile(join(dataPath, 'state.json'), 'utf8')).resolves.toBe('{"keep":true}\n')
+  })
+
+  it('retains an installed 0.3 Plugin and blocks it without rewriting registry or data', async () => {
+    const fixture = await createStoreFixture()
+    await writePlugin(join(fixture.bundled, 'legacy'), 'pictor.legacy', '0.4.0')
+
+    const installedRoot = join(fixture.userData, 'plugins', 'pictor.legacy', '0.3.0')
+    const dataRoot = join(fixture.userData, 'plugin-data', 'pictor.legacy')
+    await mkdir(join(installedRoot, 'dist'), { recursive: true })
+    await mkdir(dataRoot, { recursive: true })
+    await writeFile(
+      join(installedRoot, 'manifest.json'),
+      `${JSON.stringify({
+        id: 'pictor.legacy',
+        name: 'Legacy',
+        version: '0.3.0',
+        engines: { pictor: '^0.3.0' },
+        dependencies: {},
+        modules: { main: './dist/main.js', renderer: './dist/renderer.js' },
+      })}\n`,
+    )
+    await writeFile(join(installedRoot, 'dist', 'main.js'), 'export default []\n')
+    await writeFile(join(dataRoot, 'state.json'), '{"keep":true}\n')
+    const registry = {
+      schemaVersion: 1,
+      entries: [
+        {
+          kind: 'pictor-plugin',
+          id: 'pictor.legacy',
+          version: '0.3.0',
+          source: { kind: 'bundled', reference: 'pictor.legacy' },
+          desiredState: 'enabled',
+        },
+      ],
+    }
+    const registryText = `${JSON.stringify(registry)}\n`
+    await mkdir(fixture.userData, { recursive: true })
+    await writeFile(join(fixture.userData, 'plugin-registry.json'), registryText)
+
+    const store = new PluginStore({
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    })
+    await store.initialize()
+    const snapshot = await store.getSnapshot()
+
+    expect(snapshot.plugins).toEqual([])
+    expect(snapshot.blockedPlugins).toHaveLength(1)
+    expect(snapshot.blockedPlugins[0]).toMatchObject({
+      entry: { id: 'pictor.legacy', version: '0.3.0' },
+      reason: expect.stringContaining('host/gui'),
+    })
+    expect(snapshot.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: expect.stringContaining('main/renderer') }),
+      ]),
+    )
+    await expect(readFile(join(fixture.userData, 'plugin-registry.json'), 'utf8')).resolves.toBe(
+      registryText,
+    )
+    await expect(readFile(join(dataRoot, 'state.json'), 'utf8')).resolves.toBe('{"keep":true}\n')
+    await expect(readFile(join(installedRoot, 'manifest.json'), 'utf8')).resolves.toContain(
+      '"main"',
+    )
   })
 
   it('reports an invalid Bundled Manifest without preventing Core Store startup', async () => {
@@ -189,8 +289,8 @@ describe('PluginStore', () => {
 
     await writeFile(extensionPath, source.replace('agent_start', 'turn_start'))
     const live = (await store.getSnapshot()).nativeExtensions[0]
-    expect(live?.runtimePaths).toEqual([extensionPath])
-    await expect(readFile(live!.runtimePaths[0]!, 'utf8')).resolves.toContain('turn_start')
+    expect(live?.runtimePath).toBe(extensionPath)
+    await expect(readFile(live!.runtimePath, 'utf8')).resolves.toContain('turn_start')
 
     await store.setNativeExtensionEnabled('pi-extension', 'hello', false)
     expect((await store.getSnapshot()).nativeExtensions).toEqual([])
@@ -223,7 +323,7 @@ describe('PluginStore', () => {
       id: 'example-pi-package',
       version: '1.2.3',
     })
-    expect(installed.runtimePaths).toEqual([join(installed.runtimePath, 'extensions', 'hello.js')])
+    expect(installed.runtimePath).toBe(join(fixture.userData, 'pi-packages', 'example-pi-package'))
     await expect(
       readFile(join(installed.runtimePath, 'extensions', 'hello.js'), 'utf8'),
     ).resolves.toContain('export default')
@@ -252,6 +352,68 @@ describe('PluginStore', () => {
       source: packagePath,
       version: '2.0.0',
     })
-    expect(installed.runtimePaths).toEqual([join(installed.runtimePath, 'extensions', 'spec.js')])
+    expect(installed.runtimePath).toBe(join(fixture.userData, 'pi-packages', 'spec-pi-package'))
+  })
+
+  it('keeps npm package dependencies and all native Pi resources in the runtime copy', async () => {
+    const fixture = await createStoreFixture()
+    const installRoot = join(fixture.root, 'npm-install')
+    const packagePath = join(installRoot, 'node_modules', 'spec-pi-package')
+    const dependencyPath = join(installRoot, 'node_modules', 'fixture-dependency')
+    await mkdir(join(packagePath, 'extensions'), { recursive: true })
+    await mkdir(join(packagePath, 'skills', 'review'), { recursive: true })
+    await mkdir(join(packagePath, 'prompts'), { recursive: true })
+    await mkdir(dependencyPath, { recursive: true })
+    await writeFile(
+      join(packagePath, 'package.json'),
+      `${JSON.stringify({
+        name: 'spec-pi-package',
+        version: '2.0.0',
+        type: 'module',
+        dependencies: { 'fixture-dependency': '1.0.0' },
+        pi: {
+          extensions: ['./extensions'],
+          skills: ['./skills'],
+          prompts: ['./prompts'],
+        },
+      })}\n`,
+    )
+    await writeFile(
+      join(packagePath, 'extensions', 'spec.js'),
+      `import dependency from 'fixture-dependency'\nexport default () => dependency\n`,
+    )
+    await writeFile(join(packagePath, 'skills', 'review', 'SKILL.md'), '# Review\n')
+    await writeFile(join(packagePath, 'prompts', 'review.md'), 'Review this change.\n')
+    await writeFile(
+      join(dependencyPath, 'package.json'),
+      `${JSON.stringify({ name: 'fixture-dependency', version: '1.0.0', type: 'module' })}\n`,
+    )
+    await writeFile(join(dependencyPath, 'index.js'), 'export default "dependency"\n')
+
+    const store = new PluginStore({
+      userDataDirectory: fixture.userData,
+      bundledPluginsDirectory: fixture.bundled,
+    })
+    await store.initialize()
+
+    const installed = await store.installPiPackageFromSpec(packagePath)
+    const runtimePath = installed.runtimePath
+
+    const extension = await import(
+      pathToFileURL(join(runtimePath, 'extensions', 'spec.js')).toString()
+    )
+    expect(extension.default()).toBe('dependency')
+    await expect(readFile(join(runtimePath, 'extensions', 'spec.js'), 'utf8')).resolves.toContain(
+      'fixture-dependency',
+    )
+    await expect(
+      readFile(join(runtimePath, 'node_modules', 'fixture-dependency', 'package.json'), 'utf8'),
+    ).resolves.toContain('fixture-dependency')
+    await expect(readFile(join(runtimePath, 'skills', 'review', 'SKILL.md'), 'utf8')).resolves.toBe(
+      '# Review\n',
+    )
+    await expect(readFile(join(runtimePath, 'prompts', 'review.md'), 'utf8')).resolves.toBe(
+      'Review this change.\n',
+    )
   })
 })

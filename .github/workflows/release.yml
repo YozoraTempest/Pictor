@@ -54,9 +54,10 @@ jobs:
     uses: ./.github/workflows/package-desktop.yml
     with:
       source_sha: ${{ github.sha }}
-      version: ${{ needs.metadata.outputs.version }}
       artifact_prefix: release
+      build_channel: stable
       run_source_validation: true
+      run_e2e: true
 
   publish:
     name: Publish atomic desktop release

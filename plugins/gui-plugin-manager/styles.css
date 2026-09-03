@@ -1,0 +1,275 @@
+[data-pictor-plugin='pictor.gui.plugin-manager'] {
+  --plugin-manager-bg: #191c1f;
+  --plugin-manager-panel: #202529;
+  --plugin-manager-border: #3c454a;
+  --plugin-manager-border-soft: #2b3135;
+  --plugin-manager-text: #e7eaec;
+  --plugin-manager-text-soft: #c2c9cd;
+  --plugin-manager-text-muted: #8f999f;
+  --plugin-manager-accent: #56b89e;
+  --plugin-manager-accent-hover: #73cdb5;
+  --plugin-manager-accent-ink: #071713;
+  --plugin-manager-focus: #e5b957;
+  --plugin-manager-danger: #d97b78;
+  display: block;
+  min-height: 360px;
+  padding: 18px;
+  color: var(--plugin-manager-text);
+  font-size: 12px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] button,
+[data-pictor-plugin='pictor.gui.plugin-manager'] input {
+  box-sizing: border-box;
+  font: inherit;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] button {
+  color: inherit;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] button:focus-visible,
+[data-pictor-plugin='pictor.gui.plugin-manager'] input:focus-visible {
+  outline: 2px solid var(--plugin-manager-focus);
+  outline-offset: 2px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] button:disabled,
+[data-pictor-plugin='pictor.gui.plugin-manager'] input:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'].plugin-manager-loading {
+  display: flex;
+  min-height: 260px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--plugin-manager-text-muted);
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__toolbar > div {
+  min-width: 150px;
+  margin-right: auto;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__toolbar h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__toolbar span {
+  display: block;
+  margin-top: 4px;
+  color: var(--plugin-manager-text-muted);
+  font-size: 10px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__button,
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__button {
+  padding: 0 10px;
+  border: 1px solid var(--plugin-manager-border);
+  background: var(--plugin-manager-panel);
+  color: var(--plugin-manager-text-soft);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__button:hover:not(:disabled) {
+  border-color: var(--plugin-manager-accent);
+  color: var(--plugin-manager-text);
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__icon-button {
+  width: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--plugin-manager-text-muted);
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__danger-icon-button {
+  color: var(--plugin-manager-danger);
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-package-spec {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-package-spec input {
+  min-width: 0;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--plugin-manager-border-soft);
+  border-radius: 5px;
+  background: var(--plugin-manager-panel);
+  color: var(--plugin-manager-text);
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__notice,
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__error {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid #61583c;
+  border-radius: 5px;
+  background: #252217;
+  color: #d8c578;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__error {
+  border-color: #724042;
+  background: #2b1819;
+  color: #ea9290;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-list {
+  border-top: 1px solid var(--plugin-manager-border-soft);
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-list__empty {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  color: var(--plugin-manager-text-muted);
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.1fr) minmax(130px, 1fr) auto;
+  min-height: 76px;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--plugin-manager-border-soft);
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__identity,
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__state {
+  min-width: 0;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__identity > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__identity strong {
+  overflow: hidden;
+  color: var(--plugin-manager-text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__identity span,
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__identity code,
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__state small {
+  color: var(--plugin-manager-text-muted);
+  font-size: 9px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__identity code,
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__state small {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-state {
+  color: #91d8c1;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-state--disabled,
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-state--blocked {
+  color: #cbb66d;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-state--failed {
+  color: #e48683;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-state--pending-restart {
+  color: #85b7dd;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__actions {
+  display: flex;
+  min-width: 120px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--plugin-manager-text-soft);
+  font-size: 10px;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-toggle input {
+  accent-color: #579b87;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__spin {
+  animation: pictor-plugin-manager-spin 0.9s linear infinite;
+}
+
+@keyframes pictor-plugin-manager-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  [data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__toolbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  [data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__toolbar > div {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  [data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 10px 0;
+  }
+
+  [data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-row__actions {
+    justify-content: flex-start;
+  }
+}

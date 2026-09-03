@@ -1,0 +1,344 @@
+import {
+  DatabaseZap,
+  FileCode2,
+  FolderPlus,
+  LoaderCircle,
+  PackagePlus,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+import {
+  CommandFailure,
+  executeCommandAndWait,
+  type CommandClient,
+} from '../../src/commands/index.js'
+import type { GuiPluginSource } from '../../src/shared/desktop-bridge.js'
+import type { IpcResult } from '../../src/shared/errors.js'
+import {
+  pluginManagerSnapshotSchema,
+  type PluginManagerSnapshot,
+} from '../../src/shared/plugins.js'
+import type { GuiSettingsSectionContext } from '../../src/gui/contract.js'
+
+const stateLabels = {
+  active: '运行中',
+  disabled: '已禁用',
+  blocked: '已阻塞',
+  failed: '启动失败',
+  'pending-restart': '等待重启',
+} as const
+
+type PluginManagerProps = GuiSettingsSectionContext
+
+async function executePluginCommand(
+  commandClient: CommandClient,
+  commandId: string,
+  input: unknown,
+): Promise<IpcResult<PluginManagerSnapshot>> {
+  try {
+    const value = await executeCommandAndWait(
+      commandClient,
+      commandId,
+      input,
+      { frontend: 'gui' },
+      pluginManagerSnapshotSchema,
+    )
+    return { ok: true, value }
+  } catch (error) {
+    if (error instanceof CommandFailure) {
+      const code =
+        error.code === 'invalid-input'
+          ? 'invalid-input'
+          : error.code === 'execution-not-found'
+            ? 'not-found'
+            : 'internal'
+      return {
+        ok: false,
+        error: {
+          code,
+          message: error.error.message,
+          ...(error.error.field ? { field: error.error.field } : {}),
+        },
+      }
+    }
+    return { ok: false, error: { code: 'internal', message: '命令执行失败' } }
+  }
+}
+
+export function PluginManager({
+  commandClient,
+  pluginPicker,
+  guiPluginStatuses,
+}: PluginManagerProps): React.JSX.Element {
+  const [snapshot, setSnapshot] = useState<PluginManagerSnapshot | null>(null)
+  const [busy, setBusy] = useState<string | null>('load')
+  const [error, setError] = useState<string | null>(null)
+  const [packageSpec, setPackageSpec] = useState('')
+
+  useEffect(() => {
+    let active = true
+    void executePluginCommand(commandClient, 'plugin.list', null).then((result) => {
+      if (!active) return
+      setBusy(null)
+      if (result.ok) setSnapshot(result.value)
+      else setError(result.error.message)
+    })
+    return () => {
+      active = false
+    }
+  }, [commandClient])
+
+  const apply = async (
+    key: string,
+    operation: () => Promise<IpcResult<PluginManagerSnapshot> | null>,
+  ) => {
+    setBusy(key)
+    setError(null)
+    const result = await operation()
+    setBusy(null)
+    if (result?.ok) setSnapshot(result.value)
+    else if (result) setError(result.error.message)
+  }
+
+  const pickAndInstall = async (
+    source: Extract<GuiPluginSource, 'local' | 'development' | 'pi-extension' | 'pi-package'>,
+  ): Promise<IpcResult<PluginManagerSnapshot> | null> => {
+    const selection = await pluginPicker.pickPlugin(source)
+    if (!selection.ok) return selection
+    if (!selection.value.path) return null
+    if (selection.value.source !== source) {
+      return { ok: false, error: { code: 'internal', message: 'Plugin 选择器返回了不匹配的来源' } }
+    }
+    return executePluginCommand(commandClient, 'plugin.install', {
+      source: selection.value.source,
+      path: selection.value.path,
+    })
+  }
+
+  if (!snapshot) {
+    return (
+      <div
+        className="plugin-manager-loading"
+        data-pictor-plugin="pictor.gui.plugin-manager"
+        role="status"
+      >
+        {busy ? <LoaderCircle className="plugin-manager__spin" size={17} /> : null}
+        <span>{error ?? '正在读取 Plugin Registry'}</span>
+      </div>
+    )
+  }
+
+  return (
+    <section
+      className="plugin-manager"
+      data-pictor-plugin="pictor.gui.plugin-manager"
+      aria-label="Plugin Manager"
+    >
+      <header className="plugin-manager__toolbar">
+        <div>
+          <h3>Plugins</h3>
+          <span>{snapshot.items.length} 个已登记扩展</span>
+        </div>
+        <button
+          className="plugin-manager__button"
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void apply('install', () => pickAndInstall('local'))}
+        >
+          {busy === 'install' ? (
+            <LoaderCircle className="plugin-manager__spin" size={14} />
+          ) : (
+            <FolderPlus size={14} />
+          )}
+          安装本地 Plugin
+        </button>
+        <button
+          className="plugin-manager__button"
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void apply('install-development', () => pickAndInstall('development'))}
+        >
+          <FolderPlus size={14} />
+          Development Plugin
+        </button>
+        <button
+          className="plugin-manager__button"
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void apply('install-pi-extension', () => pickAndInstall('pi-extension'))}
+        >
+          <FileCode2 size={14} />
+          Pi Extension
+        </button>
+        <button
+          className="plugin-manager__button"
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void apply('install-pi-package', () => pickAndInstall('pi-package'))}
+        >
+          <PackagePlus size={14} />
+          Pi Package
+        </button>
+      </header>
+      <div className="plugin-package-spec">
+        <input
+          value={packageSpec}
+          placeholder="npm package or git spec"
+          aria-label="Pi Package spec"
+          disabled={busy !== null}
+          onChange={(event) => setPackageSpec(event.target.value)}
+        />
+        <button
+          className="plugin-manager__button"
+          type="button"
+          disabled={busy !== null || !packageSpec.trim()}
+          onClick={() =>
+            void apply('install-pi-package-spec', async () => {
+              const result = await executePluginCommand(commandClient, 'plugin.install', {
+                source: 'pi-package-spec',
+                spec: packageSpec.trim(),
+              })
+              if (result.ok) setPackageSpec('')
+              return result
+            })
+          }
+        >
+          <PackagePlus size={14} />
+          安装 Spec
+        </button>
+      </div>
+
+      {snapshot.safeMode ? (
+        <div className="plugin-manager__notice" role="status">
+          安全模式已忽略全部 Plugin
+        </div>
+      ) : null}
+      {snapshot.restartRequired ? (
+        <div className="plugin-manager__notice" role="status">
+          重启 Pictor 后应用 Plugin 变更
+        </div>
+      ) : null}
+      {error ? (
+        <div className="plugin-manager__error" role="alert">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="plugin-list">
+        {snapshot.items.length === 0 ? (
+          <div className="plugin-list__empty">没有已安装的 Plugin</div>
+        ) : (
+          snapshot.items.map((item) => {
+            const guiStatus = guiPluginStatuses.find((status) => status.id === item.id)
+            const effectiveState =
+              item.effectiveState === 'pending-restart'
+                ? item.effectiveState
+                : (guiStatus?.effectiveState ?? item.effectiveState)
+            const reason = guiStatus?.reason ?? item.reason
+            return (
+              <div className="plugin-row" key={`${item.kind}:${item.id}`}>
+                <div className="plugin-row__identity">
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>{item.version ? `v${item.version}` : item.kind}</span>
+                  </div>
+                  <code>{item.id}</code>
+                </div>
+                <div className="plugin-row__state">
+                  <span className={`plugin-state plugin-state--${effectiveState}`}>
+                    {stateLabels[effectiveState]}
+                  </span>
+                  <small title={item.source}>{reason ?? item.source}</small>
+                </div>
+                <div className="plugin-row__actions">
+                  {item.canRestore ? (
+                    <button
+                      className="plugin-manager__button"
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() =>
+                        void apply(item.id, () =>
+                          executePluginCommand(commandClient, 'plugin.restore', { id: item.id }),
+                        )
+                      }
+                    >
+                      <RotateCcw size={14} />
+                      恢复
+                    </button>
+                  ) : item.desiredState !== 'removed' ? (
+                    <>
+                      <label className="plugin-toggle">
+                        <input
+                          type="checkbox"
+                          checked={item.desiredState === 'enabled'}
+                          disabled={busy !== null}
+                          onChange={(event) =>
+                            void apply(item.id, () =>
+                              executePluginCommand(
+                                commandClient,
+                                event.target.checked ? 'plugin.enable' : 'plugin.disable',
+                                { kind: item.kind, id: item.id },
+                              ),
+                            )
+                          }
+                        />
+                        <span>启用</span>
+                      </label>
+                      <button
+                        className="plugin-manager__icon-button"
+                        type="button"
+                        title="移除 Plugin，保留数据"
+                        aria-label={`移除 ${item.name}`}
+                        disabled={busy !== null}
+                        onClick={() =>
+                          void apply(item.id, () =>
+                            executePluginCommand(commandClient, 'plugin.remove', {
+                              kind: item.kind,
+                              id: item.id,
+                              deleteData: false,
+                            }),
+                          )
+                        }
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                      {item.kind === 'pictor-plugin' ? (
+                        <button
+                          className="plugin-manager__icon-button plugin-manager__danger-icon-button"
+                          type="button"
+                          title="移除 Plugin 及数据"
+                          aria-label={`移除 ${item.name} 及数据`}
+                          disabled={busy !== null}
+                          onClick={() => {
+                            if (!window.confirm(`移除 ${item.name} 及其全部数据？`)) return
+                            void apply(item.id, () =>
+                              executePluginCommand(commandClient, 'plugin.remove', {
+                                kind: item.kind,
+                                id: item.id,
+                                deleteData: true,
+                              }),
+                            )
+                          }}
+                        >
+                          <DatabaseZap size={15} />
+                        </button>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      {snapshot.issues.map((issue) => (
+        <div className="plugin-manager__error" role="alert" key={issue}>
+          {issue}
+        </div>
+      ))}
+    </section>
+  )
+}

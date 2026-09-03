@@ -20,9 +20,9 @@ if (
 
 const files = {
   'shared.ts': `export const ${identifier}Id = '${name}'\n`,
-  'main.ts': `import { defineModule } from '../../kernel/module.js'\n\nimport { ${identifier}Id } from './shared.js'\n\nexport const ${identifier}MainModule = defineModule({\n  id: \`${'${'}${identifier}Id}.main\`,\n  activate() {},\n})\n`,
-  'renderer.ts': `import { defineModule } from '../../kernel/module.js'\n\nimport { ${identifier}Id } from './shared.js'\n\nexport const ${identifier}RendererModule = defineModule({\n  id: \`${'${'}${identifier}Id}.renderer\`,\n  activate() {},\n})\n`,
-  [`${name}.test.ts`]: `// @vitest-environment node\n\nimport { expect, it } from 'vitest'\n\nimport { ModuleKernel } from '../../kernel/kernel.js'\nimport { ${identifier}MainModule } from './main.js'\n\nit('activates the ${name} Main Module', async () => {\n  const kernel = new ModuleKernel()\n  await expect(kernel.start([${identifier}MainModule])).resolves.toBeUndefined()\n  await kernel.stop()\n})\n`,
+  'host.ts': `import { defineModule } from '../../kernel/module.js'\n\nimport { ${identifier}Id } from './shared.js'\n\nexport const ${identifier}HostModule = defineModule({\n  id: \`${'${'}${identifier}Id}.host\`,\n  activate() {},\n})\n`,
+  'gui.ts': `import { defineModule } from '../../kernel/module.js'\n\nimport { ${identifier}Id } from './shared.js'\n\nexport const ${identifier}GuiModule = defineModule({\n  id: \`${'${'}${identifier}Id}.gui\`,\n  activate() {},\n})\n`,
+  [`${name}.test.ts`]: `// @vitest-environment node\n\nimport { expect, it } from 'vitest'\n\nimport { ModuleKernel } from '../../kernel/kernel.js'\nimport { ${identifier}HostModule } from './host.js'\n\nit('activates the ${name} Host Module', async () => {\n  const kernel = new ModuleKernel()\n  await expect(kernel.start([${identifier}HostModule])).resolves.toBeUndefined()\n  await kernel.stop()\n})\n`,
 }
 
 await mkdir(directory, { recursive: true })
@@ -33,5 +33,5 @@ await Promise.all(
 )
 
 stdout.write(
-  `Created src/modules/${name}. Register the Main and Renderer Modules in the explicit catalogs.\n`,
+  `Created src/modules/${name}. Register the Host and GUI Modules in the explicit catalogs.\n`,
 )

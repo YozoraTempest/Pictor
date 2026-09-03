@@ -1,9 +1,11 @@
-import { pathToFileURL } from 'node:url'
-
-import { readPluginEntrypoint, type RuntimePluginContext } from '../plugin/entry.js'
-import { PluginHost, type PluginDefinition } from '../plugin/host.js'
+import { PluginHost } from '../plugin/host.js'
+import { createRuntimePluginDefinitions } from '../plugin/loader.js'
 import { runtimePluginBootstrapSchema } from '../shared/plugins.js'
-import { runtimeCommandSchema, type RuntimeEvent } from '../shared/runtime-protocol.js'
+import {
+  runtimeCommandSchema,
+  type RuntimeEvent,
+  type RuntimeSessionReplacementRequest,
+} from '../shared/runtime-protocol.js'
 import {
   agentRuntimeContributions,
   modelRuntimeProviderContributions,
@@ -19,6 +21,21 @@ interface RuntimeHostState {
   runtime: AgentRuntimeProvider | null
 }
 
+const pendingReplacementAcks = new Map<
+  string,
+  (result: { accepted: boolean; targetSessionId?: string; message?: string }) => void
+>()
+
+function requestSessionReplacement(
+  request: RuntimeSessionReplacementRequest,
+): Promise<{ accepted: boolean; targetSessionId?: string; message?: string }> {
+  const key = `${request.operationId}:${request.phase}`
+  return new Promise((resolve) => {
+    pendingReplacementAcks.set(key, resolve)
+    parentPort.postMessage(request)
+  })
+}
+
 function reportFatal(error: unknown): void {
   parentPort.postMessage({
     type: 'host.fatal',
@@ -31,23 +48,7 @@ const statePromise = (async (): Promise<RuntimeHostState> => {
   if (!bootstrapSource) throw new Error('Missing Runtime Plugin bootstrap')
   const bootstrap = runtimePluginBootstrapSchema.parse(JSON.parse(bootstrapSource))
   const emit = (event: RuntimeEvent) => parentPort.postMessage(event)
-  const definitions: PluginDefinition[] = bootstrap.plugins.map(
-    ({ manifest, desiredState, dataPath, runtimeEntryPath }) => ({
-      manifest,
-      desiredState,
-      async createModules() {
-        if (!runtimeEntryPath) return []
-        const namespace: unknown = await import(pathToFileURL(runtimeEntryPath).toString())
-        if (!namespace || typeof namespace !== 'object') {
-          throw new Error(`Invalid Runtime Plugin entry: ${manifest.id}`)
-        }
-        const entrypoint = readPluginEntrypoint<RuntimePluginContext>(
-          namespace as Record<string, unknown>,
-        )
-        return entrypoint({ process: 'runtime', dataPath, emit, extensions: bootstrap.extensions })
-      },
-    }),
-  )
+  const definitions = createRuntimePluginDefinitions(bootstrap, emit)
   const host = new PluginHost({
     pictorVersion: bootstrap.pictorVersion,
     safeMode: bootstrap.safeMode,
@@ -60,6 +61,7 @@ const statePromise = (async (): Promise<RuntimeHostState> => {
     skillPaths: bootstrap.skills,
     promptPaths: bootstrap.prompts,
     modelProviders: host.getContributions(modelRuntimeProviderContributions),
+    requestSessionReplacement,
   })
   parentPort.postMessage({ type: 'host.ready' })
   return { host, runtime: runtimes[0] ?? null }
@@ -91,6 +93,109 @@ parentPort.on('message', (messageEvent) => {
   }
 
   const command = parsed.data
+  if (command.type === 'session.replacement.ack') {
+    const resolve = pendingReplacementAcks.get(`${command.operationId}:${command.phase}`)
+    if (resolve) {
+      pendingReplacementAcks.delete(`${command.operationId}:${command.phase}`)
+      resolve({
+        accepted: command.accepted,
+        ...(command.targetSessionId ? { targetSessionId: command.targetSessionId } : {}),
+        ...(command.message ? { message: command.message } : {}),
+      })
+    }
+    return
+  }
+
+  if (command.type === 'reload-resources') {
+    void statePromise
+      .then((state) => requireRuntime(state).reloadResources(command.sessionId))
+      .then(() =>
+        parentPort.postMessage({
+          type: 'host.reloadResult',
+          sessionId: command.sessionId,
+          outcome: 'completed',
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.reloadResult',
+          sessionId: command.sessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Pi resource reload failed',
+        }),
+      )
+    return
+  }
+
+  if (command.type === 'session.open' || command.type === 'session.close') {
+    void statePromise
+      .then((state) => {
+        const runtime = requireRuntime(state)
+        return command.type === 'session.open'
+          ? runtime.openSession(command)
+          : runtime.closeSession()
+      })
+      .then(() =>
+        parentPort.postMessage({
+          type: 'host.sessionResult',
+          operationId: command.operationId,
+          sessionId: command.sessionId,
+          outcome: command.type === 'session.open' ? 'opened' : 'closed',
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.sessionResult',
+          operationId: command.operationId,
+          sessionId: command.sessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Pi Session operation failed',
+        }),
+      )
+    return
+  }
+
+  if (command.type === 'controls.get') {
+    void statePromise
+      .then((state) => {
+        const controls = requireRuntime(state).getRuntimeControls(command.sessionId)
+        if (!controls) throw new Error('Pi Session is not open')
+        parentPort.postMessage(controls)
+      })
+      .catch(reportFatal)
+    return
+  }
+
+  if (command.type === 'controls.set') {
+    void statePromise
+      .then((state) =>
+        requireRuntime(state).setRuntimeControls(command.sessionId, {
+          modelId: command.modelId,
+          thinkingLevel: command.thinkingLevel,
+          activeTools: command.activeTools,
+          steeringMode: command.steeringMode,
+          followUpMode: command.followUpMode,
+        }),
+      )
+      .then(() =>
+        parentPort.postMessage({
+          type: 'host.controlsSetResult',
+          requestId: command.requestId,
+          sessionId: command.sessionId,
+          outcome: 'completed',
+        }),
+      )
+      .catch((error) =>
+        parentPort.postMessage({
+          type: 'host.controlsSetResult',
+          requestId: command.requestId,
+          sessionId: command.sessionId,
+          outcome: 'failed',
+          message: error instanceof Error ? error.message : 'Session Controls update failed',
+        }),
+      )
+    return
+  }
   if (command.type === 'dispose') {
     void statePromise
       .then(({ host }) => host.stop())
@@ -248,16 +353,12 @@ parentPort.on('message', (messageEvent) => {
     .then((state) => {
       const runtime = requireRuntime(state)
       if (command.type === 'start') return runtime.start(command)
-      if (command.type === 'approve') {
-        runtime.resolveApproval(command.runId, command.callId, true)
-        return
-      }
-      if (command.type === 'reject') {
-        runtime.resolveApproval(command.runId, command.callId, false)
-        return
-      }
       if (command.type === 'extension.ui.respond') {
         runtime.respondToExtensionUi(command.requestId, command.value)
+        return
+      }
+      if (command.type === 'extension.composer.update') {
+        runtime.updateComposerText(command.sessionId, command.text)
         return
       }
       if (command.type === 'steer' || command.type === 'follow-up') {

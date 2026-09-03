@@ -2,22 +2,26 @@ import type { PluginStatus } from '../../plugin/host.js'
 import type { InstalledExtension, PluginDesiredState } from '../../plugin/registry.js'
 import { pluginManagerSnapshotSchema } from '../../shared/plugins.js'
 import type { PluginManagerSnapshot } from '../../shared/plugins.js'
-import type { PluginStore } from './plugin-store.js'
+import type { PluginStore, StoredPluginBlock } from './plugin-store.js'
 
 export class PluginManager {
   private readonly startupStatuses: ReadonlyMap<string, PluginStatus>
   private readonly startupDesiredStates: ReadonlyMap<string, PluginDesiredState>
+  private readonly startupBlockedPlugins: ReadonlyMap<string, StoredPluginBlock>
 
   constructor(
     private readonly store: PluginStore,
     statuses: readonly PluginStatus[],
     private readonly safeMode: boolean,
     startupEntries: readonly InstalledExtension[],
+    private readonly activationMode: 'full' | 'headless' = 'full',
+    blockedPlugins: readonly StoredPluginBlock[] = [],
   ) {
     this.startupStatuses = new Map(statuses.map((status) => [status.id, status]))
     this.startupDesiredStates = new Map(
       startupEntries.map((entry) => [`${entry.kind}:${entry.id}`, entry.desiredState]),
     )
+    this.startupBlockedPlugins = new Map(blockedPlugins.map((plugin) => [plugin.entry.id, plugin]))
   }
 
   async getSnapshot(): Promise<PluginManagerSnapshot> {
@@ -56,9 +60,14 @@ export class PluginManager {
 
       const installed = packages.get(entry.id)
       const startup = this.startupStatuses.get(entry.id)
-      const pending =
-        (!startup && entry.desiredState !== 'removed') ||
-        (startup !== undefined && startup.desiredState !== entry.desiredState)
+      const blockedCandidate = this.startupBlockedPlugins.get(entry.id)
+      const blocked =
+        blockedCandidate?.entry.version === entry.version ? blockedCandidate : undefined
+      const guiOnly =
+        this.activationMode === 'headless' &&
+        installed?.manifest.modules.gui !== undefined &&
+        installed.manifest.modules.host === undefined
+      const pending = this.isPending(entry, startup, blocked)
       restartRequired ||= pending
       return {
         kind: entry.kind,
@@ -69,9 +78,25 @@ export class PluginManager {
         desiredState: entry.desiredState,
         effectiveState: pending
           ? ('pending-restart' as const)
-          : (startup?.effectiveState ?? 'disabled'),
-        reason: pending ? 'Restart Pictor to apply this change' : (startup?.reason ?? null),
-        canRestore: entry.source.kind === 'bundled' && entry.desiredState === 'removed',
+          : blocked && entry.desiredState === 'enabled'
+            ? ('blocked' as const)
+            : this.safeMode && entry.desiredState === 'enabled'
+              ? ('disabled' as const)
+              : guiOnly && entry.desiredState === 'enabled'
+                ? ('blocked' as const)
+                : (startup?.effectiveState ?? 'disabled'),
+        reason: pending
+          ? 'Restart Pictor to apply this change'
+          : blocked && entry.desiredState === 'enabled'
+            ? blocked.reason
+            : this.safeMode && entry.desiredState === 'enabled'
+              ? 'Safe mode ignores all Plugins'
+              : guiOnly && entry.desiredState === 'enabled'
+                ? 'CLI does not load GUI Plugin Modules'
+                : (startup?.reason ?? null),
+        canRestore:
+          entry.source.kind === 'bundled' &&
+          (entry.desiredState === 'removed' || blocked !== undefined),
       }
     })
 
@@ -131,5 +156,23 @@ export class PluginManager {
   async restoreBundled(id: string): Promise<PluginManagerSnapshot> {
     await this.store.restoreBundled(id)
     return this.getSnapshot()
+  }
+
+  private isPending(
+    entry: InstalledExtension,
+    startup: PluginStatus | undefined,
+    blocked: StoredPluginBlock | undefined,
+  ): boolean {
+    if (blocked) return false
+    if (this.activationMode === 'headless') {
+      const initialDesired = this.startupDesiredStates.get(`${entry.kind}:${entry.id}`)
+      return initialDesired === undefined
+        ? entry.desiredState !== 'removed'
+        : initialDesired !== entry.desiredState
+    }
+    return (
+      (!startup && entry.desiredState !== 'removed') ||
+      (startup !== undefined && startup.desiredState !== entry.desiredState)
+    )
   }
 }

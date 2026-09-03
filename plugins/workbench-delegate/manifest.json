@@ -1,0 +1,15 @@
+{
+  "id": "pictor.workbench.delegate",
+  "name": "Delegate Workbench",
+  "version": "0.4.0",
+  "description": "Agent delegation workbench for the Pictor GUI",
+  "engines": {
+    "pictor": "^0.4.0"
+  },
+  "dependencies": {
+    "pictor.agent-workspace": "^0.4.0"
+  },
+  "modules": {
+    "gui": "./dist/gui.js"
+  }
+}

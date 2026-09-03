@@ -27,10 +27,12 @@ const packagePathSchema = z
 
 const pluginModulesSchema = z
   .object({
-    main: packagePathSchema.optional(),
-    renderer: packagePathSchema.optional(),
+    host: packagePathSchema.optional(),
+    gui: packagePathSchema.optional(),
+    tui: packagePathSchema.optional(),
     runtime: packagePathSchema.optional(),
   })
+  .strict()
   .default({})
 
 const piResourcesSchema = z.object({

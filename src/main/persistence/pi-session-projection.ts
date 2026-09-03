@@ -497,6 +497,13 @@ function displayPath(args: Record<string, unknown>): string | null {
 
 function toolKind(name: string): ToolEvent['kind'] {
   const kinds: Record<string, ToolEvent['kind']> = {
+    ls: 'list',
+    grep: 'search',
+    read: 'read',
+    write: 'write',
+    edit: 'edit',
+    bash: 'command',
+    find: 'list',
     pictor_list: 'list',
     pictor_search: 'search',
     pictor_read: 'read',

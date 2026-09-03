@@ -52,13 +52,21 @@ export class ModuleKernel {
   }
 
   async stop(): Promise<void> {
+    let firstError: Error | null = null
     for (const active of this.activeModules.toReversed()) {
-      for (const disposable of active.disposables.toReversed()) await disposable.dispose()
+      for (const disposable of active.disposables.toReversed()) {
+        try {
+          await disposable.dispose()
+        } catch (error) {
+          firstError ??= error instanceof Error ? error : new Error(String(error))
+        }
+      }
     }
     this.activeModules = []
     this.values.clear()
     this.contributions.clear()
     this.started = false
+    if (firstError) throw firstError
   }
 
   private createContext(active: ActiveModule): ModuleContext {

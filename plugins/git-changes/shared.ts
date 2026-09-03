@@ -1,7 +1,10 @@
 import { z } from 'zod'
 
-import { defineModuleContract, invokeModuleMethod } from '../../src/kernel/contract.js'
-import type { ModuleTransport } from '../../src/kernel/contract.js'
+import {
+  defineModuleContract,
+  invokeModuleMethod,
+  type ModuleTransport,
+} from '@pictor/plugin-sdk/contract'
 
 export const gitChangesContract = defineModuleContract({
   id: 'pictor.git-changes',

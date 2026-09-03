@@ -1,6 +1,6 @@
 {
   "name": "pictor",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Agent-native desktop development environment",
   "author": {
@@ -19,6 +19,9 @@
   "desktopName": "pictor.desktop",
   "main": "out/main/index.js",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "packageManager": "npm@11.17.0",
   "engines": {
     "node": ">=22.22.2"
@@ -29,16 +32,21 @@
     "deps:prepare": "install-electron --no",
     "deps:verify": "node scripts/verify-electron.mjs",
     "check:format": "prettier --check .",
-    "check:types": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "check:types": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.tui.json",
     "check:lint": "eslint . --max-warnings=0",
     "typecheck": "npm run check:types",
     "lint": "npm run check:lint",
     "format": "prettier --write .",
     "format:check": "npm run check:format",
     "test": "vitest run",
+    "test:sdk": "npm test --workspace @pictor/plugin-sdk",
     "test:unit": "vitest run --exclude **/*.integration.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
+    "build:cli": "node scripts/build-cli.mjs",
+    "cli": "npm run build:cli && node out/cli/src/cli/entry.js",
+    "build:tui": "npm run build:plugins && node scripts/build-tui.mjs",
+    "tui": "npm run build:tui && node out/tui/src/tui/entry.js",
     "test:module": "node scripts/test-module.mjs",
     "test:plugin": "node scripts/test-plugin.mjs",
     "build:plugins": "node scripts/build-plugins.mjs",
@@ -48,21 +56,24 @@
     "test:e2e:smoke:run": "playwright test --grep @smoke",
     "test:e2e": "npm run build:app && npm run test:e2e:run",
     "test:e2e:smoke": "npm run build:app && npm run test:e2e:smoke:run",
-    "build:app": "npm run build:plugins && electron-vite build",
+    "build:gui": "electron-vite build",
+    "build:distribution": "node scripts/build-distribution.mjs",
+    "build:app": "npm run build:plugins && npm run build:gui",
     "build": "npm run build:app",
     "verify:fast": "npm run check:format && npm run check:types && npm run check:lint && npm test",
-    "verify:pr": "npm run verify:fast && npm run build:app && npm run test:e2e:smoke:run",
-    "verify:release": "npm run verify:fast && npm run build:app && npm run test:e2e:run && npm run package:build && npm run package:verify",
-    "package:dir:build": "electron-builder --dir --x64",
-    "package:build": "electron-builder --x64 --publish never",
-    "package:windows:build": "electron-builder --win nsis --x64 --publish never",
-    "package:linux:build": "electron-builder --linux pacman AppImage --x64 --publish never",
-    "package:dir": "npm run build:app && npm run package:dir:build",
+    "verify:pr": "npm run verify:fast && npm run build:distribution && npm run test:e2e:smoke:run",
+    "verify:release": "npm run verify:fast && npm run build:distribution && npm run test:e2e:run && npm run package:build:target && npm run package:verify",
+    "package:dir:target": "electron-builder --dir --x64",
+    "package:build:target": "electron-builder --x64 --publish never",
+    "package:windows:target": "electron-builder --win nsis --x64 --publish never",
+    "package:linux:target": "electron-builder --linux pacman AppImage --x64 --publish never",
+    "package:dir:build": "npm run build:distribution && npm run package:dir:target",
+    "package:build": "npm run build:distribution && npm run package:build:target",
+    "package:windows:build": "npm run build:distribution && npm run package:windows:target",
+    "package:linux:build": "npm run build:distribution && npm run package:linux:target",
+    "package:dir": "npm run package:dir:build",
     "package:verify": "node scripts/verify-package.mjs",
-    "package:verify:windows": "node scripts/verify-windows-package.mjs",
-    "package:verify:linux": "node scripts/verify-linux-packages.mjs",
-    "package:verify:linux:launch": "node scripts/verify-linux-launch.mjs",
-    "package": "npm run build:app && npm run package:build && npm run package:verify"
+    "package": "npm run package:build && npm run package:verify"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.1",
@@ -76,6 +87,9 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
+    "@pictor/plugin-sdk": "0.0.0",
+    "@electron/asar": "^3.4.1",
+    "@electron/fuses": "^1.8.0",
     "@eslint/js": "^10.0.0",
     "@playwright/test": "^1.62.1",
     "@swc/core": "^1.15.47",
@@ -116,6 +130,17 @@
         "to": "bundled-plugins"
       }
     ],
+    "afterPack": "./scripts/after-pack.mjs",
+    "electronFuses": {
+      "runAsNode": true,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "loadBrowserProcessSpecificV8Snapshot": false,
+      "grantFileProtocolExtraPrivileges": false
+    },
     "toolsets": {
       "appimage": "1.0.3"
     },
@@ -127,6 +152,12 @@
           "arch": [
             "x64"
           ]
+        }
+      ],
+      "extraFiles": [
+        {
+          "from": "packaging/windows/pictor.cmd",
+          "to": "bin/pictor.cmd"
         }
       ]
     },
@@ -155,6 +186,8 @@
     "pacman": {
       "artifactName": "${productName}-${version}-arch-x64.${ext}",
       "compression": "zstd",
+      "afterInstall": "scripts/linux-after-install.sh",
+      "afterRemove": "scripts/linux-after-remove.sh",
       "depends": [
         "alsa-lib",
         "at-spi2-core",
@@ -187,7 +220,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "include": "packaging/windows/installer.nsh"
     }
   }
 }

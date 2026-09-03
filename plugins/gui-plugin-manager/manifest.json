@@ -1,0 +1,13 @@
+{
+  "id": "pictor.gui.plugin-manager",
+  "name": "GUI Plugin Manager",
+  "version": "0.4.0",
+  "description": "GUI settings for installing, enabling, disabling, removing and restoring Plugins",
+  "engines": {
+    "pictor": "^0.4.0"
+  },
+  "dependencies": {},
+  "modules": {
+    "gui": "./dist/gui.js"
+  }
+}

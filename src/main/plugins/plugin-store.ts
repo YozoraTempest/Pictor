@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { cp, copyFile, glob, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
-import { basename, extname, join, resolve } from 'node:path'
+import { cp, copyFile, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 
 import { z } from 'zod'
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent'
@@ -24,11 +24,6 @@ const MANIFEST_FILE = 'manifest.json'
 const pluginPackageJsonSchema = z.object({
   name: z.string().min(1),
   version: pluginVersionSchema.optional(),
-  pi: z
-    .object({
-      extensions: z.array(z.string().min(1)).optional(),
-    })
-    .optional(),
 })
 
 export interface PluginStoreOptions {
@@ -52,14 +47,20 @@ export interface PluginStoreIssue {
 export interface PluginStoreSnapshot {
   registry: PluginRegistry
   plugins: readonly StoredPluginPackage[]
+  blockedPlugins: readonly StoredPluginBlock[]
   nativeExtensions: readonly StoredNativeExtension[]
   issues: readonly PluginStoreIssue[]
+}
+
+export interface StoredPluginBlock {
+  entry: InstalledPictorPlugin
+  rootPath: string
+  reason: string
 }
 
 export interface StoredNativeExtension {
   entry: Exclude<InstalledExtension, { kind: 'pictor-plugin' }>
   runtimePath: string
-  runtimePaths: readonly string[]
 }
 
 interface BundledPluginPackage {
@@ -122,6 +123,11 @@ export class PluginStore {
         source: { kind: 'bundled', reference: bundled.manifest.id },
         desiredState: existing?.kind === 'pictor-plugin' ? existing.desiredState : 'enabled',
       }
+      if (
+        existing?.kind === 'pictor-plugin' &&
+        (await this.hasLegacyManifest(this.packagePath(existing)))
+      )
+        continue
       const installed = await this.isPackageInstalled(entry)
       if (existing?.kind !== 'pictor-plugin' || existing.version !== entry.version || !installed) {
         try {
@@ -143,6 +149,7 @@ export class PluginStore {
     this.ensureInitialized()
     const issues = [...this.issues]
     const plugins: StoredPluginPackage[] = []
+    const blockedPlugins: StoredPluginBlock[] = []
     const nativeExtensions: StoredNativeExtension[] = []
 
     for (const entry of this.registry.entries) {
@@ -162,10 +169,6 @@ export class PluginStore {
           nativeExtensions.push({
             entry: { ...entry },
             runtimePath,
-            runtimePaths:
-              entry.kind === 'pi-package'
-                ? await this.discoverPiPackageExtensionPaths(runtimePath)
-                : [runtimePath],
           })
         } else {
           issues.push({ source: runtimePath, message: `Installed ${entry.kind} is missing` })
@@ -177,7 +180,17 @@ export class PluginStore {
           ? resolve(entry.source.reference)
           : this.packagePath(entry)
       try {
-        const manifest = await this.readManifest(rootPath)
+        const manifestResult = await this.readStoredManifest(rootPath)
+        if (manifestResult.kind === 'blocked') {
+          blockedPlugins.push({
+            entry: { ...entry, source: { ...entry.source } },
+            rootPath,
+            reason: manifestResult.reason,
+          })
+          issues.push({ source: rootPath, message: manifestResult.reason })
+          continue
+        }
+        const manifest = manifestResult.manifest
         if (manifest.id !== entry.id || manifest.version !== entry.version) {
           throw new Error(
             `Installed Manifest is ${manifest.id}@${manifest.version}, expected ${entry.id}@${entry.version}`,
@@ -197,6 +210,7 @@ export class PluginStore {
     return {
       registry: pluginRegistrySchema.parse(this.registry),
       plugins,
+      blockedPlugins,
       nativeExtensions,
       issues,
     }
@@ -279,7 +293,7 @@ export class PluginStore {
     }
     this.replaceExtensionEntry(entry)
     await this.persistRegistry()
-    return { entry, runtimePath: target, runtimePaths: [target] }
+    return { entry, runtimePath: target }
   }
 
   async installPiPackage(sourcePath: string): Promise<StoredNativeExtension> {
@@ -303,12 +317,17 @@ export class PluginStore {
     await packageManager.install(spec)
     const installedPath = packageManager.getInstalledPath(spec, 'user')
     if (!installedPath) throw new Error(`Pi Package did not provide an installed path: ${spec}`)
-    return this.installPiPackageDirectory(installedPath, spec)
+    return this.installPiPackageDirectory(
+      installedPath,
+      spec,
+      this.packageNodeModulesDirectory(installedPath),
+    )
   }
 
   private async installPiPackageDirectory(
     sourcePath: string,
     registrySource: string,
+    nodeModulesPath?: string | null,
   ): Promise<StoredNativeExtension> {
     const source = resolve(sourcePath)
     const packageJson = await readJsonFile(join(source, 'package.json'), pluginPackageJsonSchema)
@@ -317,6 +336,9 @@ export class PluginStore {
     const target = join(this.piPackagesDirectory, id)
     await rm(target, { recursive: true, force: true })
     await cp(source, target, { recursive: true })
+    if (nodeModulesPath && resolve(nodeModulesPath) !== resolve(join(source, 'node_modules'))) {
+      await cp(nodeModulesPath, join(target, 'node_modules'), { recursive: true })
+    }
     const entry = {
       kind: 'pi-package' as const,
       id,
@@ -326,10 +348,16 @@ export class PluginStore {
     }
     this.replaceExtensionEntry(entry)
     await this.persistRegistry()
-    return {
-      entry,
-      runtimePath: target,
-      runtimePaths: await this.discoverPiPackageExtensionPaths(target),
+    return { entry, runtimePath: target }
+  }
+
+  private packageNodeModulesDirectory(packagePath: string): string | null {
+    let current = dirname(resolve(packagePath))
+    while (true) {
+      if (basename(current) === 'node_modules') return current
+      const parent = dirname(current)
+      if (parent === current) return null
+      current = parent
     }
   }
 
@@ -420,6 +448,31 @@ export class PluginStore {
     return manifest
   }
 
+  private async readStoredManifest(
+    rootPath: string,
+  ): Promise<{ kind: 'current'; manifest: PluginManifest } | { kind: 'blocked'; reason: string }> {
+    const source = JSON.parse(await readFile(join(rootPath, MANIFEST_FILE), 'utf8')) as unknown
+    const parsed = pluginManifestSchema.safeParse(source)
+    if (parsed.success) return { kind: 'current', manifest: parsed.data }
+    if (isLegacyManifest(source)) {
+      return {
+        kind: 'blocked',
+        reason:
+          'Installed Plugin uses the legacy main/renderer Manifest; this Pictor version blocks it without migration. Install a package with explicit host/gui entries or restore the current bundled package.',
+      }
+    }
+    throw parsed.error
+  }
+
+  private async hasLegacyManifest(rootPath: string): Promise<boolean> {
+    try {
+      const source = JSON.parse(await readFile(join(rootPath, MANIFEST_FILE), 'utf8')) as unknown
+      return isLegacyManifest(source)
+    } catch {
+      return false
+    }
+  }
+
   private async copyPackage(sourcePath: string, entry: InstalledPictorPlugin): Promise<void> {
     const stagingPath = join(this.pluginsDirectory, `.install-${randomUUID()}`)
     const idDirectory = join(this.pluginsDirectory, entry.id)
@@ -471,25 +524,6 @@ export class PluginStore {
     return name
   }
 
-  private async discoverPiPackageExtensionPaths(rootPath: string): Promise<string[]> {
-    const packageJson = await readJsonFile(join(rootPath, 'package.json'), pluginPackageJsonSchema)
-    if (!packageJson) return []
-    const patterns = packageJson.pi?.extensions ?? [
-      'extensions/*.{ts,js}',
-      'extensions/*/index.{ts,js}',
-    ]
-    const paths = new Set<string>()
-    for (const pattern of patterns) {
-      for await (const match of glob(pattern, { cwd: rootPath })) {
-        const path = resolve(rootPath, match)
-        const relativePath = path.slice(resolve(rootPath).length + 1)
-        if (!relativePath.startsWith('..') && ['.ts', '.js'].includes(extname(path)))
-          paths.add(path)
-      }
-    }
-    return [...paths].toSorted()
-  }
-
   private findPluginEntry(id: string): InstalledPictorPlugin {
     const entry = this.registry.entries.find(
       (candidate): candidate is InstalledPictorPlugin =>
@@ -518,4 +552,12 @@ export class PluginStore {
   private errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
   }
+}
+
+function isLegacyManifest(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || !('modules' in value)) return false
+  const modules = value.modules
+  return (
+    modules !== null && typeof modules === 'object' && ('main' in modules || 'renderer' in modules)
+  )
 }

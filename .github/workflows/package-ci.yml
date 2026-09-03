@@ -1,0 +1,38 @@
+name: Package CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - '.github/workflows/**'
+      - 'electron.vite.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'packaging/**'
+      - 'packages/**'
+      - 'plugins/**'
+      - 'scripts/**'
+      - 'src/cli/**'
+      - 'src/main/**'
+      - 'src/node/**'
+      - 'src/tui/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    name: Package acceptance
+    uses: ./.github/workflows/package-desktop.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha }}
+      artifact_prefix: pr-${{ github.event.pull_request.number }}
+      build_channel: ${{ github.base_ref == 'main' && (github.head_ref == 'develop' || startsWith(github.head_ref, 'hotfix/')) && 'stable' || 'development' }}
+      run_source_validation: ${{ github.base_ref == 'main' && (github.head_ref == 'develop' || startsWith(github.head_ref, 'hotfix/')) }}
+      run_e2e: ${{ github.base_ref == 'main' && (github.head_ref == 'develop' || startsWith(github.head_ref, 'hotfix/')) }}

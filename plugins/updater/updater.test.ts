@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 
 import { expect, it } from 'vitest'
 
-import { pluginManifestSchema } from '../../src/plugin/manifest.js'
+import { pluginManifestSchema } from '@pictor/plugin-sdk/manifest'
 
 it('ships a valid Updater Plugin package', async () => {
   const manifest = pluginManifestSchema.parse(
@@ -13,6 +13,8 @@ it('ships a valid Updater Plugin package', async () => {
 
   expect(manifest).toMatchObject({
     id: 'pictor.updater',
-    modules: { main: './dist/main.js', renderer: './dist/renderer.js' },
+    version: '0.4.0',
+    engines: { pictor: '^0.4.0' },
+    modules: { host: './dist/host.js', gui: './dist/gui.js' },
   })
 })

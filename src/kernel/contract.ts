@@ -28,11 +28,12 @@ export function defineModuleContract<
 }
 
 type MethodInput<TMethod extends MethodContract> = z.input<TMethod['input']>
+type MethodHandlerInput<TMethod extends MethodContract> = z.output<TMethod['input']>
 type MethodOutput<TMethod extends MethodContract> = z.output<TMethod['output']>
 
 export type ModuleHandlers<TContract extends ModuleContract> = {
   [TMethod in keyof TContract['methods']]: (
-    input: MethodInput<TContract['methods'][TMethod]>,
+    input: MethodHandlerInput<TContract['methods'][TMethod]>,
   ) =>
     | MethodOutput<TContract['methods'][TMethod]>
     | Promise<MethodOutput<TContract['methods'][TMethod]>>

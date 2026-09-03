@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
+import type {
+  AgentSessionRuntime,
+  AgentSessionEvent,
+  ExtensionCommandContextActions,
+  ExtensionUIContext,
+} from '@earendil-works/pi-coding-agent'
 
 import type {
   RuntimeCompactConfig,
@@ -16,9 +21,14 @@ import type {
   RuntimeLabelConfig,
   RuntimeNavigateConfig,
   RuntimeStartConfig,
+  RuntimeSessionOpenConfig,
 } from '../shared/runtime-protocol.js'
 import { REDACTED_SECRET } from '../shared/secret-redaction.js'
-import { PiAgentRuntime } from './pi-adapter.js'
+import {
+  PICTOR_TUI_SESSION_REPLACEMENT_ERROR,
+  PiAgentRuntime,
+  createPiInteractiveRunner,
+} from './pi-adapter.js'
 
 const sessionFactory = async () => ({
   subscribe: () => () => undefined,
@@ -145,6 +155,418 @@ describe('PiAgentRuntime cleanup', () => {
       })
     },
   )
+
+  it('reuses one open Pi Session across multiple Pictor Runs', async () => {
+    const prompt = vi.fn(async () => undefined)
+    const dispose = vi.fn(async () => undefined)
+    const factory = vi.fn(async () => ({
+      ...(await sessionFactory()),
+      prompt,
+      dispose,
+    }))
+    const runtime = new PiAgentRuntime(() => undefined, factory)
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const createConfig = (runId: string, messageId: string): RuntimeStartConfig => ({
+      type: 'start',
+      runId,
+      sessionId: '11234567-89ab-4def-8123-456789abcdef',
+      messageId,
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-long-session'),
+      sessionDirectory: join(root, 'session-long-session'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+      prompt: 'continue',
+    })
+
+    await runtime.start(
+      createConfig('01234567-89ab-4def-8123-456789abcdef', '21234567-89ab-4def-8123-456789abcdef'),
+    )
+    await runtime.start(
+      createConfig('31234567-89ab-4def-8123-456789abcdef', '41234567-89ab-4def-8123-456789abcdef'),
+    )
+
+    expect(factory).toHaveBeenCalledOnce()
+    expect(prompt).toHaveBeenCalledTimes(2)
+    expect(dispose).not.toHaveBeenCalled()
+    await runtime.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('exposes the InteractiveMode runner only through the Runtime public contract', async () => {
+    const runner = { run: vi.fn(async () => undefined) }
+    const runtime = new PiAgentRuntime(
+      () => undefined,
+      async () => ({
+        ...(await sessionFactory()),
+        createInteractiveRunner: () => runner,
+      }),
+    )
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+    })
+    const config: RuntimeSessionOpenConfig = {
+      type: 'session.open',
+      operationId: '01234567-89ab-4def-8123-456789abcdef',
+      sessionId: '11234567-89ab-4def-8123-456789abcdef',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-interactive'),
+      sessionDirectory: join(root, 'session-interactive'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+    }
+
+    await runtime.openSession(config)
+    expect(runtime.createInteractiveRunner()).toBe(runner)
+    await runtime.dispose()
+  })
+
+  it('rejects InteractiveMode Session replacement before Pi can change identity', async () => {
+    const beforeSessionInvalidate = vi.fn()
+    const rebindSession = vi.fn()
+    const newSession = vi.fn(
+      async (_options?: Parameters<AgentSessionRuntime['newSession']>[0]) => ({
+        cancelled: false,
+      }),
+    )
+    const fork = vi.fn(
+      async (_entryId: string, _options?: Parameters<AgentSessionRuntime['fork']>[1]) => ({
+        cancelled: false,
+      }),
+    )
+    const switchSession = vi.fn(
+      async (
+        _sessionPath: string,
+        _options?: Parameters<AgentSessionRuntime['switchSession']>[1],
+      ) => ({ cancelled: false }),
+    )
+    const importFromJsonl = vi.fn(async (_inputPath: string, _cwdOverride?: string) => ({
+      cancelled: false,
+    }))
+    const publicRuntime = {
+      setBeforeSessionInvalidate: beforeSessionInvalidate,
+      setRebindSession: rebindSession,
+      newSession,
+      fork,
+      switchSession,
+      importFromJsonl,
+    } satisfies Pick<
+      AgentSessionRuntime,
+      | 'setBeforeSessionInvalidate'
+      | 'setRebindSession'
+      | 'newSession'
+      | 'fork'
+      | 'switchSession'
+      | 'importFromJsonl'
+    >
+
+    const pictorBeforeInvalidate = vi.fn()
+    const pictorRebind = vi.fn(async () => undefined)
+    beforeSessionInvalidate(pictorBeforeInvalidate)
+    rebindSession(pictorRebind)
+
+    let adaptedRuntime: AgentSessionRuntime | undefined
+    const run = vi.fn(async () => {
+      const runtime = adaptedRuntime
+      expect(runtime).toBeDefined()
+      if (!runtime) throw new Error('InteractiveMode runtime was not adapted')
+
+      // These calls model InteractiveMode's constructor hook registration.
+      runtime.setBeforeSessionInvalidate(() => undefined)
+      runtime.setRebindSession(async () => undefined)
+      const rejectReplacement = (invoke: () => unknown) =>
+        expect(Promise.resolve().then(invoke)).rejects.toThrow(PICTOR_TUI_SESSION_REPLACEMENT_ERROR)
+      await rejectReplacement(() => runtime.newSession())
+      await rejectReplacement(() => runtime.fork('entry'))
+      await rejectReplacement(() => runtime.fork('entry', { position: 'at' }))
+      await rejectReplacement(() => runtime.switchSession('/other/session.jsonl'))
+      await rejectReplacement(() => runtime.importFromJsonl('/other/session.jsonl'))
+    })
+
+    // This strict public-method spy facade exercises the deterministic runner
+    // seam; production passes a real AgentSessionRuntime instance.
+    const runner = createPiInteractiveRunner(
+      publicRuntime as unknown as AgentSessionRuntime,
+      undefined,
+      (runtime) => {
+        adaptedRuntime = runtime
+        return { run }
+      },
+    )
+    await runner.run()
+
+    expect(run).toHaveBeenCalledOnce()
+    expect(beforeSessionInvalidate).toHaveBeenCalledOnce()
+    expect(beforeSessionInvalidate).toHaveBeenCalledWith(pictorBeforeInvalidate)
+    expect(rebindSession).toHaveBeenCalledOnce()
+    expect(rebindSession).toHaveBeenCalledWith(pictorRebind)
+    expect(newSession).not.toHaveBeenCalled()
+    expect(fork).not.toHaveBeenCalled()
+    expect(switchSession).not.toHaveBeenCalled()
+    expect(importFromJsonl).not.toHaveBeenCalled()
+  })
+
+  it('applies a model control to the already-open Pi Session', async () => {
+    const modelRuntime = {} as never
+    const nextModel = { id: 'next-model', provider: 'test-provider' } as never
+    const register = vi.fn(() => nextModel)
+    const setModel = vi.fn(async () => undefined)
+    const runtime = new PiAgentRuntime(
+      () => undefined,
+      async () => ({
+        ...(await sessionFactory()),
+        getModelId: () => 'current-model',
+        getModelRuntime: () => modelRuntime,
+        setModel,
+      }),
+    )
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register,
+        },
+      ],
+    })
+    const sessionId = '11234567-89ab-4def-8123-456789abcdef'
+    await runtime.start({
+      type: 'start',
+      runId: '01234567-89ab-4def-8123-456789abcdef',
+      sessionId,
+      messageId: '21234567-89ab-4def-8123-456789abcdef',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-model'),
+      sessionDirectory: join(root, 'session-model'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'current-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+      prompt: 'start',
+    })
+
+    await runtime.setRuntimeControls(sessionId, {
+      modelId: 'next-model',
+      thinkingLevel: 'off',
+      activeTools: ['read'],
+      steeringMode: 'one-at-a-time',
+      followUpMode: 'one-at-a-time',
+    })
+
+    expect(register).toHaveBeenCalledWith(
+      modelRuntime,
+      expect.objectContaining({ modelId: 'next-model' }),
+      'test-key',
+    )
+    expect(setModel).toHaveBeenCalledWith(nextModel)
+  })
+
+  it('coordinates native Session replacement with Main prepare and commit acknowledgements', async () => {
+    const events: RuntimeEvent[] = []
+    const sourcePath = join(root, 'session-replacement', 'source.jsonl')
+    const targetPath = join(root, 'session-replacement', 'target.jsonl')
+    let currentPath = sourcePath
+    let currentId = 'source-pi-session'
+    let beforeSessionInvalidate: (() => void) | undefined
+    let afterRebind: (() => Promise<void>) | undefined
+    let listener: ((event: AgentSessionEvent) => void) | undefined
+    const unsubscribe = vi.fn(() => {
+      listener = undefined
+    })
+    const subscribe = vi.fn((next: (event: AgentSessionEvent) => void) => {
+      listener = next
+      return unsubscribe
+    })
+    let commandActions: ExtensionCommandContextActions | undefined
+    let extensionUiContext: ExtensionUIContext | undefined
+    const withSession = vi.fn(async () => undefined)
+    const nativeNewSession = vi.fn(
+      async (options?: Parameters<ExtensionCommandContextActions['newSession']>[0]) => {
+        currentPath = targetPath
+        currentId = 'target-pi-session'
+        beforeSessionInvalidate?.()
+        extensionUiContext?.setStatus('target-status', 'Target session status')
+        extensionUiContext?.setWidget('target-widget', ['Target session widget'])
+        extensionUiContext?.setTitle('Target session')
+        await afterRebind?.()
+        await options?.withSession?.({} as never)
+        return { cancelled: false }
+      },
+    )
+    const runtime = new PiAgentRuntime(
+      (event) => events.push(event),
+      async () => ({
+        ...(await sessionFactory()),
+        subscribe,
+        newSession: nativeNewSession,
+        getSessionId: () => currentId,
+        getSessionFile: () => currentPath,
+        bindExtensionUi: async (
+          _context: ExtensionUIContext,
+          options?: {
+            commandContextActions?: ExtensionCommandContextActions
+            beforeRebind?: () => Promise<void>
+            beforeSessionInvalidate?: () => void
+            afterRebind?: () => Promise<void>
+          },
+        ) => {
+          extensionUiContext = _context
+          commandActions = options?.commandContextActions
+          beforeSessionInvalidate = options?.beforeSessionInvalidate
+          afterRebind = options?.afterRebind
+          await options?.afterRebind?.()
+        },
+      }),
+    )
+    const replacementRequests: Array<{
+      phase: 'prepare' | 'commit' | 'abort'
+      kind: 'new' | 'fork' | 'switch'
+      targetSessionId: string
+      piSessionId: string | null
+      piSessionPath: string | null
+    }> = []
+    runtime.configure({
+      extensionPaths: [],
+      skillPaths: [],
+      promptPaths: [],
+      modelProviders: [
+        {
+          id: 'test-model-provider',
+          register: () => {
+            throw new Error('not used by the test Session factory')
+          },
+        },
+      ],
+      requestSessionReplacement: async (request) => {
+        replacementRequests.push(request)
+        return request.phase === 'prepare'
+          ? { accepted: true, targetSessionId: '21234567-89ab-4def-8123-456789abcdef' }
+          : { accepted: true }
+      },
+    })
+
+    await runtime.start({
+      type: 'start',
+      runId: '01234567-89ab-4def-8123-456789abcdef',
+      sessionId: '11234567-89ab-4def-8123-456789abcdef',
+      messageId: '31234567-89ab-4def-8123-456789abcdef',
+      projectRoot: join(root, 'project'),
+      agentDirectory: join(root, 'agent-replacement'),
+      sessionDirectory: join(root, 'session-replacement'),
+      resumeSession: false,
+      settings: {
+        apiProtocol: 'responses',
+        baseUrl: 'https://example.test/v1',
+        modelId: 'test-model',
+        reasoningEffort: null,
+        temperature: null,
+        maxOutputTokens: 64,
+      },
+      apiKey: 'test-key',
+      prompt: 'start',
+    })
+
+    expect(commandActions).toBeDefined()
+    const replacement = await commandActions!.newSession({ withSession })
+
+    expect(replacement).toEqual({ cancelled: false })
+    expect(nativeNewSession).toHaveBeenCalledOnce()
+    expect(withSession).toHaveBeenCalledOnce()
+    expect(replacementRequests.map(({ phase }) => phase)).toEqual(['prepare', 'commit'])
+    expect(subscribe).toHaveBeenCalledTimes(2)
+    expect(unsubscribe).toHaveBeenCalled()
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'extension.ui.status',
+        sessionId: '21234567-89ab-4def-8123-456789abcdef',
+        key: 'target-status',
+        text: 'Target session status',
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'extension.ui.widget',
+        sessionId: '21234567-89ab-4def-8123-456789abcdef',
+        key: 'target-widget',
+        lines: ['Target session widget'],
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'extension.ui.title',
+        sessionId: '21234567-89ab-4def-8123-456789abcdef',
+        title: 'Target session',
+      }),
+    )
+    listener?.({ type: 'session_info_changed', name: 'Replaced session' })
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.infoChanged',
+        sessionId: '21234567-89ab-4def-8123-456789abcdef',
+        name: 'Replaced session',
+      }),
+    )
+    expect(replacementRequests[1]).toMatchObject({
+      kind: 'new',
+      targetSessionId: '21234567-89ab-4def-8123-456789abcdef',
+      piSessionId: 'target-pi-session',
+      piSessionPath: targetPath,
+    })
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.replaced',
+        sourceSessionId: '11234567-89ab-4def-8123-456789abcdef',
+        targetSessionId: '21234567-89ab-4def-8123-456789abcdef',
+        piSessionPath: targetPath,
+      }),
+    )
+  })
 
   it('delegates steering, follow-up, and queue clearing to the active Pi Session', async () => {
     const events: RuntimeEvent[] = []
@@ -346,9 +768,8 @@ describe('PiAgentRuntime cleanup', () => {
     ).toBe('Thinking\n\nReasoning step\n\nFinal answer')
   })
 
-  it('forks through the native Pi Session lifecycle and moves the new JSONL', async () => {
+  it('forks through the native Pi Session lifecycle and preserves Pi file placement', async () => {
     const sourceSessionDirectory = join(root, 'source-session')
-    const targetSessionDirectory = join(root, 'target-session')
     await mkdir(sourceSessionDirectory)
     const sourceFile = join(sourceSessionDirectory, 'source.jsonl')
     const forkedFile = join(sourceSessionDirectory, 'forked.jsonl')
@@ -420,9 +841,7 @@ describe('PiAgentRuntime cleanup', () => {
       entryId: 'selected-entry',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
-      targetSessionDirectory,
+      sourcePiSessionPath: sourceFile,
       settings: {
         apiProtocol: 'responses',
         baseUrl: 'https://example.test/v1',
@@ -437,15 +856,12 @@ describe('PiAgentRuntime cleanup', () => {
     await expect(runtime.fork(config)).resolves.toEqual({
       outcome: 'completed',
       piSessionId: 'forked-pi-session',
-      piSessionFile: 'forked.jsonl',
+      piSessionPath: forkedFile,
     })
-    expect(nativeFork).toHaveBeenCalledWith('selected-entry')
+    expect(nativeFork).toHaveBeenCalledWith('selected-entry', { position: 'at' })
     expect(dispose).toHaveBeenCalledOnce()
     await expect(readFile(sourceFile, 'utf8')).resolves.toContain('source')
-    await expect(readFile(join(targetSessionDirectory, 'forked.jsonl'), 'utf8')).resolves.toContain(
-      'forked',
-    )
-    await expect(readFile(forkedFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(forkedFile, 'utf8')).resolves.toContain('forked')
   })
 
   it('imports through the native Pi Session lifecycle without rewriting the source JSONL', async () => {
@@ -554,7 +970,7 @@ describe('PiAgentRuntime cleanup', () => {
     await expect(runtime.importSession(config)).resolves.toEqual({
       outcome: 'completed',
       piSessionId: 'source-session',
-      piSessionFile: 'source-history.jsonl',
+      piSessionPath: importedFile,
     })
     expect(nativeImport).toHaveBeenCalledWith(sourceFile, join(root, 'project'))
     expect(dispose).toHaveBeenCalledOnce()
@@ -602,8 +1018,7 @@ describe('PiAgentRuntime cleanup', () => {
       format: 'jsonl',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent-export'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: sourceFile,
       destinationPath: join(root, 'exported.jsonl'),
       settings: {
         apiProtocol: 'responses',
@@ -620,7 +1035,7 @@ describe('PiAgentRuntime cleanup', () => {
     expect(exportToJsonl).toHaveBeenCalledWith(join(root, 'exported.jsonl'))
     expect(factory).toHaveBeenCalledWith(
       expect.objectContaining({
-        sessionFile: 'source.jsonl',
+        sessionFile: expect.stringMatching(/\.pictor-export-/),
         extensionPaths: [],
         skillPaths: [],
         promptPaths: [],
@@ -719,8 +1134,7 @@ describe('PiAgentRuntime cleanup', () => {
       activeLeafId: 'active-answer',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent-navigate'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: sourceFile,
       settings: {
         apiProtocol: 'responses',
         baseUrl: 'https://example.test/v1',
@@ -732,6 +1146,19 @@ describe('PiAgentRuntime cleanup', () => {
       apiKey: 'test-key',
     } satisfies RuntimeNavigateConfig
 
+    await runtime.openSession({
+      type: 'session.open',
+      operationId: '41234567-89ab-4def-8123-456789abcdef',
+      sessionId: config.sourceSessionId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: sourceSessionDirectory,
+      resumeSession: true,
+      piSessionPath: sourceFile,
+      activeLeafId: config.activeLeafId,
+      settings: config.settings,
+      apiKey: config.apiKey,
+    })
     await expect(runtime.navigateSession(config)).resolves.toEqual({
       outcome: 'completed',
       activeLeafId: 'historical-answer',
@@ -739,17 +1166,9 @@ describe('PiAgentRuntime cleanup', () => {
       summaryCreated: false,
     })
     expect(navigateTree).toHaveBeenCalledWith('historical-answer', { summarize: false })
-    expect(factory).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionFile: 'source.jsonl',
-        extensionPaths: ['/trusted/extensions'],
-        skillPaths: ['/trusted/skills'],
-        promptPaths: ['/trusted/prompts'],
-        config: expect.objectContaining({ activeLeafId: 'active-answer' }),
-      }),
-    )
+    expect(factory).toHaveBeenCalledOnce()
     expect(bindExtensionUi).toHaveBeenCalledOnce()
-    expect(dispose).toHaveBeenCalledOnce()
+    expect(dispose).not.toHaveBeenCalled()
 
     navigateTree.mockResolvedValueOnce({ cancelled: true })
     await expect(
@@ -782,6 +1201,8 @@ describe('PiAgentRuntime cleanup', () => {
       summarize: true,
       customInstructions: 'Preserve decisions',
     })
+    await runtime.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 
   it('compacts the active branch and emits the native Compaction lifecycle', async () => {
@@ -809,6 +1230,7 @@ describe('PiAgentRuntime cleanup', () => {
       expect(customInstructions).toBe('Keep decisions')
       return result
     })
+    const dispose = vi.fn(async () => undefined)
     const factory = vi.fn(async () => ({
       ...(await sessionFactory()),
       subscribe: (next: typeof listener) => {
@@ -820,6 +1242,7 @@ describe('PiAgentRuntime cleanup', () => {
       compact,
       getSessionFile: () => sourceFile,
       getActiveLeafId: () => 'compaction-entry',
+      dispose,
     }))
     const runtime = new PiAgentRuntime((event) => events.push(event), factory)
     runtime.configure({
@@ -843,8 +1266,7 @@ describe('PiAgentRuntime cleanup', () => {
       activeLeafId: 'active-entry',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent-compact'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: sourceFile,
       settings: {
         apiProtocol: 'responses',
         baseUrl: 'https://example.test/v1',
@@ -856,13 +1278,26 @@ describe('PiAgentRuntime cleanup', () => {
       apiKey: 'test-key',
     } satisfies RuntimeCompactConfig
 
+    await runtime.openSession({
+      type: 'session.open',
+      operationId: '41234567-89ab-4def-8123-456789abcdef',
+      sessionId: config.sourceSessionId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: sourceSessionDirectory,
+      resumeSession: true,
+      piSessionPath: sourceFile,
+      activeLeafId: config.activeLeafId,
+      settings: config.settings,
+      apiKey: config.apiKey,
+    })
     await expect(runtime.compactSession(config)).resolves.toEqual({
       outcome: 'completed',
       activeLeafId: 'compaction-entry',
       tokensBefore: 120,
       estimatedTokensAfter: 30,
     })
-    expect(events).toEqual([
+    expect(events.filter((event) => event.type === 'compaction.stateChanged')).toEqual([
       expect.objectContaining({
         type: 'compaction.stateChanged',
         status: 'running',
@@ -875,6 +1310,10 @@ describe('PiAgentRuntime cleanup', () => {
         estimatedTokensAfter: 30,
       }),
     ])
+    expect(factory).toHaveBeenCalledOnce()
+    expect(dispose).not.toHaveBeenCalled()
+    await runtime.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 
   it('appends native Pi label entries and returns the resulting leaf', async () => {
@@ -883,11 +1322,13 @@ describe('PiAgentRuntime cleanup', () => {
     await mkdir(sourceSessionDirectory)
     await writeFile(sourceFile, '{"type":"session","version":3,"id":"pi-session"}\n')
     const labelEntry = vi.fn()
+    const dispose = vi.fn(async () => undefined)
     const factory = vi.fn(async () => ({
       ...(await sessionFactory()),
       labelEntry,
       getSessionFile: () => sourceFile,
       getActiveLeafId: () => 'label-entry',
+      dispose,
     }))
     const runtime = new PiAgentRuntime(() => undefined, factory)
     runtime.configure({
@@ -912,8 +1353,7 @@ describe('PiAgentRuntime cleanup', () => {
       activeLeafId: 'active-entry',
       projectRoot: join(root, 'project'),
       agentDirectory: join(root, 'agent-label'),
-      sourceSessionDirectory,
-      sourcePiSessionFile: 'source.jsonl',
+      sourcePiSessionPath: sourceFile,
       settings: {
         apiProtocol: 'responses',
         baseUrl: 'https://example.test/v1',
@@ -925,10 +1365,27 @@ describe('PiAgentRuntime cleanup', () => {
       apiKey: 'test-key',
     } satisfies RuntimeLabelConfig
 
+    await runtime.openSession({
+      type: 'session.open',
+      operationId: '41234567-89ab-4def-8123-456789abcdef',
+      sessionId: config.sourceSessionId,
+      projectRoot: config.projectRoot,
+      agentDirectory: config.agentDirectory,
+      sessionDirectory: sourceSessionDirectory,
+      resumeSession: true,
+      piSessionPath: sourceFile,
+      activeLeafId: config.activeLeafId,
+      settings: config.settings,
+      apiKey: config.apiKey,
+    })
     await expect(runtime.labelSessionEntry(config)).resolves.toEqual({
       outcome: 'completed',
       activeLeafId: 'label-entry',
     })
     expect(labelEntry).toHaveBeenCalledWith('target-entry', 'checkpoint')
+    expect(factory).toHaveBeenCalledOnce()
+    expect(dispose).not.toHaveBeenCalled()
+    await runtime.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 })

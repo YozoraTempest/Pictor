@@ -1,6 +1,6 @@
-import { defineModule } from '../../src/kernel/module.js'
-import { pluginEntrypoint, type RuntimePluginContext } from '../../src/plugin/entry.js'
-import { piExtensionPathContributions } from '../../src/runtime/plugin-interface.js'
+import { defineModule } from '@pictor/plugin-sdk/module'
+import { piExtensionPathContributions } from '@pictor/plugin-sdk/pi-extension'
+import { pluginEntrypoint, type RuntimePluginContext } from '@pictor/plugin-sdk/plugin'
 
 export default pluginEntrypoint<RuntimePluginContext>((plugin) => [
   defineModule({

@@ -18,6 +18,14 @@ type ExtensionUiEvent =
       message: string
     }
   | { type: 'extension.ui.status'; key: string; text: string | null }
+  | {
+      type: 'extension.ui.widget'
+      key: string
+      lines: string[] | null
+      placement: 'aboveEditor' | 'belowEditor'
+    }
+  | { type: 'extension.ui.title'; title: string }
+  | { type: 'extension.composer.changed'; text: string }
 
 interface PendingRequest {
   resolve(value: string | boolean | null): void
@@ -81,18 +89,19 @@ export class ExtensionUiBroker {
       setWorkingIndicator: () => unavailable('Custom working indicators'),
       setHiddenThinkingLabel: (label) =>
         this.emit({ type: 'extension.ui.status', key: 'thinking-label', text: label ?? null }),
-      setWidget: (key, content) => {
+      setWidget: (key, content, options) => {
         if (content === undefined || Array.isArray(content)) {
           this.emit({
-            type: 'extension.ui.status',
-            key: `widget:${key}`,
-            text: content?.join('\n') ?? null,
+            type: 'extension.ui.widget',
+            key,
+            lines: content ?? null,
+            placement: options?.placement ?? 'aboveEditor',
           })
         } else unavailable('TUI widget factories')
       },
       setFooter: () => unavailable('Custom TUI footers'),
       setHeader: () => unavailable('Custom TUI headers'),
-      setTitle: (title) => this.emit({ type: 'extension.ui.status', key: 'title', text: title }),
+      setTitle: (title) => this.emit({ type: 'extension.ui.title', title }),
       onTerminalInput: () => {
         unavailable('Raw terminal input')
         return () => undefined
@@ -102,9 +111,11 @@ export class ExtensionUiBroker {
       },
       pasteToEditor: (text) => {
         this.editorText += text
+        this.emit({ type: 'extension.composer.changed', text: this.editorText })
       },
       setEditorText: (text) => {
         this.editorText = text
+        this.emit({ type: 'extension.composer.changed', text })
       },
       getEditorText: () => this.editorText,
       addAutocompleteProvider: () => unavailable('TUI autocomplete providers'),
@@ -122,6 +133,10 @@ export class ExtensionUiBroker {
       getToolsExpanded: () => false,
       setToolsExpanded: () => unavailable('TUI tool expansion'),
     }
+  }
+
+  updateEditorText(text: string): void {
+    this.editorText = text
   }
 
   respond(requestId: string, value: string | boolean | null): boolean {

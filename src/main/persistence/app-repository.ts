@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { realpath, stat } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { readdir, realpath, stat, unlink } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 
 import { z } from 'zod'
 
-import { appSnapshotSchema, type AppSnapshot } from '../../shared/desktop-bridge.js'
+import { appSnapshotSchema, type AppSnapshot } from '../../modules/agent-workspace/shared.js'
 import {
   dataIssueSchema,
   projectSchema,
@@ -39,6 +39,24 @@ const stateSchema = z.object({
   issues: z.array(dataIssueSchema).default([]),
 })
 
+const sessionReplacementJournalSchema = z.object({
+  schemaVersion: z.literal(1),
+  operationId: z.uuid(),
+  sourceSessionId: z.uuid(),
+  targetSessionId: z.uuid(),
+  kind: z.enum(['new', 'fork', 'switch']),
+  targetProjectId: z.uuid().nullable(),
+  targetSessionPath: z.string().min(1).nullable(),
+  sourcePiSessionPath: z.string().min(1).nullable(),
+  knownPiSessionPaths: z.array(z.string().min(1)),
+  phase: z.enum(['prepared', 'committing']),
+  piSessionId: z.string().min(1).nullable(),
+  piSessionPath: z.string().min(1).nullable(),
+  cwd: z.string().min(1).nullable(),
+})
+
+type SessionReplacementJournal = z.infer<typeof sessionReplacementJournalSchema>
+
 type PersistedState = z.infer<typeof stateSchema>
 
 function createEmptyState(): PersistedState {
@@ -55,9 +73,11 @@ function createEmptyState(): PersistedState {
 
 export class AppRepository {
   private readonly statePath: string
+  private readonly sessionReplacementJournalPath: string
   private readonly sessionPersistence: SessionPersistence
   private state: PersistedState = createEmptyState()
   private initialized = false
+  private sessionReplacementJournal: SessionReplacementJournal | null = null
 
   constructor(
     private readonly dataDirectory: string,
@@ -65,11 +85,16 @@ export class AppRepository {
     migrateCredentials?: CredentialMigration,
   ) {
     this.statePath = join(dataDirectory, 'state.json')
+    this.sessionReplacementJournalPath = join(dataDirectory, 'session-replacement.json')
     this.sessionPersistence = new SessionPersistence(dataDirectory, secretStore, migrateCredentials)
   }
 
   async initialize(): Promise<void> {
     this.state = (await readJsonFile(this.statePath, stateSchema)) ?? createEmptyState()
+    this.sessionReplacementJournal = await readJsonFile(
+      this.sessionReplacementJournalPath,
+      sessionReplacementJournalSchema,
+    )
     const recovery = await this.sessionPersistence.recover(this.state.sessions, this.state.issues)
     const projectAvailabilityChanged = await this.refreshProjectAvailability()
     const changed = recovery.changed || projectAvailabilityChanged
@@ -78,6 +103,7 @@ export class AppRepository {
     this.repairSelection()
     this.initialized = true
     if (changed) await this.persistState()
+    await this.recoverSessionReplacementJournal()
   }
 
   async getSnapshot(): Promise<AppSnapshot> {
@@ -103,6 +129,29 @@ export class AppRepository {
         pathsReferToSameLocation(project.rootPath, canonicalPath, PATH_PLATFORM),
       ) ?? null
     )
+  }
+
+  async ensureProjectByPath(rootPath: string): Promise<Project> {
+    this.ensureInitialized()
+    const canonicalPath = await this.canonicalDirectory(rootPath)
+    const existing = this.state.projects.find((project) =>
+      pathsReferToSameLocation(project.rootPath, canonicalPath, PATH_PLATFORM),
+    )
+    if (existing) return existing
+
+    const now = new Date().toISOString()
+    const project = projectSchema.parse({
+      id: randomUUID(),
+      name: basename(canonicalPath),
+      rootPath: canonicalPath,
+      trustedAt: now,
+      availability: 'available',
+      createdAt: now,
+      updatedAt: now,
+    })
+    this.state.projects.push(project)
+    await this.persistState()
+    return project
   }
 
   async registerProject(rootPath: string): Promise<Project> {
@@ -181,6 +230,61 @@ export class AppRepository {
     await this.persistState()
   }
 
+  getSelectedContext(): { projectId: string | null; sessionId: string | null } {
+    this.ensureInitialized()
+    return {
+      projectId: this.state.selectedProjectId,
+      sessionId: this.state.selectedSessionId,
+    }
+  }
+
+  async prepareSessionReplacement(entry: {
+    operationId: string
+    sourceSessionId: string
+    targetSessionId: string
+    kind: 'new' | 'fork' | 'switch'
+    targetProjectId?: string
+    targetSessionPath: string | null
+    sourcePiSessionPath: string | null
+  }): Promise<void> {
+    this.ensureInitialized()
+    if (
+      this.sessionReplacementJournal &&
+      this.sessionReplacementJournal.operationId !== entry.operationId
+    ) {
+      throw new PictorError('invalid-input', '已有 Session replacement 正在执行')
+    }
+    const knownPiSessionPaths = entry.sourcePiSessionPath
+      ? await this.listPiSessionPaths(dirname(resolve(entry.sourcePiSessionPath)))
+      : []
+    const journal = sessionReplacementJournalSchema.parse({
+      schemaVersion: 1,
+      operationId: entry.operationId,
+      sourceSessionId: entry.sourceSessionId,
+      targetSessionId: entry.targetSessionId,
+      kind: entry.kind,
+      targetProjectId: entry.targetProjectId ?? null,
+      targetSessionPath: entry.targetSessionPath,
+      sourcePiSessionPath: entry.sourcePiSessionPath,
+      knownPiSessionPaths,
+      phase: 'prepared',
+      piSessionId: null,
+      piSessionPath: null,
+      cwd: null,
+    })
+    await this.writeSessionReplacementJournal(journal)
+    this.sessionReplacementJournal = journal
+  }
+
+  async abortSessionReplacement(operationId: string): Promise<void> {
+    this.ensureInitialized()
+    const journal = this.sessionReplacementJournal
+    if (!journal || journal.operationId !== operationId) return
+    if (journal.phase !== 'prepared') return
+    await this.cleanupPreparedReplacement(journal)
+    await this.clearSessionReplacementJournal(operationId)
+  }
+
   async removeProject(projectId: string): Promise<void> {
     this.ensureInitialized()
     const project = this.state.projects.find((candidate) => candidate.id === projectId)
@@ -210,7 +314,7 @@ export class AppRepository {
     agentDirectory: string
     sessionDirectory: string
     resumeSession: boolean
-    piSessionFile: string | null
+    piSessionPath: string | null
     activeLeafId?: string | null
     runtimePreferences?: SessionHistoryState['runtimePreferences']
   } {
@@ -226,7 +330,7 @@ export class AppRepository {
     return this.sessionPersistence.getHistory(sessionId)
   }
 
-  async bindPiSession(sessionId: string, identity: { id: string; file: string }): Promise<void> {
+  async bindPiSession(sessionId: string, identity: { id: string; path: string }): Promise<void> {
     const session = await this.getSession(sessionId)
     await this.sessionPersistence.bindPiSession(session, identity)
   }
@@ -292,6 +396,18 @@ export class AppRepository {
     return this.sessionPersistence.read(sessionId)
   }
 
+  async findSessionByPiSessionPath(piSessionPath: string): Promise<SessionSummary | null> {
+    this.ensureInitialized()
+    const normalizedPath = resolve(piSessionPath)
+    for (const summary of this.state.sessions) {
+      const history = this.sessionPersistence.getHistory(summary.id)
+      if (history.piSessionPath && resolve(history.piSessionPath) === normalizedPath) {
+        return summary
+      }
+    }
+    return null
+  }
+
   async inspectSessionHistory(
     sessionId: string,
     selectedEntryId: string | null,
@@ -307,7 +423,7 @@ export class AppRepository {
     sourceSessionId: string,
     targetSessionId: string,
     kind: 'fork' | 'clone',
-    identity: { id: string; file: string },
+    identity: { id: string; path: string },
   ): Promise<SessionSummary> {
     this.ensureInitialized()
     if (this.state.sessions.some((session) => session.id === targetSessionId)) {
@@ -332,7 +448,7 @@ export class AppRepository {
     projectId: string,
     targetSessionId: string,
     title: string,
-    identity: { id: string; file: string },
+    identity: { id: string; path: string },
   ): Promise<SessionSummary> {
     this.ensureInitialized()
     this.getProject(projectId)
@@ -353,9 +469,73 @@ export class AppRepository {
     return this.commitPiSession(target, identity)
   }
 
+  async commitSessionReplacement(
+    operationId: string,
+    sourceSessionId: string,
+    targetSessionId: string,
+    kind: 'new' | 'fork' | 'switch',
+    identity: { id: string; path: string },
+    targetProjectId?: string,
+    cwd?: string,
+  ): Promise<SessionSummary> {
+    this.ensureInitialized()
+    const prepared = this.sessionReplacementJournal
+    if (!prepared || prepared.operationId !== operationId) {
+      throw new PictorError('invalid-input', 'Session replacement journal is unknown')
+    }
+    const committing = sessionReplacementJournalSchema.parse({
+      ...prepared,
+      phase: 'committing',
+      targetProjectId: targetProjectId ?? prepared.targetProjectId,
+      piSessionId: identity.id,
+      piSessionPath: resolve(identity.path),
+      cwd: cwd ?? prepared.cwd,
+    })
+    await this.writeSessionReplacementJournal(committing)
+    this.sessionReplacementJournal = committing
+
+    const existing = this.state.sessions.find((session) => session.id === targetSessionId)
+    if (existing) {
+      const existingSession = await this.getSession(existing.id)
+      await this.sessionPersistence.bindPiSession(existingSession, identity)
+      const rebuilt = await this.sessionPersistence.rebuildProjection(existing.id)
+      await this.saveSession(rebuilt)
+      this.state.selectedProjectId = existing.projectId
+      this.state.selectedSessionId = existing.id
+      await this.persistState()
+      const summary = this.state.sessions.find((session) => session.id === existing.id) ?? existing
+      await this.clearSessionReplacementJournal(operationId)
+      return summary
+    }
+
+    const source = await this.getSession(sourceSessionId)
+    const projectId = targetProjectId ?? source.projectId
+    this.getProject(projectId)
+    const now = new Date().toISOString()
+    const title =
+      kind === 'new'
+        ? '新建会话'
+        : kind === 'fork'
+          ? `${source.title} (Fork)`.slice(0, 120)
+          : `${basename(identity.path, '.jsonl')} (Session)`.slice(0, 120)
+    const target = sessionRecordSchema.parse({
+      schemaVersion: 1,
+      id: targetSessionId,
+      projectId,
+      title,
+      messages: [],
+      runs: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+    const summary = await this.commitPiSession(target, identity)
+    await this.clearSessionReplacementJournal(operationId)
+    return summary
+  }
+
   private async commitPiSession(
     target: SessionRecord,
-    identity: { id: string; file: string },
+    identity: { id: string; path: string },
   ): Promise<SessionSummary> {
     const now = target.createdAt
     await this.sessionPersistence.bindPiSession(target, identity)
@@ -432,6 +612,96 @@ export class AppRepository {
   async getApiKey(): Promise<string | null> {
     this.ensureInitialized()
     return this.secretStore.getApiKey()
+  }
+
+  private async recoverSessionReplacementJournal(): Promise<void> {
+    const journal = this.sessionReplacementJournal
+    if (!journal) return
+    if (journal.phase === 'prepared') {
+      await this.cleanupPreparedReplacement(journal)
+      await this.clearSessionReplacementJournal(journal.operationId)
+      return
+    }
+    if (!journal.piSessionId || !journal.piSessionPath) {
+      await this.clearSessionReplacementJournal(journal.operationId)
+      return
+    }
+
+    try {
+      let targetProjectId: string | undefined = journal.targetProjectId ?? undefined
+      if (
+        !targetProjectId ||
+        !this.state.projects.some((project) => project.id === targetProjectId)
+      ) {
+        targetProjectId = undefined
+      }
+      if (!targetProjectId && journal.cwd) {
+        targetProjectId = (await this.ensureProjectByPath(journal.cwd)).id
+      }
+      if (!targetProjectId && journal.kind !== 'switch') {
+        targetProjectId = this.state.sessions.find(
+          (session) => session.id === journal.sourceSessionId,
+        )?.projectId
+      }
+      if (!targetProjectId) return
+      await this.commitSessionReplacement(
+        journal.operationId,
+        journal.sourceSessionId,
+        journal.targetSessionId,
+        journal.kind,
+        { id: journal.piSessionId, path: journal.piSessionPath },
+        targetProjectId,
+        journal.cwd ?? undefined,
+      )
+    } catch (error) {
+      if (isNodeError(error) && error.code === 'ENOENT') {
+        await this.clearSessionReplacementJournal(journal.operationId)
+      }
+    }
+  }
+
+  private async listPiSessionPaths(directory: string): Promise<string[]> {
+    try {
+      return (await readdir(directory, { withFileTypes: true }))
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+        .map((entry) => resolve(directory, entry.name))
+    } catch (error) {
+      if (isNodeError(error) && error.code === 'ENOENT') return []
+      throw error
+    }
+  }
+
+  private async cleanupPreparedReplacement(journal: SessionReplacementJournal): Promise<void> {
+    if (journal.kind === 'switch' || !journal.sourcePiSessionPath) return
+    const directory = dirname(resolve(journal.sourcePiSessionPath))
+    const known = new Set(journal.knownPiSessionPaths.map((path) => resolve(path)))
+    const current = await this.listPiSessionPaths(directory)
+    await Promise.all(
+      current
+        .filter((path) => !known.has(path))
+        .map((path) =>
+          unlink(path).catch((error) => {
+            if (!isNodeError(error) || error.code !== 'ENOENT') throw error
+          }),
+        ),
+    )
+  }
+
+  private async writeSessionReplacementJournal(journal: SessionReplacementJournal): Promise<void> {
+    await writeJsonFile(this.sessionReplacementJournalPath, journal)
+  }
+
+  private async clearSessionReplacementJournal(operationId: string): Promise<void> {
+    if (
+      this.sessionReplacementJournal &&
+      this.sessionReplacementJournal.operationId !== operationId
+    ) {
+      return
+    }
+    await unlink(this.sessionReplacementJournalPath).catch((error) => {
+      if (!isNodeError(error) || error.code !== 'ENOENT') throw error
+    })
+    this.sessionReplacementJournal = null
   }
 
   private ensureInitialized(): void {

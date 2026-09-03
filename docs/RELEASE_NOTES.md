@@ -1,5 +1,30 @@
 # 发布说明
 
+## 0.4.0 - 2026-09-02
+
+Stage 10 完成多 Frontend 打包收口。`npm run build:distribution` 从干净输出一次构建 GUI、CLI、
+TUI 和正好 10 个 0.4 Bundled Plugins，再由 electron-builder 生成同一版本的 `app.asar`。正式
+入口统一为 `pictor`、`pictor cli ...` 和 `pictor tui ...`；Windows 安装目录提供
+`bin\pictor.cmd`，Arch `/usr/bin/pictor` 与 AppImage `AppRun` 进入同一个 POSIX launcher。入口
+从自身/AppDir 提供固定的包版本、资源目录和 identity，支持带空格的路径和任意 cwd，不调用系统
+Node，也不会从 cwd 读取 `package.json`、`.pictor` 或静默回退空 Profile。
+
+Electron 43 / electron-builder 26 的 V1 fuses 现在在配置中逐项显式声明并在实际 Windows PE、
+Linux ELF wire 上校验：保留 `runAsNode` 以支持不依赖系统 Node 的 CLI/TUI，关闭 `NODE_OPTIONS`、
+Node CLI inspect 和 `file://` extra privileges，开启 `onlyLoadAppFromAsar`。该取舍沿用 Electron
+官方关于 `runAsNode` 攻击面的说明；launcher 只限制正常入口，不是安全沙箱，也不能消除保留该
+fuse 的本地代码执行面。
+
+包级门禁覆盖 NSIS、Pacman 和 AppImage 的真实结构与入口；GUI、CLI、TUI 的 Profile 排他锁在冲突
+时返回稳定退出码 `4`，退出后可由下一个 Frontend 获取。packaged CLI 移除 Workbench 后，GUI
+通过 10 个随包 recovery source 进入 Pictor Shell；用户恢复并重启后回到 Delegate，项目、Session、
+凭据和 Pi JSONL 数据保持不变。Windows shortcut、安装/卸载、Arch 容器生命周期和 hosted runner
+证据由 `package-desktop.yml` 条件门禁提供，不在本地 Linux 证据中冒充净机验收。
+
+本阶段保持 0.4.0、`data-v1`、Pi JSONL、凭据、Plugin Registry、Stable/Nightly 资产名以及
+Windows 11 x64、Arch Linux x64 和便携 AppImage 的既有支持边界。没有创建 release 分支、tag 或
+Release；已知 Pi terminal/异步退出接管和 TUI replacement 限制仍见 README。
+
 ## 0.3.0 - 2026-08-21
 
 Pictor 0.3.0 将产品能力迁入可组合 Plugin Host。Core Host 现在只保留 Electron 生命周期、空
@@ -12,7 +37,8 @@ Agent 会话现在直接使用 Pi `AgentSessionRuntime`，Pi JSONL 是 Session T
 Compaction 和 Extension entry 的唯一权威历史。桌面支持 Tree 查看与原生分支导航、Fork、Clone、
 Import、JSONL/HTML Export、Branch Summary、手动与自动 Compaction、Active Leaf、Session Label、
 Thinking、Model override、Tool 与消息队列控制、Token/Cost 状态、图片消息、资源重载和自动 Retry。
-Pictor 投影只负责 GUI 展示，Runtime 重启时从绑定的 Pi Session 重建，不重放历史 Tool。
+Pictor 投影只负责 GUI 展示；同一 utility process 会复用打开的 Pi Session，Runtime 重启时从
+持久化的绝对 Pi JSONL 路径重建，不重放历史 Tool，也不移动 Pi 管理的 Session 文件。
 
 原生 `.ts/.js` Pi Extension、Extension 目录和 Pi Package 无需 Pictor wrapper 即可安装并交给 Pi
 ResourceLoader/ExtensionRunner 执行。Extension 可以注册 Tool、Command、Provider、事件和消息；

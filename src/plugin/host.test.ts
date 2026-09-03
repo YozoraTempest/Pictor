@@ -29,7 +29,7 @@ describe('PluginHost', () => {
   it('isolates activation failure and only blocks transitive dependents', async () => {
     const provider = plugin('pictor.provider', {}, () => [
       defineModule({
-        id: 'provider.main',
+        id: 'provider.host',
         activate: () => {
           throw new Error('provider failed')
         },
@@ -38,7 +38,7 @@ describe('PluginHost', () => {
     const consumerFactory = vi.fn(() => [])
     const consumer = plugin('pictor.consumer', { 'pictor.provider': '^1.0.0' }, consumerFactory)
     const independent = plugin('pictor.independent', {}, () => [
-      defineModule({ id: 'independent.main', activate: () => undefined }),
+      defineModule({ id: 'independent.host', activate: () => undefined }),
     ])
     const host = new PluginHost({ pictorVersion: '0.2.1' })
 
@@ -113,13 +113,13 @@ describe('PluginHost', () => {
     await host.start([
       plugin('pictor.first', {}, () => [
         defineModule({
-          id: 'first.main',
+          id: 'first.host',
           activate: (context) => context.contribute(contributed, 'first'),
         }),
       ]),
       plugin('pictor.second', {}, () => [
         defineModule({
-          id: 'second.main',
+          id: 'second.host',
           activate: (context) => context.contribute(contributed, 'second'),
         }),
       ]),
