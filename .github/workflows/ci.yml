@@ -95,7 +95,7 @@ jobs:
       - run: npm run check:lint
 
   tests:
-    name: Unit and integration
+    name: Core, plugins, and SDK
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -109,7 +109,12 @@ jobs:
           npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
           echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
       - run: npm ci
-      - run: npm test
+      - name: Test Pictor Core
+        run: npm run test:core
+      - name: Test Bundled Plugins
+        run: npm run test:plugins
+      - name: Test Plugin SDK
+        run: npm run test:sdk
 
   windows-acceptance:
     name: Windows acceptance

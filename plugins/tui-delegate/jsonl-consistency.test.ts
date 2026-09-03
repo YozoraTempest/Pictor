@@ -6,16 +6,16 @@ import { join } from 'node:path'
 
 import { afterEach, expect, it } from 'vitest'
 
-import { CommandEngine } from '../commands/engine.js'
-import { ModuleRouter, moduleHandlerContributions } from '../kernel/contract.js'
-import { ModuleKernel } from '../kernel/kernel.js'
-import { createAgentWorkspaceHostModule } from '../modules/agent-workspace/host.js'
-import { createAgentWorkspaceClient } from '../modules/agent-workspace/shared.js'
-import { ModelConnectionTester } from '../application/index.js'
-import { AppRepository } from '../main/persistence/app-repository.js'
-import { SecretStore } from '../main/persistence/secret-store.js'
-import { RuntimeCoordinator } from '../main/runtime/coordinator.js'
-import type { RuntimeHost } from '../application/ports.js'
+import { ModelConnectionTester } from '../../src/application/index.js'
+import type { RuntimeHost } from '../../src/application/ports.js'
+import { CommandEngine } from '../../src/commands/engine.js'
+import { ModuleRouter, moduleHandlerContributions } from '../../src/kernel/contract.js'
+import { ModuleKernel } from '../../src/kernel/kernel.js'
+import { AppRepository } from '../../src/main/persistence/app-repository.js'
+import { SecretStore } from '../../src/main/persistence/secret-store.js'
+import { RuntimeCoordinator } from '../../src/main/runtime/coordinator.js'
+import { createAgentWorkspaceHostModule } from '../../src/modules/agent-workspace/host.js'
+import { createAgentWorkspaceClient } from '../../src/modules/agent-workspace/shared.js'
 import type {
   RuntimeCompactConfig,
   RuntimeCompactResult,
@@ -32,9 +32,9 @@ import type {
   RuntimeNavigateResult,
   RuntimeSessionOpenConfig,
   RuntimeStartConfig,
-} from '../shared/runtime-protocol.js'
-import { tuiApplicationContributions, type TuiApplicationContext } from './contract.js'
-import entrypoint from '../../plugins/tui-delegate/tui.js'
+} from '../../src/shared/runtime-protocol.js'
+import { tuiApplicationContributions, type TuiApplicationContext } from '../../src/tui/contract.js'
+import entrypoint from './tui.js'
 
 const now = '2026-09-02T00:00:00.000Z'
 

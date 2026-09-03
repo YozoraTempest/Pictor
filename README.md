@@ -199,6 +199,8 @@ AppImage，不在基础 CI 中维护条件分支：
 ```bash
 npm run test:module -- updater
 npm run test:plugin -- host
+npm run test:core
+npm run test:plugins
 npm run test:sdk
 npm run test:watch
 npm run verify:fast
@@ -218,8 +220,10 @@ npm run package:verify
 ```
 
 `npm run package:dir` 按当前平台生成解包应用，`npm run package` 按当前平台生成正式发布包并
-执行对应结构校验。`npm run build:distribution` 会先清理并一次构建全部 GUI、CLI、TUI 和 10 个
-Bundled Plugins；所有 `package:*` 发布构建都消费这一产物，不会把陈旧的 `out/cli` 或 `out/tui`
+执行对应结构校验。`npm test` 会顺序执行互不重叠的 Core、Bundled Plugin 和 Plugin SDK 测试
+域；单独运行 `npm run test:core` 不会收集或构建产品 Plugin。`npm run build:distribution` 会先
+清理并一次构建全部 GUI、CLI、TUI 和 10 个 Bundled Plugins；所有 `package:*` 发布构建都消费
+这一产物，不会把陈旧的 `out/cli` 或 `out/tui`
 带入包。Windows 校验 NSIS、`app.asar`、x64 PE、快捷方式和 Windows launcher；Linux 校验
 Pacman 元数据、AppImage 内容、桌面入口、`app.asar`、fuse wire 和 x64 ELF。统一验收还从带
 空格路径启动真实 GUI/CLI/TUI，验证 page target、Profile 排他锁和平台安装生命周期；它不重复
