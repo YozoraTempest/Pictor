@@ -29,7 +29,7 @@ user-data，不访问真实用户目录、模型服务或凭据。
 | 集成测试                       | `npm run test:integration`      |
 | Watch 模式                     | `npm run test:watch`            |
 | PR 级本地验收                  | `npm run verify:pr`             |
-| 当前平台发布验收               | `npm run verify:release`        |
+| 可选的当前平台发布预检         | `npm run verify:release`        |
 
 聚合命令的边界：
 
@@ -94,8 +94,14 @@ Windows 默认隐藏测试窗口；Linux CI 使用 Xvfb。本地 Linux 调试可
 打包或 Workflow 的 PR 另外触发非 required 的 `Package CI`，通过共享
 `package-desktop.yml` 构建和验收 Windows NSIS、Arch Pacman 与 AppImage。
 
-Nightly 与 Release 复用同一桌面打包 Workflow，并在 Linux job 运行完整保留 E2E。它们不复制
-普通源码 CI 已完成的静态检查和 Vitest，只有所有平台产物通过后才由单一 publish job 发布附件。
+普通开发 PR 使用 `development` 构建通道，不重复源码验证和完整 E2E。`develop` 或
+`hotfix/*` 指向 `main` 的发布 PR 使用 `stable` 通道，并启用 `run_source_validation` 与
+`run_e2e`，因此发布级验证在合并前完成。路径受限的 `ci/*` 到 `main` 仍使用轻量模式，不冒充
+正式发布候选。
+
+Nightly 与 Release 复用同一桌面打包 Workflow，并在 Linux job 运行完整保留 E2E。Release 在
+合入 `main` 后以同一稳定通道重新执行发布门禁并生成正式资产；只有所有平台产物通过后，单一
+publish job 才发布附件。
 
 ## 发布包验收
 

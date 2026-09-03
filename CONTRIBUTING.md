@@ -41,8 +41,11 @@
 1. 按 SemVer 同步更新 `package.json` 和 `package-lock.json`。
 2. 在 `docs/RELEASE_NOTES.md` 顶部加入对应版本、日期、变化、验证和已知风险。
 3. 更新 README 中的当前能力、支持基线和限制。
-4. 运行 `npm run verify:release`，并补齐目标平台要求的桌面证据。
-5. 创建 `develop` 到 `main` 的 Pull Request，全部门禁通过后使用 merge commit。
+4. 创建 `develop` 到 `main` 的 Pull Request；Package CI 会使用稳定通道执行源码复验、完整 E2E
+   和 Windows/Linux 包验收。
+5. 全部门禁通过并补齐目标平台要求的桌面证据后，使用 merge commit 合并。
+
+`npm run verify:release` 只是在本地提前复现当前平台发布路径的可选命令，不是发布的人工前置。
 
 版本变更合入 `main` 后，Release Workflow 才能创建 `v<version>` 标签和 GitHub Release。不要手工
 创建正式标签、覆盖已发布版本或上传本地构建产物。发布失败时在 `develop` 修复并提升补丁版本后

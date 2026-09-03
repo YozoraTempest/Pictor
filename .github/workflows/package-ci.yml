@@ -33,6 +33,6 @@ jobs:
     with:
       source_sha: ${{ github.event.pull_request.head.sha }}
       artifact_prefix: pr-${{ github.event.pull_request.number }}
-      build_channel: development
-      run_source_validation: false
-      run_e2e: false
+      build_channel: ${{ github.base_ref == 'main' && (github.head_ref == 'develop' || startsWith(github.head_ref, 'hotfix/')) && 'stable' || 'development' }}
+      run_source_validation: ${{ github.base_ref == 'main' && (github.head_ref == 'develop' || startsWith(github.head_ref, 'hotfix/')) }}
+      run_e2e: ${{ github.base_ref == 'main' && (github.head_ref == 'develop' || startsWith(github.head_ref, 'hotfix/')) }}
