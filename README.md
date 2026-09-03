@@ -206,9 +206,10 @@ npm run verify:pr
 npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs
 ```
 
-发布前运行 `npm run verify:release`。该命令在当前主机执行当前平台的 Full E2E、包构建和统一
-黑盒验收；Windows 净机、Arch 原生安装生命周期和 hosted CI 的另一个平台证据由
-`package-desktop.yml` 提供：
+`develop` 或 `hotfix/*` 指向 `main` 的发布 PR 会通过 Package CI 使用稳定通道执行源码复验、
+完整 E2E 和 Windows/Linux 包验收，在合并前形成发布级门禁。本地需要提前复现当前平台的完整
+发布路径时，可以运行 `npm run verify:release`；它不是发布所必需的人工前置。Windows 净机、
+Arch 原生安装生命周期和 hosted CI 的另一个平台证据由 `package-desktop.yml` 提供：
 
 ```bash
 npm run package:windows:build
