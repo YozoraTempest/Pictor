@@ -7,7 +7,6 @@ export default mergeConfig(
   defineConfig({
     test: {
       exclude: [
-        'e2e/**',
         'node_modules/**',
         'packages/**',
         'plugins/**',

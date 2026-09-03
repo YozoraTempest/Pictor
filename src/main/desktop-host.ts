@@ -38,7 +38,6 @@ import { SecretStore } from './persistence/secret-store.js'
 import { RuntimeSupervisor } from './runtime/supervisor.js'
 import { detectDesktopDistribution } from './linux-distribution.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
-import { shouldShowMainWindow, shouldShowMainWindowWithoutFocus } from './window-visibility.js'
 import type { PluginStore } from './plugins/plugin-store.js'
 
 import packageMetadata from '../../package.json' with { type: 'json' }
@@ -110,8 +109,6 @@ function validateSender(frame: WebFrameMain | null): void {
 
 function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']): BrowserWindow {
   const developmentUrl = process.env.ELECTRON_RENDERER_URL
-  const shouldShowWindow = shouldShowMainWindow()
-  const shouldAvoidFocus = shouldShowMainWindowWithoutFocus()
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -130,12 +127,7 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
   window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedRendererUrl(url, developmentUrl)) event.preventDefault()
   })
-  if (shouldShowWindow) {
-    window.once('ready-to-show', () => {
-      if (shouldAvoidFocus) window.showInactive()
-      else window.show()
-    })
-  }
+  window.once('ready-to-show', () => window.show())
   let closeConfirmed = false
   window.on('close', (event) => {
     if (closeConfirmed || !runtimeCoordinator.isActive()) return

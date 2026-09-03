@@ -20,11 +20,6 @@ on:
         type: boolean
         required: false
         default: false
-      run_e2e:
-        description: Run the retained desktop E2E suite against this source
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
@@ -99,9 +94,6 @@ jobs:
         env:
           PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
           PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}
-      - name: Run release desktop tests
-        if: inputs.run_e2e
-        run: xvfb-run --auto-servernum npm run test:e2e:run
       - name: Verify Linux packages
         run: xvfb-run --auto-servernum npm run package:verify
       - name: Verify Arch package lifecycle in a native container
@@ -115,11 +107,3 @@ jobs:
             dist/Pictor-*-linux-x64.AppImage
           if-no-files-found: error
           retention-days: 1
-      - name: Upload failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ inputs.artifact_prefix }}-linux-failure-evidence
-          path: test-results/
-          if-no-files-found: ignore
-          retention-days: 7

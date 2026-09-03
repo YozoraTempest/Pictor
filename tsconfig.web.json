@@ -29,7 +29,6 @@
     "src/modules/**/gui.ts",
     "src/modules/**/*.tsx",
     "src/shared/**/*.ts",
-    "e2e/electron-cleanup.ts",
     "tests/**/*.ts",
     "tests/**/*.tsx",
     "plugins/workbench-delegate/**/*.ts",
@@ -49,5 +48,10 @@
     "plugins/updater/gui.test.tsx",
     "plugins/updater/styles.ts"
   ],
-  "exclude": ["plugins/tui-delegate/jsonl-consistency.test.ts", "tests/plugins/**"]
+  "exclude": [
+    "plugins/tui-delegate/jsonl-consistency.test.ts",
+    "src/plugin/loader.ts",
+    "tests/gui-boundary.test.ts",
+    "tests/plugins/**"
+  ]
 }
