@@ -30,6 +30,8 @@
 - Plugin、Module 和 Contribution 是不同层级，不得合并成一个依赖图。
 - 产品 GUI 属于 Plugin；Core GUI 只保留 Host、Shell、诊断和恢复。
 - 测试与实现就近放置，并通过公开 Interface 验证行为。
+- 仓库当前不维护 E2E 测试。未经维护者针对具体场景明确批准，不得新增 E2E 测试、Runner 依赖或
+  CI 步骤。
 
 新 Plugin 使用 `npm run plugin:new -- <name>`；只为现有 Plugin 增加内部执行单元时使用
 `npm run module:new -- <name>`。
@@ -41,8 +43,8 @@
 1. 按 SemVer 同步更新 `package.json` 和 `package-lock.json`。
 2. 在 `docs/RELEASE_NOTES.md` 顶部加入对应版本、日期、变化、验证和已知风险。
 3. 更新 README 中的当前能力、支持基线和限制。
-4. 创建 `develop` 到 `main` 的 Pull Request；Package CI 会使用稳定通道执行源码复验、完整 E2E
-   和 Windows/Linux 包验收。
+4. 创建 `develop` 到 `main` 的 Pull Request；Package CI 会使用稳定通道执行源码复验和
+   Windows/Linux 包验收。
 5. 全部门禁通过并补齐目标平台要求的桌面证据后，使用 merge commit 合并。
 
 `npm run verify:release` 只是在本地提前复现当前平台发布路径的可选命令，不是发布的人工前置。

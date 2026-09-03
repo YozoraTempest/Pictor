@@ -55,7 +55,6 @@ const mocks = vi.hoisted(() => {
     readonly webContents = new FakeWebContents()
     readonly loadURL = vi.fn(async (_url: string): Promise<void> => undefined)
     readonly show = vi.fn()
-    readonly showInactive = vi.fn()
     readonly close = vi.fn(() => {
       const index = FakeBrowserWindow.instances.indexOf(this)
       if (index >= 0) FakeBrowserWindow.instances.splice(index, 1)
@@ -142,8 +141,6 @@ const mocks = vi.hoisted(() => {
       webSecurity: true,
     })),
     isTrustedRendererUrl: vi.fn(() => true),
-    shouldShowMainWindow: vi.fn(() => false),
-    shouldShowMainWindowWithoutFocus: vi.fn(() => false),
     applicationHost,
     services,
     reset() {
@@ -200,11 +197,6 @@ vi.mock('./security.js', () => ({
   getSecureWebPreferences: mocks.getSecureWebPreferences,
   isTrustedRendererUrl: mocks.isTrustedRendererUrl,
 }))
-vi.mock('./window-visibility.js', () => ({
-  shouldShowMainWindow: mocks.shouldShowMainWindow,
-  shouldShowMainWindowWithoutFocus: mocks.shouldShowMainWindowWithoutFocus,
-}))
-
 let DesktopHost: typeof import('./desktop-host.js').DesktopHost
 
 beforeAll(async () => {
@@ -228,6 +220,8 @@ describe('DesktopHost main window ownership', () => {
     await host.start()
     const firstWindow = mocks.BrowserWindow.instances[0]!
     expect(mainWindowOf(host)).toBe(firstWindow)
+    firstWindow.emit('ready-to-show')
+    expect(firstWindow.show).toHaveBeenCalledOnce()
 
     mocks.BrowserWindow.instances.splice(0, 1)
     mocks.app.emit('activate')

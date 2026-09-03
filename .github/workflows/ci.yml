@@ -136,16 +136,6 @@ jobs:
       - run: npm run deps:prepare
       - run: npm run deps:verify
       - run: npm run build:app
-      - name: Run Windows desktop shell smoke
-        run: npm run test:e2e:run -- e2e/shell.spec.ts
-      - name: Upload failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-playwright-evidence
-          path: test-results/
-          if-no-files-found: ignore
-          retention-days: 7
 
   linux-acceptance:
     name: Linux acceptance
@@ -168,13 +158,3 @@ jobs:
           ELECTRON_GET_USE_PROXY: 'true'
       - run: npm run deps:verify
       - run: npm run build:app
-      - name: Run delegated smoke test
-        run: xvfb-run --auto-servernum npm run test:e2e:smoke:run
-      - name: Upload failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-playwright-evidence
-          path: test-results/
-          if-no-files-found: ignore
-          retention-days: 7

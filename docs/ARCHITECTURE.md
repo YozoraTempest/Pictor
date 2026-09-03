@@ -43,7 +43,6 @@ src/
 ```text
 packages/plugin-sdk/  Plugin 作者使用的私有 workspace Interface
 plugins/              Bundled Plugin 源码
-e2e/                  少量 Electron 跨进程组装场景
 scripts/              构建、脚手架、打包和发布验证
 tests/                Vitest 全局测试基础设施
 ```
@@ -160,8 +159,8 @@ ESLint 与 TypeScript 项目边界负责静态检查。不要新增导出全部�
 - GUI Host 和公开 GUI contract：`src/gui/`；Electron adapter：`src/main/` 与 `src/preload/`。
 - Runtime protocol 的 Host/adapter：`src/runtime/`；可序列化 schema：对应的 `src/shared/` module。
 - Plugin 可移植 Interface：`packages/plugin-sdk/`，不得反向依赖产品实现。
-- 单元测试与实现同层；跨真实模块或协议的测试使用 `*.integration.test.ts`；只有真实 Electron
-  组装行为进入 `e2e/`。
+- 单元测试与实现同层；跨真实模块或协议的测试使用 `*.integration.test.ts`。仓库不维护 E2E
+  测试，未经维护者针对具体场景明确批准不得新增。
 
 不要按文件大小提取模糊的 `utils/`、`common/` 或 `services/`。只有出现稳定 Interface、真实变化点
 或明显 locality 收益时才建立新模块。
