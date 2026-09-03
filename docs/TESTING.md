@@ -19,22 +19,36 @@ user-data，不访问真实用户目录、模型服务或凭据。
 
 ## 日常命令
 
-| 目的                           | 命令                            |
-| ------------------------------ | ------------------------------- |
-| 格式、类型、Lint 与全部 Vitest | `npm run verify:fast`           |
-| 单个 Feature                   | `npm run test:module -- <name>` |
-| 单个 Plugin                    | `npm run test:plugin -- <name>` |
-| Plugin SDK                     | `npm run test:sdk`              |
-| 单元测试                       | `npm run test:unit`             |
-| 集成测试                       | `npm run test:integration`      |
-| Watch 模式                     | `npm run test:watch`            |
-| PR 级本地验收                  | `npm run verify:pr`             |
-| 可选的当前平台发布预检         | `npm run verify:release`        |
+| 目的                          | 命令                            |
+| ----------------------------- | ------------------------------- |
+| 格式、类型、Lint 与全部测试域 | `npm run verify:fast`           |
+| 全部测试域                    | `npm test`                      |
+| Pictor Core                   | `npm run test:core`             |
+| 全部 Bundled Plugins          | `npm run test:plugins`          |
+| 单个 Feature                  | `npm run test:module -- <name>` |
+| 单个 Plugin                   | `npm run test:plugin -- <name>` |
+| Plugin SDK                    | `npm run test:sdk`              |
+| Core 单元测试                 | `npm run test:unit`             |
+| Core 集成测试                 | `npm run test:integration`      |
+| Core Watch 模式               | `npm run test:watch`            |
+| Plugin Watch 模式             | `npm run test:plugins:watch`    |
+| PR 级本地验收                 | `npm run verify:pr`             |
+| 可选的当前平台发布预检        | `npm run verify:release`        |
+
+测试按所有权分为三个互斥域：
+
+- Core 测试验证 `src/` 中的 Kernel、Application、Frontend、Plugin Host 基础设施和 Adapter，不
+  收集具体产品 Plugin 或 Plugin SDK 测试。
+- Plugin 测试验证 `plugins/` 中的 Bundled Plugin、Plugin 源码约束和真实组装。Manifest、CLI 与
+  TUI 组装验收复用一次临时 Bundled Plugin 构建。
+- Plugin SDK 测试由 `packages/plugin-sdk` 自己的 Vitest 配置收集。
+
+`npm test` 顺序执行三个域；单独运行 `test:core` 不会构建 Bundled Plugin。
 
 聚合命令的边界：
 
 ```text
-verify:fast    静态检查 + 全部 Vitest
+verify:fast    静态检查 + Core + Bundled Plugins + Plugin SDK
 verify:pr      verify:fast + 一次完整 distribution build + 核心 Electron smoke
 verify:release verify:fast + 同一 distribution 上的完整 E2E + 当前平台打包和黑盒验收
 ```
@@ -86,7 +100,7 @@ Windows 默认隐藏测试窗口；Linux CI 使用 Xvfb。本地 Linux 调试可
 | 检查                   | 内容                                         |
 | ---------------------- | -------------------------------------------- |
 | `Quality`              | Workflow、分支/发布元数据、格式、类型与 Lint |
-| `Unit and integration` | 全部 Vitest                                  |
+| `Unit and integration` | 分步执行 Core、Bundled Plugin 与 Plugin SDK  |
 | `Windows acceptance`   | 构建应用并运行 Windows Shell smoke           |
 | `Linux acceptance`     | 构建应用并运行单一 Delegate smoke            |
 

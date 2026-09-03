@@ -48,5 +48,6 @@
     "plugins/updater/AboutSettings.test.tsx",
     "plugins/updater/gui.test.tsx",
     "plugins/updater/styles.ts"
-  ]
+  ],
+  "exclude": ["plugins/tui-delegate/jsonl-consistency.test.ts", "tests/plugins/**"]
 }

@@ -12,6 +12,7 @@ const targets =
   name === 'host'
     ? ['src/plugin', 'src/main/plugins/plugin-store.test.ts']
     : [resolve('plugins', name)]
+const config = resolve(name === 'host' ? 'vitest.config.ts' : 'vitest.plugins.config.ts')
 
 for (const target of targets) {
   if (!(await stat(target).catch(() => null))) {
@@ -20,9 +21,13 @@ for (const target of targets) {
 }
 
 const vitest = resolve('node_modules', 'vitest', 'vitest.mjs')
-const child = spawn(process.execPath, [vitest, 'run', ...targets, ...arguments_], {
-  stdio: 'inherit',
-})
+const child = spawn(
+  process.execPath,
+  [vitest, 'run', '--config', config, ...targets, ...arguments_],
+  {
+    stdio: 'inherit',
+  },
+)
 
 child.once('error', (error) => {
   throw error
