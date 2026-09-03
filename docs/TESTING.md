@@ -97,12 +97,12 @@ Windows 默认隐藏测试窗口；Linux CI 使用 Xvfb。本地 Linux 调试可
 
 普通 Pull Request 和 `develop` push 使用四项稳定检查：
 
-| 检查                     | 内容                                         |
-| ------------------------ | -------------------------------------------- |
-| `Quality`                | Workflow、分支/发布元数据、格式、类型与 Lint |
-| `Core, plugins, and SDK` | 分步执行 Core、Bundled Plugin 与 Plugin SDK  |
-| `Windows acceptance`     | 构建应用并运行 Windows Shell smoke           |
-| `Linux acceptance`       | 构建应用并运行单一 Delegate smoke            |
+| 检查                   | 内容                                         |
+| ---------------------- | -------------------------------------------- |
+| `Quality`              | Workflow、分支/发布元数据、格式、类型与 Lint |
+| `Unit and integration` | 分步执行 Core、Bundled Plugin 与 Plugin SDK  |
+| `Windows acceptance`   | 构建应用并运行 Windows Shell smoke           |
+| `Linux acceptance`     | 构建应用并运行单一 Delegate smoke            |
 
 基础 CI 不根据手写源码路径改变 required checks。触及依赖、Plugin SDK、Plugin、Frontend、构建、
 打包或 Workflow 的 PR 另外触发非 required 的 `Package CI`，通过共享

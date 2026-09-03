@@ -95,7 +95,7 @@ jobs:
       - run: npm run check:lint
 
   tests:
-    name: Core, plugins, and SDK
+    name: Unit and integration
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
