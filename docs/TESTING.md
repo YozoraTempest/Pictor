@@ -1,12 +1,11 @@
-# 测试规范
+# 测试与 CI
 
-本规范定义 Pictor 的测试分层、命令边界和 CI 门禁。目标是让日常反馈保持快速，同时把真实
-Electron、utility process、打包和发行版生命周期等高成本验证留在需要它们的阶段。
+本文只保留贡献者需要执行的验证命令和 CI 契约。测试取舍、历史门禁设计和发行证据由维护者的
+Trilium「开源项目知识库 / Pictor」维护。
 
-## 环境准备
+## 环境
 
-使用 `.nvmrc` 声明的 Node.js 版本和 `package.json` 声明的 npm 版本。首次检出或 Electron
-版本变化后运行：
+使用 `.nvmrc` 与 `package.json` 固定的 Node.js/npm 版本。首次检出或 Electron 版本变化后运行：
 
 ```bash
 npm ci
@@ -14,280 +13,124 @@ npm run deps:prepare
 npm run deps:verify
 ```
 
-`npm ci` 只恢复锁定的 Node 依赖。Electron 43 不再通过依赖安装脚本下载运行时，
-`deps:prepare` 显式下载与 npm 包版本匹配的 Electron，`deps:verify` 检查其可执行文件是否存在。
-通过 HTTP(S) 代理下载时，设置 `ELECTRON_GET_USE_PROXY=true`，让 Electron 下载器读取标准代理
-环境变量。依赖升级时应同时查看 `npm approve-scripts --allow-scripts-pending --json`，逐项审查
-安装脚本，不得为了消除提示而批量放行。
+`npm ci` 只安装锁定的 Node 依赖；Electron runtime 由 `deps:prepare` 显式下载并由
+`deps:verify` 检查。使用代理时设置 `ELECTRON_GET_USE_PROXY=true`。自动化测试必须使用独立临时
+user-data，不访问真实用户目录、模型服务或凭据。
 
-应用开发与测试使用独立进程：`npm run dev` 只运行 electron-vite watch/HMR，`npm run test:watch`
-单独运行 Vitest。开发模式使用 `pictor-dev` userData，自动化测试继续使用独占临时目录。
+## 日常命令
 
-Windows E2E 默认隐藏窗口；本地 Linux E2E 使用 `showInactive()` 显示窗口，不主动抢占当前
-应用焦点。设置 `PICTOR_E2E_NO_FOCUS=0` 可在 Linux 桌面调试时恢复普通聚焦行为。Linux CI
-继续用 Xvfb 承载测试窗口，避免影响真实桌面并保持 Playwright actionability。
+| 目的                           | 命令                            |
+| ------------------------------ | ------------------------------- |
+| 格式、类型、Lint 与全部 Vitest | `npm run verify:fast`           |
+| 单个 Feature                   | `npm run test:module -- <name>` |
+| 单个 Plugin                    | `npm run test:plugin -- <name>` |
+| Plugin SDK                     | `npm run test:sdk`              |
+| 单元测试                       | `npm run test:unit`             |
+| 集成测试                       | `npm run test:integration`      |
+| Watch 模式                     | `npm run test:watch`            |
+| PR 级本地验收                  | `npm run verify:pr`             |
+| 当前平台发布验收               | `npm run verify:release`        |
 
-## 测试分层
+聚合命令的边界：
 
-| 层级          | 命令                                                                                 | 覆盖范围                                             | 运行时机                     |
-| ------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | ---------------------------- |
-| 静态检查      | `npm run check:format`、`check:types`、`check:lint`                                  | 格式、类型、Lint                                     | 本地提交前、每个 PR          |
-| Module 测试   | `npm run test:module -- <name>`                                                      | 单个 Feature 目录                                    | 对应 Feature 开发循环        |
-| Plugin 测试   | `npm run test:plugin -- <name>`                                                      | 单个 Plugin 或 `host` 底座                           | Plugin 开发循环              |
-| Plugin SDK    | `npm run test:sdk`                                                                   | 可移植 Interface、schema 与稳定 ID                   | SDK/Plugin Interface 变更时  |
-| 单元测试      | `npm run test:unit`                                                                  | 纯函数、组件、服务边界                               | 开发循环、每个 PR            |
-| CLI 测试      | `npx vitest run src/cli`                                                             | Node CLI 路由、text/JSON、取消、Profile 锁           | Stage 5 开发循环、每个 PR    |
-| TUI 测试      | `npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs` | Host 生命周期、fake terminal、JSONL、Plugin boundary | Stage 9 开发循环、每个 PR    |
-| 集成测试      | `npm run test:integration`                                                           | Pi adapter 与运行时协议集成                          | 修改运行时边界时、每个 PR    |
-| Vitest 全量   | `npm test`                                                                           | 单元与集成测试一次完成                               | 本地提交前、每个 PR          |
-| E2E Smoke     | `npm run test:e2e:smoke:run`                                                         | 桌面启动、Chat 委托闭环                              | Linux PR，复用 `out/`        |
-| Windows Shell | `npm run test:e2e:run -- e2e/shell.spec.ts`                                          | Main/Preload/Renderer、Bridge、沙箱与基础界面        | Windows 应用改动 CI          |
-| E2E Full      | `npm run test:e2e:run`                                                               | 保留的跨进程与重启场景                               | Nightly、Release、本地发布前 |
-| 发布包验收    | `npm run package:verify`                                                             | 当前平台结构、Fuse、真实 GUI/CLI/TUI、Profile 与安装 | Package CI、Nightly、Release |
-| Arch 生命周期 | `bash scripts/verify-arch-package-lifecycle.sh`                                      | 原生容器安装、入口、卸载和用户数据保留               | Linux package workflow       |
-
-聚合命令：
-
-```bash
-npm run verify:fast     # 静态检查 + Vitest 全量
-npm run verify:pr       # verify:fast + 一次 distribution build + E2E Smoke
-npm run verify:release  # verify:fast + 一次 distribution build + E2E Full + 当前平台完整包 smoke
+```text
+verify:fast    静态检查 + 全部 Vitest
+verify:pr      verify:fast + 一次完整 distribution build + 核心 Electron smoke
+verify:release verify:fast + 同一 distribution 上的完整 E2E + 当前平台打包和黑盒验收
 ```
 
-`*:run` 是只消费已有产物的叶子命令，不负责构建。`test:e2e`、`test:e2e:smoke`、`package`
-等便捷命令会自行构建，适合独立调用。聚合命令必须调用叶子命令，避免重复构建或重复测试。
+`*:run` 命令只消费已有产物；`test:e2e`、`package` 等便捷命令会自行构建。聚合命令应复用叶子
+命令，不能重复构建同一快照。
 
-`verify:fast` 只执行静态检查和 Vitest，不构建桌面包。`verify:pr` 的 `build:distribution` 清理后
-一次构建 GUI、CLI、TUI 和 10 个 Bundled Plugins，再运行已有 E2E Smoke。`verify:release` 在
-同一个 distribution snapshot 上运行 Full E2E 和当前平台包验证：Linux 验证 AppImage，Windows
-验证 NSIS 安装/卸载生命周期。它不会伪造另一平台或净机证据。
+## 分层规则
 
-### Stage 10 发行包 smoke
+- `*.test.ts(x)` 与实现同层，验证纯逻辑、组件或一个公开 Interface。
+- `*.integration.test.ts` 只用于跨真实 Module、Plugin、Runtime 或协议边界的行为。
+- `e2e/*.spec.ts` 只保留必须由真实 Electron、utility process、Renderer 或重启生命周期证明的
+  组装行为。
+- 打包脚本验证发布物结构、launcher、Fuse、Profile 锁与安装生命周期，不重复富 DOM 行为。
 
-所有 `package:*` 发布构建都从 `npm run build:distribution` 开始；它清理 `out/` 与 Bundled source，
-因此不能单独运行 `build:app` 后打包。`npm run package:verify` 是唯一包验收接口，消费已有包且
-不会重建。它在两个平台都通过实际 launcher 的远程调试 HTTP page target 判断 GUI ready，再
-验证 CLI、TUI 与 Profile 排他锁。Linux 从带空格的 AppImage 路径和任意 cwd 启动，并把 `PATH`
-限制为基础 POSIX 工具；Windows 使用 `bin\pictor.cmd`，不假设全局 `pictor` 或修改用户 `PATH`。
+测试必须通过公开 Interface 观察结果，不得导入私有实现或用不安全类型强转穿透边界。Feature
+专用 fixture 负责创建和清理自己的 user-data、项目、端点与进程；不同用例不得共享可变状态。
 
-Fuse smoke 用 `@electron/fuses.getCurrentFuseWire` 读取真实 Windows PE/Linux ELF，而不是只读
-`package.json`。它检查 `runAsNode` 保持 enabled、Node options/inspect 与 file extra privileges
-disabled、`onlyLoadAppFromAsar` enabled，并在复制 binary 上关闭 `runAsNode` 后确认 CLI entry
-不会成功执行。该模式依赖 Electron 43 的 package-time fuse API；launcher 是入口约束，不是安全
-沙箱。
+## E2E 边界
 
-包验收不使用修改 Fuse 或复制 payload 的临时 Electron runtime。真实 Windows/Linux launcher 在
-继承 `ELECTRON_RUN_AS_NODE=1` 的 hostile 环境下必须产生 `app://bundle/index.html` page target 并
-保持存活，结束时按完整 process tree 清理。富 DOM、Workbench recovery 与 Plugin lifecycle 由
-普通 Playwright E2E 覆盖；包结构检查证明同一发布物包含对应 `app.asar` 与 10 个 recovery source，
-避免把相同行为乘以平台和包格式重复执行。
+E2E 不是业务规则的主要验证层。当前只保留以下跨边界证据：
 
-### 本地与 CI 证据
+- Windows Shell：Main、Preload、Renderer、Bridge、sandbox 和基础界面可组装。
+- 核心 Delegate smoke：从用户 Plugin Store 动态加载 Runtime Plugin，经真实 Pi SDK 与 utility
+  process 完成一次确定性委托。
+- 中断和启动恢复：跨进程退出后的状态与持久化行为。
+- 原生 Pi Extension：Tool 与 RPC UI 的完整往返。
+- Plugin 生命周期：关键移除、恢复和重启路径。
 
-本地 Stage 10 最低命令为：
+Fork/Clone、Import/Export、Tree、Compaction、消息、图片、协议变体和持久化边界优先在 Runtime、
+Coordinator、Controller、Projection 或 Repository seam 中使用 Vitest 验证。新增 E2E 必须证明
+目标风险无法由更低层的确定性测试覆盖。
+
+Smoke 标题使用 `@smoke`。本地直接运行已有构建：
 
 ```bash
-npm run check:format
-npm run check:types
-npm run check:lint
-npm test
-npm run build:distribution
-npm run verify:pr
-npm run verify:release
-git diff --check
+npm run test:e2e:smoke:run
+npm run test:e2e:run
 ```
 
-Windows NSIS/安装卸载、Arch 容器内 pacman 生命周期，以及 hosted Ubuntu 的 AppImage/Xvfb 环境
-只能由 `package-desktop.yml` 的 Windows/Linux jobs 提供；本地 Linux 的结构与 AppImage smoke
-不替代这些证据。Nightly/Release 固定 source SHA、version、channel 后复用同一个 workflow，所有
-Frontend/package gate 成功后才由唯一 publish job 生成原有三个资产和 `SHA256SUMS`。
-
-## 用例放置
-
-- 与实现同层的 `*.test.ts(x)` 默认属于单元测试。
-- CLI 测试调用 `runCli` 的公开 Interface，注入 IO、信号、Profile lock 和 Application Host 工厂；
-  必须覆盖 help/version 不启动 Host、text/JSON 成功与失败、参数错误、Command failure、`ui` 别名、
-  SIGINT 取消和稳定退出码。Profile lock 测试使用两个独立锁实例或子进程验证真实争用、owner 元数据、
-  释放和无法证明所有权时不删除现有锁；CLI 源码不得静态导入 Electron。
-- TUI 测试调用 `TuiHost`、`runTui` 和 `TuiApplicationContribution` 的公开 Interface，使用 fake
-  terminal 覆盖输入、输出、resize、取消和退出清理；测试不改写真实 stdin/stdout。另用同一
-  `AgentWorkspaceClient`/`RuntimeCoordinator` 验证 session-level Pi event 按 queue 保存 active leaf、
-  从 JSONL 重建并持久化 Projection，最终 `getSession()` 与 `inspectSessionHistory` 一致，
-  并用严格 public Runtime spy 验证 InteractiveMode 的 `/new`、`/fork`、`/clone`、`/resume`、`/import`
-  在适配层稳定拒绝且不调用底层 replacement method，
-  用两个独立 Frontend 验证 GUI/CLI/TUI Profile 锁冲突，确认 Plugin disabled/removed、Plugin
-  失败和所有 dispose 只执行一次且失败仍释放锁。TUI boundary 测试拒绝 Electron、DOM、GUI
-  私有实现、跨 Plugin 私有导入和子进程启动。
-- Kernel 测试通过公开 Interface 验证依赖排序、Provider、Contribution 和逆序释放；Feature 测试
-  通过 Module Interface 或 contract router 验证，不读取 Kernel 内部状态。
-- Plugin 测试通过 Manifest、Registry、依赖规划、Plugin Host 或 Plugin Store 的公开 Interface
-  验证。必须覆盖拓扑顺序、完整循环链、缺失/禁用/版本不兼容依赖、激活失败隔离、零 Plugin、
-  安全模式、Bundled 删除后不自动恢复，以及代码与数据的独立删除语义。
-- Plugin SDK 测试直接验证 Module、contract、entrypoint 和 Manifest Interface；Core 测试必须使用
-  真实 SDK 副本验证稳定 ID、handler registration 和 Manifest schema 兼容。导入防线禁止生产 Plugin
-  回退到 `src/kernel` 或 `src/plugin`，并要求首个试点 `pictor.pi-extension-host` 完全不导入 `src/`。
-- GUI Plugin 测试通过公开 GUI Settings Section contract 验证 `owner`、稳定 identity、确定性排序与
-  冲突过滤；Delegate、Updater、Git Changes 和 GUI Plugin Manager 必须分别验证 GUI Module 样式
-  的安装/释放、稳定 data scope 与无全局 selector。Shell、fatal/workbench fallback 的诊断归 GUI Host，
-  Extension notification 与 modal 归 Delegate；没有第二个真实消费者时不添加 overlay/notification point。
-- 核心委托 Smoke 必须通过从用户 Store 动态加载的 Runtime Plugin 完成真实 Pi SDK 与 utility
-  process 闭环；Main 构建产物中不得依赖静态 Pi adapter 启动路径。
-- Native Pi Extension 集成必须至少使用一个上游未修改示例，验证 Store 安装、Runtime bundle 的
-  Jiti virtual module 解析、动态 Tool、通用 Tool card 和结果；另用 RPC UI Extension 验证 dialog
-  event/response 在 Renderer 与 utility process 之间完整往返。
-- Pi Runtime 集成覆盖原生 queue event、Session stats、Skills/Prompt resource path、真实 Pi Session
-  token usage 和凭据脱敏；Renderer 只消费 Runtime 投影，不计算替代值。
-- Pi Runtime 可见状态测试必须覆盖 `thinking_delta` 与 text delta 顺序、`auto_retry_start/end`、错误
-  脱敏和 Session Tree Label operation；Label 必须由 Pi 追加 entry 并更新实际 active leaf。
-- Pi Session 投影测试使用真实 JSONL 形态覆盖 parent/branch、compaction、Tool、usage 和终态错误；
-  相同 JSONL 必须产生稳定投影。持久化测试必须覆盖首次 identity 绑定、重启重建、已有 Pi identity
-  的 schema v1 迁移，以及无 Pi JSONL 的 v1 只读归档，不能用旧平面消息自动制造新上下文。
-- Session Tree View 测试必须覆盖完整节点结构、active leaf、任意 selected entry Projection、显式
-  label、历史节点只读状态和返回 active leaf；inspect 不得改写 JSONL 或持久化的 active Projection。
-- Pi Session Tree Navigation 测试必须覆盖 completed/cancelled/failed host result、持久化 active leaf
-  cursor、精确恢复已绑定 JSONL、同一 Session Projection 重建和并发互斥。User/Custom Message
-  节点必须回填 editor text；Branch Summary 必须覆盖自定义指令、取消和 summary entry。Runtime
-  Adapter、Coordinator 与 Controller 测试必须观察 `session_before_tree`/`session_tree`，并证明下一次
-  Run 从导航后的分支追加消息。
-- Pi Session Compaction 测试必须覆盖 manual/threshold/overflow 状态、completed/cancelled/failed host
-  result、自定义指令、`abortCompaction()`、Extension 提供结果、active leaf 和 Projection 重建。
-  Runtime Adapter、Coordinator 与 Projection 测试必须观察 `session_before_compact`/`session_compact`、
-  取消不追加 entry、Summary/Tree 可见，并证明 Compaction 后可以继续 Run。
-- Session Runtime Controls 测试必须覆盖 schema v2 偏好持久化、Thinking、Active Tools、Steering 与
-  Follow-up mode 注入和 per-Session Model override；Model/Thinking Projection 从 active branch 的 change entry 或 assistant
-  message 重建。Controller、Runtime Host 与持久化测试必须验证 Controls 保存、resource reload、
-  Pi Session Name 同步和下一次 Run 恢复，不得把 API Key 或 Provider 凭据写入 controls metadata。
-- Pi Image Message 测试必须覆盖 Main 原生多选、Renderer 不接触路径、Composer 预览/移除、Runtime
-  image block 和 JSONL Projection 重建。Extension command 集成测试必须通过公开 Runtime Interface 调用未包装的
-  `registerCommand()`，验证 `sendMessage()`、`sendUserMessage()`、`appendEntry()` 和可见 diagnostic；
-  slash command、Skill 与 Prompt Template 必须使用 Pi 原生 expansion，不由 Pictor 重写解析器。
-- Pi Session Fork 测试必须覆盖 completed/cancelled/failed host result、精确源 JSONL、独立目标
-  identity、源文件保留、目标文件移动和新 Pictor Session 提交；Runtime 集成测试必须由原生 Extension 观察到
-  `session_before_fork`、`session_shutdown(reason: "fork")` 与 `session_start(reason: "fork")`。
-- Pi Session Clone 测试必须证明 Main 从权威 Pi Session History 推导 active leaf，Renderer 不提交
-  leaf ID，并通过同一原生 Fork lifecycle 创建标题、identity 和 JSONL 均独立的新 Pictor Session；
-  Controller 测试必须从活跃叶节点完成 Clone 并观察第二次 lifecycle。
-- Pi Session Import 测试必须覆盖 completed/cancelled/failed host result、源 JSONL 保留、目标副本
-  脱敏、失效 cwd override、完整 Tree Projection 和新 Pictor Session 提交；文件路径只能由 Main
-  的原生选择器取得。Runtime 集成测试必须观察 `session_before_switch`、`session_shutdown(reason: "resume")`
-  与 `session_start(reason: "resume")`。
-- Pi Session Export 测试必须覆盖 JSONL/HTML completed/failed host result、Main 原生保存选择器
-  取消、源历史字节不变和禁止覆盖权威 JSONL；Adapter 与 Controller 测试必须证明 JSONL 只含活跃分支、HTML
-  保留完整 Tree，并从安装到用户 Store 的 Runtime Plugin 读取 Pi 导出模板与内置主题资产。
-- 零 Plugin E2E 先通过真实 Store 将全部 Bundled Plugin 标记为 `removed`，重启后只能由 Core
-  Shell 列出 10 个 recovery source；恢复 Agent Workspace 与 Delegate Workbench 并再次重启后必须
-  回到 Workbench。另一个重启场景验证单个 Bundled Plugin 的移除和恢复会跨进程持久化；安装、
-  启用、禁用、诊断和安全模式等规则由 Plugin Store、Host 与 Shell 组件测试覆盖。
-- `npm run plugin:new -- <name>` 生成的包必须立即能由 `npm run test:plugin -- <name>` 独立测试，
-  并能被 `npm run build:plugins` 构建；Plugin 测试不要求启动开发服务器。
-- Pi Package spec 安装测试必须通过 Pi `DefaultPackageManager` 覆盖显式 local spec，并由同一实现处理
-  npm/git spec；不得在后台扫描或自动安装。Development Plugin 测试必须修改 live source 后重建
-  Store snapshot，证明重启读取最新入口且不会覆盖 Bundled 删除选择。项目 `.pi/extensions` 必须在
-  ResourceLoader 集成测试中证明默认不加载、显式启用并 reload 后 command 生效。
-- 本地 Pi Extension 测试必须修改原始 source 后重新读取 Store snapshot，证明 runtime path 保持 live；
-  source 丢失时才允许回退安装副本。重复 `session.bound` 不得清除 active leaf 或 Runtime Preferences。
-- 只有跨越真实模块或进程边界的用例使用 `*.integration.test.ts`。
-- Electron 用户场景放在 `e2e/*.spec.ts`，每个文件描述一个完整行为，不按页面或组件拆分。
-- 公共确定性服务、测试凭据和协议响应生成器放在 `e2e/support.ts`；Feature 专用且负责资源清理的
-  Playwright fixture 使用 `e2e/<feature>-fixture.ts`。fixture 可以复用不可变输入和启动逻辑，但每个
-  场景必须拥有独立 userData、项目、模型响应队列与 Electron 生命周期，不共享可变状态。
-- Pi Extension E2E 只保留 Tool/RPC 组装场景；Fork/Clone、Import/Export、Tree/Compaction 和
-  Message/Image 行为在 Runtime、Coordinator、Controller、Projection 与持久化 seam 验证。
-- Smoke 用例在标题中添加 `@smoke`。单一核心委托场景验证应用启动以及 Store Runtime、真实 Pi SDK、
-  utility process 和 Renderer 的完整委托链路；Shell 单独验证 Renderer 隔离。中断恢复、启动恢复、
-  Tool/RPC 与两个 Plugin 重启场景属于 Full。
-- 测试不得访问真实模型、用户目录或网络服务。E2E 必须使用 `testInfo.outputPath()` 隔离数据，
-  并在 `finally` 中关闭 Electron 和本地服务。验证退出生命周期的场景必须给关闭等待设置明确
-  上限，超时后终止测试进程并报告退出失败，不能消耗整个场景超时。
-- 目标桌面验收可设置 `PICTOR_E2E_EXECUTABLE`，让核心委托 Smoke 直接启动已安装或已解包的
-  发布应用；变量未设置时继续使用仓库构建产物。
-- Main、Preload、Renderer、Runtime 和 Shared 的测试归属及允许依赖方向见
-  [`ARCHITECTURE.md`](ARCHITECTURE.md)。测试不得用不安全类型强转穿透 module interface。
-
-## Linux 专项回归
-
-- Pi 原生 `read`、`write`、`edit`、`bash`、`grep`、`find` 和 `ls` 必须通过真实 Pi SDK
-  集成测试；Pictor 不再维护第二套工具包装、Bash 发现、审批或路径守卫测试。
-- 真实 Runtime 测试覆盖同一 utility process 在多个 Pictor Run 间复用同一 Pi Session，以及
-  `newSession`、`fork`、`switchSession` 的 prepare/commit replacement seam。
-- Session selection 测试覆盖打开目标、关闭旧 Session、reload/Controls 的 `sessionId` 校验；
-  replacement journal 测试覆盖 prepare、取消清理、commit、Main/Runtime 进程退出后的恢复。
-- 受信任 Project 的 `.pi/extensions`、Skills、Prompts 和 Context files 必须由 Pi 原生
-  ResourceLoader 自动加载；资源 reload 必须复用当前 Session，而不是重建 Pictor 专属资源层。
-- 更新资产选择覆盖稳定版与滚动 Nightly 两个通道、Windows NSIS、Arch pacman、便携 AppImage、
-  错误平台/架构/版本、非官方 URL 和无匹配资产回退；Nightly 必须验证固定 tag、Pre-release 标记
-  和完整源码提交，并按嵌入的构建提交判断快照是否变化。
-- Pacman 使用 `zstd` 压缩，优先缩短 develop 与 Release 的包构建反馈；不为减小附件体积改回
-  明显更慢的 `xz`。
-- API Key 在 Unix 写入后验证权限为 `0600`，且不得进入 Renderer、Session 或测试证据。
-
-## 发行版验收
-
-| 基线                    | 自动化证据                                      | 补充桌面证据                                   |
-| ----------------------- | ----------------------------------------------- | ---------------------------------------------- |
-| Windows 11 x64          | Windows hosted runner，Shell Smoke 与 NSIS 验证 | 安装、启动、卸载及完整桌面行为回归             |
-| 原生 Arch Linux x64     | `archlinux:base` Pacman 生命周期、结构验证      | 发布快照日期的 niri Wayland 会话启动与核心委托 |
-| 便携 AppImage（非基线） | Linux hosted runner，结构验证和 Xvfb 启动 Smoke | 不构成其他发行版兼容承诺                       |
-
-Arch 衍生版不是替代验收环境。Arch Wayland 桌面证据允许 Electron 使用 XWayland，并记录
-发行版、架构、内核、桌面会话、Bash 版本、产物摘要和验收日期。Ubuntu hosted runner 只是
-构建与 AppImage Smoke 基础设施，不是 Supported Distribution。Pacman 安装/移除不得删除既有
-用户数据；用户数据清理由独立、明确的手工步骤验证。
-
-## 稳定性规则
-
-- 不用固定延时等待业务状态；优先使用可见状态、事件或 `expect.poll`。
-- 不通过提高全局重试掩盖失败。出现不稳定测试时，先记录失败证据和根因，再修复或临时隔离。
-- Vitest 最多使用 4 个 worker，避免 Plugin 构建、Node Host 和 Pi Runtime 集成用例同时争用进程、
-  端口与临时目录；不要通过增加用例超时掩盖资源饥饿。
-- Electron E2E 在 CI 中保持单 worker，避免共享桌面资源和用户数据竞争。
-- Linux hosted runner 通过 `xvfb-run -a` 提供确定性显示服务，用于 AppImage 启动 Smoke，不
-  代表该 runner 的发行版获得正式支持。
-- 普通 E2E 必须等待 Renderer 进入 `.app-shell` 或 `.fatal-state` 明确终态；发布包黑盒探针必须
-  等待精确的 `app://bundle/index.html` page target，并通过同 Profile 冲突证明 Host 已持锁，不能
-  只检查子进程仍然存活。
-- Windows E2E 可以隐藏窗口；Linux E2E 必须让窗口进入当前显示服务的合成器，否则隐藏的
-  Wayland 窗口不会产生 Playwright actionability 所需的帧。CI 窗口只显示在 Xvfb 虚拟屏幕。
-- 失败证据写入 Playwright `test-results/`，CI 仅在失败时上传，保留 7 天。
-- 变更行为必须同步更新对应层的测试；仅重构时不得无理由删除既有断言。
+Windows 默认隐藏测试窗口；Linux CI 使用 Xvfb。本地 Linux 调试可设置
+`PICTOR_E2E_NO_FOCUS=0` 恢复普通聚焦。测试必须等待明确 UI/协议终态，不使用固定延时证明业务
+完成。
 
 ## CI 门禁
 
-每个 PR 同时启动 `Quality`、`Unit and integration`、`Windows acceptance` 和
-`Linux acceptance` 四项必需检查，不再通过手写路径分类改变其行为。Quality 与全量 Vitest 在
-Linux 运行，以覆盖大小写敏感文件系统
-及全部 POSIX 用例；Windows acceptance 构建应用并执行 `shell.spec.ts`，验证真实 Electron 的
-Main、Preload、Renderer、Bridge 暴露、沙箱和基础界面；Linux acceptance 构建应用并执行单一
-委托 Smoke，不重复 Vitest。独立、非 required 的 `Package CI` 通过粗粒度路径过滤识别打包面改动，
-调用唯一 reusable workflow 执行 distribution build、NSIS/Pacman/AppImage 黑盒验收和安装生命周期。
-推送 `develop` 时重跑相同基础门禁；保留的七个 E2E 与正式发布资产由 Nightly 和 Release 负责。原生 niri
-桌面证据仍在发布前由 Arch 工作站补充。
+普通 Pull Request 和 `develop` push 使用四项稳定检查：
 
-包含 `package.json` 或 `package-lock.json` 版本变化的合并进入 `main` 后，Release 调用与 Nightly
-共用的桌面打包工作流。Windows 生成并执行 NSIS/PE 结构校验；Linux 先执行完整源码验证，再生成
-Arch pacman 和便携 AppImage。Arch 容器通过 `pacman` 验证原生包生命周期，hosted runner 对
-AppImage 执行结构与启动 Smoke。所有构建成功后，单一 publish job 才创建标签与 GitHub Release，
-避免只发布部分平台资产。路径受限的 `ci/*` 控制面维护不修改版本文件，因此不会触发正式 Release。
+| 检查                   | 内容                                         |
+| ---------------------- | -------------------------------------------- |
+| `Quality`              | Workflow、分支/发布元数据、格式、类型与 Lint |
+| `Unit and integration` | 全部 Vitest                                  |
+| `Windows acceptance`   | 构建应用并运行 Windows Shell smoke           |
+| `Linux acceptance`     | 构建应用并运行单一 Delegate smoke            |
 
-Nightly 工作流每天北京时间 02:17 从远端 `develop` 固定一次源提交，同时支持手动强制重建。该
-SHA 必须已有完成且成功的 `develop` push CI；缺少、运行中或失败的 CI 都会阻止 Nightly，且不能
-回退发布更旧提交。`force` 只允许重新打包同一绿色提交，不能绕过该门禁。现有 `nightly` 标签已经
-指向该提交时，普通定时运行直接成功结束。
+基础 CI 不根据手写源码路径改变 required checks。触及依赖、Plugin SDK、Plugin、Frontend、构建、
+打包或 Workflow 的 PR 另外触发非 required 的 `Package CI`，通过共享
+`package-desktop.yml` 构建和验收 Windows NSIS、Arch Pacman 与 AppImage。
 
-源码 CI 已负责应用改动的静态检查、Vitest 和两个 PR Smoke，因此 Nightly 不重复 `verify:fast`，
-但会运行保留的七个 E2E。Nightly 与 Release 通过 `package-desktop.yml` 的小接口传入固定源码 SHA、
-artifact 前缀、是否执行发布复验和是否运行 E2E；调用方还必须显式传入 `stable` 或 `nightly` 构建通道，打包应用把通道与固定源码
-SHA 暴露为只读构建身份。其余跨平台 distribution 构建、结构/launcher/fuse 校验、GUI/CLI/TUI
-启动、Profile、AppImage 启动与 Arch 容器生命周期集中在该工作流内。
-各平台只把中间 workflow artifact 保留一天；全部平台成功后，唯一具有 `contents: write` 权限的
-publish job 才生成 `SHA256SUMS`，重建滚动的 `nightly` GitHub Pre-release。Nightly 不设为 Latest，
-不属于正式发布或支持基线。
+Nightly 与 Release 复用同一桌面打包 Workflow，并在 Linux job 运行完整保留 E2E。它们不复制
+普通源码 CI 已完成的静态检查和 Vitest，只有所有平台产物通过后才由单一 publish job 发布附件。
 
-GitHub 定时工作流只从默认分支执行，因此 Nightly 工作流文件必须进入 `main` 后才会按时运行；
-工作流运行时显式检出并固定 `develop` 提交，不能把默认分支的 `GITHUB_SHA` 当作 Nightly 源版本。
-正式 `v*` 标签和 Release 不得由 Nightly 工作流修改。
+## 发布包验收
 
-分支保护应要求 `Quality`、`Unit and integration`、`Windows acceptance` 和
-`Linux acceptance` 四个检查。结构校验和容器生命周期不代替签名、Windows 净机证据或 Arch
-niri 桌面证据；Windows Shell Smoke 不代替完整桌面行为、安装与卸载验收；Arch 桌面证据按发布
-快照记录。
+所有正式打包必须先运行：
+
+```bash
+npm run build:distribution
+```
+
+它清理旧产物并构建同一源码快照的 GUI、CLI、TUI 与 Bundled Plugin。平台命令为：
+
+```bash
+npm run package:windows:build
+npm run package:linux:build
+npm run package:verify
+```
+
+`package:verify` 消费已有包，不重建。它验证真实 launcher、GUI page target、CLI/TUI、Profile
+排他锁、Electron Fuse 和平台包结构；Windows CI 补充 NSIS 安装/卸载，Linux CI 补充 AppImage
+启动与 Arch 容器 Pacman 生命周期。
+
+支持基线：
+
+| 环境                    | 自动化证据                      | 补充证据                   |
+| ----------------------- | ------------------------------- | -------------------------- |
+| Windows 11 x64          | hosted runner Shell 与 NSIS     | 净机安装、启动和卸载       |
+| 原生 Arch Linux x64     | Arch 容器包生命周期             | 发布快照上的 niri 桌面验收 |
+| 其他 Linux x64 AppImage | hosted runner 结构与 Xvfb smoke | 不形成发行版兼容承诺       |
+
+## 稳定性规则
+
+- 使用可见状态、事件、poll 或协议响应等待结果，不用固定 sleep。
+- 不提高全局重试或超时来掩盖失败；先定位根因，再修复或有期限地隔离。
+- Vitest 最多使用 4 个 worker；Electron E2E 在 CI 中使用单 worker。
+- 关闭与恢复场景必须设置明确上限，并在失败时清理完整进程树。
+- Playwright 失败证据写入 `test-results/`，CI 仅在失败时上传并保留 7 天。
+- 行为变化必须更新最接近其稳定 seam 的测试；纯重构不得无理由删除断言。
+- API Key、完整用户数据和真实项目内容不得进入日志、fixture 或 CI artifact。

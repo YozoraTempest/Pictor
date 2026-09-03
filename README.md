@@ -235,13 +235,12 @@ Nightly/Release 额外验证中断恢复、启动恢复、原生 Extension Tool/
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 Plugin 作者使用的可移植 Interface 位于 [`packages/plugin-sdk`](packages/plugin-sdk)，Bundled Plugin
 源码继续位于 `plugins/` 并与应用保持同仓库、同版本、同发布快照。
-Pictor 0.4 的 Headless Application Host、Command Engine、GUI/TUI/CLI Frontend、Pictor Shell 和
-Workbench Plugin 迁移契约见
-[`docs/MULTI_FRONTEND_ARCHITECTURE.md`](docs/MULTI_FRONTEND_ARCHITECTURE.md)。
+Headless Application Host、Command Engine、GUI/TUI/CLI Frontend、Pictor Shell 和 Workbench
+Plugin 的当前边界统一记录在 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ## 打包安全模式
 
-Stage 10 对 Electron 43 的 V1 fuse 逐项显式配置：`runAsNode` 保持启用，是为了让 CLI/TUI 使用
+Pictor 对 Electron 43 的 V1 fuse 逐项显式配置：`runAsNode` 保持启用，是为了让 CLI/TUI 使用
 随包 Electron 而不依赖系统 Node 的有意识例外；`NODE_OPTIONS` 和 Node CLI inspect 参数关闭，
 `onlyLoadAppFromAsar` 开启，`file://` extra privileges 关闭，其他支持的项也固定在
 `electronFuses` 中并在打包后读取实际 wire。Windows/Linux GUI binary 的 wire 必须与配置一致，
@@ -259,12 +258,10 @@ recovery source，用户恢复 Workbench 后重启回到 Delegate。该行为由
 
 日常开发从 `develop` 创建短期分支并通过 Pull Request 合回；包含版本提升的 `develop` 合并到
 `main` 时自动创建正式版本。默认分支定时工作流等控制面维护使用路径受限的 `ci/*` Pull Request，
-不触发正式发布。分支、Issue、Pull Request 和发布规则见
-[`CONTRIBUTING.md`](CONTRIBUTING.md) 和
-[`docs/PROJECT_MANAGEMENT.md`](docs/PROJECT_MANAGEMENT.md)。仓库默认展示稳定的 `main`；提交
-普通贡献时，请在 GitHub 上将 Pull Request 的目标分支改为 `develop`。
-
-项目领域术语见 [`CONTEXT.md`](CONTEXT.md)，已接受的架构决策见 [`docs/adr/`](docs/adr/)。
+不触发正式发布。分支、Issue、Pull Request、发布和文档治理规则见
+[`CONTRIBUTING.md`](CONTRIBUTING.md)。仓库默认展示稳定的 `main`；提交普通贡献时，请在 GitHub
+上将 Pull Request 的目标分支改为 `develop`。领域术语和已经生效的架构约束保留在
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，完整决策依据与历史由维护者的 Trilium 知识库维护。
 
 ## 已知限制
 
