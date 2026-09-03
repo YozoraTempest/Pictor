@@ -192,13 +192,15 @@ Profile 冲突、无可用 TUI、Plugin 失败和取消退出码分别为 `0`、
 
 ## 验证
 
-日常提交前运行快速验证；PR 级验证会额外执行一次干净的 GUI/CLI/TUI/Plugin distribution build
-并执行核心 E2E Smoke。打包相关改动由独立 Package CI 构建并验收 Windows NSIS、Pacman 和
-AppImage，不在基础 CI 中维护条件分支：
+日常提交前运行快速验证；PR 级验证会额外执行一次干净的 GUI/CLI/TUI/Plugin distribution
+build。打包相关改动由独立 Package CI 构建并验收 Windows NSIS、Pacman 和 AppImage，不在基础
+CI 中维护条件分支：
 
 ```bash
 npm run test:module -- updater
 npm run test:plugin -- host
+npm run test:core
+npm run test:plugins
 npm run test:sdk
 npm run test:watch
 npm run verify:fast
@@ -206,10 +208,10 @@ npm run verify:pr
 npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs
 ```
 
-`develop` 或 `hotfix/*` 指向 `main` 的发布 PR 会通过 Package CI 使用稳定通道执行源码复验、
-完整 E2E 和 Windows/Linux 包验收，在合并前形成发布级门禁。本地需要提前复现当前平台的完整
-发布路径时，可以运行 `npm run verify:release`；它不是发布所必需的人工前置。Windows 净机、
-Arch 原生安装生命周期和 hosted CI 的另一个平台证据由 `package-desktop.yml` 提供：
+`develop` 或 `hotfix/*` 指向 `main` 的发布 PR 会通过 Package CI 使用稳定通道执行源码复验和
+Windows/Linux 包验收，在合并前形成发布级门禁。本地需要提前复现当前平台的完整发布路径时，
+可以运行 `npm run verify:release`；它不是发布所必需的人工前置。Windows 净机、Arch 原生安装
+生命周期和 hosted CI 的另一个平台证据由 `package-desktop.yml` 提供：
 
 ```bash
 npm run package:windows:build
@@ -218,17 +220,19 @@ npm run package:verify
 ```
 
 `npm run package:dir` 按当前平台生成解包应用，`npm run package` 按当前平台生成正式发布包并
-执行对应结构校验。`npm run build:distribution` 会先清理并一次构建全部 GUI、CLI、TUI 和 10 个
-Bundled Plugins；所有 `package:*` 发布构建都消费这一产物，不会把陈旧的 `out/cli` 或 `out/tui`
+执行对应结构校验。`npm test` 会顺序执行互不重叠的 Core、Bundled Plugin 和 Plugin SDK 测试
+域；单独运行 `npm run test:core` 不会收集或构建产品 Plugin。`npm run build:distribution` 会先
+清理并一次构建全部 GUI、CLI、TUI 和 10 个 Bundled Plugins；所有 `package:*` 发布构建都消费
+这一产物，不会把陈旧的 `out/cli` 或 `out/tui`
 带入包。Windows 校验 NSIS、`app.asar`、x64 PE、快捷方式和 Windows launcher；Linux 校验
 Pacman 元数据、AppImage 内容、桌面入口、`app.asar`、fuse wire 和 x64 ELF。统一验收还从带
-空格路径启动真实 GUI/CLI/TUI，验证 page target、Profile 排他锁和平台安装生命周期；它不重复
-普通 E2E 已覆盖的富 DOM 与 Plugin 恢复场景。
+空格路径启动真实 GUI/CLI/TUI，验证 page target、Profile 排他锁和平台安装生命周期；它不承担
+产品交互流程测试。
 
-Electron E2E 只保留跨模块组装证据：PR 验证一次真实 Pi SDK/utility process 委托和 Windows Shell；
-Nightly/Release 额外验证中断恢复、启动恢复、原生 Extension Tool/RPC 与两个 Plugin 重启场景。
-业务规则、协议变体和持久化边界由 Vitest 在对应 seam 验证，不需要外部模型凭据。完整分层、CI
-门禁和发行版验收见 [`docs/TESTING.md`](docs/TESTING.md)。
+仓库当前不包含 E2E 测试。未经维护者针对具体场景明确批准，不得新增 E2E 测试、Runner 依赖或
+CI 步骤。业务规则、协议变体、持久化和跨模块行为应优先由 Vitest 在对应稳定 seam 验证；正式
+发布物继续由 `package:verify` 做黑盒结构与启动验收。完整分层、CI 门禁和发行版验收见
+[`docs/TESTING.md`](docs/TESTING.md)。
 
 应用源码统一位于 `src/`。`kernel/` 保存最小 Module Kernel，`modules/` 按 Feature 聚合新增
 功能；既有代码继续按 Electron Main、Preload、Renderer、Agent Runtime 和共享协议划分，
@@ -253,9 +257,9 @@ launcher 只缩小正常调用入口，不是安全沙箱，也不能消除保�
 [`ELECTRON_RUN_AS_NODE` 文档](https://www.electronjs.org/docs/latest/api/environment-variables/#electron_run_as_node)。
 
 删除或禁用 `pictor.workbench.delegate` 后，GUI 会进入 Pictor Shell；Shell 列出随包的 10 个
-recovery source，用户恢复 Workbench 后重启回到 Delegate。该行为由普通 E2E 与包内容检查共同
-覆盖，不在每个平台重复同一富 UI 场景。CLI/TUI 与 GUI 共用 Profile 排他锁：冲突稳定退出码为
-`4`，持锁 Frontend 退出后下一个 Frontend 才能获取。
+recovery source，用户恢复 Workbench 后重启回到 Delegate。该行为由 Plugin/Core 测试与发布包
+内容检查覆盖。CLI/TUI 与 GUI 共用 Profile 排他锁：冲突稳定退出码为 `4`，持锁 Frontend 退出后
+下一个 Frontend 才能获取。
 
 日常开发从 `develop` 创建短期分支并通过 Pull Request 合回；包含版本提升的 `develop` 合并到
 `main` 时自动创建正式版本。默认分支定时工作流等控制面维护使用路径受限的 `ci/*` Pull Request，
@@ -267,9 +271,9 @@ recovery source，用户恢复 Workbench 后重启回到 Delegate。该行为由
 ## 已知限制
 
 - Windows、Arch 和 AppImage 发布物及应用可执行文件未签名，应用图标仍使用 Electron 默认图标。
-- 普通 Windows CI 只执行确定性的 Electron Shell Smoke；触及打包面的 PR、Nightly 和 Release
-  还由 `package-desktop.yml` 执行 NSIS、shortcut、CLI/TUI、安装/卸载和用户数据保留验收，但不
-  代替完整 Electron E2E 或额外的真实净机/人工桌面证据。
+- 普通 Windows/Linux CI 只准备 Electron 并构建应用，不自动执行桌面交互流程；触及打包面的 PR、
+  Nightly 和 Release 还由 `package-desktop.yml` 执行 NSIS、shortcut、CLI/TUI、安装/卸载和用户
+  数据保留验收，但不代替真实净机或人工桌面证据。
 - AppImage 只执行结构与启动 Smoke，不构成其他 Linux 发行版兼容承诺；Arch 容器生命周期与
   本机 niri 桌面证据仍按发布门禁分别记录。
 - Arch 是滚动发行版，正式支持以发布说明记录的快照日期为验收基线，不承诺未来系统更新永不

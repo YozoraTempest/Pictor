@@ -6,11 +6,9 @@ export default mergeConfig(
   sharedConfig,
   defineConfig({
     test: {
-      exclude: [
-        'node_modules/**',
-        'packages/**',
-        'plugins/**',
-        'tests/plugins/**',
+      include: [
+        'plugins/**/*.test.{ts,tsx}',
+        'tests/plugins/**/*.test.{ts,tsx}',
         'scripts/gui-import-boundaries.test.mjs',
         'scripts/plugin-sdk-imports.test.mjs',
         'scripts/style-boundaries.test.mjs',

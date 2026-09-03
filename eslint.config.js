@@ -5,16 +5,7 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    ignores: [
-      '.noctis/**',
-      '.pictor/**',
-      'coverage/**',
-      'dist/**',
-      'node_modules/**',
-      'out/**',
-      'playwright-report/**',
-      'test-results/**',
-    ],
+    ignores: ['.noctis/**', '.pictor/**', 'coverage/**', 'dist/**', 'node_modules/**', 'out/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

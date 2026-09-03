@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "check:types": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --root ../.. packages/plugin-sdk"
+    "test": "vitest run --root ../.. --config packages/plugin-sdk/vitest.config.ts"
   },
   "exports": {
     "./contract": "./src/contract.ts",

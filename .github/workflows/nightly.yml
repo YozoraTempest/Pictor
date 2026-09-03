@@ -98,7 +98,6 @@ jobs:
       artifact_prefix: nightly
       build_channel: nightly
       run_source_validation: false
-      run_e2e: true
 
   publish:
     name: Publish rolling Nightly

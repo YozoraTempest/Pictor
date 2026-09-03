@@ -19,65 +19,59 @@ user-data，不访问真实用户目录、模型服务或凭据。
 
 ## 日常命令
 
-| 目的                           | 命令                            |
-| ------------------------------ | ------------------------------- |
-| 格式、类型、Lint 与全部 Vitest | `npm run verify:fast`           |
-| 单个 Feature                   | `npm run test:module -- <name>` |
-| 单个 Plugin                    | `npm run test:plugin -- <name>` |
-| Plugin SDK                     | `npm run test:sdk`              |
-| 单元测试                       | `npm run test:unit`             |
-| 集成测试                       | `npm run test:integration`      |
-| Watch 模式                     | `npm run test:watch`            |
-| PR 级本地验收                  | `npm run verify:pr`             |
-| 可选的当前平台发布预检         | `npm run verify:release`        |
+| 目的                          | 命令                            |
+| ----------------------------- | ------------------------------- |
+| 格式、类型、Lint 与全部测试域 | `npm run verify:fast`           |
+| 全部测试域                    | `npm test`                      |
+| Pictor Core                   | `npm run test:core`             |
+| 全部 Bundled Plugins          | `npm run test:plugins`          |
+| 单个 Feature                  | `npm run test:module -- <name>` |
+| 单个 Plugin                   | `npm run test:plugin -- <name>` |
+| Plugin SDK                    | `npm run test:sdk`              |
+| Core 单元测试                 | `npm run test:unit`             |
+| Core 集成测试                 | `npm run test:integration`      |
+| Core Watch 模式               | `npm run test:watch`            |
+| Plugin Watch 模式             | `npm run test:plugins:watch`    |
+| PR 级本地验收                 | `npm run verify:pr`             |
+| 可选的当前平台发布预检        | `npm run verify:release`        |
+
+测试按所有权分为三个互斥域：
+
+- Core 测试验证 `src/` 中的 Kernel、Application、Frontend、Plugin Host 基础设施和 Adapter，不
+  收集具体产品 Plugin 或 Plugin SDK 测试。
+- Plugin 测试验证 `plugins/` 中的 Bundled Plugin、Plugin 源码约束和真实组装。Manifest、CLI 与
+  TUI 组装验收复用一次临时 Bundled Plugin 构建。
+- Plugin SDK 测试由 `packages/plugin-sdk` 自己的 Vitest 配置收集。
+
+`npm test` 顺序执行三个域；单独运行 `test:core` 不会构建 Bundled Plugin。
 
 聚合命令的边界：
 
 ```text
-verify:fast    静态检查 + 全部 Vitest
-verify:pr      verify:fast + 一次完整 distribution build + 核心 Electron smoke
-verify:release verify:fast + 同一 distribution 上的完整 E2E + 当前平台打包和黑盒验收
+verify:fast    静态检查 + Core + Bundled Plugins + Plugin SDK
+verify:pr      verify:fast + 一次完整 distribution build
+verify:release verify:fast + 同一 distribution 上的当前平台打包和黑盒验收
 ```
 
-`*:run` 命令只消费已有产物；`test:e2e`、`package` 等便捷命令会自行构建。聚合命令应复用叶子
-命令，不能重复构建同一快照。
+`package:verify` 只消费已有产物；`package` 等便捷命令会自行构建。聚合命令应复用叶子命令，不能
+重复构建同一快照。
 
 ## 分层规则
 
 - `*.test.ts(x)` 与实现同层，验证纯逻辑、组件或一个公开 Interface。
 - `*.integration.test.ts` 只用于跨真实 Module、Plugin、Runtime 或协议边界的行为。
-- `e2e/*.spec.ts` 只保留必须由真实 Electron、utility process、Renderer 或重启生命周期证明的
-  组装行为。
 - 打包脚本验证发布物结构、launcher、Fuse、Profile 锁与安装生命周期，不重复富 DOM 行为。
 
 测试必须通过公开 Interface 观察结果，不得导入私有实现或用不安全类型强转穿透边界。Feature
 专用 fixture 负责创建和清理自己的 user-data、项目、端点与进程；不同用例不得共享可变状态。
 
-## E2E 边界
+## E2E 政策
 
-E2E 不是业务规则的主要验证层。当前只保留以下跨边界证据：
+仓库当前不包含 E2E 测试、E2E Runner 依赖或 E2E CI 入口。未经维护者针对具体场景明确批准，
+不得新增这些内容。申请新增时必须说明目标风险为何无法在 Core、Plugin、SDK 或集成测试的稳定
+seam 中验证，并给出确定性的等待、清理、失败证据和 CI 成本方案。
 
-- Windows Shell：Main、Preload、Renderer、Bridge、sandbox 和基础界面可组装。
-- 核心 Delegate smoke：从用户 Plugin Store 动态加载 Runtime Plugin，经真实 Pi SDK 与 utility
-  process 完成一次确定性委托。
-- 中断和启动恢复：跨进程退出后的状态与持久化行为。
-- 原生 Pi Extension：Tool 与 RPC UI 的完整往返。
-- Plugin 生命周期：关键移除、恢复和重启路径。
-
-Fork/Clone、Import/Export、Tree、Compaction、消息、图片、协议变体和持久化边界优先在 Runtime、
-Coordinator、Controller、Projection 或 Repository seam 中使用 Vitest 验证。新增 E2E 必须证明
-目标风险无法由更低层的确定性测试覆盖。
-
-Smoke 标题使用 `@smoke`。本地直接运行已有构建：
-
-```bash
-npm run test:e2e:smoke:run
-npm run test:e2e:run
-```
-
-Windows 默认隐藏测试窗口；Linux CI 使用 Xvfb。本地 Linux 调试可设置
-`PICTOR_E2E_NO_FOCUS=0` 恢复普通聚焦。测试必须等待明确 UI/协议终态，不使用固定延时证明业务
-完成。
+这项限制不影响 `package:verify`：它是正式发布物的黑盒结构与启动验收，不承担产品交互流程测试。
 
 ## CI 门禁
 
@@ -86,22 +80,20 @@ Windows 默认隐藏测试窗口；Linux CI 使用 Xvfb。本地 Linux 调试可
 | 检查                   | 内容                                         |
 | ---------------------- | -------------------------------------------- |
 | `Quality`              | Workflow、分支/发布元数据、格式、类型与 Lint |
-| `Unit and integration` | 全部 Vitest                                  |
-| `Windows acceptance`   | 构建应用并运行 Windows Shell smoke           |
-| `Linux acceptance`     | 构建应用并运行单一 Delegate smoke            |
+| `Unit and integration` | 分步执行 Core、Bundled Plugin 与 Plugin SDK  |
+| `Windows acceptance`   | 准备 Windows Electron 并构建应用             |
+| `Linux acceptance`     | 准备 Linux Electron 并构建应用               |
 
 基础 CI 不根据手写源码路径改变 required checks。触及依赖、Plugin SDK、Plugin、Frontend、构建、
 打包或 Workflow 的 PR 另外触发非 required 的 `Package CI`，通过共享
 `package-desktop.yml` 构建和验收 Windows NSIS、Arch Pacman 与 AppImage。
 
-普通开发 PR 使用 `development` 构建通道，不重复源码验证和完整 E2E。`develop` 或
-`hotfix/*` 指向 `main` 的发布 PR 使用 `stable` 通道，并启用 `run_source_validation` 与
-`run_e2e`，因此发布级验证在合并前完成。路径受限的 `ci/*` 到 `main` 仍使用轻量模式，不冒充
-正式发布候选。
+普通开发 PR 使用 `development` 构建通道，不重复源码验证。`develop` 或 `hotfix/*` 指向 `main`
+的发布 PR 使用 `stable` 通道并启用 `run_source_validation`，因此发布级源码与包验收在合并前
+完成。路径受限的 `ci/*` 到 `main` 仍使用轻量模式，不冒充正式发布候选。
 
-Nightly 与 Release 复用同一桌面打包 Workflow，并在 Linux job 运行完整保留 E2E。Release 在
-合入 `main` 后以同一稳定通道重新执行发布门禁并生成正式资产；只有所有平台产物通过后，单一
-publish job 才发布附件。
+Nightly 与 Release 复用同一桌面打包 Workflow。Release 在合入 `main` 后以同一稳定通道重新执行
+发布门禁并生成正式资产；只有所有平台产物通过后，单一 publish job 才发布附件。
 
 ## 发布包验收
 
@@ -135,8 +127,7 @@ npm run package:verify
 
 - 使用可见状态、事件、poll 或协议响应等待结果，不用固定 sleep。
 - 不提高全局重试或超时来掩盖失败；先定位根因，再修复或有期限地隔离。
-- Vitest 最多使用 4 个 worker；Electron E2E 在 CI 中使用单 worker。
+- Vitest 最多使用 4 个 worker。
 - 关闭与恢复场景必须设置明确上限，并在失败时清理完整进程树。
-- Playwright 失败证据写入 `test-results/`，CI 仅在失败时上传并保留 7 天。
 - 行为变化必须更新最接近其稳定 seam 的测试；纯重构不得无理由删除断言。
 - API Key、完整用户数据和真实项目内容不得进入日志、fixture 或 CI artifact。

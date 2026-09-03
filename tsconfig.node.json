@@ -44,10 +44,14 @@
     "plugins/gui-plugin-manager/gui-plugin-manager.test.ts",
     "plugins/agent-resources/agent-resources.test.ts",
     "plugins/tui-delegate/tui.ts",
-    "e2e/**/*.ts",
+    "plugins/tui-delegate/jsonl-consistency.test.ts",
+    "tests/gui-boundary.test.ts",
+    "tests/plugins/**/*.ts",
     "src/shared/**/*.ts",
     "electron.vite.config.ts",
-    "playwright.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "vitest.plugins.config.ts",
+    "vitest.shared.ts",
+    "packages/plugin-sdk/vitest.config.ts"
   ]
 }

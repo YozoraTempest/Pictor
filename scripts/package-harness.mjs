@@ -187,7 +187,7 @@ async function waitForPageTarget(port, child, output, timeoutMs) {
   )
 }
 
-async function stopProcessTree(child, exit) {
+export async function stopProcessTree(child, exit) {
   if (child.exitCode !== null || child.signalCode !== null) return
   if (process.platform === 'win32') {
     spawnSync(process.env.ComSpec ?? 'cmd.exe', windowsProcessTreeKillArguments(child.pid), {
@@ -198,7 +198,12 @@ async function stopProcessTree(child, exit) {
     signalProcessGroup(child.pid, 'SIGTERM')
   }
 
-  if (await settlesWithin(exit, 5_000)) return
+  if (
+    await (process.platform === 'win32'
+      ? settlesWithin(exit, 5_000)
+      : processGroupSettlesWithin(child.pid, exit, 5_000))
+  )
+    return
   if (process.platform === 'win32') {
     spawnSync(process.env.ComSpec ?? 'cmd.exe', windowsProcessTreeKillArguments(child.pid), {
       stdio: 'ignore',
@@ -207,8 +212,31 @@ async function stopProcessTree(child, exit) {
   } else {
     signalProcessGroup(child.pid, 'SIGKILL')
   }
-  if (!(await settlesWithin(exit, 5_000))) {
+  const stopped = await (process.platform === 'win32'
+    ? settlesWithin(exit, 5_000)
+    : processGroupSettlesWithin(child.pid, exit, 5_000))
+  if (!stopped) {
     throw new Error(`Packaged process tree ${child.pid} did not exit`)
+  }
+}
+
+async function processGroupSettlesWithin(pid, exit, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  if (!(await settlesWithin(exit, timeoutMs))) return false
+  while (Date.now() < deadline) {
+    if (!processGroupExists(pid)) return true
+    await new Promise((resolvePromise) => globalThis.setTimeout(resolvePromise, 50))
+  }
+  return !processGroupExists(pid)
+}
+
+function processGroupExists(pid) {
+  try {
+    process.kill(-pid, 0)
+    return true
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false
+    throw error
   }
 }
 
