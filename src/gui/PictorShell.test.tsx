@@ -34,6 +34,11 @@ const restartRequiredSnapshot = pluginManagerSnapshotSchema.parse({
   ...snapshot,
   restartRequired: true,
 })
+const creationModeRestartSnapshot = pluginManagerSnapshotSchema.parse({
+  ...snapshot,
+  creationMode: true,
+  restartRequired: true,
+})
 
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
@@ -177,6 +182,28 @@ describe('PictorShell', () => {
     await click(screen.getByRole('button', { name: '刷新 Plugin 列表' }))
     await waitFor(() => expect(execute).toHaveBeenCalledTimes(2))
     expect(screen.queryByText('操作已记录；重启 Pictor 后生效。')).not.toBeInTheDocument()
+  })
+
+  it('reports automatic reassembly instead of a manual restart in Creation Mode', async () => {
+    const { client } = createCommandClient(GUI_RECOVERY_COMMAND_IDS, creationModeRestartSnapshot)
+    render(
+      <PictorShell
+        commandClient={client}
+        pluginPicker={{
+          pickPlugin: vi.fn(async (source) => ({
+            ok: true as const,
+            value: { source, path: '/tmp/creation-plugin' },
+          })),
+        }}
+        guiPluginStatuses={[]}
+        safeMode={false}
+        state={shellState}
+      />,
+    )
+
+    await screen.findByText('plugin.install description')
+    await click(screen.getByRole('button', { name: '安装本地 GUI Plugin' }))
+    expect(screen.getByText('Plugin 安装意图已记录；创造模式正在重新装配 Plugin。')).toBeVisible()
   })
 
   it('routes enable, disable, remove, and Bundled restore through shell commands', async () => {

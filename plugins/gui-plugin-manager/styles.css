@@ -139,6 +139,20 @@
   line-height: 1.5;
 }
 
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__notice--creation {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  border-color: #3f796a;
+  background: #172823;
+  color: #9cdbc9;
+}
+
+[data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__notice--creation svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
 [data-pictor-plugin='pictor.gui.plugin-manager'] .plugin-manager__error {
   border-color: #724042;
   background: #2b1819;

@@ -54,6 +54,7 @@ export interface WebTransportOptions {
     input: unknown,
     outcome: ModuleInvocationOutcome,
   ) => void | Promise<void>
+  readonly onHostGenerationChanged?: (previous: string, current: string) => void
 }
 
 export function createWebTransports(
@@ -74,9 +75,29 @@ export function createWebTransports(
     event: string
     listener: (payload: unknown) => void
   }>()
+  let hostGeneration: string | null = null
 
   const releaseConnection = connection.onMessage((message) => {
     if (message.type === 'connection.ready') {
+      if (hostGeneration === null) {
+        hostGeneration = message.generation
+        return
+      }
+      if (hostGeneration !== message.generation) {
+        const previous = hostGeneration
+        hostGeneration = message.generation
+        commandEventHistory.clear()
+        terminalExecutionIds.clear()
+        trackedExecutionIds.clear()
+        pendingCorrelations.clear()
+        pendingExecutionIdsByCorrelation.clear()
+        try {
+          options.onHostGenerationChanged?.(previous, message.generation)
+        } catch {
+          // Host generation recovery must not be blocked by diagnostics.
+        }
+        return
+      }
       for (const executionId of trackedExecutionIds) {
         connection.send({ type: 'command.replay', executionId })
       }

@@ -10,8 +10,12 @@ import {
 const CLIENT_ID_KEY = 'pictor.web.client-id'
 const MAX_RECONNECT_DELAY_MS = 2_000
 
+export type WebConnectionState =
+  'connecting' | 'ready' | 'reconnecting' | 'lease-conflict' | 'stopped'
+
 export class WebEventConnection {
   private readonly listeners = new Set<(message: WebServerMessage) => void>()
+  private readonly stateListeners = new Set<(state: WebConnectionState) => void>()
   private socket: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectDelay = 250
@@ -19,6 +23,7 @@ export class WebEventConnection {
   private startPromise: Promise<void> | null = null
   private startResolve: (() => void) | null = null
   private startReject: ((error: Error) => void) | null = null
+  private state: WebConnectionState = 'connecting'
 
   readonly clientId = loadClientId()
 
@@ -38,6 +43,7 @@ export class WebEventConnection {
     this.reconnectTimer = null
     this.socket?.close(1000, 'Web GUI stopped')
     this.socket = null
+    this.setState('stopped')
   }
 
   send(message: WebClientMessage): void {
@@ -49,6 +55,12 @@ export class WebEventConnection {
   onMessage(listener: (message: WebServerMessage) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  onState(listener: (state: WebConnectionState) => void): () => void {
+    this.stateListeners.add(listener)
+    listener(this.state)
+    return () => this.stateListeners.delete(listener)
   }
 
   private connect(): void {
@@ -70,11 +82,13 @@ export class WebEventConnection {
       if (!parsed.success) return
       if (parsed.data.type === 'connection.ready') {
         this.reconnectDelay = 250
+        this.setState('ready')
         this.startResolve?.()
         this.startResolve = null
         this.startReject = null
       } else if (parsed.data.type === 'connection.error' && parsed.data.code === 'lease-conflict') {
         this.stopped = true
+        this.setState('lease-conflict')
         this.startReject?.(new Error(parsed.data.message))
         this.startResolve = null
         this.startReject = null
@@ -89,7 +103,10 @@ export class WebEventConnection {
     })
     socket.addEventListener('close', () => {
       if (this.socket === socket) this.socket = null
-      if (!this.stopped) this.scheduleReconnect()
+      if (!this.stopped) {
+        this.setState('reconnecting')
+        this.scheduleReconnect()
+      }
     })
     socket.addEventListener('error', () => {
       socket.close()
@@ -104,6 +121,18 @@ export class WebEventConnection {
       this.reconnectTimer = null
       this.connect()
     }, delay)
+  }
+
+  private setState(state: WebConnectionState): void {
+    if (this.state === state) return
+    this.state = state
+    for (const listener of [...this.stateListeners]) {
+      try {
+        listener(state)
+      } catch {
+        // Connection diagnostics must not affect transport recovery.
+      }
+    }
   }
 }
 

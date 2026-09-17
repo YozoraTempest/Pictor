@@ -6,6 +6,7 @@ import { startGui } from '../gui/index.js'
 import type { ModuleTransport } from '../kernel/contract.js'
 import type { PictorBridge } from '../shared/desktop-bridge.js'
 import { createWebFrontendAdapters } from '../web-client/bridge.js'
+import '../web-client/connection-status.css'
 import '../web-client/file-picker.css'
 import '../gui/styles.css'
 

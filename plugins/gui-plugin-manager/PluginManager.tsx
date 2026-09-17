@@ -6,6 +6,7 @@ import {
   PackagePlus,
   RotateCcw,
   Trash2,
+  WandSparkles,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
@@ -215,9 +216,20 @@ export function PluginManager({
           安全模式已忽略全部 Plugin
         </div>
       ) : null}
+      {snapshot.creationMode ? (
+        <div className="plugin-manager__notice plugin-manager__notice--creation" role="status">
+          <WandSparkles size={14} />
+          <span>
+            创造模式已开启。Bundled Plugin 构建成功或 Development Plugin 输出变化后，Web Host
+            会自动重新装配。
+          </span>
+        </div>
+      ) : null}
       {snapshot.restartRequired ? (
         <div className="plugin-manager__notice" role="status">
-          重启 Pictor 后应用 Plugin 变更
+          {snapshot.creationMode
+            ? '正在等待创造模式重新装配 Plugin'
+            : '重启 Pictor 后应用 Plugin 变更'}
         </div>
       ) : null}
       {error ? (
@@ -237,6 +249,14 @@ export function PluginManager({
                 ? item.effectiveState
                 : (guiStatus?.effectiveState ?? item.effectiveState)
             const reason = guiStatus?.reason ?? item.reason
+            const sourceDescription =
+              snapshot.creationMode && item.source.startsWith('development:')
+                ? '创造模式 · live source'
+                : item.source
+            const stateDescription =
+              snapshot.creationMode && effectiveState === 'pending-restart'
+                ? '创造模式正在重新装配'
+                : (reason ?? sourceDescription)
             return (
               <div className="plugin-row" key={`${item.kind}:${item.id}`}>
                 <div className="plugin-row__identity">
@@ -250,7 +270,7 @@ export function PluginManager({
                   <span className={`plugin-state plugin-state--${effectiveState}`}>
                     {stateLabels[effectiveState]}
                   </span>
-                  <small title={item.source}>{reason ?? item.source}</small>
+                  <small title={item.source}>{stateDescription}</small>
                 </div>
                 <div className="plugin-row__actions">
                   {item.canRestore ? (

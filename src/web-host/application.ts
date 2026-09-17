@@ -27,6 +27,7 @@ export interface WebApplicationOptions {
   readonly runtimeHostPath: string
   readonly safeMode?: boolean
   readonly profile?: 'default' | 'developer'
+  readonly creationMode?: boolean
 }
 
 export interface WebApplicationServices {
@@ -79,6 +80,7 @@ export async function createWebApplication(
     frontendLock: new ProfileFileLock(options.userDataDirectory, { frontend: 'web' }),
     profile: options.profile === 'developer' ? webDeveloperPluginProfile : webPluginProfile,
     safeMode: options.safeMode ?? false,
+    creationMode: options.creationMode ?? false,
     secretStore: new SecretStore(userData.dataDirectory),
     createHostPluginDefinitions: createWebHostPluginDefinitions,
   })

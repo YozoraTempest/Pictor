@@ -4,6 +4,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { resolveUserDataDirectory } from '../application/index.js'
 import { createWebApplication } from './application.js'
+import { WebSessionAuth } from './auth.js'
+import { CreationModeWatcher } from './creation-mode.js'
 import { WebFileTransferStore } from './file-transfers.js'
 import { openExternalUrl } from './open-external.js'
 import { parseWebArgs, WebUsageError } from './parser.js'
@@ -14,6 +16,7 @@ const sourceDirectory = dirname(fileURLToPath(import.meta.url))
 export async function main(arguments_: readonly string[] = process.argv.slice(2)): Promise<number> {
   let application: Awaited<ReturnType<typeof createWebApplication>> | null = null
   let server: WebHostServer | null = null
+  let creationMode: CreationModeWatcher | null = null
   let stopping: Promise<void> | null = null
 
   try {
@@ -33,22 +36,35 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
       runtimeHostPath,
       safeMode: request.safeMode,
       profile: request.profile,
+      creationMode: request.development,
     })
+    const auth = developmentAuth(request.development)
     server = new WebHostServer({
       services: application.services,
       moduleEvents: application.moduleEvents,
       staticDirectory: resolve(projectRoot, 'out/web/client'),
       fileTransfers: new WebFileTransferStore(resolve(userDataDirectory, 'web-transfers')),
       port: request.port,
+      ...(auth ? { auth } : {}),
       ...(request.development
         ? { development: { rendererRoot: resolve(projectRoot, 'src/renderer') } }
         : {}),
     })
     const address = await server.start()
+    const creationTrigger = process.env.PICTOR_WEB_CREATION_TRIGGER
+    if (request.development && creationTrigger) {
+      creationMode = new CreationModeWatcher({
+        pluginStore: application.services.pluginStore,
+        userDataDirectory,
+        triggerPath: creationTrigger,
+      })
+      await creationMode.start()
+    }
 
     const stop = (): Promise<void> => {
       if (stopping) return stopping
       stopping = (async () => {
+        creationMode?.stop()
         await server?.stop()
         await application?.applicationHost.stop()
       })()
@@ -68,6 +84,7 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
     }
     return 0
   } catch (error) {
+    creationMode?.stop()
     await server?.stop().catch(() => undefined)
     await application?.applicationHost.stop().catch(() => undefined)
     console.error(
@@ -76,6 +93,17 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
     )
     return error instanceof WebUsageError ? 2 : 1
   }
+}
+
+function developmentAuth(development: boolean): WebSessionAuth | undefined {
+  if (!development) return undefined
+  const launchToken = process.env.PICTOR_WEB_LAUNCH_TOKEN
+  const sessionToken = process.env.PICTOR_WEB_SESSION_TOKEN
+  if (!launchToken && !sessionToken) return undefined
+  if (!launchToken || !sessionToken) {
+    throw new Error('Development Web Host requires both stable authentication tokens')
+  }
+  return new WebSessionAuth({ launchToken, sessionToken })
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

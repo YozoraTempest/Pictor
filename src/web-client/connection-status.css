@@ -1,0 +1,32 @@
+.web-connection-status {
+  position: fixed;
+  z-index: 10000;
+  top: 10px;
+  left: 50%;
+  max-width: min(520px, calc(100vw - 24px));
+  min-height: 30px;
+  padding: 7px 12px;
+  transform: translateX(-50%);
+  border: 1px solid #556168;
+  border-radius: 6px;
+  background: #202529;
+  box-shadow: 0 5px 18px rgb(0 0 0 / 34%);
+  color: #e7eaec;
+  font:
+    600 11px/1.4 Inter,
+    system-ui,
+    sans-serif;
+  text-align: center;
+}
+
+.web-connection-status[data-state='lease-conflict'] {
+  border-color: #8a4e50;
+  background: #2b1819;
+  color: #f0a09e;
+}
+
+.web-connection-status[data-state='reloading'] {
+  border-color: #3f796a;
+  background: #172823;
+  color: #9cdbc9;
+}

@@ -27,8 +27,8 @@
     "node": ">=22.22.2"
   },
   "scripts": {
-    "dev": "npm run dev:web",
-    "dev:web": "npm run build:plugins && tsx watch src/web-host/entry.ts --development",
+    "dev": "node scripts/dev-web.mjs",
+    "dev:web": "node scripts/dev-web.mjs",
     "dev:desktop": "npm run build:plugins && electron-vite dev --watch",
     "start": "npm run start:web",
     "start:web": "node out/web-host/src/web-host/entry.js",
@@ -50,6 +50,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
     "test:plugins:watch": "vitest --config vitest.plugins.config.ts",
+    "test:web": "vitest run src/web-client src/web-host scripts/dev-web.test.mjs",
     "build:cli": "node scripts/build-cli.mjs",
     "cli": "npm run build:cli && node out/cli/src/cli/entry.js",
     "build:tui": "npm run build:plugins && node scripts/build-tui.mjs",
@@ -68,6 +69,7 @@
     "build:app": "npm run build:web",
     "build": "npm run build:web",
     "verify:fast": "npm run check:format && npm run check:types && npm run check:lint && npm test",
+    "verify:web": "npm run verify:fast && npm run build:web",
     "verify:pr": "npm run verify:fast && npm run build:distribution",
     "verify:release": "npm run verify:fast && npm run build:distribution && npm run package:build:target && npm run package:verify",
     "package:dir:target": "electron-builder --dir --x64",

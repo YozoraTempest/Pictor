@@ -40,6 +40,8 @@ describe('createWebTransports', () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockReturnValue(executeResponse)
     vi.stubGlobal('fetch', fetch)
     const transports = createWebTransports(connection)
+    const generation = '33333333-3333-4333-8333-333333333333'
+    connection.emit({ type: 'connection.ready', generation })
 
     const executePromise = transports.commands.execute(
       'test.command',
@@ -83,9 +85,34 @@ describe('createWebTransports', () => {
 
     connection.emit({
       type: 'connection.ready',
-      generation: '33333333-3333-4333-8333-333333333333',
+      generation,
     })
     expect(connection.sent).toEqual([{ type: 'command.replay', executionId: EXECUTION_ID }])
+  })
+
+  it('drops stale command recovery when a new Host generation connects', async () => {
+    const connection = new FakeEventTransport()
+    const changed = vi.fn()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+        Response.json({
+          ok: true,
+          value: { executionId: EXECUTION_ID, commandId: 'test.command' },
+        }),
+      ),
+    )
+    const transports = createWebTransports(connection, { onHostGenerationChanged: changed })
+    const firstGeneration = '33333333-3333-4333-8333-333333333333'
+    const secondGeneration = '44444444-4444-4444-8444-444444444444'
+    connection.emit({ type: 'connection.ready', generation: firstGeneration })
+    await transports.commands.execute('test.command', null, { frontend: 'gui' })
+
+    connection.emit({ type: 'connection.ready', generation: secondGeneration })
+
+    expect(changed).toHaveBeenCalledWith(firstGeneration, secondGeneration)
+    expect(connection.sent).toEqual([])
+    expect(() => transports.commands.subscribe(EXECUTION_ID, vi.fn())).toThrow('找不到命令执行')
   })
 
   it('按 Module 和事件名分发 WebSocket 事件', () => {

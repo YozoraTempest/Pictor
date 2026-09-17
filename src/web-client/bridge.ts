@@ -7,6 +7,7 @@ import {
 import { PictorError } from '../shared/errors.js'
 import { WEB_API_PREFIX } from '../shared/web-protocol.js'
 import { WebEventConnection } from './connection.js'
+import { WebConnectionStatusView } from './connection-status.js'
 import { WebFilePicker } from './file-picker.js'
 import { createWebTransports } from './transport.js'
 
@@ -16,12 +17,29 @@ export interface WebFrontendAdapters {
   stop(): void
 }
 
-export async function createWebFrontendAdapters(): Promise<WebFrontendAdapters> {
+export interface WebFrontendAdapterOptions {
+  readonly reloadPage?: () => void
+  readonly reloadDelayMs?: number
+}
+
+export async function createWebFrontendAdapters(
+  options: WebFrontendAdapterOptions = {},
+): Promise<WebFrontendAdapters> {
   const connection = new WebEventConnection()
+  const connectionStatus = new WebConnectionStatusView()
   const filePicker = new WebFilePicker()
+  let reloadTimer: ReturnType<typeof setTimeout> | null = null
+  const releaseConnectionState = connection.onState((state) => connectionStatus.update(state))
   const transports = createWebTransports(connection, {
     onModuleInvocationSettled: (moduleId, method, input, outcome) =>
       filePicker.onModuleInvocationSettled(moduleId, method, input, outcome),
+    onHostGenerationChanged: () => {
+      connectionStatus.showReload()
+      reloadTimer = setTimeout(
+        () => (options.reloadPage ?? (() => window.location.reload()))(),
+        options.reloadDelayMs ?? 80,
+      )
+    },
   })
   await connection.start()
 
@@ -45,9 +63,12 @@ export async function createWebFrontendAdapters(): Promise<WebFrontendAdapters> 
     bridge,
     modules: transports.modules,
     stop: () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
       transports.dispose()
       filePicker.stop()
       connection.stop()
+      releaseConnectionState()
+      connectionStatus.stop()
     },
   }
 }

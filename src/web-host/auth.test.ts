@@ -22,4 +22,14 @@ describe('WebSessionAuth', () => {
     expect(auth.authenticate(undefined)).toBe(false)
     expect(auth.sessionCookie()).toContain('HttpOnly; SameSite=Strict')
   })
+
+  it('can reuse supervisor-owned tokens across development Host generations', () => {
+    const auth = new WebSessionAuth({
+      launchToken: 'stable-launch-token',
+      sessionToken: 'stable-session-token',
+    })
+
+    expect(auth.launchToken).toBe('stable-launch-token')
+    expect(auth.authenticate('pictor_session=stable-session-token')).toBe(true)
+  })
 })

@@ -6,12 +6,44 @@ import { describe, expect, it, vi } from 'vitest'
 import type { CommandClient, CommandEvent } from '../../src/commands/index.js'
 import type { GuiPluginPicker } from '../../src/shared/desktop-bridge.js'
 import { pluginManagerSnapshotSchema } from '../../src/shared/plugins.js'
+import type { PluginManagerSnapshot } from '../../src/shared/plugins.js'
 import { PluginManager } from './PluginManager.js'
 
 const snapshot = pluginManagerSnapshotSchema.parse({
   safeMode: false,
   restartRequired: false,
   items: [],
+  issues: [],
+})
+
+const creationModeSnapshot = pluginManagerSnapshotSchema.parse({
+  creationMode: true,
+  safeMode: false,
+  restartRequired: true,
+  items: [
+    {
+      kind: 'pictor-plugin',
+      id: 'example.creation-plugin',
+      name: 'Creation Plugin',
+      version: '1.0.0',
+      source: 'development:/tmp/creation-plugin',
+      desiredState: 'enabled',
+      effectiveState: 'pending-restart',
+      reason: 'Restart Pictor to apply this change',
+      canRestore: false,
+    },
+    {
+      kind: 'pictor-plugin',
+      id: 'example.live-plugin',
+      name: 'Live Plugin',
+      version: '1.0.0',
+      source: 'development:/tmp/live-plugin',
+      desiredState: 'enabled',
+      effectiveState: 'active',
+      reason: null,
+      canRestore: false,
+    },
+  ],
   issues: [],
 })
 
@@ -39,6 +71,17 @@ function event(type: 'started' | 'completed', executionId: string): CommandEvent
       commandId: 'plugin.list',
       value: snapshot,
     },
+  }
+}
+
+function completedEvent(executionId: string, value: PluginManagerSnapshot): CommandEvent {
+  return {
+    type: 'completed',
+    executionId,
+    commandId: 'plugin.list',
+    sequence: 1,
+    at: now,
+    result: { executionId, commandId: 'plugin.list', value },
   }
 }
 
@@ -120,5 +163,33 @@ describe('PluginManager command integration', () => {
       ),
     )
     expect(pickPlugin).toHaveBeenCalledWith('development')
+  })
+
+  it('explains automatic Plugin reassembly while Creation Mode is active', async () => {
+    const executionId = '00000000-0000-4000-8000-000000000003'
+    const commands: CommandClient = {
+      list: vi.fn(async () => []),
+      execute: vi.fn(async () => ({ executionId, commandId: 'plugin.list' })),
+      cancel: vi.fn(async () => ({ executionId, accepted: false })),
+      subscribe: vi.fn((_id, listener) => {
+        listener(event('started', executionId))
+        listener(completedEvent(executionId, creationModeSnapshot))
+        return vi.fn()
+      }),
+    }
+
+    render(
+      <PluginManager
+        commandClient={commands}
+        pluginPicker={{ pickPlugin: vi.fn() }}
+        guiPluginStatuses={[]}
+      />,
+    )
+
+    expect(await screen.findByText(/创造模式已开启/)).toBeVisible()
+    expect(screen.getByText('正在等待创造模式重新装配 Plugin')).toBeVisible()
+    expect(screen.getByText('创造模式正在重新装配')).toBeVisible()
+    expect(screen.getByText('创造模式 · live source')).toBeVisible()
+    expect(screen.queryByText('Restart Pictor to apply this change')).not.toBeInTheDocument()
   })
 })

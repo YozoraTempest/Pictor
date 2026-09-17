@@ -4,6 +4,8 @@ const SESSION_COOKIE = 'pictor_session'
 
 export interface WebSessionAuthOptions {
   readonly createToken?: () => string
+  readonly launchToken?: string
+  readonly sessionToken?: string
 }
 
 export class WebSessionAuth {
@@ -13,8 +15,8 @@ export class WebSessionAuth {
 
   constructor(options: WebSessionAuthOptions = {}) {
     const createToken = options.createToken ?? (() => randomBytes(32).toString('base64url'))
-    this.launchToken = createToken()
-    this.sessionToken = createToken()
+    this.launchToken = options.launchToken ?? createToken()
+    this.sessionToken = options.sessionToken ?? createToken()
   }
 
   consumeLaunchToken(candidate: string | null): boolean {
