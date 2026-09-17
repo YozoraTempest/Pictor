@@ -33,6 +33,8 @@ else environment.PICTOR_SOURCE_COMMIT = sourceCommit
 await run(process.execPath, ['scripts/build-plugins.mjs'], environment)
 await run(process.execPath, ['scripts/build-cli.mjs'], environment)
 await run(process.execPath, ['scripts/build-tui.mjs'], environment)
+await run(command, ['run', 'build:web-client'], environment)
+await run(process.execPath, ['scripts/build-web-host.mjs'], environment)
 await run(command, ['run', 'build:gui'], environment)
 
 await writeFile(

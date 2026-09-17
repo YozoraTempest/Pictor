@@ -3,14 +3,20 @@ import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-import { APP_ASAR_FRONTEND_ENTRIES, BUNDLED_PLUGIN_IDS } from './distribution-contract.mjs'
+import {
+  APP_ASAR_FRONTEND_ENTRIES,
+  BUNDLED_PLUGIN_IDS,
+  WEB_FRONTEND_ENTRIES,
+} from './distribution-contract.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageMetadata = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'))
 const outputRoot = resolve(repositoryRoot, 'out')
 const bundledRoot = resolve(repositoryRoot, '.pictor', 'bundled-plugins')
 const expectedPlugins = BUNDLED_PLUGIN_IDS
-const requiredFiles = APP_ASAR_FRONTEND_ENTRIES.map((file) => file.replace(/^out\//, ''))
+const requiredFiles = [...APP_ASAR_FRONTEND_ENTRIES, ...WEB_FRONTEND_ENTRIES].map((file) =>
+  file.replace(/^out\//, ''),
+)
 
 for (const file of requiredFiles) await requireFile(join(outputRoot, file))
 await requireNoWorkspaceSdkImports(outputRoot)
@@ -65,7 +71,7 @@ process.stdout.write(
       version: packageMetadata.version,
       buildChannel: identity.buildChannel,
       sourceCommit: identity.sourceCommit,
-      frontends: ['gui', 'cli', 'tui'],
+      frontends: ['web', 'desktop', 'cli', 'tui'],
       bundledPlugins: expectedPlugins.length,
     },
     null,

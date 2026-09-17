@@ -5,10 +5,10 @@
 
 ## 核心原则
 
-- `ApplicationHost` 是 GUI、TUI 和 CLI 共用的无界面应用核心，拥有一个 Profile 的状态、Plugin
+- `ApplicationHost` 是 Web GUI、Desktop GUI、TUI 和 CLI 共用的无界面应用核心，拥有一个 Profile 的状态、Plugin
   组合、Runtime 协调和 Command Engine。
-- Frontend 只负责交互与适配，不复制应用能力。GUI 使用 Electron，CLI/TUI 使用独立 Node
-  Composition root。
+- Frontend 只负责交互与适配，不复制应用能力。浏览器 GUI 是默认开发入口，通过本机 Node Web
+  Host 连接 `ApplicationHost`；Electron、CLI 和 TUI 保留各自的 Composition root。
 - Plugin 是安装、版本、启停和移除单元；Module 是一个 Plugin 在单个进程中的执行单元；
   Contribution 是 Plugin 通过公开 Interface 提供的可组合值。
 - Core GUI 只保留 GUI Host、Workbench slot、Pictor Shell、诊断和恢复入口。产品 GUI 属于可移除
@@ -31,10 +31,13 @@ src/
 ├── kernel/      单个 Plugin 内的 Module 生命周期、Token 和 Contribution
 ├── plugin/      Manifest、Registry、依赖规划和进程级 Plugin Host
 ├── modules/     按 Feature 聚合的 Headless contract、Host 和 domain 能力
-├── main/        DesktopHost、Electron IPC、持久化、Plugin Store 和 Runtime 监管
+├── node/        Frontend 共用的 Node 持久化、Plugin Store 和平台适配
+├── web-host/    本机 HTTP/WS Host、认证、文件传输和 Web Composition root
+├── web-client/  浏览器 bridge、HTTP/WS transport 和 Web 文件选择适配
+├── main/        DesktopHost、Electron IPC、安全设置和 Electron Composition root
 ├── preload/     受限 Desktop bridge 的 Electron adapter
-├── renderer/    React Renderer 基础设施
-├── runtime/     独立 Agent Runtime Host 和 Pi adapter
+├── renderer/    Web 与 Desktop 共用的 React Renderer 基础设施
+├── runtime/     独立 Node Agent Runtime Host、监管和 Pi adapter
 └── shared/      跨进程可序列化模型与协议
 ```
 
@@ -55,9 +58,11 @@ tests/                Vitest 全局测试基础设施
 `FrontendLock` 后初始化 Repository 与 Plugin Store，装配 Runtime、Host Plugin、Module Router
 和 Command Engine；失败时释放已获得的资源，关闭时按相反顺序清理。
 
-`DesktopHost` 是 GUI 的 Electron adapter，负责窗口、IPC、协议、安全设置和应用级单实例锁。
-CLI 与 TUI 使用同一个 Profile 文件锁；冲突退出码固定为 `4`。当前不运行常驻 daemon，一个
-Profile 同时只允许一个 Frontend 持有。
+`Web Host` 是默认 GUI adapter，负责浏览器静态资源、HTTP command/module 调用、WS 事件、认证和
+Web 文件工作流。`DesktopHost` 是保留的 Electron adapter，负责窗口、IPC、协议、安全设置和应用级
+单实例锁；它当前仍直接装配 Renderer IPC，后续薄壳阶段应改为启动同一 Web Host 并加载其本机
+URL，不得新增 Electron 专属业务协议。所有 Frontend 使用同一个 Profile 文件锁；CLI/TUI 的冲突
+退出码固定为 `4`。当前不运行常驻 daemon，一个 Profile 同时只允许一个 Frontend 持有。
 
 CLI 只处理参数、Command 路由、text/JSON 输出、取消和退出码。TUI Host 只处理 Terminal、信号、
 Plugin Composition 与清理；Delegate 交互属于 `pictor.tui.delegate`，不属于 Core TUI。
@@ -65,8 +70,9 @@ Plugin Composition 与清理；Delegate 交互属于 `pictor.tui.delegate`，不
 ### Command Engine
 
 Frontend 通过不可变的 `CommandClient` 发现、执行、取消和观察 Pictor Command。Registry、handler、
-权限上下文、事件历史和取消实现留在 Engine 内部。GUI transport 只适配 IPC，Renderer 不直接访问
-Repository、Plugin Manager 或 Electron Main 实现。
+权限上下文、事件历史和取消实现留在 Engine 内部。Web transport 使用 HTTP 承载一元调用、WS 承载
+事件和历史重放；Desktop transport 继续适配 IPC。Renderer 不直接访问 Repository、Plugin Manager、
+Node Host 或 Electron Main 实现。
 
 ### Plugin、Module 与 SDK
 
@@ -88,7 +94,7 @@ runtime，不携带第二套 React。Plugin GUI 样式必须按 Plugin identity 
 Delegate GUI/TUI 只消费公开 Client。Model Provider 通过 `model.providers` Contribution 注册，Pi
 Runtime 不硬编码供应商。
 
-Pi Runtime 在独立 utility process 或 TUI 的 in-process Runtime Host 中运行。原生 Pi Extension、
+Web/Desktop 的 Pi Runtime 在独立 Node 子进程中运行；TUI 使用 in-process Runtime Host。原生 Pi Extension、
 Package、Skill、Prompt 和 Tool 交给 Pi ResourceLoader 与 ExtensionRunner 解析，Pictor 不维护第二套
 格式或工具包装。
 
@@ -98,9 +104,9 @@ leaf 和 replacement transaction 都通过 Runtime/Repository 的公开 seam 完
 
 ### Distribution 与安全边界
 
-`npm run build:distribution` 是发布包的唯一完整构建入口：清理旧产物后构建 GUI、CLI、TUI 和全部
-Bundled Plugin，再写入同一源码快照的 build identity。`package:*`、Nightly 和 Release 只能消费
-该完整产物。
+`npm run build:distribution` 是发布包的唯一完整构建入口：清理旧产物后构建 Web GUI、Desktop GUI、
+CLI、TUI 和全部 Bundled Plugin，再写入同一源码快照的 build identity。`package:*`、Nightly 和
+Release 只能消费该完整产物。
 
 公开入口固定为 `pictor`、`pictor cli ...` 和 `pictor tui ...`。打包后的 CLI/TUI 使用包内 Electron
 Node adapter，不依赖系统 Node。Electron `runAsNode` fuse 因此保持启用；launcher 限制正常入口，
@@ -111,10 +117,17 @@ Pictor 不为 Pi 原生文件与 Shell 工具增加第二套项目路径守卫�
 需要更强隔离时使用操作系统或容器能力。API Key 不得进入 Renderer、Session、Pi JSONL、日志或
 测试证据。
 
+Web Host 只绑定 `127.0.0.1`。首次启动 URL 使用一次性随机 Token 换取 `HttpOnly`、`SameSite=Strict`
+Cookie；API 写请求和 WebSocket 必须通过精确的 Host、Origin 与 Fetch Metadata 校验。一个 Host/Profile
+只允许一个活跃 GUI lease，同一浏览器 Client 重连可以替换旧连接。Plugin 静态资源和 SPA 文件必须
+限制在各自根目录内，上传、导出临时文件使用私有权限、随机名称、一次性下载票据和过期清理。该边界
+只支持本机单用户开发，不形成远程访问、多租户或常驻 daemon 承诺。
+
 ## 领域语言
 
 - **Application Host**：一个 Profile 的无界面应用能力所有者。不要称为 Core Host 或 GUI Kernel。
 - **Frontend**：连接 Application Host 的 GUI、TUI 或 CLI 交互方式。
+- **Web Host**：绑定本机回环地址、向浏览器暴露受认证 HTTP/WS transport 的 Node GUI adapter。
 - **GUI Host**：只承载 Workbench Plugin 或 Pictor Shell 的最小图形宿主。
 - **Pictor Shell**：无 Workbench 可用时提供诊断和恢复命令的内置轻量 GUI。
 - **Pictor Command**：通过 Command Engine 向不同 Frontend 一致暴露的应用操作。
@@ -132,19 +145,21 @@ Pictor 不为 Pi 原生文件与 Shell 工具增加第二套项目路径守卫�
 ## 依赖方向
 
 ```text
+Renderer -> GUI/Module contract -> Web bridge -> HTTP/WS -> Web Host
 Renderer -> GUI/Module contract -> Preload adapter -> IPC -> DesktopHost
 Bundled Plugin -> Plugin SDK / 明确的产品 contract
 CLI/TUI -> Application Host ports / Command Client
-DesktopHost -> Application Host -> Runtime / Plugin Host / Repository
+Web Host / DesktopHost -> Application Host -> Runtime / Plugin Host / Repository
 Application Host -> Command Engine -> Core 或 Plugin command
 Runtime Host -> Runtime protocol -> Runtime Plugin Host
-Main / Preload / Renderer / Runtime -> Shared
+Web Host / Web Client / Main / Preload / Renderer / Runtime -> Shared
 
 Kernel -X-> Electron / React / Pi / 业务实现
 Plugin SDK -X-> src / Electron / React / Pi / 产品实现
 Shared -X-> 任何进程实现
 Runtime -X-> Main / Preload / Renderer
 Renderer -X-> Electron / Node / 其他进程实现
+Node -X-> Electron / Renderer
 ```
 
 ESLint 与 TypeScript 项目边界负责静态检查。不要新增导出全部协议的总入口；调用者应直接依赖它
@@ -154,9 +169,11 @@ ESLint 与 TypeScript 项目边界负责静态检查。不要新增导出全部�
 
 - Headless 生命周期与装配：`src/application/`。
 - Command Engine 与公开 Command contract：`src/commands/`。
-- Plugin 安装、Manifest、Registry 和依赖规划：`src/plugin/`；Store 与恢复源：`src/main/plugins/`。
+- Plugin 安装、Manifest、Registry 和依赖规划：`src/plugin/`；Store 与恢复源：`src/node/plugins/`。
+- Node 持久化、Secret Store 和平台探测：`src/node/`；不得放入 Electron `src/main/`。
 - 新 Headless Feature：`src/modules/<feature>/`；产品 GUI：对应的 `plugins/<plugin>/`。
-- GUI Host 和公开 GUI contract：`src/gui/`；Electron adapter：`src/main/` 与 `src/preload/`。
+- GUI Host 和公开 GUI contract：`src/gui/`；浏览器 transport：`src/web-host/` 与 `src/web-client/`；
+  Electron adapter：`src/main/` 与 `src/preload/`。
 - Runtime protocol 的 Host/adapter：`src/runtime/`；可序列化 schema：对应的 `src/shared/` module。
 - Plugin 可移植 Interface：`packages/plugin-sdk/`，不得反向依赖产品实现。
 - 单元测试与实现同层；跨真实模块或协议的测试使用 `*.integration.test.ts`。仓库不维护 E2E

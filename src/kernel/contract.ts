@@ -67,6 +67,8 @@ export const moduleEventEnvelopeSchema = z.object({
   payload: z.unknown(),
 })
 
+export type ModuleEventEnvelope = z.infer<typeof moduleEventEnvelopeSchema>
+
 export interface ModuleTransport {
   invoke(moduleId: string, method: string, input: unknown): Promise<unknown>
   onEvent(moduleId: string, event: string, listener: (payload: unknown) => void): () => void

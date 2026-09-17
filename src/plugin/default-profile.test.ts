@@ -2,7 +2,12 @@
 
 import { expect, it } from 'vitest'
 
-import { defaultPluginProfile, developerPluginProfile } from './default-profile.js'
+import {
+  defaultPluginProfile,
+  developerPluginProfile,
+  webDeveloperPluginProfile,
+  webPluginProfile,
+} from './default-profile.js'
 
 it('provides distinct default and Developer Profile identities with the same product roots', () => {
   expect(defaultPluginProfile.id).toBe('pictor.default')
@@ -12,4 +17,12 @@ it('provides distinct default and Developer Profile identities with the same pro
   expect(defaultPluginProfile.plugins['pictor.workbench.delegate']).toBe('^0.4.0')
   expect(defaultPluginProfile.plugins['pictor.tui.delegate']).toBe('^0.4.0')
   expect(defaultPluginProfile.plugins['pictor.gui.plugin-manager']).toBe('^0.4.0')
+})
+
+it('omits the desktop Updater from Web-first profiles', () => {
+  expect(webPluginProfile.id).toBe('pictor.web')
+  expect(webDeveloperPluginProfile.id).toBe('pictor.web-developer')
+  expect(webDeveloperPluginProfile.plugins).toEqual(webPluginProfile.plugins)
+  expect(webPluginProfile.plugins).not.toHaveProperty('pictor.updater')
+  expect(Object.keys(webPluginProfile.plugins)).toHaveLength(9)
 })

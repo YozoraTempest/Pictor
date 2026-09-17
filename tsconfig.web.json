@@ -19,6 +19,8 @@
   "include": [
     "src/renderer/**/*.ts",
     "src/renderer/**/*.tsx",
+    "src/web-client/**/*.ts",
+    "src/web-client/**/*.tsx",
     "src/gui/**/*.ts",
     "src/gui/**/*.tsx",
     "src/kernel/**/*.ts",
