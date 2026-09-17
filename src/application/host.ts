@@ -14,14 +14,14 @@ import type {
   RuntimeHost,
   UserData,
 } from './ports.js'
-import { RuntimeCoordinator } from '../main/runtime/coordinator.js'
-import { AppRepository } from '../main/persistence/app-repository.js'
-import { SecretStore } from '../main/persistence/secret-store.js'
-import { createRuntimePluginBootstrap } from '../main/plugins/plugin-loader.js'
-import { PluginManager } from '../main/plugins/plugin-manager.js'
-import { PluginStore, type PluginStoreSnapshot } from '../main/plugins/plugin-store.js'
+import { PluginManager } from '../node/plugins/plugin-manager.js'
+import { PluginStore, type PluginStoreSnapshot } from '../node/plugins/plugin-store.js'
+import { AppRepository } from '../node/persistence/app-repository.js'
+import { SecretStore } from '../node/persistence/secret-store.js'
 import { PluginHost, type PluginDefinition } from '../plugin/host.js'
+import { createRuntimePluginBootstrap } from '../plugin/loader.js'
 import type { PluginProfile } from '../plugin/profile.js'
+import { RuntimeCoordinator } from './coordinator.js'
 
 export interface ApplicationHostPluginContext {
   readonly repository: AppRepository

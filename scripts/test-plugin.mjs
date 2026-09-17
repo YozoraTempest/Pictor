@@ -10,7 +10,7 @@ if (!name || !/^[a-z][a-z0-9-]*$/.test(name)) {
 
 const targets =
   name === 'host'
-    ? ['src/plugin', 'src/main/plugins/plugin-store.test.ts']
+    ? ['src/plugin', 'src/node/plugins/plugin-store.test.ts']
     : [resolve('plugins', name)]
 const config = resolve(name === 'host' ? 'vitest.config.ts' : 'vitest.plugins.config.ts')
 

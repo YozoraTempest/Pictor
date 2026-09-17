@@ -8,8 +8,8 @@ import type {
   SessionHistoryView,
   SessionRecord,
   SessionSummary,
-} from '../../shared/domain.js'
-import type { ModelSettings } from '../../shared/model.js'
+} from '../shared/domain.js'
+import type { ModelSettings } from '../shared/model.js'
 import { RuntimeCoordinator, type RuntimeHost, type RuntimePersistence } from './coordinator.js'
 
 const projectId = '01234567-89ab-4def-8123-456789abcdef'

@@ -8,14 +8,14 @@ import {
   ProfileFileLock,
   type EventPublisher,
 } from '../application/index.js'
-import { createHostPluginDefinitions } from '../main/plugins/plugin-loader.js'
+import { createHostPluginDefinitions } from '../plugin/loader.js'
 import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
 import type { AgentWorkspaceHost } from '../modules/agent-workspace/host.js'
 import type { UpdaterHostAdapter } from '../modules/updater/host.js'
 import { appInfoSchema, type AppInfo } from '../shared/app-info.js'
 import { PictorError } from '../shared/errors.js'
-import { defaultPluginProfile, developerPluginProfile } from '../main/plugins/default-profile.js'
-import { detectDesktopDistribution } from '../main/linux-distribution.js'
+import { defaultPluginProfile, developerPluginProfile } from '../plugin/default-profile.js'
+import { detectDesktopDistribution } from '../node/linux-distribution.js'
 import { resolveFrontendIdentity } from '../node/frontend-identity.js'
 
 import { HeadlessRuntimeHost } from './headless-runtime.js'

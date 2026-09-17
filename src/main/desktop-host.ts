@@ -29,16 +29,16 @@ import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
 import type { UpdaterHostAdapter } from '../modules/updater/host.js'
 import { appInfoSchema } from '../shared/app-info.js'
 import type { Disposable } from '../kernel/module.js'
-import { defaultPluginProfile, developerPluginProfile } from './plugins/default-profile.js'
+import { defaultPluginProfile, developerPluginProfile } from '../plugin/default-profile.js'
 import { registerCommandIpc } from './command-ipc.js'
 import { registerIpc } from './ipc.js'
 import { broadcastModuleEvent, registerModuleIpc } from './module-ipc.js'
-import { createHostPluginDefinitions } from './plugins/plugin-loader.js'
-import { SecretStore } from './persistence/secret-store.js'
+import { createHostPluginDefinitions } from '../plugin/loader.js'
+import { SecretStore } from '../node/persistence/secret-store.js'
 import { RuntimeSupervisor } from '../runtime/supervisor.js'
-import { detectDesktopDistribution } from './linux-distribution.js'
+import { detectDesktopDistribution } from '../node/linux-distribution.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
-import type { PluginStore } from './plugins/plugin-store.js'
+import type { PluginStore } from '../node/plugins/plugin-store.js'
 
 import packageMetadata from '../../package.json' with { type: 'json' }
 
@@ -231,6 +231,9 @@ export class DesktopHost {
       (request) =>
         coordinatorReference.current?.handleSessionReplacementRequest(request) ??
         Promise.resolve({ accepted: false, message: 'Runtime Coordinator is unavailable' }),
+      {
+        environment: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      },
     )
     const applicationHost = new ApplicationHost({
       userData,

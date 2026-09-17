@@ -10,18 +10,18 @@ import {
   type SessionHistoryView,
   type SessionRecord,
   type SessionSummary,
-} from '../../shared/domain.js'
-import { PictorError } from '../../shared/errors.js'
+} from '../shared/domain.js'
+import { PictorError } from '../shared/errors.js'
 import {
   type RuntimeEvent,
   type RuntimeSessionOpenConfig,
   type RuntimeSessionReplacementRequest,
   type SessionExportFormat,
-} from '../../shared/runtime-protocol.js'
-import { createSecretRedactor, type SecretRedactor } from '../../shared/secret-redaction.js'
-import type { RuntimeHost, RuntimePersistence } from '../../application/ports.js'
+} from '../shared/runtime-protocol.js'
+import { createSecretRedactor, type SecretRedactor } from '../shared/secret-redaction.js'
+import type { RuntimeHost, RuntimePersistence } from './ports.js'
 
-export type { RuntimeHost, RuntimePersistence } from '../../application/ports.js'
+export type { RuntimeHost, RuntimePersistence } from './ports.js'
 
 const defaultRuntimeTools = ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls']
 

@@ -580,13 +580,17 @@ export class RuntimeSupervisor {
   private spawnChild(): void {
     if (!this.pluginBootstrap) throw new Error('Runtime Plugin bootstrap is not configured')
     const processFactory = this.options.processFactory ?? fork
-    const child = processFactory(this.options.runtimeHostPath ?? join(__dirname, 'runtime/host.js'), [], {
-      env: {
-        ...(this.options.environment ?? process.env),
-        PICTOR_RUNTIME_PLUGIN_BOOTSTRAP: JSON.stringify(this.pluginBootstrap),
+    const child = processFactory(
+      this.options.runtimeHostPath ?? join(__dirname, 'runtime/host.js'),
+      [],
+      {
+        env: {
+          ...(this.options.environment ?? process.env),
+          PICTOR_RUNTIME_PLUGIN_BOOTSTRAP: JSON.stringify(this.pluginBootstrap),
+        },
+        stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
       },
-      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-    })
+    )
     let resolveReady!: () => void
     let rejectReady!: (error: Error) => void
     const ready = new Promise<void>((resolve, reject) => {

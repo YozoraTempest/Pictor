@@ -14,7 +14,7 @@ import type { RuntimeHost } from '../application/ports.js'
 export const HEADLESS_RUNTIME_UNAVAILABLE_MESSAGE =
   'Agent Runtime 在 CLI Frontend 中不可用；请使用 GUI 或支持 Runtime 的 Frontend'
 
-/** Runtime adapter used by the CLI. It never starts Electron or a utility process. */
+/** Runtime adapter used by the CLI. It never starts Electron or a separate Runtime Host process. */
 export class HeadlessRuntimeHost implements RuntimeHost {
   async openSession(_config: RuntimeSessionOpenConfig): Promise<void> {
     throw unavailable()

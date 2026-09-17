@@ -33,7 +33,7 @@ export interface InProcessRuntimeHostOptions {
 /**
  * Runtime adapter for the Node TUI Frontend. Runtime Plugins are loaded from
  * the same bootstrap as GUI/utility mode, but their public provider runs in
- * this process and never starts an Electron utility process.
+ * this process and never starts a separate Runtime Host child process.
  */
 export class InProcessRuntimeHost implements RuntimeHost {
   private bootstrap: RuntimePluginBootstrap | null = null

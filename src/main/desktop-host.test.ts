@@ -109,7 +109,12 @@ const mocks = vi.hoisted(() => {
   const disposable = () => ({ dispose: vi.fn(async () => undefined) })
   class FakeModelConnectionTester {}
   class FakeProfileFileLock {}
-  class FakeRuntimeSupervisor {}
+  const runtimeSupervisorConstructor = vi.fn()
+  class FakeRuntimeSupervisor {
+    constructor(...arguments_: unknown[]) {
+      runtimeSupervisorConstructor(...arguments_)
+    }
+  }
   class FakeSecretStore {}
 
   return {
@@ -127,6 +132,7 @@ const mocks = vi.hoisted(() => {
     ModelConnectionTester: FakeModelConnectionTester,
     ProfileFileLock: FakeProfileFileLock,
     RuntimeSupervisor: FakeRuntimeSupervisor,
+    runtimeSupervisorConstructor,
     SecretStore: FakeSecretStore,
     detectDesktopDistribution: vi.fn(async () => 'unsupported-linux'),
     registerCommandIpc: vi.fn(disposable),
@@ -150,6 +156,7 @@ const mocks = vi.hoisted(() => {
       applicationHost.start.mockClear()
       applicationHost.stop.mockClear()
       runtime.isActive.mockClear()
+      runtimeSupervisorConstructor.mockClear()
     },
   }
 })
@@ -181,16 +188,16 @@ vi.mock('./module-ipc.js', () => ({
   broadcastModuleEvent: mocks.broadcastModuleEvent,
   registerModuleIpc: mocks.registerModuleIpc,
 }))
-vi.mock('./plugins/plugin-loader.js', () => ({
+vi.mock('../plugin/loader.js', () => ({
   createHostPluginDefinitions: mocks.createHostPluginDefinitions,
 }))
-vi.mock('./plugins/default-profile.js', () => ({
+vi.mock('../plugin/default-profile.js', () => ({
   defaultPluginProfile: undefined,
   developerPluginProfile: undefined,
 }))
-vi.mock('./persistence/secret-store.js', () => ({ SecretStore: mocks.SecretStore }))
-vi.mock('./runtime/supervisor.js', () => ({ RuntimeSupervisor: mocks.RuntimeSupervisor }))
-vi.mock('./linux-distribution.js', () => ({
+vi.mock('../node/persistence/secret-store.js', () => ({ SecretStore: mocks.SecretStore }))
+vi.mock('../runtime/supervisor.js', () => ({ RuntimeSupervisor: mocks.RuntimeSupervisor }))
+vi.mock('../node/linux-distribution.js', () => ({
   detectDesktopDistribution: mocks.detectDesktopDistribution,
 }))
 vi.mock('./security.js', () => ({
@@ -218,6 +225,14 @@ describe('DesktopHost main window ownership', () => {
     const host = new DesktopHost()
 
     await host.start()
+    expect(mocks.runtimeSupervisorConstructor).toHaveBeenCalledWith(
+      expect.any(Function),
+      undefined,
+      expect.any(Function),
+      expect.objectContaining({
+        environment: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }),
+      }),
+    )
     const firstWindow = mocks.BrowserWindow.instances[0]!
     expect(mainWindowOf(host)).toBe(firstWindow)
     firstWindow.emit('ready-to-show')
