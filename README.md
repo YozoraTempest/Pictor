@@ -138,9 +138,11 @@ npm ci
 npm run dev
 ```
 
-`npm run dev` 先构建本地 Bundled Plugin，再启动绑定到 `127.0.0.1` 的 Node Web Host、Vite HMR
-和默认浏览器，并使用独立的 `pictor-dev` user-data，不会读取或修改正式安装的数据。浏览器 GUI
-通过同源 HTTP/WS 与 Host 通信；启动 URL 中的一次性 Token 会兑换为 HttpOnly Session Cookie。
+`npm run dev` 启动 Web 创造模式：先原子构建本地 Bundled Plugin，再启动固定使用 `4310` 端口的
+Node Web Host、Vite HMR、Plugin 源码 watcher 和默认浏览器，并使用独立的 `pictor-dev` user-data，
+不会读取或修改正式安装的数据。浏览器 GUI 通过同源 HTTP/WS 与 Host 通信；启动 URL 中的一次性
+Token 会兑换为 HttpOnly Session Cookie。Host 因源码或 Plugin 变化而重启时，开发监督器保留同一
+浏览器 Session，界面在新 Host generation 就绪后自动重新装配，不需要反复打开页面。
 可将参数传给 Web Host，例如：
 
 ```bash
@@ -171,7 +173,10 @@ Pi Extension 目录选择由本机 Host 提供目录浏览，JSONL 导入、Sess
 显式子路径导入；该 SDK 会进入 Plugin bundle，不要求发布应用在运行时提供 workspace `node_modules`。
 SDK 当前为私有开发 Interface，不是已发布 npm 包，也不形成第三方兼容承诺。
 设置 `PICTOR_PLUGIN_PROFILE=developer` 使用 Developer Profile；Plugin Manager 可以登记 live source
-Development Plugin，修改其已构建入口后重启 Pictor 即可生效，不需要重新打包 Pictor。
+Development Plugin。在 Web 创造模式中，修改 Bundled Plugin 源码会触发增量构建，修改
+Development Plugin 的 `manifest.json`、`dist/`、`assets/` 或 `pi/` 输出会直接触发 Host 重新装配；
+构建失败时继续保留上一份可运行的 Bundled Plugin 输出。正式 Web 构建和 Electron 入口仍只消费
+明确构建产物，不依赖 watcher。
 
 开发 CLI 不需要 Electron runtime。安装依赖后可直接构建并运行系统 Node 入口；这只属于开发命令，
 不代表发布包要求系统 Node：
@@ -230,7 +235,9 @@ npm run test:core
 npm run test:plugins
 npm run test:sdk
 npm run test:watch
+npm run test:web
 npm run verify:fast
+npm run verify:web
 npm run verify:pr
 npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs
 ```

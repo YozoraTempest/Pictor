@@ -32,6 +32,8 @@ user-data，不访问真实用户目录、模型服务或凭据。
 | Core 集成测试                 | `npm run test:integration`      |
 | Core Watch 模式               | `npm run test:watch`            |
 | Plugin Watch 模式             | `npm run test:plugins:watch`    |
+| Web 创造模式定向验证          | `npm run test:web`              |
+| Web 开发与生产构建验收        | `npm run verify:web`            |
 | PR 级本地验收                 | `npm run verify:pr`             |
 | 可选的当前平台发布预检        | `npm run verify:release`        |
 
@@ -49,12 +51,18 @@ user-data，不访问真实用户目录、模型服务或凭据。
 
 ```text
 verify:fast    静态检查 + Core + Bundled Plugins + Plugin SDK
+verify:web     verify:fast + Bundled Plugin/Web Client/Web Host 构建
 verify:pr      verify:fast + 一次完整 distribution build
 verify:release verify:fast + 同一 distribution 上的当前平台打包和黑盒验收
 ```
 
 `package:verify` 只消费已有产物；`package` 等便捷命令会自行构建。聚合命令应复用叶子命令，不能
 重复构建同一快照。
+
+`test:web` 只覆盖 Web 连接恢复、Host generation、创造模式 watcher 和开发监督器参数等稳定 seam；
+Plugin Manager 的创造模式界面仍由 `test:plugins` 验证。开发闭环的人工 smoke 使用
+`npm run dev -- --no-open`，确认固定端口启动、一次 Plugin 源码改动触发原子构建与 Host 重启、原有
+浏览器 Session 在重启后继续可用。该 smoke 不新增 E2E Runner。
 
 ## 分层规则
 
