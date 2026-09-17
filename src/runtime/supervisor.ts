@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { fork, type ChildProcess, type ForkOptions } from 'node:child_process'
 import { join } from 'node:path'
-
-import { utilityProcess, type UtilityProcess } from 'electron'
 
 import {
   runtimeEventSchema,
@@ -25,8 +24,8 @@ import {
   type RuntimeSessionOpenConfig,
   type RuntimeSessionReplacementRequest,
   type RuntimeStartConfig,
-} from '../../shared/runtime-protocol.js'
-import type { RuntimePluginBootstrap } from '../../shared/plugins.js'
+} from '../shared/runtime-protocol.js'
+import type { RuntimePluginBootstrap } from '../shared/plugins.js'
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'stopped', 'interrupted'])
 const RUNTIME_READY_TIMEOUT_MS = 30_000
@@ -35,13 +34,27 @@ type RuntimeProcessState =
   | { status: 'stopped' }
   | {
       status: 'starting'
-      child: UtilityProcess
+      child: RuntimeChildProcess
       ready: Promise<void>
       resolveReady: () => void
       rejectReady: (error: Error) => void
     }
-  | { status: 'ready'; child: UtilityProcess }
-  | { status: 'stopping'; child: UtilityProcess }
+  | { status: 'ready'; child: RuntimeChildProcess }
+  | { status: 'stopping'; child: RuntimeChildProcess }
+
+export type RuntimeChildProcess = Pick<ChildProcess, 'kill' | 'on' | 'once' | 'send'>
+
+export type RuntimeProcessFactory = (
+  modulePath: string,
+  args: readonly string[],
+  options: ForkOptions,
+) => RuntimeChildProcess
+
+export interface RuntimeSupervisorOptions {
+  readonly runtimeHostPath?: string
+  readonly processFactory?: RuntimeProcessFactory
+  readonly environment?: Readonly<NodeJS.ProcessEnv>
+}
 
 type RuntimeActivityState =
   | { status: 'idle'; sessionId: string | null }
@@ -160,6 +173,7 @@ export class RuntimeSupervisor {
     private readonly onSessionReplacementRequest?: (
       request: RuntimeSessionReplacementRequest,
     ) => Promise<{ accepted: boolean; targetSessionId?: string; message?: string }>,
+    private readonly options: RuntimeSupervisorOptions = {},
   ) {}
 
   configurePluginBootstrap(bootstrap: RuntimePluginBootstrap): void {
@@ -459,7 +473,7 @@ export class RuntimeSupervisor {
     if (state.status === 'starting') state.rejectReady(new Error('Agent Runtime 已关闭'))
     this.processState = { status: 'stopping', child }
     try {
-      child.postMessage({ type: 'dispose' } satisfies RuntimeCommand)
+      child.send({ type: 'dispose' } satisfies RuntimeCommand)
     } catch {
       child.kill()
     }
@@ -565,12 +579,13 @@ export class RuntimeSupervisor {
 
   private spawnChild(): void {
     if (!this.pluginBootstrap) throw new Error('Runtime Plugin bootstrap is not configured')
-    const child = utilityProcess.fork(join(__dirname, 'runtime/host.js'), [], {
-      serviceName: 'Pictor Agent Runtime',
+    const processFactory = this.options.processFactory ?? fork
+    const child = processFactory(this.options.runtimeHostPath ?? join(__dirname, 'runtime/host.js'), [], {
       env: {
-        ...process.env,
+        ...(this.options.environment ?? process.env),
         PICTOR_RUNTIME_PLUGIN_BOOTSTRAP: JSON.stringify(this.pluginBootstrap),
       },
+      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     })
     let resolveReady!: () => void
     let rejectReady!: (error: Error) => void
@@ -583,7 +598,7 @@ export class RuntimeSupervisor {
     child.on('exit', () => this.handleExit(child))
   }
 
-  private handleMessage(child: UtilityProcess, message: unknown): void {
+  private handleMessage(child: RuntimeChildProcess, message: unknown): void {
     const processState = this.processState
     if (processState.status === 'stopped' || processState.child !== child) return
 
@@ -619,7 +634,7 @@ export class RuntimeSupervisor {
   }
 
   private async handleSessionReplacementRequest(
-    child: UtilityProcess,
+    child: RuntimeChildProcess,
     request: RuntimeSessionReplacementRequest,
   ): Promise<void> {
     let result: { accepted: boolean; targetSessionId?: string; message?: string }
@@ -645,7 +660,7 @@ export class RuntimeSupervisor {
     })
   }
 
-  private handleExit(child: UtilityProcess): void {
+  private handleExit(child: RuntimeChildProcess): void {
     const processState = this.processState
     if (processState.status === 'stopped' || processState.child !== child) return
     const expected = processState.status === 'stopping'
@@ -723,13 +738,13 @@ export class RuntimeSupervisor {
     this.activity = { ...this.activity, sessionId }
   }
 
-  private isCurrentChild(child: UtilityProcess): boolean {
+  private isCurrentChild(child: RuntimeChildProcess): boolean {
     const state = this.processState
     return state.status !== 'stopped' && state.child === child
   }
 
   private post(command: RuntimeCommand): void {
     if (this.processState.status !== 'ready') throw new Error('Agent Runtime 尚未启动')
-    this.processState.child.postMessage(command)
+    this.processState.child.send(command)
   }
 }

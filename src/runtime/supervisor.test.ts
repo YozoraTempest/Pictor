@@ -2,23 +2,22 @@
 
 import { EventEmitter } from 'node:events'
 
-import type { UtilityProcess } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { RuntimePluginBootstrap } from '../../shared/plugins.js'
+import type { RuntimePluginBootstrap } from '../shared/plugins.js'
 import type {
   RuntimeCommand,
   RuntimeNavigateConfig,
   RuntimeSessionOpenConfig,
   RuntimeStartConfig,
-} from '../../shared/runtime-protocol.js'
-import { RuntimeSupervisor } from './supervisor.js'
+} from '../shared/runtime-protocol.js'
+import {
+  RuntimeSupervisor,
+  type RuntimeChildProcess,
+  type RuntimeProcessFactory,
+} from './supervisor.js'
 
 const forkMock = vi.hoisted(() => vi.fn())
-
-vi.mock('electron', () => ({
-  utilityProcess: { fork: forkMock },
-}))
 
 const sessionA = '11111111-1111-4111-8111-111111111111'
 const sessionB = '22222222-2222-4222-8222-222222222222'
@@ -44,11 +43,11 @@ const settings = {
   maxOutputTokens: null,
 }
 
-class FakeUtilityProcess extends EventEmitter {
-  readonly postMessage = vi.fn((_command: RuntimeCommand) => undefined)
+class FakeChildProcess extends EventEmitter {
+  readonly send = vi.fn((_command: RuntimeCommand) => true)
   readonly kill = vi.fn(() => this.emit('exit', 1))
 
-  send(message: unknown): void {
+  receive(message: unknown): void {
     this.emit('message', message)
   }
 
@@ -57,10 +56,13 @@ class FakeUtilityProcess extends EventEmitter {
   }
 }
 
-let processes: FakeUtilityProcess[]
+let processes: FakeChildProcess[]
 
 function createSupervisor(onEvent = vi.fn()): RuntimeSupervisor {
-  return new RuntimeSupervisor(onEvent, pluginBootstrap)
+  return new RuntimeSupervisor(onEvent, pluginBootstrap, undefined, {
+    runtimeHostPath: '/runtime/host.js',
+    processFactory: forkMock as RuntimeProcessFactory,
+  })
 }
 
 function sessionOpenConfig(
@@ -110,14 +112,14 @@ async function openSession(
   supervisor: RuntimeSupervisor,
   sessionId = sessionA,
   operationId = operationA,
-): Promise<FakeUtilityProcess> {
+): Promise<FakeChildProcess> {
   const config = sessionOpenConfig(sessionId, operationId)
   const opened = supervisor.openSession(config)
   const child = processes.at(-1)
   if (!child) throw new Error('Runtime process was not started')
-  child.send({ type: 'host.ready' })
-  await vi.waitFor(() => expect(child.postMessage).toHaveBeenCalledWith(config))
-  child.send({
+  child.receive({ type: 'host.ready' })
+  await vi.waitFor(() => expect(child.send).toHaveBeenCalledWith(config))
+  child.receive({
     type: 'host.sessionResult',
     operationId,
     sessionId,
@@ -131,9 +133,9 @@ beforeEach(() => {
   processes = []
   forkMock.mockReset()
   forkMock.mockImplementation(() => {
-    const child = new FakeUtilityProcess()
+    const child = new FakeChildProcess()
     processes.push(child)
-    return child as unknown as UtilityProcess
+    return child as unknown as RuntimeChildProcess
   })
 })
 
@@ -147,13 +149,13 @@ describe('RuntimeSupervisor state machine', () => {
     const child = processes[0]
     if (!child) throw new Error('Runtime process was not started')
 
-    child.send({ type: 'host.ready' })
+    child.receive({ type: 'host.ready' })
 
     await expect(second).rejects.toThrow('已有 Runtime 操作正在执行')
-    await vi.waitFor(() => expect(child.postMessage).toHaveBeenCalledTimes(1))
-    expect(child.postMessage).toHaveBeenCalledWith(firstConfig)
+    await vi.waitFor(() => expect(child.send).toHaveBeenCalledTimes(1))
+    expect(child.send).toHaveBeenCalledWith(firstConfig)
 
-    child.send({
+    child.receive({
       type: 'host.sessionResult',
       operationId: operationA,
       sessionId: sessionA,
@@ -167,7 +169,7 @@ describe('RuntimeSupervisor state machine', () => {
     const child = await openSession(supervisor)
     const controls = supervisor.getRuntimeControls(sessionA)
 
-    child.send({
+    child.receive({
       type: 'host.controlsResult',
       sessionId: sessionB,
       modelId: 'ignored-model',
@@ -192,7 +194,7 @@ describe('RuntimeSupervisor state machine', () => {
       steeringMode: 'all' as const,
       followUpMode: 'one-at-a-time' as const,
     }
-    child.send(expected)
+    child.receive(expected)
     await expect(controls).resolves.toEqual(expected)
   })
 
@@ -202,13 +204,13 @@ describe('RuntimeSupervisor state machine', () => {
     const reload = supervisor.reloadResources(sessionA)
     const controls = supervisor.getRuntimeControls(sessionA)
 
-    child.send({ type: 'host.fatal', message: 'runtime failed' })
+    child.receive({ type: 'host.fatal', message: 'runtime failed' })
 
     await expect(reload).rejects.toThrow('runtime failed')
     await expect(controls).rejects.toThrow('runtime failed')
 
     const retry = supervisor.getRuntimeControls(sessionA)
-    child.send({
+    child.receive({
       type: 'host.controlsResult',
       sessionId: sessionA,
       modelId: null,
@@ -226,9 +228,9 @@ describe('RuntimeSupervisor state machine', () => {
     const child = await openSession(supervisor)
     const config = navigateConfig()
     const navigation = supervisor.navigateSession(config)
-    await vi.waitFor(() => expect(child.postMessage).toHaveBeenCalledWith(config))
+    await vi.waitFor(() => expect(child.send).toHaveBeenCalledWith(config))
 
-    child.send({
+    child.receive({
       type: 'host.navigateResult',
       operationId: config.operationId,
       sourceSessionId: config.sourceSessionId,
@@ -239,7 +241,7 @@ describe('RuntimeSupervisor state machine', () => {
 
     await expect(supervisor.getRuntimeControls(sessionB)).resolves.toBeNull()
     const controls = supervisor.getRuntimeControls(sessionA)
-    child.send({
+    child.receive({
       type: 'host.controlsResult',
       sessionId: sessionA,
       modelId: null,
@@ -265,10 +267,10 @@ describe('RuntimeSupervisor state machine', () => {
     const reopened = supervisor.openSession(sessionOpenConfig(sessionB, operationB))
     const secondChild = processes[1]
     if (!secondChild) throw new Error('Replacement runtime process was not started')
-    secondChild.send({ type: 'host.ready' })
-    await vi.waitFor(() => expect(secondChild.postMessage).toHaveBeenCalledTimes(1))
+    secondChild.receive({ type: 'host.ready' })
+    await vi.waitFor(() => expect(secondChild.send).toHaveBeenCalledTimes(1))
 
-    firstChild.send({
+    firstChild.receive({
       type: 'host.sessionResult',
       operationId: operationB,
       sessionId: sessionB,
@@ -278,7 +280,7 @@ describe('RuntimeSupervisor state machine', () => {
       '已有 Runtime 操作正在执行',
     )
 
-    secondChild.send({
+    secondChild.receive({
       type: 'host.sessionResult',
       operationId: operationB,
       sessionId: sessionB,
@@ -294,7 +296,7 @@ describe('RuntimeSupervisor state machine', () => {
     const started = supervisor.start(startConfig())
     const child = processes[0]
     if (!child) throw new Error('Runtime process was not started')
-    child.send({ type: 'host.ready' })
+    child.receive({ type: 'host.ready' })
     await started
 
     child.exit()
