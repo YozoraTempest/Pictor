@@ -12,12 +12,10 @@ export function getSecureWebPreferences(): Pick<
   }
 }
 
-export function isTrustedRendererUrl(url: string, developmentUrl?: string): boolean {
-  const parsedUrl = new URL(url)
-
-  if (developmentUrl) {
-    return parsedUrl.origin === new URL(developmentUrl).origin
+export function isTrustedRendererUrl(url: string, trustedOrigin: string): boolean {
+  try {
+    return new URL(url).origin === trustedOrigin
+  } catch {
+    return false
   }
-
-  return parsedUrl.protocol === 'app:' && parsedUrl.host === 'bundle'
 }

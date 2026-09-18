@@ -2,6 +2,7 @@ import {
   appInfoResultSchema,
   pluginBootstrapResultSchema,
   voidResultSchema,
+  type PlatformFilePicker,
   type PictorBridge,
 } from '../shared/desktop-bridge.js'
 import { PictorError } from '../shared/errors.js'
@@ -20,6 +21,12 @@ export interface WebFrontendAdapters {
 export interface WebFrontendAdapterOptions {
   readonly reloadPage?: () => void
   readonly reloadDelayMs?: number
+  readonly platformFilePicker?: PlatformFilePicker
+}
+
+interface FrontendFilePicker extends PlatformFilePicker {
+  onModuleInvocationSettled?: WebFilePicker['onModuleInvocationSettled']
+  stop?: () => void
 }
 
 export async function createWebFrontendAdapters(
@@ -27,12 +34,12 @@ export async function createWebFrontendAdapters(
 ): Promise<WebFrontendAdapters> {
   const connection = new WebEventConnection()
   const connectionStatus = new WebConnectionStatusView()
-  const filePicker = new WebFilePicker()
+  const filePicker: FrontendFilePicker = options.platformFilePicker ?? new WebFilePicker()
   let reloadTimer: ReturnType<typeof setTimeout> | null = null
   const releaseConnectionState = connection.onState((state) => connectionStatus.update(state))
   const transports = createWebTransports(connection, {
     onModuleInvocationSettled: (moduleId, method, input, outcome) =>
-      filePicker.onModuleInvocationSettled(moduleId, method, input, outcome),
+      filePicker.onModuleInvocationSettled?.(moduleId, method, input, outcome),
     onHostGenerationChanged: () => {
       connectionStatus.showReload()
       reloadTimer = setTimeout(
@@ -65,7 +72,7 @@ export async function createWebFrontendAdapters(
     stop: () => {
       if (reloadTimer) clearTimeout(reloadTimer)
       transports.dispose()
-      filePicker.stop()
+      filePicker.stop?.()
       connection.stop()
       releaseConnectionState()
       connectionStatus.stop()

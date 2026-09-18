@@ -70,76 +70,58 @@ const mocks = vi.hoisted(() => {
 
   const app = Object.assign(new FakeEventEmitter(), {
     isPackaged: false,
+    getAppPath: vi.fn(() => '/workspace/Pictor'),
     getVersion: vi.fn(() => '0.4.0'),
     getPath: vi.fn(() => '/tmp/pictor-desktop-host-test'),
     getName: vi.fn(() => 'Pictor'),
     requestSingleInstanceLock: vi.fn(() => true),
     releaseSingleInstanceLock: vi.fn(),
     quit: vi.fn(),
-    exit: vi.fn(),
-    setPath: vi.fn(),
-    enableSandbox: vi.fn(),
   })
-
   const runtime = { isActive: vi.fn(() => false) }
-  const services = {
-    appInfo: {
-      name: 'Pictor',
-      version: '0.4.0',
-      buildChannel: 'development',
-      sourceCommit: null,
-      platform: 'linux',
-      arch: 'x64',
-      distribution: 'unsupported-linux',
-    },
-    commandClient: {},
-    repository: {},
-    pluginStore: {},
-    pluginHost: {},
-    pluginManager: {},
-    runtime,
-    moduleRouter: {},
-    getPluginBootstrap: vi.fn(async () => ({})),
-    restoreSelectedContext: vi.fn(async () => undefined),
+  const services = { runtime }
+  const applicationHost = { stop: vi.fn(async () => undefined) }
+  const application = { applicationHost, services }
+  const address = {
+    origin: 'http://127.0.0.1:43123',
+    launchUrl: 'http://127.0.0.1:43123/?token=launch-token',
   }
-  const applicationHost = {
-    start: vi.fn(async () => services),
-    stop: vi.fn(async () => undefined),
-  }
-  const disposable = () => ({ dispose: vi.fn(async () => undefined) })
-  class FakeModelConnectionTester {}
-  class FakeProfileFileLock {}
-  const runtimeSupervisorConstructor = vi.fn()
-  class FakeRuntimeSupervisor {
-    constructor(...arguments_: unknown[]) {
-      runtimeSupervisorConstructor(...arguments_)
+  const serverStop = vi.fn(async () => undefined)
+  const webHostServerConstructor = vi.fn()
+  class FakeWebHostServer {
+    constructor(options: unknown) {
+      webHostServerConstructor(options)
     }
+
+    start = vi.fn(async () => address)
+    stop = serverStop
   }
+  class FakeProfileFileLock {}
   class FakeSecretStore {}
+  class FakeEventHub {
+    publish = vi.fn()
+  }
+  class FakeWebFileTransferStore {}
+  const platformIpc = { dispose: vi.fn(async () => undefined) }
 
   return {
     app,
     BrowserWindow: FakeBrowserWindow,
     dialog: { showMessageBoxSync: vi.fn(() => 0) },
     net: { fetch: vi.fn(async () => new Response()) },
-    protocol: { handle: vi.fn() },
     safeStorage: {},
     session: { defaultSession: { setPermissionRequestHandler: vi.fn() } },
-    shell: { openExternal: vi.fn() },
-    ApplicationHost: vi.fn(function FakeApplicationHost() {
-      return applicationHost
-    }),
-    ModelConnectionTester: FakeModelConnectionTester,
+    shell: { openExternal: vi.fn(async () => undefined) },
+    createNodeApplication: vi.fn(async () => application),
     ProfileFileLock: FakeProfileFileLock,
-    RuntimeSupervisor: FakeRuntimeSupervisor,
-    runtimeSupervisorConstructor,
     SecretStore: FakeSecretStore,
+    EventHub: FakeEventHub,
+    WebFileTransferStore: FakeWebFileTransferStore,
+    WebHostServer: FakeWebHostServer,
+    webHostServerConstructor,
+    registerIpc: vi.fn(() => platformIpc),
+    platformIpc,
     detectDesktopDistribution: vi.fn(async () => 'unsupported-linux'),
-    registerCommandIpc: vi.fn(disposable),
-    registerIpc: vi.fn(disposable),
-    registerModuleIpc: vi.fn(disposable),
-    broadcastModuleEvent: vi.fn(),
-    createHostPluginDefinitions: vi.fn(() => []),
     getSecureWebPreferences: vi.fn(() => ({
       contextIsolation: true,
       nodeIntegration: false,
@@ -148,15 +130,20 @@ const mocks = vi.hoisted(() => {
     })),
     isTrustedRendererUrl: vi.fn(() => true),
     applicationHost,
-    services,
+    serverStop,
+    runtime,
+    address,
     reset() {
       app.removeAllListeners()
       FakeBrowserWindow.instances = []
       FakeBrowserWindow.getAllWindows.mockClear()
-      applicationHost.start.mockClear()
       applicationHost.stop.mockClear()
+      serverStop.mockClear()
       runtime.isActive.mockClear()
-      runtimeSupervisorConstructor.mockClear()
+      webHostServerConstructor.mockClear()
+      platformIpc.dispose.mockClear()
+      this.createNodeApplication.mockClear()
+      this.registerIpc.mockClear()
     },
   }
 })
@@ -166,44 +153,33 @@ vi.mock('electron', () => ({
   BrowserWindow: mocks.BrowserWindow,
   dialog: mocks.dialog,
   net: mocks.net,
-  protocol: mocks.protocol,
   safeStorage: mocks.safeStorage,
   session: mocks.session,
   shell: mocks.shell,
 }))
-
 vi.mock('../application/index.js', () => ({
-  ApplicationHost: mocks.ApplicationHost,
-  ModelConnectionTester: mocks.ModelConnectionTester,
+  createNodeApplication: mocks.createNodeApplication,
   ProfileFileLock: mocks.ProfileFileLock,
 }))
-
-vi.mock('../modules/agent-workspace/shared.js', () => ({
-  agentWorkspaceContract: { id: 'pictor.agent-workspace' },
-}))
-
-vi.mock('./command-ipc.js', () => ({ registerCommandIpc: mocks.registerCommandIpc }))
-vi.mock('./ipc.js', () => ({ registerIpc: mocks.registerIpc }))
-vi.mock('./module-ipc.js', () => ({
-  broadcastModuleEvent: mocks.broadcastModuleEvent,
-  registerModuleIpc: mocks.registerModuleIpc,
-}))
-vi.mock('../plugin/loader.js', () => ({
-  createHostPluginDefinitions: mocks.createHostPluginDefinitions,
-}))
-vi.mock('../plugin/default-profile.js', () => ({
-  defaultPluginProfile: undefined,
-  developerPluginProfile: undefined,
-}))
-vi.mock('../node/persistence/secret-store.js', () => ({ SecretStore: mocks.SecretStore }))
-vi.mock('../runtime/supervisor.js', () => ({ RuntimeSupervisor: mocks.RuntimeSupervisor }))
 vi.mock('../node/linux-distribution.js', () => ({
   detectDesktopDistribution: mocks.detectDesktopDistribution,
 }))
+vi.mock('../node/persistence/secret-store.js', () => ({ SecretStore: mocks.SecretStore }))
+vi.mock('../plugin/default-profile.js', () => ({
+  defaultPluginProfile: { id: 'pictor.default', plugins: {} },
+  developerPluginProfile: { id: 'pictor.developer', plugins: {} },
+}))
+vi.mock('../web-host/event-hub.js', () => ({ EventHub: mocks.EventHub }))
+vi.mock('../web-host/file-transfers.js', () => ({
+  WebFileTransferStore: mocks.WebFileTransferStore,
+}))
+vi.mock('../web-host/server.js', () => ({ WebHostServer: mocks.WebHostServer }))
+vi.mock('./ipc.js', () => ({ registerIpc: mocks.registerIpc }))
 vi.mock('./security.js', () => ({
   getSecureWebPreferences: mocks.getSecureWebPreferences,
   isTrustedRendererUrl: mocks.isTrustedRendererUrl,
 }))
+
 let DesktopHost: typeof import('./desktop-host.js').DesktopHost
 
 beforeAll(async () => {
@@ -213,26 +189,43 @@ beforeAll(async () => {
 })
 
 afterAll(() => vi.unstubAllGlobals())
-
 beforeEach(() => mocks.reset())
 
 function mainWindowOf(host: InstanceType<typeof DesktopHost>): unknown {
   return (host as unknown as { mainWindow: unknown }).mainWindow
 }
 
-describe('DesktopHost main window ownership', () => {
-  it('retains the startup and activated windows until their matching close, then stops cleanly', async () => {
+describe('DesktopHost Web Host shell', () => {
+  it('starts the shared Node application and loads the loopback Web Host URL', async () => {
     const host = new DesktopHost()
 
     await host.start()
-    expect(mocks.runtimeSupervisorConstructor).toHaveBeenCalledWith(
-      expect.any(Function),
-      undefined,
-      expect.any(Function),
+
+    expect(mocks.createNodeApplication).toHaveBeenCalledWith(
       expect.objectContaining({
-        environment: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }),
+        userDataDirectory: '/tmp/pictor-desktop-host-test',
+        runtimeHostPath: expect.stringMatching(/runtime[\\/]host\.js$/),
+        runtimeEnvironment: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }),
+        profile: expect.objectContaining({ id: 'pictor.default' }),
+        updaterHost: expect.any(Object),
       }),
     )
+    expect(mocks.webHostServerConstructor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        services: expect.any(Object),
+        staticDirectory: '/workspace/Pictor/out/web/client',
+        development: { rendererRoot: '/workspace/Pictor/src/renderer' },
+      }),
+    )
+    const firstWindow = mocks.BrowserWindow.instances[0]!
+    expect(firstWindow.loadURL).toHaveBeenCalledWith(mocks.address.launchUrl)
+    expect(mocks.registerIpc).toHaveBeenCalledWith({ validateSender: expect.any(Function) })
+  })
+
+  it('retains activated windows and stops Web Host before Application Host cleanup completes', async () => {
+    const host = new DesktopHost()
+
+    await host.start()
     const firstWindow = mocks.BrowserWindow.instances[0]!
     expect(mainWindowOf(host)).toBe(firstWindow)
     firstWindow.emit('ready-to-show')
@@ -246,15 +239,10 @@ describe('DesktopHost main window ownership', () => {
     firstWindow.emit('closed')
     expect(mainWindowOf(host)).toBe(activatedWindow)
 
-    mocks.BrowserWindow.instances.splice(0, 1)
-    activatedWindow.emit('closed')
-    expect(mainWindowOf(host)).toBeNull()
-
-    mocks.app.emit('activate')
-    const replacementWindow = mocks.BrowserWindow.instances[0]!
-    expect(mainWindowOf(host)).toBe(replacementWindow)
-
     await host.stop()
+    expect(mocks.platformIpc.dispose).toHaveBeenCalledOnce()
+    expect(mocks.serverStop).toHaveBeenCalledOnce()
+    expect(mocks.applicationHost.stop).toHaveBeenCalledOnce()
     expect(mainWindowOf(host)).toBeNull()
   })
 })

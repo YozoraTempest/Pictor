@@ -9,16 +9,29 @@ import {
 } from './package-harness.mjs'
 
 describe('package harness', () => {
-  it('accepts only the packaged application page target', () => {
-    const packagedPage = { type: 'page', url: 'app://bundle/index.html', title: 'Pictor' }
+  it('accepts only the packaged loopback Web Host page target', () => {
+    const packagedPage = { type: 'page', url: 'http://127.0.0.1:43123/', title: 'Pictor' }
     expect(
       findPackagedPageTarget([
         { type: 'page', url: 'devtools://devtools/bundled/inspector.html' },
-        { type: 'service_worker', url: 'app://bundle/index.html' },
+        { type: 'service_worker', url: 'http://127.0.0.1:43123/' },
         packagedPage,
       ]),
     ).toEqual(packagedPage)
-    expect(findPackagedPageTarget([{ type: 'page', url: 'http://localhost' }])).toBeNull()
+    expect(findPackagedPageTarget([{ type: 'page', url: 'http://localhost:43123/' }])).toBeNull()
+    expect(findPackagedPageTarget([{ type: 'page', url: 'https://127.0.0.1/' }])).toBeNull()
+    expect(
+      findPackagedPageTarget([
+        {
+          type: 'page',
+          url: 'http://127.0.0.1:43123/?token=launch-token',
+          title: 'Pictor',
+        },
+      ]),
+    ).toBeNull()
+    expect(
+      findPackagedPageTarget([{ type: 'page', url: 'http://127.0.0.1:43123/', title: '' }]),
+    ).toBeNull()
   })
 
   it('closes the complete Windows launcher process tree', () => {

@@ -1,6 +1,5 @@
 import { resolve } from 'node:path'
 
-import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
 const buildChannel = process.env.PICTOR_BUILD_CHANNEL ?? 'development'
@@ -25,6 +24,7 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
+        external: ['vite', '@vitejs/plugin-react'],
         input: {
           index: resolve('src/main/index.ts'),
           'runtime/host': resolve('src/runtime/host.ts'),
@@ -41,15 +41,6 @@ export default defineConfig({
           entryFileNames: 'index.cjs',
           format: 'cjs',
         },
-      },
-    },
-  },
-  renderer: {
-    root: resolve('src/renderer'),
-    plugins: [react()],
-    build: {
-      rollupOptions: {
-        input: resolve('src/renderer/index.html'),
       },
     },
   },

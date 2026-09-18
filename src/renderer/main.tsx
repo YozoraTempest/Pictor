@@ -3,8 +3,7 @@ import * as jsxDevRuntime from 'react/jsx-dev-runtime'
 import * as jsxRuntime from 'react/jsx-runtime'
 
 import { startGui } from '../gui/index.js'
-import type { ModuleTransport } from '../kernel/contract.js'
-import type { PictorBridge } from '../shared/desktop-bridge.js'
+import type { PlatformFilePicker } from '../shared/desktop-bridge.js'
 import { createWebFrontendAdapters } from '../web-client/bridge.js'
 import '../web-client/connection-status.css'
 import '../web-client/file-picker.css'
@@ -25,13 +24,10 @@ Object.assign(globalThis, {
 void startRenderer(root)
 
 async function startRenderer(rootElement: HTMLElement): Promise<void> {
-  const desktopBridge = readDesktopBridge()
-  if (desktopBridge) {
-    await startGui(rootElement, desktopBridge.bridge)
-    return
-  }
-
-  const web = await createWebFrontendAdapters()
+  const platformFilePicker = readDesktopFilePicker()
+  const web = await createWebFrontendAdapters({
+    ...(platformFilePicker ? { platformFilePicker } : {}),
+  })
   Object.assign(window, {
     pictor: web.bridge,
     pictorModules: web.modules,
@@ -47,8 +43,6 @@ async function startRenderer(rootElement: HTMLElement): Promise<void> {
   )
 }
 
-function readDesktopBridge(): { bridge: PictorBridge; modules: ModuleTransport } | null {
-  const bridge = Reflect.get(window, 'pictor') as PictorBridge | undefined
-  const modules = Reflect.get(window, 'pictorModules') as ModuleTransport | undefined
-  return bridge && modules ? { bridge, modules } : null
+function readDesktopFilePicker(): PlatformFilePicker | undefined {
+  return Reflect.get(window, 'pictorDesktop') as PlatformFilePicker | undefined
 }

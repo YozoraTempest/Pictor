@@ -16,5 +16,10 @@ export type {
 } from './ports.js'
 export { ProfileFileLock, type ProfileLockConflict, type ProfileLockOwner } from './profile-lock.js'
 export { ModelConnectionTester } from './model-connection.js'
+export {
+  createNodeApplication,
+  type NodeApplicationOptions,
+  type NodeApplicationServices,
+} from './node-application.js'
 export { resolveUserDataDirectory, type UserDataDirectoryOptions } from './user-data.js'
 export type { CommandClient } from '../commands/index.js'

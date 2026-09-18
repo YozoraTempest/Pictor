@@ -4,8 +4,6 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { AppInfo } from '../shared/app-info.js'
-import type { PluginBootstrap } from '../shared/plugins.js'
 import type { Disposable } from '../kernel/module.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -50,9 +48,6 @@ beforeEach(() => {
   mocks.commandExecute.mockClear()
   registration = registerIpc({
     validateSender: vi.fn(),
-    onGuiReady: vi.fn(async () => undefined),
-    appInfo: {} as AppInfo,
-    getPluginBootstrap: vi.fn(async () => ({}) as PluginBootstrap),
   })
 })
 
