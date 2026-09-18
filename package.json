@@ -80,6 +80,10 @@
     "package:build": "npm run build:distribution && npm run package:build:target",
     "package:windows:build": "npm run build:distribution && npm run package:windows:target",
     "package:linux:build": "npm run build:distribution && npm run package:linux:target",
+    "package:web:target": "node scripts/package-web.mjs",
+    "package:web:build": "npm run build:web && npm run package:web:target",
+    "package:web:verify": "node scripts/verify-web-package.mjs",
+    "package:web": "npm run package:web:build && npm run package:web:verify",
     "package:dir": "npm run package:dir:build",
     "package:verify": "node scripts/verify-package.mjs",
     "package": "npm run package:build && npm run package:verify"

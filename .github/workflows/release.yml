@@ -48,10 +48,10 @@ jobs:
             exit 1
           fi
 
-  packages:
-    name: Build desktop packages
+  package:
+    name: Build Web package
     needs: metadata
-    uses: ./.github/workflows/package-desktop.yml
+    uses: ./.github/workflows/package-web.yml
     with:
       source_sha: ${{ github.sha }}
       artifact_prefix: release
@@ -59,10 +59,10 @@ jobs:
       run_source_validation: true
 
   publish:
-    name: Publish atomic desktop release
+    name: Publish Web release
     needs:
       - metadata
-      - packages
+      - package
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -74,7 +74,7 @@ jobs:
           node-version-file: .nvmrc
       - uses: actions/download-artifact@v8
         with:
-          pattern: release-*-x64
+          pattern: release-web
           path: release-assets
           merge-multiple: true
       - name: Read release notes
@@ -86,11 +86,17 @@ jobs:
           RELEASE_NOTES_PATH: ${{ steps.metadata.outputs.notes_path }}
         run: |
           cd release-assets
-          sha256sum \
-            "Pictor-$RELEASE_VERSION-windows-x64-setup.exe" \
-            "Pictor-$RELEASE_VERSION-arch-x64.pacman" \
-            "Pictor-$RELEASE_VERSION-linux-x64.AppImage" > SHA256SUMS
+          sha256sum "Pictor-$RELEASE_VERSION-web.tgz" > SHA256SUMS
           {
+            echo
+            echo '### Web installation'
+            echo
+            echo 'Requires Node.js 22.22.2 or newer.'
+            echo
+            echo '```bash'
+            echo "npm install --global ./Pictor-$RELEASE_VERSION-web.tgz"
+            echo 'pictor-web'
+            echo '```'
             echo
             echo '### SHA-256'
             while read -r digest asset; do
@@ -130,9 +136,7 @@ jobs:
             --draft
           draft_created=1
           gh release upload "$RELEASE_TAG" \
-            "release-assets/Pictor-$RELEASE_VERSION-windows-x64-setup.exe" \
-            "release-assets/Pictor-$RELEASE_VERSION-arch-x64.pacman" \
-            "release-assets/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
+            "release-assets/Pictor-$RELEASE_VERSION-web.tgz" \
             "release-assets/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY"
           gh release edit "$RELEASE_TAG" \

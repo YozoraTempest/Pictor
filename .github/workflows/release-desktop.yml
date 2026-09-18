@@ -1,0 +1,112 @@
+name: Publish desktop packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing Nightly or version Release to receive desktop packages
+        type: string
+        required: true
+        default: nightly
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  source:
+    name: Resolve existing Release source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+      channel: ${{ steps.source.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Validate Release tag and source identity
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          source_sha="$(git rev-parse HEAD)"
+          source_version="$(node --print "require('./package.json').version")"
+
+          case "$RELEASE_TAG" in
+            nightly)
+              build_channel=nightly
+              ;;
+            "v$source_version")
+              build_channel=stable
+              ;;
+            *)
+              echo "Release tag $RELEASE_TAG does not match source version $source_version." >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "sha=$source_sha"
+            echo "version=$source_version"
+            echo "channel=$build_channel"
+          } >> "$GITHUB_OUTPUT"
+
+  packages:
+    name: Build desktop packages manually
+    needs: source
+    uses: ./.github/workflows/package-desktop.yml
+    with:
+      source_sha: ${{ needs.source.outputs.sha }}
+      artifact_prefix: desktop-release
+      build_channel: ${{ needs.source.outputs.channel }}
+      run_source_validation: ${{ needs.source.outputs.channel == 'stable' }}
+
+  publish:
+    name: Attach desktop packages
+    needs:
+      - source
+      - packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-release-*-x64
+          path: release-assets
+          merge-multiple: true
+      - name: Prepare desktop checksums
+        env:
+          RELEASE_VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum \
+            "Pictor-$RELEASE_VERSION-windows-x64-setup.exe" \
+            "Pictor-$RELEASE_VERSION-arch-x64.pacman" \
+            "Pictor-$RELEASE_VERSION-linux-x64.AppImage" > SHA256SUMS-desktop
+      - name: Attach desktop packages to the existing Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.source.outputs.version }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "release-assets/Pictor-$RELEASE_VERSION-windows-x64-setup.exe" \
+            "release-assets/Pictor-$RELEASE_VERSION-arch-x64.pacman" \
+            "release-assets/Pictor-$RELEASE_VERSION-linux-x64.AppImage" \
+            release-assets/SHA256SUMS-desktop \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

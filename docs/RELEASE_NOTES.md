@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+Nightly 与正式 Release 现在默认发布可由 npm 安装的 `Pictor-<version>-web.tgz`。该包使用系统
+Node.js 22.22.2 或更新版本启动本机回环 Web Host，并通过 `pictor-web` 打开浏览器 GUI；构建嵌入
+Stable/Nightly 通道和精确源码提交，Package CI 会在隔离 prefix 真实全局安装后验证启动 token、
+session cookie、根页面、AppInfo identity 和无 Electron 依赖；Linux 与 Windows 都会通过 npm 生成的
+真实 `pictor-web` 命令启动 Host。
+
+Windows NSIS、Arch Pacman 与 Linux AppImage 不再由 Nightly 或正式 Release 自动构建。维护者需要
+桌面兼容资产时，只能手动运行 `Publish desktop packages`，从已有 `nightly` 或 `v<version>` tag 的
+精确提交构建并附加资产与 `SHA256SUMS-desktop`。PR 仍保留桌面包兼容性验收，避免薄壳在未来恢复前
+失修；基础 Windows/Linux acceptance 则只构建 Web 应用，不再下载 Electron runtime。
+
 Electron GUI 已收敛为同一 Web Application 的薄壳。Web 与 Desktop 现在共用
 `createNodeApplication`、`WebHostServer`、HTTP/WS transport 和 `out/web/client` Renderer；Electron
 Main 不再注册 `app://bundle`，Preload 不再实现 CommandClient、ModuleTransport 或事件重放，构建也

@@ -88,11 +88,11 @@ jobs:
             echo "should_skip=$should_skip"
           } >> "$GITHUB_OUTPUT"
 
-  packages:
-    name: Build desktop packages
+  package:
+    name: Build Web package
     needs: source
     if: needs.source.outputs.should_skip != 'true'
-    uses: ./.github/workflows/package-desktop.yml
+    uses: ./.github/workflows/package-web.yml
     with:
       source_sha: ${{ needs.source.outputs.sha }}
       artifact_prefix: nightly
@@ -103,7 +103,7 @@ jobs:
     name: Publish rolling Nightly
     needs:
       - source
-      - packages
+      - package
     if: ${{ success() && needs.source.outputs.should_skip != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -116,7 +116,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          pattern: nightly-*-x64
+          pattern: nightly-web
           path: release-assets
           merge-multiple: true
       - name: Prepare checksums and Nightly notes
@@ -127,20 +127,19 @@ jobs:
           set -euo pipefail
 
           cd release-assets
-          sha256sum \
-            "Pictor-$SOURCE_VERSION-windows-x64-setup.exe" \
-            "Pictor-$SOURCE_VERSION-arch-x64.pacman" \
-            "Pictor-$SOURCE_VERSION-linux-x64.AppImage" > SHA256SUMS
+          sha256sum "Pictor-$SOURCE_VERSION-web.tgz" > SHA256SUMS
 
           source_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$SOURCE_SHA"
           built_at="$(date --utc '+%Y-%m-%d %H:%M:%S UTC')"
           {
-            echo "This is an automated development build from the latest successful \`develop\` snapshot."
+            echo "This is an automated local Web build from the latest successful \`develop\` snapshot."
             echo
             printf -- "- Source commit: [\`%s\`](%s)\n" "$SOURCE_SHA" "$source_url"
             printf -- "- Built at: \`%s\`\n" "$built_at"
             echo
-            echo '> Nightly packages are unsigned, may be unstable, and are not official releases. Back up important data before use.'
+            printf '%s\n' "Install with \`npm install --global ./Pictor-${SOURCE_VERSION}-web.tgz\`, then run \`pictor-web\`."
+            echo
+            echo '> This Nightly requires Node.js 22.22.2 or newer, may be unstable, and is not an official release. Back up important data before use.'
           } > "$RUNNER_TEMP/nightly-notes.md"
       - name: Remove the previous Nightly release and tag
         env:
@@ -166,7 +165,5 @@ jobs:
             --notes-file "$RUNNER_TEMP/nightly-notes.md" \
             --prerelease \
             --latest=false \
-            "release-assets/Pictor-$SOURCE_VERSION-windows-x64-setup.exe" \
-            "release-assets/Pictor-$SOURCE_VERSION-arch-x64.pacman" \
-            "release-assets/Pictor-$SOURCE_VERSION-linux-x64.AppImage" \
+            "release-assets/Pictor-$SOURCE_VERSION-web.tgz" \
             release-assets/SHA256SUMS
