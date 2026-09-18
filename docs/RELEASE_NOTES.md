@@ -1,5 +1,17 @@
 # 发布说明
 
+## Unreleased
+
+Electron GUI 已收敛为同一 Web Application 的薄壳。Web 与 Desktop 现在共用
+`createNodeApplication`、`WebHostServer`、HTTP/WS transport 和 `out/web/client` Renderer；Electron
+Main 不再注册 `app://bundle`，Preload 不再实现 CommandClient、ModuleTransport 或事件重放，构建也
+不再生成第二份 Desktop Renderer。
+
+桌面入口继续保留 single-instance/Profile lock、旧 `safeStorage` 凭据迁移、Updater、外链、运行中
+退出确认和原生文件选择。原生文件能力通过独立 `PlatformFilePicker` 窄 IPC 注入共享 Web bridge，
+其余 GUI 业务统一通过回环 Web Host。发布包 GUI 验收相应改为定位
+`http://127.0.0.1:<port>/` page target；CLI/TUI、Runtime child、Fuse 和持久化格式不变。
+
 ## 0.4.0 - 2026-09-02
 
 Stage 10 完成多 Frontend 打包收口。`npm run build:distribution` 从干净输出一次构建 GUI、CLI、

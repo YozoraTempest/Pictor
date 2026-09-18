@@ -52,7 +52,7 @@ user-data，不访问真实用户目录、模型服务或凭据。
 ```text
 verify:fast    静态检查 + Core + Bundled Plugins + Plugin SDK
 verify:web     verify:fast + Bundled Plugin/Web Client/Web Host 构建
-verify:pr      verify:fast + 一次完整 distribution build
+verify:pr      verify:fast + 共享 Web GUI、Electron Main/Preload 与全部 Frontend distribution build
 verify:release verify:fast + 同一 distribution 上的当前平台打包和黑盒验收
 ```
 
@@ -111,7 +111,8 @@ Nightly 与 Release 复用同一桌面打包 Workflow。Release 在合入 `main`
 npm run build:distribution
 ```
 
-它清理旧产物并构建同一源码快照的 GUI、CLI、TUI 与 Bundled Plugin。平台命令为：
+它清理旧产物并构建同一源码快照的共享 Web GUI、Electron Main/Preload、CLI、TUI 与 Bundled
+Plugin。Electron GUI 不再构建第二份 Renderer。平台命令为：
 
 ```bash
 npm run package:windows:build
@@ -119,7 +120,8 @@ npm run package:linux:build
 npm run package:verify
 ```
 
-`package:verify` 消费已有包，不重建。它验证真实 launcher、GUI page target、CLI/TUI、Profile
+`package:verify` 消费已有包，不重建。它验证真实 launcher、随机端口的回环 Web Host GUI page
+target、CLI/TUI、Profile
 排他锁、Electron Fuse 和平台包结构；Windows CI 补充 NSIS 安装/卸载，Linux CI 补充 AppImage
 启动与 Arch 容器 Pacman 生命周期。
 

@@ -157,7 +157,7 @@ npm run build
 npm start -- --no-open
 ```
 
-需要维护或验证当前 Electron 兼容入口时，先准备 Electron 依赖，再显式运行 Desktop 命令：
+需要维护或验证 Electron 薄壳兼容入口时，先准备 Electron 依赖，再显式运行 Desktop 命令：
 
 ```bash
 npm run deps:prepare
@@ -165,9 +165,10 @@ npm run deps:verify
 npm run dev:desktop
 ```
 
-Web 和 Electron GUI 使用同一 `ApplicationHost`、Plugin、Runtime 与 React Renderer。Web 版的项目和
-Pi Extension 目录选择由本机 Host 提供目录浏览，JSONL 导入、Session 导出和图片附件通过受控的
-浏览器上传/下载流程完成。新建可安装能力使用
+Web 和 Electron GUI 使用同一 Node Application、Web Host HTTP/WS transport、Plugin、Runtime 与
+React Renderer。Electron Main 只管理窗口、单实例锁、Updater、外链和运行中退出确认；Preload
+只提供原生文件选择。纯 Web 版的项目和 Pi Extension 目录选择由本机 Host 提供目录浏览，JSONL
+导入、Session 导出和图片附件通过受控的浏览器上传/下载流程完成。新建可安装能力使用
 `npm run plugin:new -- <name>`；只新增 Plugin 内部执行单元时使用 `npm run module:new -- <name>`。
 新 Plugin 的 Module、contract、entrypoint 和 Manifest 从内部 `@pictor/plugin-sdk` workspace 的
 显式子路径导入；该 SDK 会进入 Plugin bundle，不要求发布应用在运行时提供 workspace `node_modules`。
@@ -256,7 +257,7 @@ npm run package:verify
 `npm run package:dir` 按当前平台生成解包应用，`npm run package` 按当前平台生成正式发布包并
 执行对应结构校验。`npm test` 会顺序执行互不重叠的 Core、Bundled Plugin 和 Plugin SDK 测试
 域；单独运行 `npm run test:core` 不会收集或构建产品 Plugin。`npm run build:distribution` 会先
-清理并一次构建 Web GUI、Desktop GUI、CLI、TUI 和 10 个 Bundled Plugins；所有 `package:*`
+清理并一次构建共享 Web GUI、Electron Main/Preload、CLI、TUI 和 10 个 Bundled Plugins；所有 `package:*`
 发布构建都消费
 这一产物，不会把陈旧的 `out/cli` 或 `out/tui`
 带入包。Windows 校验 NSIS、`app.asar`、x64 PE、快捷方式和 Windows launcher；Linux 校验
@@ -270,8 +271,9 @@ CI 步骤。业务规则、协议变体、持久化和跨模块行为应优先�
 [`docs/TESTING.md`](docs/TESTING.md)。
 
 应用源码统一位于 `src/`。`kernel/` 保存最小 Module Kernel，`modules/` 按 Feature 聚合新增
-功能；`web-host/` 和 `web-client/` 分别承载默认浏览器 GUI 的 Node Host 与传输适配，`node/` 保存
-共享 Node 基础设施，`main/` 只保存 Electron adapter，`renderer/` 是两个 GUI 共用的 React 界面，
+功能；`web-host/` 和 `web-client/` 分别承载两个 GUI 共用的 Node Host 与传输适配，`node/` 保存
+共享 Node 基础设施，`main/` 只保存 Electron 窗口与平台 adapter，`preload/` 只暴露原生文件选择，
+`renderer/` 是两个 GUI 共用的 React 界面，
 `tui/` 是不导入 GUI 私有实现的 Node Frontend。目录职责、跨进程协议和允许依赖方向见
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 Plugin 作者使用的可移植 Interface 位于 [`packages/plugin-sdk`](packages/plugin-sdk)，Bundled Plugin
@@ -345,8 +347,9 @@ TUI 与 GUI/CLI 使用同一个 user-data/profile 锁和 `data-v1`。TUI Plugin 
 `TuiApplicationContribution`、`AgentWorkspaceClient`、`CommandClient` 和 Runtime interactive
 runner seam 访问应用能力；Pi JSONL 仍是唯一会话历史来源。
 
-Renderer 启用限制性 CSP；Electron adapter 额外启用 Chromium sandbox 和 context isolation，两个
-GUI 都不向 Renderer 开放 Node 或原始 Electron API。Pi Runtime Plugin 从用户 Store 动态加载到独立
+Renderer 启用限制性 CSP；Electron adapter 额外启用 Chromium sandbox 和 context isolation，并只
+接受当前回环 Web Host origin 发起的平台 IPC。两个 GUI 都不向 Renderer 开放 Node 或原始 Electron
+API。Pi Runtime Plugin 从用户 Store 动态加载到独立
 Node 子进程，直接交给 Pi
 ResourceLoader、ExtensionRunner 和原生工具注册表；删除或禁用该 Plugin 后，项目与历史仍可查看，
 但不能启动新 Run。Pi Extension 和 Pi 原生工具以当前用户权限运行，安装或信任项目之前必须确认
