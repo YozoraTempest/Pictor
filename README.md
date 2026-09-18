@@ -1,22 +1,23 @@
 # Pictor
 
-Pictor 是一个面向 Agent 委托工作流的 Windows 与 Linux 桌面开发环境。当前 0.4.0 版本提供
-可组合 Plugin Host、本地项目、Pi JSONL 权威 Session、原生 Pi Agent Runtime 与 Extension、
-Pi 原生工具和 OpenAI 兼容模型配置。
+Pictor 是一个面向 Agent 委托工作流的本地开发环境。当前源码以浏览器 GUI 和本机 Node Web Host
+作为默认开发形态，同时保留 Windows 与 Linux 的 Electron 桌面入口和发行能力。0.4.0 提供可组合
+Plugin Host、本地项目、Pi JSONL 权威 Session、原生 Pi Agent Runtime 与 Extension、Pi 原生工具和
+OpenAI 兼容模型配置。
 
 ## 当前能力
 
 - 添加、移除和重新关联本地项目，项目路径经过规范化后作为项目身份；
 - 创建、切换、重命名和删除 Session，重启后保留消息、运行与工具记录；
-- GUI 选择 Session 时同步打开对应的 Pi Session，并关闭此前驻留的 Pi Session；单个 utility
-  process 同时最多持有一个 Pi Session；
+- GUI 选择 Session 时同步打开对应的 Pi Session，并关闭此前驻留的 Pi Session；单个 Runtime Host
+  子进程同时最多持有一个 Pi Session；
 - 打开 Pi Session Tree，查看完整分支结构并以只读 Projection 检查任意历史节点；
 - 从 Tree 中的历史节点执行 Pi 原生同文件导航，并从该分支继续下一次 Run；
 - 手动压缩当前 Pi 分支、提供自定义摘要指令、取消压缩，并显示自动 Compaction 状态；
 - 在 Tree Navigation 时总结被放弃分支，或选择历史 User Message 回填 Composer 后重新编辑；
 - 配置每个 Session 的 Thinking Level、Active Tools 和 Steering/Follow-up delivery mode；
 - 显示当前分支 Model/Thinking，重新加载 Runtime 资源，并把 Pictor 标题同步到 Pi Session Name；
-- 在同一个 utility process 中复用打开的 Pi Session，并支持 Extension 触发原生 `newSession`、`fork`
+- 在同一个 Runtime Host 子进程中复用打开的 Pi Session，并支持 Extension 触发原生 `newSession`、`fork`
   与 `switchSession` 的完整替换事务；
 - 流式展示 Thinking、显示 Pi 自动重试状态，并为任意 Session Tree 节点设置原生 Label；
 - 从原生选择器附加图片并发送 Pi Image Message，重建后继续显示图片内容；
@@ -71,8 +72,9 @@ Pi 原生工具和 OpenAI 兼容模型配置。
 Arch 的 Wayland 会话可以由 Electron 使用 XWayland，不承诺强制原生 Wayland。Arch 衍生版和
 其他 Linux 发行版不属于正式支持范围，即使 AppImage 可能可以运行。所有平台还需要：
 
-- Node.js 22.22.2 或更新版本，仅本地开发和构建需要；已安装/便携包的 CLI、TUI 使用包内 Electron
-  Node adapter，不调用系统 `node`；Pi 会按当前平台解析原生 Shell；
+- Node.js 22.22.2 或更新版本。源码 Web Host、CLI、TUI、本地开发和构建需要系统 Node；当前已安装/
+  便携 Electron 包的 CLI、TUI 仍使用包内 Electron Node adapter，不调用系统 `node`；Pi 会按当前
+  平台解析原生 Shell；
 - 一个兼容 OpenAI Chat Completions 或 Responses、SSE 流式响应和函数工具调用的模型端点。
 
 Pictor 不再预探测、替换或审批 Bash。`bash` 工具由 Pi 原生实现，以当前用户权限和当前 Session
@@ -110,10 +112,11 @@ Pictor 自身不会调用 `sudo`、`pkexec` 或 `pacman`；安装和卸载始终
 `%APPDATA%\pictor`，或 Linux 默认的 `~/.config/pictor`；设置了 `XDG_CONFIG_HOME` 时，Linux
 数据目录位于 `$XDG_CONFIG_HOME/pictor`。
 
-### 三个 Frontend 入口
+### 当前发行入口
 
-正式包统一使用三个入口：`pictor` 启动 GUI，`pictor cli ...` 启动 CLI，`pictor tui ...` 启动
-TUI。Arch 安装后的 `/usr/bin/pictor` 是由包安装脚本创建的精确符号链接，AppImage 的 `AppRun`
+当前正式 Electron 包统一使用三个入口：`pictor` 启动桌面 GUI，`pictor cli ...` 启动 CLI，
+`pictor tui ...` 启动 TUI。源码开发还提供独立的 Web Frontend；它尚未替代正式桌面发布包。
+Arch 安装后的 `/usr/bin/pictor` 是由包安装脚本创建的精确符号链接，AppImage 的 `AppRun`
 和它都进入同一个 POSIX launcher；两者都以自身或 `$APPDIR` 推导路径，支持带空格的安装目录和任意
 当前工作目录。Windows 不修改用户 `PATH`，请使用安装目录中的
 `<安装目录>\bin\pictor.cmd`；桌面和开始菜单快捷方式也指向这个清除环境变量的 GUI 入口，避免
@@ -132,19 +135,49 @@ Release 获取文件，并通过同一 Release 的 `SHA256SUMS` 核对摘要；�
 
 ```bash
 npm ci
-npm run deps:prepare
-npm run deps:verify
 npm run dev
 ```
 
-`npm run dev` 先构建本地 Bundled Plugin，再启动 electron-vite watch/HMR，并使用独立的
-`pictor-dev` userData，不会读取或修改正式安装的数据。新建可安装能力使用
+`npm run dev` 启动 Web 创造模式：先原子构建本地 Bundled Plugin，再启动固定使用 `4310` 端口的
+Node Web Host、Vite HMR、Plugin 源码 watcher 和默认浏览器，并使用独立的 `pictor-dev` user-data，
+不会读取或修改正式安装的数据。浏览器 GUI 通过同源 HTTP/WS 与 Host 通信；启动 URL 中的一次性
+Token 会兑换为 HttpOnly Session Cookie。Host 因源码或 Plugin 变化而重启时，开发监督器保留同一
+浏览器 Session，界面在新 Host generation 就绪后自动重新装配，不需要反复打开页面。
+可将参数传给 Web Host，例如：
+
+```bash
+npm run dev -- --no-open --port 4310 --user-data-dir ./pictor-web
+npm run dev -- --safe-mode --profile developer
+```
+
+生产构建和启动使用：
+
+```bash
+npm run build
+npm start -- --no-open
+```
+
+需要维护或验证 Electron 薄壳兼容入口时，先准备 Electron 依赖，再显式运行 Desktop 命令：
+
+```bash
+npm run deps:prepare
+npm run deps:verify
+npm run dev:desktop
+```
+
+Web 和 Electron GUI 使用同一 Node Application、Web Host HTTP/WS transport、Plugin、Runtime 与
+React Renderer。Electron Main 只管理窗口、单实例锁、Updater、外链和运行中退出确认；Preload
+只提供原生文件选择。纯 Web 版的项目和 Pi Extension 目录选择由本机 Host 提供目录浏览，JSONL
+导入、Session 导出和图片附件通过受控的浏览器上传/下载流程完成。新建可安装能力使用
 `npm run plugin:new -- <name>`；只新增 Plugin 内部执行单元时使用 `npm run module:new -- <name>`。
 新 Plugin 的 Module、contract、entrypoint 和 Manifest 从内部 `@pictor/plugin-sdk` workspace 的
 显式子路径导入；该 SDK 会进入 Plugin bundle，不要求发布应用在运行时提供 workspace `node_modules`。
 SDK 当前为私有开发 Interface，不是已发布 npm 包，也不形成第三方兼容承诺。
 设置 `PICTOR_PLUGIN_PROFILE=developer` 使用 Developer Profile；Plugin Manager 可以登记 live source
-Development Plugin，修改其已构建入口后重启 Pictor 即可生效，不需要重新打包 Pictor。
+Development Plugin。在 Web 创造模式中，修改 Bundled Plugin 源码会触发增量构建，修改
+Development Plugin 的 `manifest.json`、`dist/`、`assets/` 或 `pi/` 输出会直接触发 Host 重新装配；
+构建失败时继续保留上一份可运行的 Bundled Plugin 输出。正式 Web 构建和 Electron 入口仍只消费
+明确构建产物，不依赖 watcher。
 
 开发 CLI 不需要 Electron runtime。安装依赖后可直接构建并运行系统 Node 入口；这只属于开发命令，
 不代表发布包要求系统 Node：
@@ -192,7 +225,7 @@ Profile 冲突、无可用 TUI、Plugin 失败和取消退出码分别为 `0`、
 
 ## 验证
 
-日常提交前运行快速验证；PR 级验证会额外执行一次干净的 GUI/CLI/TUI/Plugin distribution
+日常提交前运行快速验证；PR 级验证会额外执行一次干净的 Web/Desktop/CLI/TUI/Plugin distribution
 build。打包相关改动由独立 Package CI 构建并验收 Windows NSIS、Pacman 和 AppImage，不在基础
 CI 中维护条件分支：
 
@@ -203,7 +236,9 @@ npm run test:core
 npm run test:plugins
 npm run test:sdk
 npm run test:watch
+npm run test:web
 npm run verify:fast
+npm run verify:web
 npm run verify:pr
 npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs
 ```
@@ -222,7 +257,8 @@ npm run package:verify
 `npm run package:dir` 按当前平台生成解包应用，`npm run package` 按当前平台生成正式发布包并
 执行对应结构校验。`npm test` 会顺序执行互不重叠的 Core、Bundled Plugin 和 Plugin SDK 测试
 域；单独运行 `npm run test:core` 不会收集或构建产品 Plugin。`npm run build:distribution` 会先
-清理并一次构建全部 GUI、CLI、TUI 和 10 个 Bundled Plugins；所有 `package:*` 发布构建都消费
+清理并一次构建共享 Web GUI、Electron Main/Preload、CLI、TUI 和 10 个 Bundled Plugins；所有 `package:*`
+发布构建都消费
 这一产物，不会把陈旧的 `out/cli` 或 `out/tui`
 带入包。Windows 校验 NSIS、`app.asar`、x64 PE、快捷方式和 Windows launcher；Linux 校验
 Pacman 元数据、AppImage 内容、桌面入口、`app.asar`、fuse wire 和 x64 ELF。统一验收还从带
@@ -235,8 +271,10 @@ CI 步骤。业务规则、协议变体、持久化和跨模块行为应优先�
 [`docs/TESTING.md`](docs/TESTING.md)。
 
 应用源码统一位于 `src/`。`kernel/` 保存最小 Module Kernel，`modules/` 按 Feature 聚合新增
-功能；既有代码继续按 Electron Main、Preload、Renderer、Agent Runtime 和共享协议划分，
-`tui/` 是不导入 Electron/GUI 私有实现的 Node Frontend。目录职责、跨进程协议和允许依赖方向见
+功能；`web-host/` 和 `web-client/` 分别承载两个 GUI 共用的 Node Host 与传输适配，`node/` 保存
+共享 Node 基础设施，`main/` 只保存 Electron 窗口与平台 adapter，`preload/` 只暴露原生文件选择，
+`renderer/` 是两个 GUI 共用的 React 界面，
+`tui/` 是不导入 GUI 私有实现的 Node Frontend。目录职责、跨进程协议和允许依赖方向见
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 Plugin 作者使用的可移植 Interface 位于 [`packages/plugin-sdk`](packages/plugin-sdk)，Bundled Plugin
 源码继续位于 `plugins/` 并与应用保持同仓库、同版本、同发布快照。
@@ -293,7 +331,7 @@ recovery source，用户恢复 Workbench 后重启回到 Delegate。该行为由
 
 ## 本地数据与安全边界
 
-Pictor 将版本化状态写入 Electron `userData/data-v1`。普通设置保存在 `state.json`，每个
+Pictor 将版本化状态写入当前 Frontend 的 `user-data/data-v1`。普通设置保存在 `state.json`，每个
 Session 的导航元数据、Pi Session identity 和可重建投影以 schema v2 独立保存在 `sessions/`；
 `pi/` 中的 Pi JSONL 是 Agent 对话历史的唯一权威。启动后的终态投影会从对应 JSONL 重建，
 不会把 Renderer event 形成的平面消息副本当作历史来源。旧 schema v1 若没有可匹配的 Pi JSONL，
@@ -309,15 +347,17 @@ TUI 与 GUI/CLI 使用同一个 user-data/profile 锁和 `data-v1`。TUI Plugin 
 `TuiApplicationContribution`、`AgentWorkspaceClient`、`CommandClient` 和 Runtime interactive
 runner seam 访问应用能力；Pi JSONL 仍是唯一会话历史来源。
 
-Renderer 启用 Chromium sandbox、context isolation 和限制性 CSP，不开放 Node 或原始
-Electron API。Pi Runtime Plugin 从用户 Store 动态加载到独立 utility process，直接交给 Pi
+Renderer 启用限制性 CSP；Electron adapter 额外启用 Chromium sandbox 和 context isolation，并只
+接受当前回环 Web Host origin 发起的平台 IPC。两个 GUI 都不向 Renderer 开放 Node 或原始 Electron
+API。Pi Runtime Plugin 从用户 Store 动态加载到独立
+Node 子进程，直接交给 Pi
 ResourceLoader、ExtensionRunner 和原生工具注册表；删除或禁用该 Plugin 后，项目与历史仍可查看，
 但不能启动新 Run。Pi Extension 和 Pi 原生工具以当前用户权限运行，安装或信任项目之前必须确认
 来源。Pictor 的模型 API Key 不进入 Extension 配置、Runtime event 或 Pi JSONL。受信任 Project 的
 `.pi/extensions`、Skills 和 Prompt Templates 由 Pi 原生资源解析器自动加载，Session Controls 只
 管理 Pi 暴露的模型、Thinking、工具和队列偏好。
 
-更新检查只在用户点击“检查更新”后由 Main Process 请求 Pictor 官方 GitHub Release API；
+更新检查只在用户点击“检查更新”后由 Host 请求 Pictor 官方 GitHub Release API；
 应用不会在后台轮询。稳定通道查询 Latest Release，并按 SemVer 判断；用户显式选择的 Nightly
 通道查询滚动的 `nightly` Pre-release，并用打包时嵌入的源码提交判断快照是否变化。通道选择保存在
 Updater Plugin 的独立数据目录，默认仍为稳定版。Linux 只在本机读取 `/etc/os-release` 识别原生

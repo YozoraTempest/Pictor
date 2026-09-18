@@ -15,8 +15,13 @@ export const APP_ASAR_FRONTEND_ENTRIES = Object.freeze([
   'out/main/index.js',
   'out/main/runtime/host.js',
   'out/preload/index.cjs',
-  'out/renderer/index.html',
   'out/cli/src/cli/entry.js',
   'out/tui/src/tui/entry.js',
   'out/package-identity.json',
+])
+
+export const WEB_FRONTEND_ENTRIES = Object.freeze([
+  'out/web/client/index.html',
+  'out/web-host/src/web-host/entry.js',
+  'out/web-host/src/runtime/host.js',
 ])

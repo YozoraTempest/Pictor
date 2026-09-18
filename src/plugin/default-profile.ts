@@ -20,3 +20,16 @@ export const developerPluginProfile = pluginProfileSchema.parse({
   id: 'pictor.developer',
   plugins: { ...defaultPluginProfile.plugins },
 })
+
+const webPlugins = { ...defaultPluginProfile.plugins }
+delete webPlugins['pictor.updater']
+
+export const webPluginProfile = pluginProfileSchema.parse({
+  id: 'pictor.web',
+  plugins: webPlugins,
+})
+
+export const webDeveloperPluginProfile = pluginProfileSchema.parse({
+  id: 'pictor.web-developer',
+  plugins: { ...webPluginProfile.plugins },
+})

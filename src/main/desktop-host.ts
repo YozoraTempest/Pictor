@@ -1,12 +1,10 @@
-import { join, relative, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { join, resolve } from 'node:path'
 
 import {
   app,
   BrowserWindow,
   dialog,
   net,
-  protocol,
   safeStorage,
   session,
   shell,
@@ -15,100 +13,42 @@ import {
 } from 'electron'
 
 import {
-  ApplicationHost,
-  ModelConnectionTester,
+  createNodeApplication,
   ProfileFileLock,
   type ApplicationHostServices,
-  type EventPublisher,
   type FrontendLock,
   type FrontendLockLease,
-  type HostPluginDefinitionsFactory,
-  type UserData,
+  type NodeApplicationServices,
 } from '../application/index.js'
+import type { Disposable } from '../kernel/module.js'
 import { agentWorkspaceContract } from '../modules/agent-workspace/shared.js'
 import type { UpdaterHostAdapter } from '../modules/updater/host.js'
+import { detectDesktopDistribution } from '../node/linux-distribution.js'
+import { SecretStore } from '../node/persistence/secret-store.js'
+import { defaultPluginProfile, developerPluginProfile } from '../plugin/default-profile.js'
 import { appInfoSchema } from '../shared/app-info.js'
-import type { Disposable } from '../kernel/module.js'
-import { defaultPluginProfile, developerPluginProfile } from './plugins/default-profile.js'
-import { registerCommandIpc } from './command-ipc.js'
+import type { ModuleEventEnvelope } from '../kernel/contract.js'
+import { EventHub } from '../web-host/event-hub.js'
+import { WebFileTransferStore } from '../web-host/file-transfers.js'
+import { WebHostServer, type WebHostAddress } from '../web-host/server.js'
 import { registerIpc } from './ipc.js'
-import { broadcastModuleEvent, registerModuleIpc } from './module-ipc.js'
-import { createHostPluginDefinitions } from './plugins/plugin-loader.js'
-import { SecretStore } from './persistence/secret-store.js'
-import { RuntimeSupervisor } from './runtime/supervisor.js'
-import { detectDesktopDistribution } from './linux-distribution.js'
 import { getSecureWebPreferences, isTrustedRendererUrl } from './security.js'
-import type { PluginStore } from './plugins/plugin-store.js'
 
 import packageMetadata from '../../package.json' with { type: 'json' }
 
 declare const __PICTOR_BUILD_CHANNEL__: string
 declare const __PICTOR_SOURCE_COMMIT__: string | null
 
-const APP_SCHEME = 'app'
-const APP_HOST = 'bundle'
-
-function isPathWithin(root: string, candidate: string): boolean {
-  const relativePath = relative(root, candidate)
-  return relativePath === '' || (!relativePath.startsWith('..') && !relativePath.includes(':'))
-}
-
-function registerAppProtocol(pluginStore: PluginStore): void {
-  const guiRoot = resolve(__dirname, '../renderer')
-
-  protocol.handle(APP_SCHEME, async (request) => {
-    const requestUrl = new URL(request.url)
-    const requestedPath =
-      decodeURIComponent(requestUrl.pathname).replace(/^\/+/, '') || 'index.html'
-    if (requestUrl.host !== APP_HOST) return new Response('Not found', { status: 404 })
-
-    const pluginSegments = requestedPath.split('/')
-    if (pluginSegments[0] === 'plugins' && pluginSegments.length >= 4) {
-      const [, pluginId, version, ...packageSegments] = pluginSegments
-      const plugin = (await pluginStore.getSnapshot()).plugins.find(
-        ({ manifest }) => manifest.id === pluginId && manifest.version === version,
-      )
-      if (!plugin) return new Response('Not found', { status: 404 })
-      const pluginFile = resolve(plugin.rootPath, packageSegments.join('/'))
-      if (!isPathWithin(plugin.rootPath, pluginFile)) {
-        return new Response('Not found', { status: 404 })
-      }
-      return net.fetch(pathToFileURL(pluginFile).toString())
-    }
-
-    const filePath = resolve(guiRoot, requestedPath)
-    if (!isPathWithin(guiRoot, filePath)) {
-      return new Response('Not found', { status: 404 })
-    }
-    return net.fetch(pathToFileURL(filePath).toString())
-  })
-}
-
 function bundledPluginsDirectory(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'bundled-plugins')
-    : resolve(__dirname, '../../.pictor/bundled-plugins')
+    : resolve(app.getAppPath(), '.pictor/bundled-plugins')
 }
 
-function guiPluginUrl(rootPath: string, id: string, version: string, entry: string): string {
-  const filePath = resolve(rootPath, entry)
-  const developmentUrl = process.env.ELECTRON_RENDERER_URL
-  if (developmentUrl) {
-    return new URL(`/@fs${filePath.replaceAll('\\', '/')}`, developmentUrl).toString()
-  }
-  const packagePath = entry.replace(/^\.\//, '')
-  return `${APP_SCHEME}://${APP_HOST}/plugins/${encodeURIComponent(id)}/${encodeURIComponent(version)}/${packagePath}`
-}
-
-function validateSender(frame: WebFrameMain | null): void {
-  const senderUrl = frame?.url ?? ''
-  if (!isTrustedRendererUrl(senderUrl, process.env.ELECTRON_RENDERER_URL)) {
-    throw new Error('Rejected IPC request from an untrusted renderer')
-  }
-}
-
-function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']): BrowserWindow {
-  const developmentUrl = process.env.ELECTRON_RENDERER_URL
+function createMainWindow(
+  address: WebHostAddress,
+  runtimeCoordinator: ApplicationHostServices['runtime'],
+): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -123,9 +63,14 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
     },
   })
 
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalWebUrl(url, address.origin)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
   window.webContents.on('will-navigate', (event, url) => {
-    if (!isTrustedRendererUrl(url, developmentUrl)) event.preventDefault()
+    if (isTrustedRendererUrl(url, address.origin)) return
+    event.preventDefault()
+    if (isExternalWebUrl(url, address.origin)) void shell.openExternal(url)
   })
   window.once('ready-to-show', () => window.show())
   let closeConfirmed = false
@@ -149,10 +94,17 @@ function createMainWindow(runtimeCoordinator: ApplicationHostServices['runtime']
     }
   })
 
-  if (developmentUrl) void window.loadURL(developmentUrl)
-  else void window.loadURL(`${APP_SCHEME}://${APP_HOST}/index.html`)
-
+  void window.loadURL(address.launchUrl)
   return window
+}
+
+function isExternalWebUrl(url: string, trustedOrigin: string): boolean {
+  try {
+    const parsedUrl = new URL(url)
+    return ['http:', 'https:'].includes(parsedUrl.protocol) && parsedUrl.origin !== trustedOrigin
+  } catch {
+    return false
+  }
 }
 
 export class ElectronFrontendLock implements FrontendLock {
@@ -194,25 +146,21 @@ export class ElectronFrontendLock implements FrontendLock {
 }
 
 export class DesktopHost {
-  private applicationHost: ApplicationHost | null = null
-  private services: ApplicationHostServices | null = null
+  private application: NodeApplicationServices | null = null
+  private server: WebHostServer | null = null
+  private address: WebHostAddress | null = null
   private mainWindow: BrowserWindow | null = null
-  private ipc: Disposable | null = null
-  private commandIpc: Disposable | null = null
-  private moduleIpc: Disposable | null = null
+  private platformIpc: Disposable | null = null
   private quitting = false
   private activationRegistered = false
   private beforeQuitRegistered = false
 
   async start(): Promise<void> {
-    if (this.applicationHost) throw new Error('Desktop Host has already started')
+    if (this.application) throw new Error('Desktop Host has already started')
 
-    const currentVersion = app.isPackaged ? app.getVersion() : packageMetadata.version
+    const projectRoot = app.getAppPath()
     const userDataDirectory = app.getPath('userData')
-    const dataDirectory = join(userDataDirectory, 'data-v1')
-    const sharedProfileLock = new ProfileFileLock(userDataDirectory, { frontend: 'gui' })
-    const frontendLock = new ElectronFrontendLock(sharedProfileLock)
-    const safeMode = process.argv.includes('--safe-mode')
+    const currentVersion = app.isPackaged ? app.getVersion() : packageMetadata.version
     const distribution = await detectDesktopDistribution()
     const appInfo = appInfoSchema.parse({
       name: app.getName(),
@@ -223,50 +171,56 @@ export class DesktopHost {
       arch: process.arch,
       distribution,
     })
-    const userData: UserData = { userDataDirectory, dataDirectory }
-    const coordinatorReference: { current?: ApplicationHostServices['runtime'] } = {}
-    const runtimeSupervisor = new RuntimeSupervisor(
-      (event) => coordinatorReference.current?.handleEvent(event),
-      undefined,
-      (request) =>
-        coordinatorReference.current?.handleSessionReplacementRequest(request) ??
-        Promise.resolve({ accepted: false, message: 'Runtime Coordinator is unavailable' }),
-    )
-    const applicationHost = new ApplicationHost({
-      userData,
-      appInfo,
-      bundledPluginsDirectory: bundledPluginsDirectory(),
-      runtimeHost: runtimeSupervisor,
-      eventPublisher: this.createEventPublisher(),
-      frontendLock,
-      profile:
-        process.env.PICTOR_PLUGIN_PROFILE === 'developer'
-          ? developerPluginProfile
-          : defaultPluginProfile,
-      safeMode,
-      secretStore: new SecretStore(dataDirectory, safeStorage),
-      createHostPluginDefinitions: createDesktopHostPluginDefinitions,
-    })
-    this.applicationHost = applicationHost
+    const moduleEvents = new EventHub<ModuleEventEnvelope>()
+    const updaterHost: UpdaterHostAdapter = {
+      fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+      openExternal: (url) => shell.openExternal(url),
+    }
 
     try {
-      const services = await applicationHost.start()
-      coordinatorReference.current = services.runtime
-      this.services = services
-      registerAppProtocol(services.pluginStore)
-      this.commandIpc = registerCommandIpc(services.commandClient, validateSender)
-      this.moduleIpc = registerModuleIpc(services.moduleRouter, validateSender)
-      this.ipc = registerIpc({
-        validateSender,
-        onGuiReady: services.restoreSelectedContext,
-        appInfo: services.appInfo,
-        getPluginBootstrap: () => services.getPluginBootstrap(guiPluginUrl),
+      this.application = await createNodeApplication({
+        userDataDirectory,
+        runtimeHostPath: join(__dirname, 'runtime/host.js'),
+        runtimeEnvironment: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        appInfo,
+        bundledPluginsDirectory: bundledPluginsDirectory(),
+        frontendLock: new ElectronFrontendLock(
+          new ProfileFileLock(userDataDirectory, { frontend: 'gui' }),
+        ),
+        profile:
+          process.env.PICTOR_PLUGIN_PROFILE === 'developer'
+            ? developerPluginProfile
+            : defaultPluginProfile,
+        eventPublisher: {
+          publish: (event) =>
+            moduleEvents.publish({
+              moduleId: agentWorkspaceContract.id,
+              event: 'runtimeEvent',
+              payload: event,
+            }),
+        },
+        safeMode: process.argv.includes('--safe-mode'),
+        secretStore: new SecretStore(join(userDataDirectory, 'data-v1'), safeStorage),
+        updaterHost,
+      })
+      this.server = new WebHostServer({
+        services: this.application.services,
+        moduleEvents,
+        staticDirectory: resolve(projectRoot, 'out/web/client'),
+        fileTransfers: new WebFileTransferStore(join(userDataDirectory, 'web-transfers')),
+        ...(!app.isPackaged
+          ? { development: { rendererRoot: resolve(projectRoot, 'src/renderer') } }
+          : {}),
+      })
+      this.address = await this.server.start()
+      this.platformIpc = registerIpc({
+        validateSender: this.createSenderValidator(this.address.origin),
       })
       session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
         callback(false)
       })
 
-      this.setMainWindow(createMainWindow(services.runtime))
+      this.setMainWindow(createMainWindow(this.address, this.application.services.runtime))
       app.on('activate', this.handleActivate)
       this.activationRegistered = true
       app.on('before-quit', this.handleBeforeQuit)
@@ -294,37 +248,27 @@ export class DesktopHost {
     this.mainWindow = null
 
     let firstError: Error | null = null
-    const dispose = async (resource: Disposable | null): Promise<void> => {
-      if (!resource) return
+    const dispose = async (step: () => void | Promise<void>): Promise<void> => {
       try {
-        await resource.dispose()
+        await step()
       } catch (error) {
         firstError ??= error instanceof Error ? error : new Error(String(error))
       }
     }
-    await dispose(this.ipc)
-    await dispose(this.commandIpc)
-    await dispose(this.moduleIpc)
-    this.ipc = null
-    this.commandIpc = null
-    this.moduleIpc = null
+    if (this.platformIpc) await dispose(() => this.platformIpc!.dispose())
+    if (this.server) await dispose(() => this.server!.stop())
+    if (this.application) await dispose(() => this.application!.applicationHost.stop())
 
-    if (this.applicationHost) {
-      try {
-        await this.applicationHost.stop()
-      } catch (error) {
-        firstError ??= error instanceof Error ? error : new Error(String(error))
-      }
-    }
-    this.applicationHost = null
-    this.services = null
+    this.platformIpc = null
+    this.server = null
+    this.address = null
+    this.application = null
     return firstError
   }
 
   private readonly handleActivate = (): void => {
-    const runtime = this.services?.runtime
-    if (!runtime || BrowserWindow.getAllWindows().length > 0) return
-    this.setMainWindow(createMainWindow(runtime))
+    if (!this.application || !this.address || BrowserWindow.getAllWindows().length > 0) return
+    this.setMainWindow(createMainWindow(this.address, this.application.services.runtime))
   }
 
   private setMainWindow(window: BrowserWindow): void {
@@ -341,37 +285,11 @@ export class DesktopHost {
     void this.stop().finally(() => app.quit())
   }
 
-  private createEventPublisher(): EventPublisher {
-    return {
-      publish: (event) =>
-        broadcastModuleEvent({
-          moduleId: agentWorkspaceContract.id,
-          event: 'runtimeEvent',
-          payload: event,
-        }),
+  private createSenderValidator(trustedOrigin: string): (frame: WebFrameMain | null) => void {
+    return (frame) => {
+      if (!isTrustedRendererUrl(frame?.url ?? '', trustedOrigin)) {
+        throw new Error('Rejected IPC request from an untrusted renderer')
+      }
     }
   }
-}
-
-const createDesktopHostPluginDefinitions: HostPluginDefinitionsFactory = (
-  snapshot,
-  appInfo,
-  context,
-) => {
-  const agentWorkspaceHost = {
-    repository: context.repository,
-    runtime: context.runtime,
-    connectionTester: new ModelConnectionTester(),
-  }
-  const updaterHost: UpdaterHostAdapter = {
-    fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
-    openExternal: (url) => shell.openExternal(url),
-  }
-  return createHostPluginDefinitions(snapshot, appInfo, (pluginId) =>
-    pluginId === agentWorkspaceContract.id
-      ? agentWorkspaceHost
-      : pluginId === 'pictor.updater'
-        ? updaterHost
-        : undefined,
-  )
 }

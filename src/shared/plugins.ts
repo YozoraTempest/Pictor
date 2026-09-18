@@ -40,6 +40,7 @@ export const pluginManagerItemSchema = z.object({
 
 export const pluginManagerSnapshotSchema = z.object({
   safeMode: z.boolean(),
+  creationMode: z.boolean().default(false),
   restartRequired: z.boolean(),
   items: z.array(pluginManagerItemSchema),
   issues: z.array(z.string()),

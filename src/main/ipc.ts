@@ -8,15 +8,10 @@ import {
   sessionExportPickerRequestSchema,
   type GuiPluginSource,
 } from '../shared/desktop-bridge.js'
-import type { AppInfo } from '../shared/app-info.js'
 import { ipcResult } from '../shared/ipc-result.js'
-import type { PluginBootstrap } from '../shared/plugins.js'
 import type { Disposable } from '../kernel/module.js'
 
 const IPC_CHANNELS = [
-  'app:gui-ready',
-  'app:get-info',
-  'plugin:get-bootstrap',
   'plugin:pick',
   'workspace:pick-project-directory',
   'workspace:pick-session-import',
@@ -26,31 +21,10 @@ const IPC_CHANNELS = [
 
 interface IpcDependencies {
   validateSender: (frame: WebFrameMain | null) => void
-  onGuiReady: () => Promise<void>
-  appInfo: AppInfo
-  getPluginBootstrap: () => Promise<PluginBootstrap>
 }
 
 export function registerIpc(dependencies: IpcDependencies): Disposable {
-  const { validateSender, onGuiReady, appInfo, getPluginBootstrap } = dependencies
-
-  ipcMain.handle('app:gui-ready', (event) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => {
-      await onGuiReady()
-      return null
-    })
-  })
-
-  ipcMain.handle('app:get-info', (event) => {
-    validateSender(event.senderFrame)
-    return ipcResult(async () => appInfo)
-  })
-
-  ipcMain.handle('plugin:get-bootstrap', (event) => {
-    validateSender(event.senderFrame)
-    return ipcResult(getPluginBootstrap)
-  })
+  const { validateSender } = dependencies
 
   ipcMain.handle('plugin:pick', (event, input: unknown) => {
     validateSender(event.senderFrame)

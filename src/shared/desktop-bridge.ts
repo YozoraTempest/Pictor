@@ -33,16 +33,19 @@ export const workspaceImagePickerResultSchema = ipcResultSchema(
   z.array(imageAttachmentSchema).nullable(),
 )
 
-export interface PictorBridge extends GuiPluginPicker {
-  commands: CommandClient
-  notifyGuiReady(): Promise<IpcResult<null>>
-  getAppInfo(): Promise<IpcResult<AppInfo>>
-  getPluginBootstrap(): Promise<IpcResult<PluginBootstrap>>
+export interface PlatformFilePicker extends GuiPluginPicker {
   pickProjectDirectory(): Promise<IpcResult<string | null>>
   pickSessionImport(): Promise<IpcResult<string | null>>
   pickSessionExport(
     request: z.infer<typeof sessionExportPickerRequestSchema>,
   ): Promise<IpcResult<string | null>>
   pickMessageImages(): Promise<IpcResult<ImageAttachment[] | null>>
+}
+
+export interface PictorBridge extends PlatformFilePicker {
+  commands: CommandClient
+  notifyGuiReady(): Promise<IpcResult<null>>
+  getAppInfo(): Promise<IpcResult<AppInfo>>
+  getPluginBootstrap(): Promise<IpcResult<PluginBootstrap>>
 }
 export type { IpcResult } from './errors.js'

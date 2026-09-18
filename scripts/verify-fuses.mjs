@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { chmod, copyFile, readFile, rm } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { flipFuses, FuseV1Options, FuseVersion } from '@electron/fuses'
 
 import { assertFuseWire } from './electron-fuses.mjs'
+import { runProbe } from './fuse-probe.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageMetadata = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'))
@@ -55,13 +55,20 @@ async function probeRunAsNodeDependency(binaryPath) {
     const appRoot = resolve(dirname(binaryPath), 'resources', 'app.asar')
     const bundledPlugins = resolve(dirname(binaryPath), 'resources', 'bundled-plugins')
     const entry = `${appRoot}/out/cli/src/cli/entry.js`
-    const result = await runProbe(probeBinary, [entry, '--help'], {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-      PICTOR_PACKAGED: '1',
-      PICTOR_PACKAGE_ROOT: appRoot,
-      PICTOR_BUNDLED_PLUGINS_DIRECTORY: bundledPlugins,
-    })
+    const result = await runProbe(
+      probeBinary,
+      [entry, '--help'],
+      {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        PICTOR_PACKAGED: '1',
+        PICTOR_PACKAGE_ROOT: appRoot,
+        PICTOR_BUNDLED_PLUGINS_DIRECTORY: bundledPlugins,
+      },
+      {
+        cwd: repositoryRoot,
+      },
+    )
     if (result.stdout.includes('Usage: pictor cli')) {
       throw new Error('A runAsNode-disabled binary unexpectedly executed the CLI entry')
     }
@@ -70,37 +77,6 @@ async function probeRunAsNodeDependency(binaryPath) {
     }
     return result
   } finally {
-    await rm(probeBinary, { force: true })
+    await rm(probeBinary, { force: true, maxRetries: 30, retryDelay: 100 })
   }
-}
-
-function runProbe(executable, arguments_, environment) {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(executable, arguments_, {
-      cwd: repositoryRoot,
-      env: environment,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    let timedOut = false
-    const timer = globalThis.setTimeout(() => {
-      timedOut = true
-      child.kill()
-    }, 5_000)
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString()
-    })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString()
-    })
-    child.once('error', (error) => {
-      globalThis.clearTimeout(timer)
-      reject(error)
-    })
-    child.once('exit', (exitCode, signal) => {
-      globalThis.clearTimeout(timer)
-      resolvePromise({ exitCode, signal, timedOut, stdout, stderr })
-    })
-  })
 }

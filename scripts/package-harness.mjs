@@ -1,14 +1,33 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:net'
 import process from 'node:process'
+import { URL } from 'node:url'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 
 export function findPackagedPageTarget(targets) {
   return (
-    targets.find((target) => target.type === 'page' && target.url === 'app://bundle/index.html') ??
-    null
+    targets.find(
+      (target) =>
+        target.type === 'page' &&
+        target.title === 'Pictor' &&
+        isReadyLoopbackWebHostUrl(target.url),
+    ) ?? null
   )
+}
+
+function isReadyLoopbackWebHostUrl(value) {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'http:' &&
+      url.hostname === '127.0.0.1' &&
+      url.pathname === '/' &&
+      url.search === ''
+    )
+  } catch {
+    return false
+  }
 }
 
 export function windowsProcessTreeKillArguments(pid) {
@@ -180,10 +199,12 @@ async function waitForPageTarget(port, child, output, timeoutMs) {
     await new Promise((resolvePromise) => globalThis.setTimeout(resolvePromise, 100))
   }
   throw new Error(
-    `Packaged GUI did not expose app://bundle/index.html within ${timeoutMs}ms: ${JSON.stringify({
-      lastError: lastError instanceof Error ? lastError.message : lastError,
-      ...output.read(),
-    })}`,
+    `Packaged GUI did not expose its loopback Web Host page within ${timeoutMs}ms: ${JSON.stringify(
+      {
+        lastError: lastError instanceof Error ? lastError.message : lastError,
+        ...output.read(),
+      },
+    )}`,
   )
 }
 

@@ -1,20 +1,7 @@
-import { app, protocol } from 'electron'
+import { app } from 'electron'
 
 import { DesktopHost } from './desktop-host.js'
 import { developmentUserDataPath } from './development-profile.js'
-
-const APP_SCHEME = 'app'
-
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: APP_SCHEME,
-    privileges: {
-      secure: true,
-      standard: true,
-      supportFetchAPI: true,
-    },
-  },
-])
 
 app.enableSandbox()
 

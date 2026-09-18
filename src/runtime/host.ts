@@ -13,8 +13,11 @@ import {
   type AgentRuntimeProvider,
 } from './plugin-interface.js'
 
-const parentPort = process.parentPort
-if (!parentPort) throw new Error('Pictor runtime host requires an Electron utility-process parent')
+if (!process.send) throw new Error('Pictor runtime host requires a Node IPC parent')
+
+function sendToParent(message: unknown): void {
+  process.send?.(message)
+}
 
 interface RuntimeHostState {
   host: PluginHost
@@ -32,12 +35,12 @@ function requestSessionReplacement(
   const key = `${request.operationId}:${request.phase}`
   return new Promise((resolve) => {
     pendingReplacementAcks.set(key, resolve)
-    parentPort.postMessage(request)
+    sendToParent(request)
   })
 }
 
 function reportFatal(error: unknown): void {
-  parentPort.postMessage({
+  sendToParent({
     type: 'host.fatal',
     message: error instanceof Error ? error.message : 'Agent Runtime 加载失败',
   })
@@ -47,7 +50,7 @@ const statePromise = (async (): Promise<RuntimeHostState> => {
   const bootstrapSource = process.env.PICTOR_RUNTIME_PLUGIN_BOOTSTRAP
   if (!bootstrapSource) throw new Error('Missing Runtime Plugin bootstrap')
   const bootstrap = runtimePluginBootstrapSchema.parse(JSON.parse(bootstrapSource))
-  const emit = (event: RuntimeEvent) => parentPort.postMessage(event)
+  const emit = (event: RuntimeEvent) => sendToParent(event)
   const definitions = createRuntimePluginDefinitions(bootstrap, emit)
   const host = new PluginHost({
     pictorVersion: bootstrap.pictorVersion,
@@ -63,7 +66,7 @@ const statePromise = (async (): Promise<RuntimeHostState> => {
     modelProviders: host.getContributions(modelRuntimeProviderContributions),
     requestSessionReplacement,
   })
-  parentPort.postMessage({ type: 'host.ready' })
+  sendToParent({ type: 'host.ready' })
   return { host, runtime: runtimes[0] ?? null }
 })().catch((error) => {
   reportFatal(error)
@@ -85,10 +88,10 @@ function requireRuntime(state: RuntimeHostState): AgentRuntimeProvider {
   return state.runtime
 }
 
-parentPort.on('message', (messageEvent) => {
-  const parsed = runtimeCommandSchema.safeParse(messageEvent.data)
+process.on('message', (message) => {
+  const parsed = runtimeCommandSchema.safeParse(message)
   if (!parsed.success) {
-    parentPort.postMessage({ type: 'host.fatal', message: 'Runtime command validation failed' })
+    sendToParent({ type: 'host.fatal', message: 'Runtime command validation failed' })
     return
   }
 
@@ -110,14 +113,14 @@ parentPort.on('message', (messageEvent) => {
     void statePromise
       .then((state) => requireRuntime(state).reloadResources(command.sessionId))
       .then(() =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.reloadResult',
           sessionId: command.sessionId,
           outcome: 'completed',
         }),
       )
       .catch((error) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.reloadResult',
           sessionId: command.sessionId,
           outcome: 'failed',
@@ -136,7 +139,7 @@ parentPort.on('message', (messageEvent) => {
           : runtime.closeSession()
       })
       .then(() =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.sessionResult',
           operationId: command.operationId,
           sessionId: command.sessionId,
@@ -144,7 +147,7 @@ parentPort.on('message', (messageEvent) => {
         }),
       )
       .catch((error) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.sessionResult',
           operationId: command.operationId,
           sessionId: command.sessionId,
@@ -160,7 +163,7 @@ parentPort.on('message', (messageEvent) => {
       .then((state) => {
         const controls = requireRuntime(state).getRuntimeControls(command.sessionId)
         if (!controls) throw new Error('Pi Session is not open')
-        parentPort.postMessage(controls)
+        sendToParent(controls)
       })
       .catch(reportFatal)
     return
@@ -178,7 +181,7 @@ parentPort.on('message', (messageEvent) => {
         }),
       )
       .then(() =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.controlsSetResult',
           requestId: command.requestId,
           sessionId: command.sessionId,
@@ -186,7 +189,7 @@ parentPort.on('message', (messageEvent) => {
         }),
       )
       .catch((error) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.controlsSetResult',
           requestId: command.requestId,
           sessionId: command.sessionId,
@@ -215,7 +218,7 @@ parentPort.on('message', (messageEvent) => {
     void statePromise
       .then((state) => requireRuntime(state).fork(command))
       .then((result) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.forkResult',
           operationId: command.operationId,
           targetSessionId: command.targetSessionId,
@@ -223,7 +226,7 @@ parentPort.on('message', (messageEvent) => {
         }),
       )
       .catch((error) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.forkResult',
           operationId: command.operationId,
           targetSessionId: command.targetSessionId,
@@ -238,7 +241,7 @@ parentPort.on('message', (messageEvent) => {
     void statePromise
       .then((state) => requireRuntime(state).importSession(command))
       .then((result) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.importResult',
           operationId: command.operationId,
           targetSessionId: command.targetSessionId,
@@ -246,7 +249,7 @@ parentPort.on('message', (messageEvent) => {
         }),
       )
       .catch((error) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.importResult',
           operationId: command.operationId,
           targetSessionId: command.targetSessionId,
@@ -261,7 +264,7 @@ parentPort.on('message', (messageEvent) => {
     void statePromise
       .then((state) => requireRuntime(state).exportSession(command))
       .then((result) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.exportResult',
           operationId: command.operationId,
           sourceSessionId: command.sourceSessionId,
@@ -269,7 +272,7 @@ parentPort.on('message', (messageEvent) => {
         }),
       )
       .catch((error) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.exportResult',
           operationId: command.operationId,
           sourceSessionId: command.sourceSessionId,
@@ -284,7 +287,7 @@ parentPort.on('message', (messageEvent) => {
     void statePromise
       .then((state) => requireRuntime(state).navigateSession(command))
       .then((result) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.navigateResult',
           operationId: command.operationId,
           sourceSessionId: command.sourceSessionId,
@@ -292,7 +295,7 @@ parentPort.on('message', (messageEvent) => {
         }),
       )
       .catch((error) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.navigateResult',
           operationId: command.operationId,
           sourceSessionId: command.sourceSessionId,
@@ -307,7 +310,7 @@ parentPort.on('message', (messageEvent) => {
     void statePromise
       .then((state) => requireRuntime(state).compactSession(command))
       .then((result) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.compactResult',
           operationId: command.operationId,
           sourceSessionId: command.sourceSessionId,
@@ -315,7 +318,7 @@ parentPort.on('message', (messageEvent) => {
         }),
       )
       .catch((error) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.compactResult',
           operationId: command.operationId,
           sourceSessionId: command.sourceSessionId,
@@ -330,7 +333,7 @@ parentPort.on('message', (messageEvent) => {
     void statePromise
       .then((state) => requireRuntime(state).labelSessionEntry(command))
       .then((result) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.labelResult',
           operationId: command.operationId,
           sourceSessionId: command.sourceSessionId,
@@ -338,7 +341,7 @@ parentPort.on('message', (messageEvent) => {
         }),
       )
       .catch((error) =>
-        parentPort.postMessage({
+        sendToParent({
           type: 'host.labelResult',
           operationId: command.operationId,
           sourceSessionId: command.sourceSessionId,

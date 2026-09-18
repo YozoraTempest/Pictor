@@ -16,6 +16,7 @@ export class PluginManager {
     startupEntries: readonly InstalledExtension[],
     private readonly activationMode: 'full' | 'headless' = 'full',
     blockedPlugins: readonly StoredPluginBlock[] = [],
+    private readonly creationMode = false,
   ) {
     this.startupStatuses = new Map(statuses.map((status) => [status.id, status]))
     this.startupDesiredStates = new Map(
@@ -102,6 +103,7 @@ export class PluginManager {
 
     return pluginManagerSnapshotSchema.parse({
       safeMode: this.safeMode,
+      creationMode: this.creationMode,
       restartRequired,
       items,
       issues: store.issues.map((issue) => `${issue.source}: ${issue.message}`),

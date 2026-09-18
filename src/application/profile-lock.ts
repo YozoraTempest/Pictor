@@ -14,7 +14,7 @@ const profileLockOwnerSchema = z.object({
   token: z.uuid(),
   pid: z.number().int().positive(),
   hostname: z.string().min(1),
-  frontend: z.enum(['gui', 'tui', 'cli', 'shell']),
+  frontend: z.enum(['web', 'gui', 'tui', 'cli', 'shell']),
   profilePath: z.string().min(1),
   acquiredAt: z.iso.datetime(),
 })

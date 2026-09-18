@@ -667,7 +667,8 @@ function compareText(left: string, right: string): number {
 }
 
 function snapshotNotice(label: string, snapshot: PluginManagerSnapshot): string {
-  return snapshot.restartRequired
-    ? `${label}已记录；重启 Pictor 后生效。`
-    : `${label}已完成，无需重启。`
+  if (!snapshot.restartRequired) return `${label}已完成，无需重启。`
+  return snapshot.creationMode
+    ? `${label}已记录；创造模式正在重新装配 Plugin。`
+    : `${label}已记录；重启 Pictor 后生效。`
 }

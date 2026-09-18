@@ -154,14 +154,11 @@ it('keeps the production Pi composition on the public InteractiveMode runner sea
 
 it('keeps ModelConnectionTester in the Application boundary transitively', async () => {
   const applicationSource = await readFile(resolve('src/application/model-connection.ts'), 'utf8')
-  const mainSource = await readFile(resolve('src/main/model-connection.ts'), 'utf8')
   const tuiConfig = JSON.parse(await readFile(resolve('tsconfig.tui.json'), 'utf8'))
   const graph = await transitiveProductionSources()
 
   expect(applicationSource).not.toMatch(/(?:from|import)\s+['"][^'"]*(?:src\/main|\.\.\/main)/)
-  expect(mainSource).toContain(
-    "export { ModelConnectionTester } from '../application/model-connection.js'",
-  )
   expect(tuiConfig.include).not.toContain('src/main/model-connection.ts')
   expect(graph.has(resolve('src/main/model-connection.ts'))).toBe(false)
+  expect(graph.has(resolve('src/application/model-connection.ts'))).toBe(true)
 })
