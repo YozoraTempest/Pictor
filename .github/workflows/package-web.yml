@@ -1,0 +1,90 @@
+name: Package web
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Exact source commit to package
+        type: string
+        required: true
+      artifact_prefix:
+        description: Prefix for the intermediate workflow artifact
+        type: string
+        required: true
+      build_channel:
+        description: Build channel embedded in the Web package
+        type: string
+        required: true
+      run_source_validation:
+        description: Run release-only source validation before packaging
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  web-package:
+    name: Build local Web package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned npm without replacing the runner copy
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/pictor-npm" npm@11.17.0
+          echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
+      - run: npm ci
+      - name: Run release source validation
+        if: inputs.run_source_validation
+        run: npm run verify:fast
+      - name: Build and verify installable Web package
+        run: npm run package:web
+        env:
+          PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
+          PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}
+      - name: Stage Web package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-web
+          path: dist/Pictor-*-web.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  windows-install:
+    name: Verify Windows global install
+    needs: web-package
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned npm without replacing the runner copy
+        shell: pwsh
+        run: |
+          $npmPrefix = Join-Path $env:RUNNER_TEMP 'pictor-npm'
+          npm install --global --prefix $npmPrefix npm@11.17.0
+          $npmPrefix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact_prefix }}-web
+          path: dist
+      - name: Verify the installed Windows command and Web Host
+        run: npm run package:web:verify
+        env:
+          PICTOR_BUILD_CHANNEL: ${{ inputs.build_channel }}
+          PICTOR_SOURCE_COMMIT: ${{ inputs.source_sha }}

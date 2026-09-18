@@ -5,10 +5,15 @@ Trilium「开源项目知识库 / Pictor」维护。
 
 ## 环境
 
-使用 `.nvmrc` 与 `package.json` 固定的 Node.js/npm 版本。首次检出或 Electron 版本变化后运行：
+使用 `.nvmrc` 与 `package.json` 固定的 Node.js/npm 版本。首次检出运行：
 
 ```bash
 npm ci
+```
+
+只有维护 Electron 薄壳或桌面打包时才需要额外运行：
+
+```bash
 npm run deps:prepare
 npm run deps:verify
 ```
@@ -34,6 +39,7 @@ user-data，不访问真实用户目录、模型服务或凭据。
 | Plugin Watch 模式             | `npm run test:plugins:watch`    |
 | Web 创造模式定向验证          | `npm run test:web`              |
 | Web 开发与生产构建验收        | `npm run verify:web`            |
+| 可安装 Web 包黑盒验收         | `npm run package:web`           |
 | PR 级本地验收                 | `npm run verify:pr`             |
 | 可选的当前平台发布预检        | `npm run verify:release`        |
 
@@ -56,8 +62,8 @@ verify:pr      verify:fast + 共享 Web GUI、Electron Main/Preload 与全部 Fr
 verify:release verify:fast + 同一 distribution 上的当前平台打包和黑盒验收
 ```
 
-`package:verify` 只消费已有产物；`package` 等便捷命令会自行构建。聚合命令应复用叶子命令，不能
-重复构建同一快照。
+`package:web:verify` 与 `package:verify` 都只消费已有产物；`package:web` 和 `package` 等便捷命令会
+自行构建。聚合命令应复用叶子命令，不能重复构建同一快照。
 
 `test:web` 只覆盖 Web 连接恢复、Host generation、创造模式 watcher 和开发监督器参数等稳定 seam；
 Plugin Manager 的创造模式界面仍由 `test:plugins` 验证。开发闭环的人工 smoke 使用
@@ -79,7 +85,8 @@ Plugin Manager 的创造模式界面仍由 `test:plugins` 验证。开发闭环�
 不得新增这些内容。申请新增时必须说明目标风险为何无法在 Core、Plugin、SDK 或集成测试的稳定
 seam 中验证，并给出确定性的等待、清理、失败证据和 CI 成本方案。
 
-这项限制不影响 `package:verify`：它是正式发布物的黑盒结构与启动验收，不承担产品交互流程测试。
+这项限制不影响 `package:web:verify` 或 `package:verify`：它们是正式发布物的黑盒结构与启动验收，
+不承担产品交互流程测试。
 
 ## CI 门禁
 
@@ -89,30 +96,43 @@ seam 中验证，并给出确定性的等待、清理、失败证据和 CI 成�
 | ---------------------- | -------------------------------------------- |
 | `Quality`              | Workflow、分支/发布元数据、格式、类型与 Lint |
 | `Unit and integration` | 分步执行 Core、Bundled Plugin 与 Plugin SDK  |
-| `Windows acceptance`   | 准备 Windows Electron 并构建应用             |
-| `Linux acceptance`     | 准备 Linux Electron 并构建应用               |
+| `Windows acceptance`   | 在 Windows 构建 Web 应用                     |
+| `Linux acceptance`     | 在 Linux 构建 Web 应用                       |
 
-基础 CI 不根据手写源码路径改变 required checks。触及依赖、Plugin SDK、Plugin、Frontend、构建、
-打包或 Workflow 的 PR 另外触发非 required 的 `Package CI`，通过共享
-`package-desktop.yml` 构建和验收 Windows NSIS、Arch Pacman 与 AppImage。
+基础 CI 不下载 Electron，也不根据手写源码路径改变 required checks。触及依赖、Plugin SDK、Plugin、
+Frontend、构建、打包或 Workflow 的 PR 另外触发非 required 的 `Package CI`：`package-web.yml`
+在 Linux 构建包并分别于 Linux、Windows 全局安装和启动默认 Web 包，`package-desktop.yml` 继续构建
+NSIS、Pacman 与 AppImage 作为兼容性证据。
 
 普通开发 PR 使用 `development` 构建通道，不重复源码验证。`develop` 或 `hotfix/*` 指向 `main`
 的发布 PR 使用 `stable` 通道并启用 `run_source_validation`，因此发布级源码与包验收在合并前
 完成。路径受限的 `ci/*` 到 `main` 仍使用轻量模式，不冒充正式发布候选。
 
-Nightly 与 Release 复用同一桌面打包 Workflow。Release 在合入 `main` 后以同一稳定通道重新执行
-发布门禁并生成正式资产；只有所有平台产物通过后，单一 publish job 才发布附件。
+Nightly 与 Release 复用 `package-web.yml`，自动发布 Web `.tgz` 和 `SHA256SUMS`。Electron 桌面资产
+不进入自动发布路径；维护者只能手动运行 `Publish desktop packages`，从已有 Release tag 的精确提交
+构建并追加三个桌面资产和 `SHA256SUMS-desktop`。滚动 Nightly 被下一次自动发布整体替换后，需要重新
+执行该手动 Workflow 才会再次包含桌面资产。
 
 ## 发布包验收
 
-所有正式打包必须先运行：
+默认 Web 发布包使用：
+
+```bash
+npm run package:web
+```
+
+命令构建 Web Client、Host 和 Bundled Plugin，生成 `.tgz`，在仓库外的隔离 prefix 执行真实 npm
+全局安装，再通过 npm 生成的真实 `pictor-web` 命令验证构建 identity、无 Electron 依赖、启动 token、
+session cookie、根页面和 AppInfo HTTP API。Package CI 在 Linux 和 Windows 各执行一次该安装 smoke。
+
+Electron 兼容打包必须先运行：
 
 ```bash
 npm run build:distribution
 ```
 
 它清理旧产物并构建同一源码快照的共享 Web GUI、Electron Main/Preload、CLI、TUI 与 Bundled
-Plugin。Electron GUI 不再构建第二份 Renderer。平台命令为：
+Plugin。Electron GUI 不再构建第二份 Renderer。手动桌面平台命令为：
 
 ```bash
 npm run package:windows:build

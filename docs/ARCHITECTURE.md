@@ -105,15 +105,18 @@ leaf 和 replacement transaction 都通过 Runtime/Repository 的公开 seam 完
 
 ### Distribution 与安全边界
 
-`npm run build:distribution` 是发布包的唯一完整构建入口：清理旧产物后构建共享 Web GUI、Electron
-Main/Preload、CLI、TUI 和全部 Bundled Plugin，再写入同一源码快照的 build identity。Electron 不
-再生成第二份 Renderer。`package:*`、Nightly 和
-Release 只能消费该完整产物。
+`npm run build:web` 构建默认发行所需的 Web Client、Node Web Host、Runtime Host 和 Bundled Plugin；
+`npm run package:web` 将其封装为可由 npm 安装的 `Pictor-<version>-web.tgz`，写入构建通道和精确源码
+提交，并通过 Linux 与 Windows 隔离全局安装、真实 npm bin、回环 HTTP 和浏览器页面 smoke 验证。
+正式入口是 `pictor-web`，依赖系统 Node.js 22.22.2 或更新版本。安装版使用 `pictor` Profile，源码
+开发使用 `pictor-dev`。
 
-公开入口固定为 `pictor`、`pictor cli ...` 和 `pictor tui ...`。打包后的 CLI/TUI 使用包内 Electron
-Node adapter，不依赖系统 Node。Electron `runAsNode` fuse 因此保持启用；launcher 限制正常入口，
-但不是安全沙箱。Renderer 必须保持 sandbox、context isolation、限制性 CSP，且不能访问 Node 或
-原始 Electron API。
+Nightly 与正式 Release 自动发布 Web 包。Electron 兼容包只允许通过手动 Workflow 向已有 Release
+追加；`npm run build:distribution` 继续从同一快照构建 Web GUI、Electron Main/Preload、CLI、TUI 和
+全部 Bundled Plugin。桌面公开入口仍为 `pictor`、`pictor cli ...` 和 `pictor tui ...`，CLI/TUI 使用
+包内 Electron Node adapter。Electron `runAsNode` fuse 因此保持启用；launcher 限制正常入口，但不是
+安全沙箱。Renderer 必须保持 sandbox、context isolation、限制性 CSP，且不能访问 Node 或原始
+Electron API。
 
 Pictor 不为 Pi 原生文件与 Shell 工具增加第二套项目路径守卫或命令审批。它们以当前用户权限运行；
 需要更强隔离时使用操作系统或容器能力。API Key 不得进入 Renderer、Session、Pi JSONL、日志或
@@ -143,6 +146,7 @@ Cookie；API 写请求和 WebSocket 必须通过精确的 Host、Origin 与 Fetc
 - **Session Projection**：从 Pi Session History 重建的桌面展示与导航模型，不是历史来源。
 - **Supported Distribution**：发布原生资产并维护明确验收基线的 Linux 发行版。
 - **Portable Linux Asset**：不承诺通用发行版兼容性的便携 AppImage。
+- **Local Web Distribution**：通过系统 Node 启动回环 Web Host 和浏览器 GUI 的默认 `.tgz` 发行物。
 
 ## 依赖方向
 

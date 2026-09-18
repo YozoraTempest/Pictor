@@ -1,7 +1,7 @@
 # Pictor
 
-Pictor 是一个面向 Agent 委托工作流的本地开发环境。当前源码以浏览器 GUI 和本机 Node Web Host
-作为默认开发形态，同时保留 Windows 与 Linux 的 Electron 桌面入口和发行能力。0.4.0 提供可组合
+Pictor 是一个面向 Agent 委托工作流的本地开发环境。浏览器 GUI 和本机 Node Web Host 是默认开发、
+构建与发布形态，同时保留 Windows 与 Linux 的 Electron 薄壳兼容入口和手动发行能力。0.4.0 提供可组合
 Plugin Host、本地项目、Pi JSONL 权威 Session、原生 Pi Agent Runtime 与 Extension、Pi 原生工具和
 OpenAI 兼容模型配置。
 
@@ -32,9 +32,8 @@ OpenAI 兼容模型配置。
 - 展示 Markdown 回复、工具状态、命令输出、错误、停止和中断状态；
 - 配置 Chat Completions 或 Responses 兼容模式、API Base URL、模型标识、API Key、模型
   推理强度、温度和最大输出 Token 数；支持从兼容的 `/models` 端点获取并选择模型；
-- 在设置的“关于”页查看版本，选择并记忆稳定版或 Nightly 更新通道，再按需检查 GitHub
-  Release；有新版本或滚动快照时只打开与当前平台、架构匹配的 Windows、Arch 或便携 Linux
-  官方发布包，否则安全回退到对应发布页；
+- 手动 Electron 包可在设置的“关于”页查看版本，选择并记忆稳定版或 Nightly 更新通道，再按需检查
+  GitHub Release；有匹配当前平台与架构的手动桌面资产时直接打开，否则回退到对应发布页；
 - 通过 Plugin Host 从用户 Store 动态装配 Host/GUI/TUI/Runtime Module，支持 SemVer 依赖、故障隔离、
   安全模式和独立 Plugin 测试循环；Updater 已作为可删除、可恢复的 Bundled Plugin 运行。
 - `pictor.pi-extension-host` 可直接安装、禁用和删除原生 `.ts/.js` Pi Extension、Extension 目录
@@ -63,18 +62,20 @@ OpenAI 兼容模型配置。
 
 ## 支持基线
 
-| 平台           | 环境                                               | Release Asset | 支持语义                   |
-| -------------- | -------------------------------------------------- | ------------- | -------------------------- |
-| Windows x64    | Windows 11 x64                                     | NSIS `.exe`   | 正式支持                   |
-| Arch Linux x64 | 原生 Arch Linux，2026-08-21 滚动快照、niri Wayland | `.pacman`     | 唯一正式支持的 Linux 环境  |
-| 其他 Linux x64 | 未指定                                             | `.AppImage`   | 便携资产，不承诺发行版兼容 |
+| Frontend         | 环境                                           | Release Asset              | 支持语义                   |
+| ---------------- | ---------------------------------------------- | -------------------------- | -------------------------- |
+| Web              | Windows 11 x64、原生 Arch Linux x64            | `Pictor-<version>-web.tgz` | 默认正式发行形态           |
+| Electron Desktop | Windows 11 x64                                 | 手动附加 NSIS `.exe`       | 薄壳兼容发行               |
+| Electron Desktop | 原生 Arch Linux，2026-08-21 快照、niri Wayland | 手动附加 `.pacman`         | Linux 桌面正式支持基线     |
+| Electron Desktop | 其他 Linux x64                                 | 手动附加 `.AppImage`       | 便携资产，不承诺发行版兼容 |
 
-Arch 的 Wayland 会话可以由 Electron 使用 XWayland，不承诺强制原生 Wayland。Arch 衍生版和
-其他 Linux 发行版不属于正式支持范围，即使 AppImage 可能可以运行。所有平台还需要：
+Web 发行包由系统 Node 启动本机 Host 并打开默认浏览器，不是远程托管站点。Arch 的 Wayland 会话可以
+由手动发布的 Electron 薄壳使用 XWayland，不承诺强制原生 Wayland。Arch 衍生版和其他 Linux 发行版
+不属于正式支持范围，即使 Web 包或 AppImage 可能可以运行。所有平台还需要：
 
-- Node.js 22.22.2 或更新版本。源码 Web Host、CLI、TUI、本地开发和构建需要系统 Node；当前已安装/
-  便携 Electron 包的 CLI、TUI 仍使用包内 Electron Node adapter，不调用系统 `node`；Pi 会按当前
-  平台解析原生 Shell；
+- Node.js 22.22.2 或更新版本。正式 Web 包、源码 Web Host、CLI、TUI、本地开发和构建需要系统
+  Node；手动发布的 Electron 包内 CLI/TUI 仍使用 Electron Node adapter；Pi 会按当前平台解析原生
+  Shell；
 - 一个兼容 OpenAI Chat Completions 或 Responses、SSE 流式响应和函数工具调用的模型端点。
 
 Pictor 不再预探测、替换或审批 Bash。`bash` 工具由 Pi 原生实现，以当前用户权限和当前 Session
@@ -82,7 +83,32 @@ Pictor 不再预探测、替换或审批 Bash。`bash` 工具由 Pi 原生实现
 
 ## 安装与卸载
 
-从 0.4.0 起，正式 GitHub Release 原子提供以下 x64 发布包及 `SHA256SUMS`：
+正式 GitHub Release 与滚动 Nightly 默认提供本地 Web 包及 `SHA256SUMS`：
+
+```text
+Pictor-<version>-web.tgz
+```
+
+下载并核对摘要后安装：
+
+```bash
+npm install --global ./Pictor-<version>-web.tgz
+pictor-web
+```
+
+`pictor-web` 默认绑定随机的 `127.0.0.1` 端口并打开系统浏览器。使用 `--no-open` 只输出一次性启动
+URL，使用 `--port <port>` 固定端口。升级时安装新 Release 的 `.tgz`；卸载使用：
+
+```bash
+npm uninstall --global @yozoratempest/pictor-web
+```
+
+正式 Web 包与 Electron 共享 Windows `%APPDATA%\pictor` 或 Linux `~/.config/pictor`，同一时间只能有
+一个 Frontend 持有该 Profile。源码 `npm run dev` 继续使用独立的 `pictor-dev`，不会修改正式数据。
+
+Electron 桌面资产不再由 Nightly 或正式 Release 自动生成。维护者需要桌面兼容包时，手动运行
+`Publish desktop packages` Workflow，把以下资产和 `SHA256SUMS-desktop` 附加到已经存在的
+`nightly` 或 `v<version>` Release：
 
 ```text
 Pictor-<version>-windows-x64-setup.exe
@@ -90,33 +116,18 @@ Pictor-<version>-arch-x64.pacman
 Pictor-<version>-linux-x64.AppImage
 ```
 
-Windows：运行 NSIS 安装程序并按向导选择安装位置。要卸载，请在“已安装的应用”中选择
-Pictor，或运行安装目录中的卸载程序。
+`nightly` 是滚动 Release；下一次自动 Nightly 会整体替换它并移除此前手动附加的桌面资产，需要时应在
+新的 Nightly 发布完成后重新运行桌面 Workflow。正式 `v<version>` Release 不受这一行为影响。
 
-原生 Arch Linux：
-
-```bash
-sudo pacman -U ./Pictor-<version>-arch-x64.pacman
-sudo pacman -Rns pictor
-```
-
-其他 x64 Linux 可以尝试直接运行便携 AppImage：
-
-```bash
-chmod +x ./Pictor-<version>-linux-x64.AppImage
-./Pictor-<version>-linux-x64.AppImage
-```
-
-Pictor 自身不会调用 `sudo`、`pkexec` 或 `pacman`；安装和卸载始终是用户在应用外明确执行的
-操作。Pacman 卸载和删除 AppImage 都不会删除用户数据。关闭应用后，可另行删除 Windows 的
-`%APPDATA%\pictor`，或 Linux 默认的 `~/.config/pictor`；设置了 `XDG_CONFIG_HOME` 时，Linux
-数据目录位于 `$XDG_CONFIG_HOME/pictor`。
+桌面包的安装方式保持不变：Windows 运行 NSIS；Arch 使用 `sudo pacman -U`；其他 Linux 可以直接
+运行 AppImage。Pictor 不会自行调用 `sudo`、`pkexec` 或 `pacman`。卸载 Web 或 Desktop 都不会删除
+用户数据；设置了 `XDG_CONFIG_HOME` 时，Linux 数据目录位于 `$XDG_CONFIG_HOME/pictor`。
 
 ### 当前发行入口
 
-当前正式 Electron 包统一使用三个入口：`pictor` 启动桌面 GUI，`pictor cli ...` 启动 CLI，
-`pictor tui ...` 启动 TUI。源码开发还提供独立的 Web Frontend；它尚未替代正式桌面发布包。
-Arch 安装后的 `/usr/bin/pictor` 是由包安装脚本创建的精确符号链接，AppImage 的 `AppRun`
+正式 Web 包以 `pictor-web` 启动浏览器 Frontend，不包含 Electron、CLI 或 TUI。Nightly 与 Release
+自动发布该入口。手动 Electron 包统一使用三个兼容入口：`pictor` 启动桌面 GUI，`pictor cli ...`
+启动 CLI，`pictor tui ...` 启动 TUI。Arch 安装后的 `/usr/bin/pictor` 是由包安装脚本创建的精确符号链接，AppImage 的 `AppRun`
 和它都进入同一个 POSIX launcher；两者都以自身或 `$APPDIR` 推导路径，支持带空格的安装目录和任意
 当前工作目录。Windows 不修改用户 `PATH`，请使用安装目录中的
 `<安装目录>\bin\pictor.cmd`；桌面和开始菜单快捷方式也指向这个清除环境变量的 GUI 入口，避免
@@ -128,8 +139,9 @@ GUI 默认会清除继承的 `ELECTRON_RUN_AS_NODE`；只有 `cli`/`tui` 明确�
 读取 `package.json`、`.pictor`，也不会因身份缺失静默回退到空 Profile。默认 user-data 仍为当前
 平台既有的 `data-v1` 路径；`--user-data-dir` 可显式选择共享 Profile。
 
-发布包和解包可执行文件均未签名，且仍使用 Electron 默认图标。请只从 Pictor 官方 GitHub
-Release 获取文件，并通过同一 Release 的 `SHA256SUMS` 核对摘要；组织策略要求签名时暂缓部署。
+请只从 Pictor 官方 GitHub Release 获取 Web 包并通过 `SHA256SUMS` 核对摘要。手动 Electron 包和
+解包可执行文件均未签名且仍使用默认图标，使用 `SHA256SUMS-desktop` 单独核对；组织策略要求签名时
+暂缓部署。
 
 ## 本地运行
 
@@ -226,8 +238,7 @@ Profile 冲突、无可用 TUI、Plugin 失败和取消退出码分别为 `0`、
 ## 验证
 
 日常提交前运行快速验证；PR 级验证会额外执行一次干净的 Web/Desktop/CLI/TUI/Plugin distribution
-build。打包相关改动由独立 Package CI 构建并验收 Windows NSIS、Pacman 和 AppImage，不在基础
-CI 中维护条件分支：
+build。Package CI 以真实安装的 Web `.tgz` 为主验收，并继续构建 Electron 包作为兼容性证据：
 
 ```bash
 npm run test:module -- updater
@@ -240,13 +251,15 @@ npm run test:web
 npm run verify:fast
 npm run verify:web
 npm run verify:pr
+npm run package:web
 npx vitest run src/tui plugins/tui-delegate scripts/tui-import-boundaries.test.mjs
 ```
 
-`develop` 或 `hotfix/*` 指向 `main` 的发布 PR 会通过 Package CI 使用稳定通道执行源码复验和
-Windows/Linux 包验收，在合并前形成发布级门禁。本地需要提前复现当前平台的完整发布路径时，
-可以运行 `npm run verify:release`；它不是发布所必需的人工前置。Windows 净机、Arch 原生安装
-生命周期和 hosted CI 的另一个平台证据由 `package-desktop.yml` 提供：
+`develop` 或 `hotfix/*` 指向 `main` 的发布 PR 会通过 Package CI 使用稳定通道执行源码复验、Linux
+与 Windows Web 全局安装启动验收，以及 Windows/Linux 桌面兼容包验收。Nightly 与 Release 自动发布
+Web 包；桌面包只由手动 Workflow 发布。本地需要提前复现 Electron 当前平台发布路径时，可以运行
+`npm run verify:release`。Windows 净机、Arch 原生安装生命周期和 hosted CI 证据由
+`package-desktop.yml` 提供：
 
 ```bash
 npm run package:windows:build
@@ -254,8 +267,9 @@ npm run package:linux:build
 npm run package:verify
 ```
 
-`npm run package:dir` 按当前平台生成解包应用，`npm run package` 按当前平台生成正式发布包并
-执行对应结构校验。`npm test` 会顺序执行互不重叠的 Core、Bundled Plugin 和 Plugin SDK 测试
+`npm run package:web` 生成 `.tgz`，在隔离 prefix 中真实全局安装后验证 launcher、回环 HTTP、浏览器
+页面、AppInfo identity 和无 Electron 依赖。`npm run package:dir` 与 `npm run package` 只用于
+Electron 兼容包。`npm test` 会顺序执行互不重叠的 Core、Bundled Plugin 和 Plugin SDK 测试
 域；单独运行 `npm run test:core` 不会收集或构建产品 Plugin。`npm run build:distribution` 会先
 清理并一次构建共享 Web GUI、Electron Main/Preload、CLI、TUI 和 10 个 Bundled Plugins；所有 `package:*`
 发布构建都消费
@@ -308,10 +322,10 @@ recovery source，用户恢复 Workbench 后重启回到 Delegate。该行为由
 
 ## 已知限制
 
-- Windows、Arch 和 AppImage 发布物及应用可执行文件未签名，应用图标仍使用 Electron 默认图标。
-- 普通 Windows/Linux CI 只准备 Electron 并构建应用，不自动执行桌面交互流程；触及打包面的 PR、
-  Nightly 和 Release 还由 `package-desktop.yml` 执行 NSIS、shortcut、CLI/TUI、安装/卸载和用户
-  数据保留验收，但不代替真实净机或人工桌面证据。
+- Web 包需要用户预先安装 Node.js 22.22.2 或更新版本，当前不提供独立系统安装器或常驻服务。
+- Electron 的 Windows、Arch 和 AppImage 资产仅手动发布，均未签名且仍使用默认图标。
+- 普通 Windows/Linux CI 构建 Web 应用；Package CI 另外在 Linux 与 Windows 执行 Web 包全局安装
+  smoke，并执行 Electron compatibility packaging，但不代替真实净机或人工桌面证据。
 - AppImage 只执行结构与启动 Smoke，不构成其他 Linux 发行版兼容承诺；Arch 容器生命周期与
   本机 niri 桌面证据仍按发布门禁分别记录。
 - Arch 是滚动发行版，正式支持以发布说明记录的快照日期为验收基线，不承诺未来系统更新永不
@@ -357,12 +371,9 @@ ResourceLoader、ExtensionRunner 和原生工具注册表；删除或禁用该 P
 `.pi/extensions`、Skills 和 Prompt Templates 由 Pi 原生资源解析器自动加载，Session Controls 只
 管理 Pi 暴露的模型、Thinking、工具和队列偏好。
 
-更新检查只在用户点击“检查更新”后由 Host 请求 Pictor 官方 GitHub Release API；
-应用不会在后台轮询。稳定通道查询 Latest Release，并按 SemVer 判断；用户显式选择的 Nightly
-通道查询滚动的 `nightly` Pre-release，并用打包时嵌入的源码提交判断快照是否变化。通道选择保存在
-Updater Plugin 的独立数据目录，默认仍为稳定版。Linux 只在本机读取 `/etc/os-release` 识别原生
-Arch，不上传或记录该文件。Arch 下载按钮优先打开匹配的官方 Pacman 资产，其他 Linux 只打开匹配
-版本和架构的官方 AppImage；没有匹配资产时回退到对应官方发布页。
+Web Profile 不安装 Updater Plugin；升级通过下载新的 `.tgz` 并再次运行 `npm install --global` 完成。
+手动 Electron 包中的 Updater 仍只在用户点击“检查更新”后请求官方 GitHub Release API，不在后台
+轮询。若当前 Release 已手动附加匹配平台的桌面资产则打开该资产，否则回退到 Release 页面。
 
 Pictor 不为 Pi 工具增加第二套项目路径守卫或命令审批；项目根目录作为 Pi Session 的工作目录，
 文件与 Shell 操作遵循 Pi 和当前操作系统的权限语义。需要更强隔离时，应使用操作系统或容器提供

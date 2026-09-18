@@ -25,7 +25,7 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
       ? resolve(sourceDirectory, '../..')
       : resolve(sourceDirectory, '../../../..')
     const userDataDirectory = resolveUserDataDirectory(request.userDataDirectory, {
-      applicationName: 'pictor-dev',
+      applicationName: webApplicationName(),
     })
     const runtimeHostPath = request.development
       ? resolve(projectRoot, 'src/runtime/host.ts')
@@ -93,6 +93,12 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
     )
     return error instanceof WebUsageError ? 2 : 1
   }
+}
+
+export function webApplicationName(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): 'pictor' | 'pictor-dev' {
+  return environment.PICTOR_PACKAGED === '1' ? 'pictor' : 'pictor-dev'
 }
 
 function developmentAuth(development: boolean): WebSessionAuth | undefined {

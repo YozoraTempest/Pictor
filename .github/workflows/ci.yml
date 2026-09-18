@@ -133,9 +133,8 @@ jobs:
           npm install --global --prefix $npmPrefix npm@11.17.0
           $npmPrefix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: npm ci
-      - run: npm run deps:prepare
-      - run: npm run deps:verify
-      - run: npm run build:app
+      - name: Build Web application
+        run: npm run build:web
 
   linux-acceptance:
     name: Linux acceptance
@@ -153,8 +152,5 @@ jobs:
           echo "$RUNNER_TEMP/pictor-npm/bin" >> "$GITHUB_PATH"
       - run: npm --version
       - run: npm ci
-      - run: npm run deps:prepare
-        env:
-          ELECTRON_GET_USE_PROXY: 'true'
-      - run: npm run deps:verify
-      - run: npm run build:app
+      - name: Build Web application
+        run: npm run build:web
