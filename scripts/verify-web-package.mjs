@@ -122,7 +122,7 @@ try {
     ),
   )
 } finally {
-  await rm(testRoot, { recursive: true, force: true })
+  await rm(testRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }
 
 async function startWebHost(binPath, profileDirectory) {
@@ -169,19 +169,42 @@ async function startWebHost(binPath, profileDirectory) {
     return {
       ...resolved,
       stop: async () => {
-        if (child.exitCode !== null || child.signalCode !== null) return
-        child.kill('SIGTERM')
-        await Promise.race([
-          new Promise((resolvePromise) => child.once('exit', resolvePromise)),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Packaged Web Host did not stop')), 10_000),
-          ),
-        ])
+        await stopProcessTree(child)
       },
     }
   } catch (error) {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    await stopProcessTree(child).catch(() => undefined)
     throw error
+  }
+}
+
+async function stopProcessTree(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const exited = new Promise((resolvePromise) => child.once('exit', resolvePromise))
+
+  if (process.platform === 'win32' && child.pid) {
+    const killer = spawn('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    await new Promise((resolvePromise) => {
+      killer.once('error', resolvePromise)
+      killer.once('exit', resolvePromise)
+    })
+  } else {
+    child.kill('SIGTERM')
+  }
+
+  let timeout
+  try {
+    await Promise.race([
+      exited,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('Packaged Web Host did not stop')), 10_000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
