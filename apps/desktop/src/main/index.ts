@@ -11,7 +11,12 @@ import {
   expandPluginRoots,
   resolveActivationOrder,
 } from '@pictor/plugin-host'
-import { parsePanelContributions, type PanelContribution } from '@pictor/plugin-sdk'
+import {
+  evaluateToolGuards,
+  parsePanelContributions,
+  parseToolGuardContributions,
+  type PanelContribution,
+} from '@pictor/plugin-sdk'
 import { PROVIDER_ID, readApiKey, readModelSettings, writeModelsJson } from '@pictor/model-config'
 import type { JsonValue, PluginRecord, Section } from '@pictor/shared'
 
@@ -194,6 +199,14 @@ async function startWorkspace(): Promise<Workspace | null> {
   }
   const panels: PanelContribution[] = parsedPanels.panels
 
+  // Guards run in contribution order and fail closed. With no guard installed
+  // the interceptor stays null, so the default policy costs nothing.
+  const parsedGuards = parseToolGuardContributions(pluginHost.contributions('toolGuards'))
+  for (const failure of parsedGuards.failures) {
+    console.warn(`[plugin] tool guard ignored: ${failure.reason}`)
+  }
+  const toolGuards = parsedGuards.guards
+
   console.info(`pictor host core ${info.version} (schema ${info.schemaVersion})`)
 
   let disposed = false
@@ -203,6 +216,15 @@ async function startWorkspace(): Promise<Workspace | null> {
       mainWindow?.webContents.send('pictor:chat.event', event)
     },
   })
+
+  if (toolGuards.length > 0) {
+    chat.setToolInterceptor(async ({ tool, args }) => {
+      const verdict = await evaluateToolGuards(toolGuards, { tool, args })
+      if (!verdict.blocked) return undefined
+      console.warn(`[tool-guard] blocked ${tool}: ${verdict.reason ?? 'no reason given'}`)
+      return { block: true, reason: verdict.reason ?? 'blocked by a tool guard' }
+    })
+  }
 
   return {
     appHost,

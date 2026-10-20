@@ -177,12 +177,17 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         const messages = [...state.messages]
         const index = messages.findIndex(
           (message) =>
-            message.role === 'tool' && message.toolName === event.tool && message.text === '',
+            message.role === 'tool' &&
+            message.toolName === event.tool &&
+            (message.text === '' || message.blocked === true),
         )
 
         if (index >= 0) {
           const existing = messages[index]
-          if (existing !== undefined) {
+          // A guarded call already has its verdict; Pi still reports the tool as
+          // finished, and overwriting the reason with a generic error would hide
+          // the only explanation the user gets.
+          if (existing !== undefined && existing.blocked !== true) {
             messages[index] = {
               ...existing,
               text: event.output.slice(0, 4000),
@@ -202,6 +207,47 @@ export const useChatStore = create<ChatState>()((set, get) => ({
               timestamp: Date.now(),
               toolName: event.tool,
               isError: event.isError,
+            },
+          ],
+        }
+      })
+      return
+    }
+
+    if (event.type === 'tool.blocked') {
+      set((state) => {
+        const messages = [...state.messages]
+        // The start event usually lands first; reuse that row so one call never
+        // shows up twice (once as a failure, once as a blocked call).
+        const index = messages.findIndex(
+          (message) =>
+            message.role === 'tool' && message.toolName === event.tool && message.text === '',
+        )
+
+        if (index >= 0) {
+          const existing = messages[index]
+          if (existing !== undefined) {
+            messages[index] = {
+              ...existing,
+              text: event.reason,
+              isError: true,
+              blocked: true,
+            }
+          }
+          return { messages }
+        }
+
+        return {
+          messages: [
+            ...messages,
+            {
+              id: `tool-${event.runId}-${messages.length}`,
+              role: 'tool',
+              text: event.reason,
+              timestamp: Date.now(),
+              toolName: event.tool,
+              isError: true,
+              blocked: true,
             },
           ],
         }

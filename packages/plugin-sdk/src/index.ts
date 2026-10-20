@@ -14,3 +14,14 @@ export {
   type PanelContribution,
   type PanelContributionFailure,
 } from './panels.js'
+export {
+  ToolGuardContributionError,
+  evaluateToolGuards,
+  parseToolGuardContribution,
+  parseToolGuardContributions,
+  type ToolGuardContext,
+  type ToolGuardContribution,
+  type ToolGuardDecision,
+  type ToolGuardFailure,
+  type ToolGuardVerdict,
+} from './tool-guards.js'

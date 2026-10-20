@@ -113,6 +113,72 @@ describe('ChatService', () => {
     expect(agent.interceptor).toBeTypeOf('function')
   })
 
+  it('reports a blocked tool call so the transcript can show it', async () => {
+    const events: ChatEvent[] = []
+    const agent = fakeAgent('/tmp/x.jsonl', () => undefined)
+    const service = new ChatService({
+      onEvent: (event) => events.push(event),
+      openAgent: async () => agent,
+    })
+
+    service.setToolInterceptor(async () => ({ block: true, reason: 'rm is not allowed' }))
+    await service.open({
+      sessionId: 's1',
+      cwd: '/tmp',
+      sessionDir: '/tmp/pi',
+      agentDir: '/tmp/agent',
+      modelsPath: '/tmp/models.json',
+      modelId: 'demo',
+      apiKey: null,
+      sessionPath: null,
+    })
+
+    const interceptor = agent.interceptor as (input: {
+      tool: string
+      args: unknown
+    }) => Promise<{ block?: boolean; reason?: string } | undefined>
+
+    const decision = await interceptor({ tool: 'bash', args: { cmd: 'rm -rf /' } })
+
+    expect(decision).toMatchObject({ block: true })
+    expect(events).toContainEqual({
+      type: 'tool.blocked',
+      sessionId: 's1',
+      runId: expect.any(String),
+      tool: 'bash',
+      reason: 'rm is not allowed',
+    })
+  })
+
+  it('stays quiet when the guard allows the call', async () => {
+    const events: ChatEvent[] = []
+    const agent = fakeAgent('/tmp/x.jsonl', () => undefined)
+    const service = new ChatService({
+      onEvent: (event) => events.push(event),
+      openAgent: async () => agent,
+    })
+
+    service.setToolInterceptor(async () => ({ block: false }))
+    await service.open({
+      sessionId: 's1',
+      cwd: '/tmp',
+      sessionDir: '/tmp/pi',
+      agentDir: '/tmp/agent',
+      modelsPath: '/tmp/models.json',
+      modelId: 'demo',
+      apiKey: null,
+      sessionPath: null,
+    })
+
+    const interceptor = agent.interceptor as (input: {
+      tool: string
+      args: unknown
+    }) => Promise<{ block?: boolean } | undefined>
+    await interceptor({ tool: 'bash', args: {} })
+
+    expect(events.some((event) => event.type === 'tool.blocked')).toBe(false)
+  })
+
   it('rejects send when no session is open', async () => {
     const service = new ChatService({ onEvent: () => undefined })
     await expect(service.send('hello')).rejects.toThrow(/no chat session/)

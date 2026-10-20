@@ -95,5 +95,10 @@ projects it and never writes a second history.
   entry to the side panel. Panels are data only — opening one runs a command, so
   plugins never ship renderer code. `tools` is reserved for the agent-facing
   capability surface; an agent tool may open a panel, but a panel is not a tool.
+- Tool guard: `contributes('toolGuards', { id, tools?, decide })` polices agent
+  tool calls before they run. Guards are the only place that can deny a call;
+  they run in contribution order, the first deny wins, and a guard that throws
+  fails closed. Denials surface as a blocked row in the transcript instead of a
+  silent abort.
 - Tests sit next to the implementation as `*.test.ts`; cross-module behaviour is
   tested through the public seam (client, engine, plugin host).

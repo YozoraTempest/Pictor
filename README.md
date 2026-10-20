@@ -79,9 +79,11 @@ Selecting a session opens its Pi JSONL transcript and a composer:
   previous agent and opens the bound JSONL.
 - The first open creates `<userData>/pi/sessions/<projectId>/<sessionId>.jsonl`
   and stores its path in the session's `piSessionId` column.
-- Tool calls execute with the current user's permissions. A `beforeToolCall`
-  interceptor seam exists for a future approval plugin; the built-in policy is
-  allow-all, so install only trusted projects and extensions.
+- Tool calls execute with the current user's permissions and the built-in policy
+  is allow-all. A plugin can tighten that by contributing a `toolGuards` guard;
+  guards run in order, the first deny wins, and a denied call is shown in the
+  transcript with its reason. With no guard installed the interceptor is null,
+  so the default path costs nothing. Install only trusted projects and extensions.
 
 ## Model settings
 

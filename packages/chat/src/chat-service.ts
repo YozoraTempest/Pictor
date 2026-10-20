@@ -32,9 +32,35 @@ export class ChatService {
     return this.#active?.sessionId ?? null
   }
 
+  /**
+   * Installs the guard chain. The interceptor is wrapped so a denied call also
+   * reaches the transcript: Pi aborts the tool silently otherwise, and a tool
+   * that vanished without a trace is the worst possible outcome for a policy
+   * hook.
+   */
   setToolInterceptor(interceptor: ToolInterceptor | null): void {
-    this.#interceptor = interceptor
-    this.#active?.agent.setToolInterceptor(interceptor)
+    this.#interceptor = interceptor === null ? null : this.#reporting(interceptor)
+    this.#active?.agent.setToolInterceptor(this.#interceptor)
+  }
+
+  #reporting(interceptor: ToolInterceptor): ToolInterceptor {
+    return async (input) => {
+      const decision = await interceptor(input)
+      if (decision?.block !== true) return decision
+
+      const sessionId = this.#active?.sessionId
+      if (sessionId !== undefined) {
+        this.#onEvent({
+          type: 'tool.blocked',
+          sessionId,
+          runId: this.#runId(),
+          tool: input.tool,
+          reason: decision.reason ?? 'blocked by a tool guard',
+        })
+      }
+
+      return decision
+    }
   }
 
   async open(input: OpenChatInput): Promise<OpenedChat> {

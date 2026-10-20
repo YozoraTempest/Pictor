@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { AlertTriangle, ChevronDown, Sparkles, Terminal } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ShieldX, Sparkles, Terminal } from 'lucide-react'
 import { useState } from 'react'
 
 import type { ChatMessage } from '@pictor/shared'
@@ -74,15 +74,19 @@ function Dot({ delay }: { delay: string }): React.JSX.Element {
 }
 
 function ToolMessage({ message }: { message: ChatMessage }): React.JSX.Element {
-  const running = message.text.length === 0
-  const [open, setOpen] = useState(message.isError === true || message.text.length < 600)
+  const blocked = message.blocked === true
+  const running = message.text.length === 0 && !blocked
+  const [open, setOpen] = useState(blocked || message.isError === true || message.text.length < 600)
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={transition}
-      className="overflow-hidden rounded-lg border border-border bg-surface/60"
+      className={cn(
+        'overflow-hidden rounded-lg border bg-surface/60',
+        blocked ? 'border-danger/40' : 'border-border',
+      )}
     >
       <button
         type="button"
@@ -90,9 +94,18 @@ function ToolMessage({ message }: { message: ChatMessage }): React.JSX.Element {
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-surface-hover"
       >
-        <Terminal className="size-3.5 shrink-0 text-faint" />
+        {blocked ? (
+          <ShieldX className="size-3.5 shrink-0 text-danger" />
+        ) : (
+          <Terminal className="size-3.5 shrink-0 text-faint" />
+        )}
         <span className="truncate font-mono text-xs text-muted">{message.toolName ?? 'tool'}</span>
-        {running ? (
+        {blocked ? (
+          <Badge tone="danger">
+            <ShieldX className="mr-1 size-3" />
+            已拦截
+          </Badge>
+        ) : running ? (
           <Spinner className="size-3" />
         ) : message.isError === true ? (
           <Badge tone="danger">

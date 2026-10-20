@@ -8,6 +8,8 @@ export interface ChatMessage {
   timestamp: number | null
   toolName?: string
   isError?: boolean
+  /** True when a tool guard denied the call; the text holds the reason. */
+  blocked?: boolean
 }
 
 export interface ChatHistoryPage {
@@ -29,6 +31,13 @@ export type ChatEvent =
       tool: string
       output: string
       isError: boolean
+    }
+  | {
+      type: 'tool.blocked'
+      sessionId: string
+      runId: string
+      tool: string
+      reason: string
     }
   | {
       type: 'run.finished'
