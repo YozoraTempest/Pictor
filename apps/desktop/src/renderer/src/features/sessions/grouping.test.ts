@@ -2,17 +2,16 @@ import { describe, expect, it } from 'vitest'
 
 import type { Project, Section, Session } from '@pictor/shared'
 
-import { groupSessions } from './grouping.js'
+import { collectSectionSessionIds, groupSessions } from './grouping.js'
 
 const NOW = 1_700_000_000_000
 const HOUR = 3_600_000
-const DAY = 86_400_000
 
 function project(id: string, name: string): Project {
   return { id, path: `/tmp/${id}`, name, folders: [], createdAt: 0, updatedAt: 0 }
 }
 
-function section(id: string, name: string, position: number): Section {
+function section(id: string, name: string, position = 0): Section {
   return { id, name, position, createdAt: 0 }
 }
 
@@ -23,6 +22,7 @@ function session(overrides: Partial<Session> = {}): Session {
     title: 'Chat',
     piSessionId: null,
     pinned: false,
+    archived: false,
     sectionIds: [],
     createdAt: NOW - HOUR,
     updatedAt: NOW - HOUR,
@@ -31,161 +31,180 @@ function session(overrides: Partial<Session> = {}): Session {
 }
 
 const projects = [project('p1', 'Alpha'), project('p2', 'Beta')]
-const sections = [section('sec1', 'Design', 0), section('sec2', 'Research', 1)]
 
-describe('groupSessions', () => {
-  describe('project grouping', () => {
-    it('groups by project and keeps an unfiled bucket', () => {
-      const groups = groupSessions({
-        sessions: [
-          session({ id: 'a', projectId: 'p1' }),
-          session({ id: 'b', projectId: 'p2' }),
-          session({ id: 'c', projectId: null }),
-        ],
-        projects,
-        sections,
-        grouping: 'project',
-        exclusive: true,
-      })
+function titles(nodes: ReturnType<typeof groupSessions>): string[] {
+  return nodes.map((node) => node.title)
+}
 
-      expect(groups.map((group) => [group.title, group.sessions.length])).toEqual([
-        ['Alpha', 1],
-        ['Beta', 1],
-        ['未归属项目', 1],
-      ])
-    })
-
-    it('hides projects without sessions', () => {
-      const groups = groupSessions({
-        sessions: [session({ projectId: 'p2' })],
-        projects,
-        sections,
-        grouping: 'project',
-        exclusive: true,
-      })
-
-      expect(groups.map((group) => group.title)).toEqual(['Beta'])
-    })
-  })
-
-  describe('section grouping', () => {
-    it('lists a session under every section when not exclusive', () => {
-      const groups = groupSessions({
-        sessions: [session({ id: 'a', sectionIds: ['sec1', 'sec2'] })],
-        projects,
-        sections,
-        grouping: 'section',
-        exclusive: false,
-      })
-
-      expect(groups.map((group) => group.title)).toEqual(['Design', 'Research'])
-      expect(groups.every((group) => group.sessions.length === 1)).toBe(true)
-    })
-
-    it('keeps only the first section when exclusive', () => {
-      const groups = groupSessions({
-        sessions: [session({ id: 'a', sectionIds: ['sec2', 'sec1'] })],
-        projects,
-        sections,
-        grouping: 'section',
-        exclusive: true,
-      })
-
-      expect(groups.map((group) => group.title)).toEqual(['Design'])
-    })
-
-    it('collects sessions without sections into one bucket', () => {
-      const groups = groupSessions({
-        sessions: [session({ id: 'a' }), session({ id: 'b', sectionIds: ['sec1'] })],
-        projects,
-        sections,
-        grouping: 'section',
-        exclusive: true,
-      })
-
-      expect(groups.map((group) => [group.title, group.sessions.map((entry) => entry.id)])).toEqual(
-        [
-          ['Design', ['b']],
-          ['未归档', ['a']],
-        ],
-      )
-    })
-  })
-
-  describe('recent grouping', () => {
-    it('buckets by age', () => {
-      const groups = groupSessions({
-        sessions: [
-          session({ id: 'today', updatedAt: NOW - HOUR }),
-          session({ id: 'yesterday', updatedAt: NOW - DAY - HOUR }),
-          session({ id: 'week', updatedAt: NOW - 3 * DAY }),
-          session({ id: 'older', updatedAt: NOW - 30 * DAY }),
-        ],
-        projects,
-        sections,
-        grouping: 'recent',
-        exclusive: true,
-        now: NOW,
-      })
-
-      expect(groups.map((group) => group.title)).toEqual(['今天', '昨天', '最近 7 天', '更早'])
-    })
-  })
-
-  describe('pinned', () => {
-    it('puts pinned sessions in their own group first', () => {
-      const groups = groupSessions({
-        sessions: [
-          session({ id: 'pinned', pinned: true, projectId: 'p1' }),
-          session({ id: 'plain', projectId: 'p1' }),
-        ],
-        projects,
-        sections,
-        grouping: 'project',
-        exclusive: true,
-      })
-
-      expect(groups[0]?.title).toBe('置顶')
-      expect(groups[0]?.sessions.map((entry) => entry.id)).toEqual(['pinned'])
-
-      const alpha = groups.find((group) => group.title === 'Alpha')
-      expect(alpha?.sessions.map((entry) => entry.id)).toEqual(['plain'])
-    })
-
-    it('also lists pinned sessions in their group when not exclusive', () => {
-      const groups = groupSessions({
-        sessions: [session({ id: 'pinned', pinned: true, projectId: 'p1' })],
-        projects,
-        sections,
-        grouping: 'project',
-        exclusive: false,
-      })
-
-      expect(groups.map((group) => group.title)).toEqual(['置顶', 'Alpha'])
-    })
-  })
-
-  it('orders sessions inside a group by recency, pinned first', () => {
-    const groups = groupSessions({
-      sessions: [
-        session({ id: 'old', updatedAt: NOW - 3 * HOUR }),
-        session({ id: 'new', updatedAt: NOW - HOUR }),
-        session({ id: 'pinned', pinned: true, updatedAt: NOW - 5 * DAY }),
-      ],
-      projects,
-      sections,
-      grouping: 'recent',
+describe('groupSessions (section → project → session)', () => {
+  it('always exposes the three built-in sections first', () => {
+    const nodes = groupSessions({
+      sessions: [],
+      projects: [],
+      sections: [],
       exclusive: false,
-      now: NOW,
+      sorts: {},
     })
 
-    expect(groups[0]?.sessions.map((entry) => entry.id)).toEqual(['pinned'])
-    expect(groups[1]?.sessions.map((entry) => entry.id)).toEqual(['new', 'old'])
+    expect(titles(nodes)).toEqual(['置顶', '项目', '最近'])
+    expect(nodes.every((node) => node.builtin)).toBe(true)
   })
 
-  it('returns no groups for an empty list', () => {
-    expect(
-      groupSessions({ sessions: [], projects, sections, grouping: 'project', exclusive: true }),
-    ).toEqual([])
+  it('nests sessions under their project', () => {
+    const nodes = groupSessions({
+      sessions: [session({ id: 'a', projectId: 'p1' }), session({ id: 'b', projectId: 'p2' })],
+      projects,
+      sections: [],
+      exclusive: false,
+      sorts: {},
+    })
+
+    const projectsSection = nodes.find((node) => node.id === 'projects')
+    expect(projectsSection?.children.map((child) => child.kind)).toEqual(['project', 'project'])
+
+    const alpha = projectsSection?.children[0]
+    expect(alpha?.kind).toBe('project')
+    if (alpha?.kind === 'project') {
+      expect(alpha.project.name).toBe('Alpha')
+      expect(alpha.sessions.map((entry) => entry.id)).toEqual(['a'])
+    }
+  })
+
+  it('keeps empty projects so their "+" action stays reachable', () => {
+    const nodes = groupSessions({
+      sessions: [],
+      projects,
+      sections: [],
+      exclusive: false,
+      sorts: {},
+    })
+
+    const projectsSection = nodes.find((node) => node.id === 'projects')
+    expect(projectsSection?.children).toHaveLength(2)
+  })
+
+  it('lists sessions without a project as direct children', () => {
+    const nodes = groupSessions({
+      sessions: [session({ id: 'loose', projectId: null })],
+      projects,
+      sections: [],
+      exclusive: false,
+      sorts: {},
+    })
+
+    const projectsSection = nodes.find((node) => node.id === 'projects')
+    const leaf = projectsSection?.children.find((child) => child.kind === 'session')
+    expect(leaf?.kind).toBe('session')
+    if (leaf?.kind === 'session') expect(leaf.session.id).toBe('loose')
+  })
+
+  it('puts pinned sessions in the pinned section', () => {
+    const nodes = groupSessions({
+      sessions: [session({ id: 'pin', pinned: true, projectId: 'p1' })],
+      projects,
+      sections: [],
+      exclusive: false,
+      sorts: {},
+    })
+
+    const pinned = nodes.find((node) => node.id === 'pinned')
+    expect(pinned?.count).toBe(1)
+    expect(pinned?.children[0]?.kind).toBe('project')
+  })
+
+  it('drops pinned sessions from other sections when exclusive', () => {
+    const nodes = groupSessions({
+      sessions: [session({ id: 'pin', pinned: true, projectId: 'p1' })],
+      projects,
+      sections: [],
+      exclusive: true,
+      sorts: {},
+    })
+
+    const projectsSection = nodes.find((node) => node.id === 'projects')
+    expect(projectsSection?.count).toBe(0)
+  })
+
+  it('keeps archived sessions in their own section only', () => {
+    const nodes = groupSessions({
+      sessions: [
+        session({ id: 'gone', archived: true, sectionIds: ['sec1'] }),
+        session({ id: 'live' }),
+      ],
+      projects: [],
+      sections: [section('sec1', 'Design')],
+      exclusive: false,
+      sorts: {},
+    })
+
+    expect(titles(nodes)).toContain('已归档')
+    const archived = nodes.find((node) => node.id === 'archived')
+    expect(archived?.count).toBe(1)
+
+    const design = nodes.find((node) => node.title === 'Design')
+    expect(design?.count).toBe(0)
+  })
+
+  it('groups custom sections by project', () => {
+    const nodes = groupSessions({
+      sessions: [session({ id: 'tagged', projectId: 'p2', sectionIds: ['sec1'] })],
+      projects,
+      sections: [section('sec1', 'Design')],
+      exclusive: false,
+      sorts: {},
+    })
+
+    const design = nodes.find((node) => node.title === 'Design')
+    expect(design?.kind).toBe('custom')
+    expect(design?.sectionId).toBe('sec1')
+    expect(design?.children[0]?.kind).toBe('project')
+  })
+
+  it('orders by creation time when asked', () => {
+    const nodes = groupSessions({
+      sessions: [
+        session({ id: 'older', createdAt: NOW - 10 * HOUR, updatedAt: NOW }),
+        session({ id: 'newer', createdAt: NOW - HOUR, updatedAt: NOW - 5 * HOUR }),
+      ],
+      projects: [],
+      sections: [],
+      exclusive: false,
+      sorts: { recent: 'created' },
+    })
+
+    const recent = nodes.find((node) => node.id === 'recent')
+    const ids = recent?.children.map((child) => (child.kind === 'session' ? child.session.id : ''))
+    expect(ids).toEqual(['newer', 'older'])
+  })
+
+  it('defaults to ordering by last activity', () => {
+    const nodes = groupSessions({
+      sessions: [
+        session({ id: 'stale', createdAt: NOW - HOUR, updatedAt: NOW - 10 * HOUR }),
+        session({ id: 'fresh', createdAt: NOW - 10 * HOUR, updatedAt: NOW }),
+      ],
+      projects: [],
+      sections: [],
+      exclusive: false,
+      sorts: {},
+    })
+
+    const recent = nodes.find((node) => node.id === 'recent')
+    const ids = recent?.children.map((child) => (child.kind === 'session' ? child.session.id : ''))
+    expect(ids).toEqual(['fresh', 'stale'])
+  })
+
+  it('collects every session id of a section for archive actions', () => {
+    const nodes = groupSessions({
+      sessions: [session({ id: 'a', projectId: 'p1' }), session({ id: 'b', projectId: null })],
+      projects,
+      sections: [],
+      exclusive: false,
+      sorts: {},
+    })
+
+    const projectsSection = nodes.find((node) => node.id === 'projects')
+    expect(projectsSection).toBeDefined()
+    expect(collectSectionSessionIds(projectsSection!).sort()).toEqual(['a', 'b'])
   })
 })

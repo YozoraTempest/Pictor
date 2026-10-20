@@ -285,6 +285,18 @@ function registerIpc(workspace: Workspace): void {
     return workspace.appHost.commands.execute('session.setPinned', { id, pinned })
   })
 
+  ipcMain.handle('pictor:session.setArchived', async (_event, id: unknown, archived: unknown) => {
+    if (typeof id !== 'string' || typeof archived !== 'boolean') {
+      throw new Error('id must be a string and archived a boolean')
+    }
+    return workspace.appHost.commands.execute('session.setArchived', { id, archived })
+  })
+
+  ipcMain.handle('pictor:session.archiveMany', async (_event, ids: unknown) => {
+    if (!Array.isArray(ids)) throw new Error('ids must be an array')
+    return workspace.appHost.commands.execute('session.archiveMany', { ids })
+  })
+
   ipcMain.handle('pictor:session.setProject', async (_event, id: unknown, projectId: unknown) => {
     if (typeof id !== 'string') throw new Error('id must be a string')
     if (projectId !== null && typeof projectId !== 'string') {

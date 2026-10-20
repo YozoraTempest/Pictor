@@ -27,6 +27,8 @@ export interface Session {
   title: string
   piSessionId: string | null
   pinned: boolean
+  /** Archived sessions stay in the database but leave the working list. */
+  archived: boolean
   /** Sections (user-defined tags) the session is filed under. */
   sectionIds: string[]
   createdAt: number
@@ -40,9 +42,6 @@ export interface Section {
   position: number
   createdAt: number
 }
-
-/** How the session list is grouped in the sidebar. */
-export type SessionGrouping = 'project' | 'section' | 'recent'
 
 export interface PluginRecord {
   id: string

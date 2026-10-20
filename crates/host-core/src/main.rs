@@ -241,6 +241,32 @@ fn dispatch(
             )?)
             .map_err(to_internal)?)
         }
+        "session.setArchived" => {
+            let id = required_str(&params, "id")?;
+            let archived = params
+                .get("archived")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| HostError::InvalidParams("missing param: archived".into()))?;
+            Ok(serde_json::to_value(store::set_session_archived(
+                connection, &id, archived,
+            )?)
+            .map_err(to_internal)?)
+        }
+        "session.archiveMany" => {
+            let ids: Vec<String> = params
+                .get("ids")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let archived = store::archive_sessions(connection, &ids)?;
+            Ok(json!({ "archived": archived }))
+        }
         "section.list" => {
             Ok(serde_json::to_value(store::list_sections(connection)?).map_err(to_internal)?)
         }

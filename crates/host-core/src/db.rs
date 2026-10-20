@@ -6,7 +6,7 @@ use crate::error::HostError;
 
 /// Current on-disk schema version. Bump when `SCHEMA_V1` changes shape and add a
 /// forward migration step in `migrate`.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS projects (
@@ -89,6 +89,12 @@ CREATE TABLE IF NOT EXISTS session_sections (
 CREATE INDEX IF NOT EXISTS session_sections_by_section ON session_sections(section_id);
 "#;
 
+/// v3 adds archiving, so a session can be hidden from the working list without
+/// being deleted.
+const SCHEMA_V3: &str = r#"
+ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+"#;
+
 pub fn open(path: &Path) -> Result<Connection, HostError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -129,6 +135,10 @@ fn migrate(connection: &Connection) -> Result<(), HostError> {
         let result = connection.execute_batch(&format!("BEGIN;\n{SCHEMA_V2}\nCOMMIT;"));
         connection.pragma_update(None, "foreign_keys", "ON")?;
         result?;
+    }
+
+    if version < 3 {
+        connection.execute_batch(SCHEMA_V3)?;
     }
 
     connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;

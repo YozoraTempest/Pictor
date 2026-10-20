@@ -12,6 +12,8 @@ export interface ApplicationStore {
   listSessions(projectId?: string): Promise<Session[]>
   createSession(projectId: string | null, title: string): Promise<Session>
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
+  setSessionArchived(id: string, archived: boolean): Promise<Session>
+  archiveSessions(ids: string[]): Promise<number>
   setSessionProject(id: string, projectId: string | null): Promise<Session>
   setSessionSections(id: string, sectionIds: string[]): Promise<Session>
   deleteSession(id: string): Promise<void>
@@ -173,6 +175,37 @@ export class ApplicationHost {
         )
         this.events.emit('session.updated', session)
         return session
+      },
+    })
+
+    this.commands.register<void, Session>({
+      id: 'session.setArchived',
+      description: 'Archive or restore a session',
+      handler: async (input) => {
+        const params = input as { id?: unknown; archived?: unknown } | undefined
+        if (typeof params?.archived !== 'boolean') {
+          throw new Error('session.setArchived requires an archived boolean')
+        }
+        const session = await this.#store.setSessionArchived(
+          requireId(input, 'session.setArchived'),
+          params.archived,
+        )
+        this.events.emit('session.updated', session)
+        return session
+      },
+    })
+
+    this.commands.register<void, { archived: number }>({
+      id: 'session.archiveMany',
+      description: 'Archive every given session, used by "archive this section"',
+      handler: async (input) => {
+        const params = input as { ids?: unknown } | undefined
+        if (!Array.isArray(params?.ids)) {
+          throw new Error('session.archiveMany requires an ids array')
+        }
+        const ids = params.ids.filter((value): value is string => typeof value === 'string')
+        const archived = await this.#store.archiveSessions(ids)
+        return { archived }
       },
     })
 

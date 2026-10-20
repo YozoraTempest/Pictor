@@ -28,6 +28,7 @@ pub struct Session {
     pub title: String,
     pub pi_session_id: Option<String>,
     pub pinned: bool,
+    pub archived: bool,
     /// Sections (user-defined tags) this session is filed under.
     pub section_ids: Vec<String>,
     pub created_at: i64,
@@ -357,7 +358,7 @@ pub fn list_sessions(connection: &Connection, project_id: Option<&str>) -> Resul
     match project_id {
         Some(project_id) => {
             let mut statement = connection.prepare(
-                "SELECT id, project_id, title, pi_session_id, pinned, created_at, updated_at
+                "SELECT id, project_id, title, pi_session_id, pinned, archived, created_at, updated_at
                  FROM sessions WHERE project_id = ?1 ORDER BY updated_at DESC",
             )?;
             let rows = statement.query_map(params![project_id], map_session)?;
@@ -369,7 +370,7 @@ pub fn list_sessions(connection: &Connection, project_id: Option<&str>) -> Resul
         }
         None => {
             let mut statement = connection.prepare(
-                "SELECT id, project_id, title, pi_session_id, pinned, created_at, updated_at
+                "SELECT id, project_id, title, pi_session_id, pinned, archived, created_at, updated_at
                  FROM sessions ORDER BY updated_at DESC",
             )?;
             let rows = statement.query_map([], map_session)?;
@@ -391,9 +392,10 @@ fn map_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
         title: row.get(2)?,
         pi_session_id: row.get(3)?,
         pinned: row.get::<_, i64>(4)? != 0,
+        archived: row.get::<_, i64>(5)? != 0,
         section_ids: Vec::new(),
-        created_at: row.get(5)?,
-        updated_at: row.get(6)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
     })
 }
 
@@ -418,6 +420,7 @@ pub fn create_session(
         title: trimmed.to_string(),
         pi_session_id: None,
         pinned: false,
+        archived: false,
         section_ids: Vec::new(),
         created_at: now,
         updated_at: now,
@@ -453,7 +456,7 @@ pub fn get_session(connection: &Connection, id: &str) -> Result<Option<Session>,
     let mut sections = load_session_sections(connection)?;
     let mut session = connection
         .query_row(
-            "SELECT id, project_id, title, pi_session_id, pinned, created_at, updated_at
+            "SELECT id, project_id, title, pi_session_id, pinned, archived, created_at, updated_at
              FROM sessions WHERE id = ?1",
             params![id],
             map_session,
@@ -497,6 +500,34 @@ pub fn set_session_pinned(
     }
 
     get_session(connection, id)?.ok_or_else(|| HostError::NotFound(format!("session {id}")))
+}
+
+pub fn set_session_archived(
+    connection: &Connection,
+    id: &str,
+    archived: bool,
+) -> Result<Session, HostError> {
+    let updated = connection.execute(
+        "UPDATE sessions SET archived = ?2 WHERE id = ?1",
+        params![id, i64::from(archived)],
+    )?;
+    if updated == 0 {
+        return Err(HostError::NotFound(format!("session {id}")));
+    }
+
+    get_session(connection, id)?.ok_or_else(|| HostError::NotFound(format!("session {id}")))
+}
+
+/// Archives every session in `ids`; used by "archive this section".
+pub fn archive_sessions(connection: &Connection, ids: &[String]) -> Result<usize, HostError> {
+    let mut archived = 0;
+    for id in ids {
+        archived += connection.execute(
+            "UPDATE sessions SET archived = 1 WHERE id = ?1",
+            params![id],
+        )?;
+    }
+    Ok(archived)
 }
 
 pub fn set_session_project(
@@ -856,6 +887,32 @@ mod tests {
         let session = create_session(&connection, None, "Loose").unwrap();
         let error = set_session_sections(&connection, &session.id, &["missing".to_string()]).unwrap_err();
         assert!(matches!(error, HostError::NotFound(_)));
+    }
+
+    #[test]
+    fn archives_and_restores_sessions() {
+        let connection = connection();
+        let session = create_session(&connection, None, "Loose").unwrap();
+        assert!(!session.archived);
+
+        let archived = set_session_archived(&connection, &session.id, true).unwrap();
+        assert!(archived.archived);
+
+        let restored = set_session_archived(&connection, &session.id, false).unwrap();
+        assert!(!restored.archived);
+    }
+
+    #[test]
+    fn archives_many_sessions_at_once() {
+        let connection = connection();
+        let first = create_session(&connection, None, "One").unwrap();
+        let second = create_session(&connection, None, "Two").unwrap();
+
+        let count = archive_sessions(&connection, &[first.id.clone(), second.id.clone()]).unwrap();
+        assert_eq!(count, 2);
+
+        let listed = list_sessions(&connection, None).unwrap();
+        assert!(listed.iter().all(|entry| entry.archived));
     }
 
     #[test]

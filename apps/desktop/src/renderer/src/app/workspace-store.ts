@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 
-import type { PluginRecord, Project, Section, Session, SessionGrouping } from '@pictor/shared'
+import type { PluginRecord, Project, Section, Session } from '@pictor/shared'
 
 import type { AppInfo, CommandDescriptor, PluginReport } from '../../../shared/bridge.js'
+import type { SectionSort } from '../features/sessions/grouping.js'
 
 interface WorkspaceState {
   projects: Project[]
@@ -14,7 +15,7 @@ interface WorkspaceState {
   info: AppInfo | null
   selectedProjectId: string | null
   selectedSessionId: string | null
-  grouping: SessionGrouping
+  sorts: Record<string, SectionSort>
   groupingExclusive: boolean
   busy: boolean
   error: string | null
@@ -27,15 +28,17 @@ interface WorkspaceState {
   removeProject: (id: string) => Promise<void>
   addProjectFolder: (id: string) => Promise<void>
   removeProjectFolder: (id: string, path: string) => Promise<void>
-  createSession: (title: string, projectId?: string | null) => Promise<void>
+  createSession: (title: string, projectId?: string | null) => Promise<Session | null>
   deleteSession: (id: string) => Promise<void>
   setSessionPinned: (id: string, pinned: boolean) => Promise<void>
+  setSessionArchived: (id: string, archived: boolean) => Promise<void>
+  archiveSessions: (ids: string[]) => Promise<void>
   setSessionProject: (id: string, projectId: string | null) => Promise<void>
   setSessionSections: (id: string, sectionIds: string[]) => Promise<void>
   createSection: (name: string) => Promise<void>
   renameSection: (id: string, name: string) => Promise<void>
   removeSection: (id: string) => Promise<void>
-  setGrouping: (grouping: SessionGrouping) => Promise<void>
+  setSectionSort: (key: string, sort: SectionSort) => Promise<void>
   setGroupingExclusive: (exclusive: boolean) => Promise<void>
   setPluginEnabled: (id: string, enabled: boolean) => Promise<void>
   runCommand: (id: string) => Promise<void>
@@ -43,10 +46,14 @@ interface WorkspaceState {
   setError: (error: string | null) => void
 }
 
-const GROUPINGS: SessionGrouping[] = ['project', 'section', 'recent']
-
-function readGrouping(value: unknown): SessionGrouping {
-  return GROUPINGS.find((entry) => entry === value) ?? 'project'
+function readSorts(settings: Record<string, unknown>): Record<string, SectionSort> {
+  const sorts: Record<string, SectionSort> = {}
+  for (const [key, value] of Object.entries(settings)) {
+    if (!key.startsWith('sessions.sort.')) continue
+    if (value !== 'created' && value !== 'updated') continue
+    sorts[key.slice('sessions.sort.'.length)] = value
+  }
+  return sorts
 }
 
 async function guard(
@@ -73,7 +80,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   info: null,
   selectedProjectId: null,
   selectedSessionId: null,
-  grouping: 'project',
+  sorts: {},
   groupingExclusive: false,
   busy: false,
   error: null,
@@ -110,7 +117,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       info,
       selectedProjectId: projectId,
       selectedSessionId: sessionId,
-      grouping: readGrouping(snapshot.settings['sessions.grouping']),
+      sorts: readSorts(snapshot.settings),
       groupingExclusive: snapshot.settings['sessions.groupingExclusive'] === true,
     })
   },
@@ -158,12 +165,16 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   async createSession(title, projectId) {
+    const target = projectId === undefined ? get().selectedProjectId : projectId
+    let created: Session | null = null
+
     await guard(set, async () => {
-      const target = projectId === undefined ? get().selectedProjectId : projectId
-      const session = await window.pictor.createSession(target, title)
-      set({ selectedSessionId: session.id })
+      created = await window.pictor.createSession(target, title)
+      set({ selectedSessionId: created.id })
       await get().refresh()
     })
+
+    return created
   },
 
   async deleteSession(id) {
@@ -177,6 +188,21 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   async setSessionPinned(id, pinned) {
     await guard(set, async () => {
       await window.pictor.setSessionPinned(id, pinned)
+      await get().refresh()
+    })
+  },
+
+  async setSessionArchived(id, archived) {
+    await guard(set, async () => {
+      await window.pictor.setSessionArchived(id, archived)
+      await get().refresh()
+    })
+  },
+
+  async archiveSessions(ids) {
+    await guard(set, async () => {
+      if (ids.length === 0) return
+      await window.pictor.archiveSessions(ids)
       await get().refresh()
     })
   },
@@ -216,9 +242,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     })
   },
 
-  async setGrouping(grouping) {
-    set({ grouping })
-    await window.pictor.putSetting('sessions.grouping', grouping)
+  async setSectionSort(key, sort) {
+    set((state) => ({ sorts: { ...state.sorts, [key]: sort } }))
+    await window.pictor.putSetting(`sessions.sort.${key}`, sort)
   },
 
   async setGroupingExclusive(groupingExclusive) {

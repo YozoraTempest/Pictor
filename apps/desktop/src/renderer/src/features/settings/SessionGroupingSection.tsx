@@ -1,24 +1,14 @@
 import { Check, Plus, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 
-import type { SessionGrouping } from '@pictor/shared'
-
 import { useWorkspaceStore } from '../../app/workspace-store.js'
-import { Button, IconButton, Input, Select, Switch } from '../../components/ui/index.js'
+import { Button, IconButton, Input, Switch } from '../../components/ui/index.js'
 import { Section } from './Section.js'
-
-const MODES: Array<{ id: SessionGrouping; label: string; hint: string }> = [
-  { id: 'project', label: '按项目', hint: '项目是 Agent 的主要工作区，这里只影响展示分组' },
-  { id: 'section', label: '按分区', hint: '分区相当于标签，一个会话可以有多个' },
-  { id: 'recent', label: '按最近', hint: '按更新时间划分为今天 / 昨天 / 最近 7 天 / 更早' },
-]
 
 export function SessionGroupingSection(): React.JSX.Element {
   const sections = useWorkspaceStore((state) => state.sections)
-  const grouping = useWorkspaceStore((state) => state.grouping)
   const exclusive = useWorkspaceStore((state) => state.groupingExclusive)
   const busy = useWorkspaceStore((state) => state.busy)
-  const setGrouping = useWorkspaceStore((state) => state.setGrouping)
   const setGroupingExclusive = useWorkspaceStore((state) => state.setGroupingExclusive)
   const createSection = useWorkspaceStore((state) => state.createSection)
   const renameSection = useWorkspaceStore((state) => state.renameSection)
@@ -28,45 +18,26 @@ export function SessionGroupingSection(): React.JSX.Element {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
 
-  const active = MODES.find((mode) => mode.id === grouping)
-
   return (
     <Section
       title="会话列表"
-      description="选择分组方式；置顶会话始终排在最上面，不受分组方式影响。"
+      description="左栏按「分区 → 项目 → 会话」三层展示；置顶会话始终在最上面的置顶分区。"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-muted">分组方式</span>
-          <Select
-            value={grouping}
-            onChange={(event) => void setGrouping(event.target.value as SessionGrouping)}
-          >
-            {MODES.map((mode) => (
-              <option key={mode.id} value={mode.id}>
-                {mode.label}
-              </option>
-            ))}
-          </Select>
-          {active !== undefined && <span className="text-xs text-faint">{active.hint}</span>}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-muted">分组互斥</span>
+        <label className="flex items-center gap-2 text-xs text-muted">
+          <Switch
+            label="分组互斥"
+            checked={exclusive}
+            onChange={(value) => void setGroupingExclusive(value)}
+          />
+          置顶会话只出现在「置顶」分区
         </label>
-
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-muted">分组互斥</span>
-          <label className="flex items-center gap-2 text-xs text-muted">
-            <Switch
-              label="分组互斥"
-              checked={exclusive}
-              onChange={(value) => void setGroupingExclusive(value)}
-            />
-            一个会话只出现在一个分组里
-          </label>
-          <span className="text-xs text-faint">
-            {exclusive
-              ? '置顶会话只在置顶分组显示；多分区会话归入第一个分区'
-              : '置顶会话同时出现在置顶和所属分组；多分区会话会出现在每个分区'}
-          </span>
-        </div>
+        <span className="text-xs text-faint">
+          {exclusive
+            ? '置顶会话不会重复出现在项目、最近或自定义分区里'
+            : '置顶会话同时出现在「置顶」和它所属的分区/项目里'}
+        </span>
       </div>
 
       <div className="flex flex-col gap-2">

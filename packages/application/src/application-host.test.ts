@@ -24,6 +24,7 @@ function session(overrides: Partial<Session> = {}): Session {
     title: 'Draft',
     piSessionId: null,
     pinned: false,
+    archived: false,
     sectionIds: [],
     createdAt: 1,
     updatedAt: 1,
@@ -71,6 +72,24 @@ class FakeStore implements ApplicationStore {
     const created = session({ projectId, title })
     this.sessions.push(created)
     return created
+  }
+
+  async setSessionArchived(id: string, archived: boolean): Promise<Session> {
+    const target = this.sessions.find((entry) => entry.id === id)
+    if (target === undefined) throw new Error(`session ${id}`)
+    target.archived = archived
+    return target
+  }
+
+  async archiveSessions(ids: string[]): Promise<number> {
+    let count = 0
+    for (const id of ids) {
+      const target = this.sessions.find((entry) => entry.id === id)
+      if (target === undefined) continue
+      target.archived = true
+      count += 1
+    }
+    return count
   }
 
   async setSessionPinned(id: string, pinned: boolean): Promise<Session> {
@@ -138,8 +157,10 @@ describe('ApplicationHost', () => {
       'section.create',
       'section.remove',
       'section.rename',
+      'session.archiveMany',
       'session.create',
       'session.delete',
+      'session.setArchived',
       'session.setPinned',
       'session.setProject',
       'session.setSections',

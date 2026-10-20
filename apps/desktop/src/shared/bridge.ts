@@ -79,6 +79,8 @@ export interface PictorBridge {
   createSession(projectId: string | null, title: string): Promise<Session>
   deleteSession(id: string): Promise<void>
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
+  setSessionArchived(id: string, archived: boolean): Promise<Session>
+  archiveSessions(ids: string[]): Promise<number>
   setSessionProject(id: string, projectId: string | null): Promise<Session>
   setSessionSections(id: string, sectionIds: string[]): Promise<Session>
   pickDirectory(): Promise<string | null>

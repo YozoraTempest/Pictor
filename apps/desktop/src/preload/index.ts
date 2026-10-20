@@ -18,6 +18,9 @@ const bridge: PictorBridge = {
     ipcRenderer.invoke('pictor:session.create', projectId, title),
   deleteSession: (id) => ipcRenderer.invoke('pictor:session.delete', id),
   setSessionPinned: (id, pinned) => ipcRenderer.invoke('pictor:session.setPinned', id, pinned),
+  setSessionArchived: (id, archived) =>
+    ipcRenderer.invoke('pictor:session.setArchived', id, archived),
+  archiveSessions: (ids) => ipcRenderer.invoke('pictor:session.archiveMany', ids),
   setSessionProject: (id, projectId) =>
     ipcRenderer.invoke('pictor:session.setProject', id, projectId),
   setSessionSections: (id, sectionIds) =>
