@@ -3,6 +3,24 @@ import { mkdirSync } from 'node:fs'
 import type { OpenChatInput } from './types.js'
 
 export const PI_API_KEY_ENV = 'PICTOR_PROVIDER_API_KEY'
+
+/**
+ * Injects the key only for the duration of one call.
+ *
+ * Pi resolves `$PICTOR_PROVIDER_API_KEY` on every provider request, so a key set
+ * once at session-open time is gone after the first run finishes.
+ */
+export async function withApiKeyEnv<T>(apiKey: string | null, run: () => Promise<T>): Promise<T> {
+  if (apiKey !== null && apiKey.length > 0) {
+    process.env[PI_API_KEY_ENV] = apiKey
+  }
+
+  try {
+    return await run()
+  } finally {
+    delete process.env[PI_API_KEY_ENV]
+  }
+}
 export const PI_PROVIDER_ID = 'pictor'
 
 export type BridgeEvent =
@@ -117,11 +135,7 @@ export async function openPiChat(
   return {
     path: sessionManager.getSessionFile() ?? '',
     async prompt(text: string): Promise<void> {
-      try {
-        await session.prompt(text)
-      } finally {
-        delete process.env[PI_API_KEY_ENV]
-      }
+      await withApiKeyEnv(input.apiKey, () => session.prompt(text))
     },
     async abort(): Promise<void> {
       await session.abort()

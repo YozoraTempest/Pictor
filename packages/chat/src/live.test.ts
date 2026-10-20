@@ -56,9 +56,17 @@ describe.skipIf(!enabled)('ChatService live', () => {
     expect(opened.path).toContain('sessions')
 
     await service.send('Answer with the single word: ok')
+    const firstRun = events.filter((event) => event.type === 'run.finished')
+    expect(firstRun.at(-1)).toMatchObject({ reason: 'stop' })
 
-    expect(events.some((event) => event.type === 'message.delta')).toBe(true)
-    expect(events.at(-1)).toMatchObject({ type: 'run.finished', reason: 'stop' })
+    // Second run must work too: the key is re-injected for every prompt.
+    await service.send('Answer with the single word: ok again')
+    const runs = events.filter((event) => event.type === 'run.finished')
+    expect(runs).toHaveLength(2)
+    expect(runs.every((event) => event.type === 'run.finished' && event.reason === 'stop')).toBe(
+      true,
+    )
+    expect(events.filter((event) => event.type === 'message.delta').length).toBeGreaterThan(1)
 
     const history = await loadHistoryPage(opened.path, 50, 0)
     expect(history.messages.some((message) => message.role === 'user')).toBe(true)
