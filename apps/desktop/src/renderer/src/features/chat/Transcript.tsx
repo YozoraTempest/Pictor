@@ -27,6 +27,7 @@ export function Transcript({
   // Set when the user scrolls deliberately; cleared once they are back at the
   // bottom or send a new message.
   const userScrolledRef = useRef(false)
+  const touchYRef = useRef(0)
   const observerRef = useRef<ResizeObserver | null>(null)
 
   const stickToBottom = useCallback(() => {
@@ -93,8 +94,33 @@ export function Transcript({
     if (gap < 56) userScrolledRef.current = false
   }
 
-  function markUserScroll(): void {
-    userScrolledRef.current = true
+  function handleWheel(event: React.WheelEvent<HTMLDivElement>): void {
+    // Only an upward wheel means "I want to read history". A downward wheel is a
+    // request to keep following, so it must never unpin the view — treating any
+    // wheel as takeover is what made the scrollbar stop following.
+    if (event.deltaY < 0) {
+      userScrolledRef.current = true
+      return
+    }
+
+    const scroller = scrollerRef.current
+    if (scroller === null) return
+    const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+    if (gap < 56) {
+      userScrolledRef.current = false
+      setPinned(true)
+    }
+  }
+
+  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>): void {
+    touchYRef.current = event.touches[0]?.clientY ?? 0
+  }
+
+  function handleTouchMove(event: React.TouchEvent<HTMLDivElement>): void {
+    const y = event.touches[0]?.clientY ?? 0
+    // Dragging the content down reveals older messages, same as an upward wheel.
+    if (y > touchYRef.current) userScrolledRef.current = true
+    touchYRef.current = y
   }
 
   if (loading && messages.length === 0) {
@@ -117,8 +143,9 @@ export function Transcript({
       <div
         ref={attachScroller}
         onScroll={handleScroll}
-        onWheel={markUserScroll}
-        onTouchMove={markUserScroll}
+        onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         className="h-full overflow-y-auto"
         role="log"
         aria-live="polite"
