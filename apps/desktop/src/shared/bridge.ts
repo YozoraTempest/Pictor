@@ -49,6 +49,17 @@ export interface HostSnapshot {
   sections: Section[]
   settings: SettingsMap
 }
+/**
+ * One entry in the side panel. Built-in panels use the same shape on the
+ * renderer side; plugin panels arrive from the `panels` contribution point.
+ */
+export interface PanelDescriptor {
+  id: string
+  title: string
+  description?: string
+  icon?: string
+  command: string
+}
 
 export interface CcSwitchScanResult {
   available: boolean
@@ -112,6 +123,9 @@ export interface PictorBridge {
   windowCommand(command: WindowCommand): Promise<void>
   getWindowState(): Promise<WindowState>
   onWindowState(listener: (state: WindowState) => void): () => void
+
+  listPanels(): Promise<PanelDescriptor[]>
+  invokePanel(id: string): Promise<unknown>
 
   listPlugins(): Promise<PluginRecord[]>
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginRecord>

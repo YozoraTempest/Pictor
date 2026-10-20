@@ -11,6 +11,7 @@ import {
   expandPluginRoots,
   resolveActivationOrder,
 } from '@pictor/plugin-host'
+import { parsePanelContributions, type PanelContribution } from '@pictor/plugin-sdk'
 import { PROVIDER_ID, readApiKey, readModelSettings, writeModelsJson } from '@pictor/model-config'
 import type { JsonValue, PluginRecord, Section } from '@pictor/shared'
 
@@ -65,6 +66,8 @@ interface Workspace {
   pluginHost: PluginHost
   model: ModelService
   chat: ChatService
+  /** Panels contributed by plugins; built-in panels live in the renderer registry. */
+  panels: PanelContribution[]
   client: ReturnType<typeof startHostCore>['client']
   hostCore: string
   database: string
@@ -136,6 +139,16 @@ async function startWorkspace(): Promise<Workspace | null> {
     }
   }
 
+  // A bundled plugin that was deleted from the install must not linger as a
+  // ghost row in the plugin list.
+  const discovered = new Set(discovery.plugins.map((plugin) => plugin.id))
+  for (const record of await running.client.listPlugins()) {
+    if (record.source !== 'bundled') continue
+    if (discovered.has(record.id)) continue
+    await running.client.removePlugin(record.id)
+    console.info(`[plugin] removed stale bundled record: ${record.id}`)
+  }
+
   const records = await running.client.listPlugins()
   const enabled = new Map(records.map((record) => [record.id, record.enabled]))
   const resolution = resolveActivationOrder(
@@ -173,6 +186,14 @@ async function startWorkspace(): Promise<Workspace | null> {
     }
   }
 
+  // Panels are data: a panel names a command to run when it opens. A broken
+  // contribution is reported and dropped instead of failing the host.
+  const parsedPanels = parsePanelContributions(pluginHost.contributions('panels'))
+  for (const failure of parsedPanels.failures) {
+    console.warn(`[plugin] panel ignored: ${failure.reason}`)
+  }
+  const panels: PanelContribution[] = parsedPanels.panels
+
   console.info(`pictor host core ${info.version} (schema ${info.schemaVersion})`)
 
   let disposed = false
@@ -188,6 +209,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     pluginHost,
     model,
     chat,
+    panels,
     client: running.client,
     hostCore,
     database,
@@ -470,6 +492,17 @@ function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:pickDirectory', async (): Promise<string | null> => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  ipcMain.handle('pictor:panels.list', async (): Promise<PanelContribution[]> => {
+    return workspace.panels
+  })
+
+  ipcMain.handle('pictor:panels.invoke', async (_event, id: unknown) => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    const panel = workspace.panels.find((entry) => entry.id === id)
+    if (panel === undefined) throw new Error(`unknown panel: ${id}`)
+    return workspace.appHost.commands.execute(panel.command, {})
   })
 
   ipcMain.handle('pictor:plugins.list', async (): Promise<PluginRecord[]> => {

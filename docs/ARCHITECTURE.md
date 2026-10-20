@@ -89,7 +89,11 @@ projects it and never writes a second history.
 ## Adding code
 
 - Headless feature: `packages/<feature>/src`, exported through its `index.ts`.
-- Bundled plugin: `plugins/<name>` with `manifest.json`, `src/`, and an esbuild
-  bundle in `dist/`.
+- Plugin: `plugins/<name>` with `manifest.json`, `src/`, and an esbuild bundle in
+  `dist/`. The directory is optional; an empty install simply has no plugins.
+- Panel contribution: `contributes('panels', { id, title, command })` adds one
+  entry to the side panel. Panels are data only — opening one runs a command, so
+  plugins never ship renderer code. `tools` is reserved for the agent-facing
+  capability surface; an agent tool may open a panel, but a panel is not a tool.
 - Tests sit next to the implementation as `*.test.ts`; cross-module behaviour is
   tested through the public seam (client, engine, plugin host).

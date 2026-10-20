@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 import type { PluginRecord, Project, Section, Session } from '@pictor/shared'
 
-import type { AppInfo, PluginReport } from '../../../shared/bridge.js'
+import type { AppInfo, PanelDescriptor, PluginReport } from '../../../shared/bridge.js'
 import type { SectionSort } from '../features/sessions/grouping.js'
 
 interface WorkspaceState {
@@ -10,6 +10,7 @@ interface WorkspaceState {
   sessions: Session[]
   sections: Section[]
   plugins: PluginRecord[]
+  panels: PanelDescriptor[]
   report: PluginReport | null
   info: AppInfo | null
   selectedProjectId: string | null
@@ -43,6 +44,7 @@ interface WorkspaceState {
   setSectionSort: (key: string, sort: SectionSort) => Promise<void>
   setGroupingExclusive: (exclusive: boolean) => Promise<void>
   setPluginEnabled: (id: string, enabled: boolean) => Promise<void>
+  invokePanel: (id: string, title: string) => Promise<void>
   setNotice: (notice: string | null) => void
   setError: (error: string | null) => void
 }
@@ -76,6 +78,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   sessions: [],
   sections: [],
   plugins: [],
+  panels: [],
   report: null,
   info: null,
   selectedProjectId: null,
@@ -87,9 +90,10 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   notice: null,
 
   async refresh() {
-    const [snapshot, plugins, report, info] = await Promise.all([
+    const [snapshot, plugins, panels, report, info] = await Promise.all([
       window.pictor.getSnapshot(),
       window.pictor.listPlugins(),
+      window.pictor.listPanels(),
       window.pictor.pluginReport(),
       window.pictor.getAppInfo(),
     ])
@@ -111,12 +115,20 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       sessions: snapshot.sessions,
       sections: snapshot.sections,
       plugins,
+      panels,
       report,
       info,
       selectedProjectId: projectId,
       selectedSessionId: sessionId,
       sorts: readSorts(snapshot.settings),
       groupingExclusive: snapshot.settings['sessions.groupingExclusive'] === true,
+    })
+  },
+
+  async invokePanel(id, title) {
+    await guard(set, async () => {
+      await window.pictor.invokePanel(id)
+      set({ notice: `已打开 ${title}` })
     })
   },
 
