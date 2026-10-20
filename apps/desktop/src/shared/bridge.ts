@@ -1,5 +1,7 @@
 import type {
   CcSwitchProviderSummary,
+  ChatEvent,
+  ChatHistoryPage,
   JsonValue,
   ModelEntry,
   ModelProtocol,
@@ -51,6 +53,11 @@ export interface AgentTestResult {
   message?: string
 }
 
+export interface OpenChatResult {
+  path: string
+  history: ChatHistoryPage
+}
+
 export interface PluginReport {
   activated: string[]
   skipped: string[]
@@ -89,4 +96,11 @@ export interface PictorBridge {
   scanCcSwitch(): Promise<CcSwitchScanResult>
   importCcSwitchProvider(id: string, includeApiKey: boolean): Promise<ModelSettings>
   runAgentTest(prompt: string, workingDirectory: string): Promise<AgentTestResult>
+
+  openChat(sessionId: string): Promise<OpenChatResult>
+  sendChat(prompt: string): Promise<void>
+  stopChat(): Promise<void>
+  closeChat(): Promise<void>
+  chatHistory(path: string, limit: number, offset: number): Promise<ChatHistoryPage>
+  onChatEvent(listener: (event: ChatEvent) => void): () => void
 }

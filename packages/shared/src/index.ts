@@ -58,3 +58,5 @@ export const HOST_ERROR_CODES = {
 export type HostErrorCode = (typeof HOST_ERROR_CODES)[keyof typeof HOST_ERROR_CODES]
 
 export * from './model.js'
+
+export * from './chat.js'

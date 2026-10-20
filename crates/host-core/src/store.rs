@@ -228,6 +228,22 @@ pub fn get_session(connection: &Connection, id: &str) -> Result<Option<Session>,
     Ok(session)
 }
 
+pub fn bind_pi_session(
+    connection: &Connection,
+    id: &str,
+    pi_session_id: Option<&str>,
+) -> Result<Session, HostError> {
+    let updated = connection.execute(
+        "UPDATE sessions SET pi_session_id = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, pi_session_id, now_millis()],
+    )?;
+    if updated == 0 {
+        return Err(HostError::NotFound(format!("session {id}")));
+    }
+
+    get_session(connection, id)?.ok_or_else(|| HostError::NotFound(format!("session {id}")))
+}
+
 pub fn delete_session(connection: &Connection, id: &str) -> Result<(), HostError> {
     let affected = connection.execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
     if affected == 0 {
@@ -413,6 +429,20 @@ mod tests {
         let renamed = rename_session(&connection, &session.id, "Final").unwrap();
         assert_eq!(renamed.title, "Final");
         assert_eq!(renamed.created_at, session.created_at);
+    }
+
+    #[test]
+    fn binds_a_pi_session_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let connection = connection();
+        let project = add_project(&connection, directory.path().to_str().unwrap(), None).unwrap();
+        let session = create_session(&connection, &project.id, "Draft").unwrap();
+
+        let bound = bind_pi_session(&connection, &session.id, Some("/tmp/pi/session.jsonl")).unwrap();
+        assert_eq!(bound.pi_session_id.as_deref(), Some("/tmp/pi/session.jsonl"));
+
+        let cleared = bind_pi_session(&connection, &session.id, None).unwrap();
+        assert_eq!(cleared.pi_session_id, None);
     }
 
     #[test]

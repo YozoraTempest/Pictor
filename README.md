@@ -4,9 +4,9 @@ Pictor is an agent-native local development environment. This repository is the
 new implementation: an Electron shell, a Rust host core that owns SQLite, and a
 TypeScript application core shared by every frontend.
 
-> Status: runnable scaffold with a working model pipeline. Projects, sessions,
-> plugins, model settings, cc-switch import, endpoint probes and a real Pi SDK
-> agent test-run are implemented; the main chat surface is still to come.
+> Status: runnable scaffold with a working chat loop. Projects, sessions,
+> plugins, model settings, cc-switch import, endpoint probes and a streaming
+> agent chat backed by Pi JSONL are implemented.
 
 ## Requirements
 
@@ -69,6 +69,21 @@ plugins/hello-workbench/Bundled reference plugin
   object crosses the context bridge, and the window runs with sandbox, context isolation, no Node
   integration and a restrictive CSP.
 
+## Chat
+
+Selecting a session opens its Pi JSONL transcript and a composer:
+
+- Messages stream token by token; tool executions appear as separate rows.
+- The transcript is paginated: the newest 50 messages load first and **Load older
+  messages** prepends earlier pages.
+- One Pi session is active at a time; switching Pictor sessions disposes the
+  previous agent and opens the bound JSONL.
+- The first open creates `<userData>/pi/sessions/<projectId>/<sessionId>.jsonl`
+  and stores its path in the session's `piSessionId` column.
+- Tool calls execute with the current user's permissions. A `beforeToolCall`
+  interceptor seam exists for a future approval plugin; the built-in policy is
+  allow-all, so install only trusted projects and extensions.
+
 ## Model settings
 
 Open **Model settings** in the top bar:
@@ -97,11 +112,13 @@ Override discovery for tests with `PICTOR_CCSWITCH_DB` (database path) and
 
 Implemented: profile locking, project/session metadata, plugin lifecycle,
 command dispatch, model settings with cc-switch import, endpoint discovery and
-connection test, real Pi SDK agent test-run, minimal shell UI.
+connection test, streaming chat with Pi JSONL persistence and paginated recovery,
+three-column shell UI.
 
-Not yet implemented: persistent chat surface and session projection, session
-tree/navigation, remote hosts, packaging/auto-update, end-to-end UI tests. Plugin
-modules run in-process; there is no per-plugin process sandbox yet.
+Not yet implemented: session tree/navigation, built-in tool approval (the seam is
+ready; approval belongs to a plugin), remote hosts, packaging/auto-update,
+end-to-end UI tests. Plugin modules run in-process; there is no per-plugin
+process sandbox yet.
 
 ## License
 

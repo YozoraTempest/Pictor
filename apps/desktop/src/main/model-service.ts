@@ -64,6 +64,18 @@ export class ModelService {
       options.ccSwitchPath ?? (process.env.PICTOR_CCSWITCH_DB?.trim() || DEFAULT_CC_SWITCH_PATH)
   }
 
+  get authPath(): string {
+    return this.#authPath
+  }
+
+  get modelsPath(): string {
+    return this.#modelsPath
+  }
+
+  get agentDir(): string {
+    return this.#agentDir
+  }
+
   async settings(): Promise<ModelSettings> {
     return readModelSettings(this.#store, this.#authPath)
   }

@@ -185,6 +185,16 @@ fn dispatch(
             Ok(serde_json::to_value(store::rename_session(connection, &id, &title)?)
                 .map_err(to_internal)?)
         }
+        "session.bindPiSession" => {
+            let id = required_str(&params, "id")?;
+            let pi_session_id = optional_str(&params, "piSessionId");
+            Ok(serde_json::to_value(store::bind_pi_session(
+                connection,
+                &id,
+                pi_session_id.as_deref(),
+            )?)
+            .map_err(to_internal)?)
+        }
         "session.delete" => {
             let id = required_str(&params, "id")?;
             store::delete_session(connection, &id)?;

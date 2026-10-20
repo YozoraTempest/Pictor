@@ -28,6 +28,7 @@ export interface MetadataStore {
   listSessions(projectId?: string): Promise<Session[]>
   createSession(projectId: string, title: string): Promise<Session>
   renameSession(id: string, title: string): Promise<Session>
+  bindPiSession(id: string, piSessionId: string | null): Promise<Session>
   deleteSession(id: string): Promise<void>
 
   listSettings(): Promise<SettingsMap>
@@ -89,6 +90,10 @@ export class HostCoreClient implements MetadataStore {
 
   renameSession(id: string, title: string): Promise<Session> {
     return this.#rpc.request<Session>('session.rename', { id, title })
+  }
+
+  bindPiSession(id: string, piSessionId: string | null): Promise<Session> {
+    return this.#rpc.request<Session>('session.bindPiSession', { id, piSessionId })
   }
 
   async deleteSession(id: string): Promise<void> {

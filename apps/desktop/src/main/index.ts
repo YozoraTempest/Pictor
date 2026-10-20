@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@pictor/application'
+import { ChatService } from '@pictor/chat'
 import { resolveHostCoreBinary, startHostCore } from '@pictor/host-client'
 import {
   PluginHost,
@@ -10,6 +11,7 @@ import {
   expandPluginRoots,
   resolveActivationOrder,
 } from '@pictor/plugin-host'
+import { PROVIDER_ID, readApiKey, readModelSettings, writeModelsJson } from '@pictor/model-config'
 import type { JsonValue, PluginRecord } from '@pictor/shared'
 
 import type { AppInfo, CommandDescriptor, HostSnapshot, PluginReport } from '../shared/bridge.js'
@@ -60,6 +62,7 @@ interface Workspace {
   appHost: ApplicationHost
   pluginHost: PluginHost
   model: ModelService
+  chat: ChatService
   client: ReturnType<typeof startHostCore>['client']
   hostCore: string
   database: string
@@ -172,11 +175,17 @@ async function startWorkspace(): Promise<Workspace | null> {
 
   let disposed = false
   const model = new ModelService({ store: running.client, userData })
+  const chat = new ChatService({
+    onEvent: (event) => {
+      mainWindow?.webContents.send('pictor:chat.event', event)
+    },
+  })
 
   return {
     appHost,
     pluginHost,
     model,
+    chat,
     client: running.client,
     hostCore,
     database,
@@ -184,6 +193,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     dispose: async () => {
       if (disposed) return
       disposed = true
+      await chat.close()
       await pluginHost.stop()
       running.dispose()
       lock.release()
@@ -355,6 +365,68 @@ function registerIpc(workspace: Workspace): void {
           : app.getPath('userData')
 
       return workspace.model.runTest(prompt, directory)
+    },
+  )
+
+  ipcMain.handle('pictor:chat.open', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+
+    const sessions = await workspace.client.listSessions()
+    const session = sessions.find((entry) => entry.id === sessionId)
+    if (session === undefined) throw new Error('session not found')
+
+    const projects = await workspace.client.listProjects()
+    const project = projects.find((entry) => entry.id === session.projectId)
+    if (project === undefined) throw new Error('project not found')
+
+    const settings = await readModelSettings(workspace.client, workspace.model.authPath)
+    if (settings.baseUrl.length === 0 || settings.modelId.length === 0) {
+      throw new Error('model settings are incomplete; open Model settings first')
+    }
+
+    writeModelsJson(workspace.model.modelsPath, settings)
+
+    const sessionDir = join(app.getPath('userData'), 'pi', 'sessions', project.id)
+    const opened = await workspace.chat.open({
+      sessionId,
+      cwd: project.path,
+      sessionDir,
+      agentDir: workspace.model.agentDir,
+      modelsPath: workspace.model.modelsPath,
+      modelId: settings.modelId,
+      apiKey: readApiKey(workspace.model.authPath, PROVIDER_ID),
+      sessionPath: session.piSessionId,
+    })
+
+    if (session.piSessionId !== opened.path) {
+      await workspace.client.bindPiSession(sessionId, opened.path)
+    }
+
+    return { path: opened.path, history: await workspace.chat.history(opened.path, 50, 0) }
+  })
+
+  ipcMain.handle('pictor:chat.send', async (_event, prompt: unknown) => {
+    if (typeof prompt !== 'string' || prompt.trim().length === 0) {
+      throw new Error('prompt must be a non-empty string')
+    }
+    await workspace.chat.send(prompt)
+  })
+
+  ipcMain.handle('pictor:chat.stop', async () => {
+    await workspace.chat.stop()
+  })
+
+  ipcMain.handle('pictor:chat.close', async () => {
+    await workspace.chat.close()
+  })
+
+  ipcMain.handle(
+    'pictor:chat.history',
+    async (_event, path: unknown, limit: unknown, offset: unknown) => {
+      if (typeof path !== 'string') throw new Error('path must be a string')
+      const size = typeof limit === 'number' && limit > 0 ? Math.min(limit, 200) : 50
+      const from = typeof offset === 'number' && offset >= 0 ? offset : 0
+      return workspace.chat.history(path, size, from)
     },
   )
 

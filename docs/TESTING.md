@@ -72,6 +72,17 @@ pnpm vitest run packages/agent-runtime/src/live.test.ts
 The first validates `/models` plus one completion; the second drives the real Pi
 SDK adapter with tools disabled.
 
+The chat loop has its own opt-in check (streaming, JSONL persistence, history
+reload and reopening the same transcript):
+
+```bash
+PICTOR_LIVE_CHAT=1 \
+PICTOR_LIVE_BASE_URL=https://api.example.com/v1 \
+PICTOR_LIVE_MODEL=<model-id> \
+PICTOR_LIVE_API_KEY=<key> \
+pnpm vitest run packages/chat/src/live.test.ts
+```
+
 ## CI
 
 `.github/workflows/ci.yml` runs on Node 22.22.2 and stable Rust:

@@ -52,6 +52,22 @@ Plugin lifecycle: discovery -> manifest validation -> engine check -> dependency
 resolution -> topological order -> activation -> reverse disposal. Failures are
 isolated per plugin and surfaced in the plugin report.
 
+### Chat
+
+`@pictor/chat` owns the active agent session:
+
+- One Pi session per process. `open()` disposes the previous agent, so switching
+  Pictor sessions is explicit.
+- The JSONL transcript is the only history source. `history.ts` projects it for
+  display and paginates from the newest message backwards.
+- `session.piSessionId` stores the transcript path; `session.bindPiSession`
+  persists it through the Rust store.
+- Events are normalised in the chat package and forwarded to the renderer over
+  one IPC channel (`pictor:chat.event`).
+- Tool approval is a seam, not a policy: `setToolInterceptor` installs a
+  `beforeToolCall` hook that can block a call. The default is allow-all so an
+  approval Plugin can own the decision.
+
 ### Model configuration
 
 `@pictor/model-config` owns the settings contract:
