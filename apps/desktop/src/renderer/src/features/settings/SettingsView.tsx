@@ -1,6 +1,7 @@
 import { ModelSection } from './ModelSection.js'
 import { CcSwitchSection } from './CcSwitchSection.js'
 import { AgentTestSection } from './AgentTestSection.js'
+import { SessionGroupingSection } from './SessionGroupingSection.js'
 
 export function SettingsView(): React.JSX.Element {
   return (
@@ -14,6 +15,7 @@ export function SettingsView(): React.JSX.Element {
         </header>
 
         <ModelSection />
+        <SessionGroupingSection />
         <CcSwitchSection />
         <AgentTestSection />
       </div>

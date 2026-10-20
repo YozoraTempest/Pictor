@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +14,8 @@ pub struct Project {
     pub id: String,
     pub path: String,
     pub name: String,
+    /// Extra folders the agent may work in, beyond the primary `path`.
+    pub folders: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -21,11 +24,23 @@ pub struct Project {
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub id: String,
-    pub project_id: String,
+    pub project_id: Option<String>,
     pub title: String,
     pub pi_session_id: Option<String>,
+    pub pinned: bool,
+    /// Sections (user-defined tags) this session is filed under.
+    pub section_ids: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Section {
+    pub id: String,
+    pub name: String,
+    pub position: i64,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -45,7 +60,39 @@ fn now_millis() -> i64 {
         .unwrap_or_default()
 }
 
+fn load_folders(connection: &Connection) -> Result<HashMap<String, Vec<String>>, HostError> {
+    let mut statement = connection.prepare(
+        "SELECT project_id, path FROM project_folders ORDER BY project_id, position, path",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    let mut folders: HashMap<String, Vec<String>> = HashMap::new();
+    for row in rows {
+        let (project_id, path) = row?;
+        folders.entry(project_id).or_default().push(path);
+    }
+    Ok(folders)
+}
+
+fn load_session_sections(connection: &Connection) -> Result<HashMap<String, Vec<String>>, HostError> {
+    let mut statement =
+        connection.prepare("SELECT session_id, section_id FROM session_sections")?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    let mut sections: HashMap<String, Vec<String>> = HashMap::new();
+    for row in rows {
+        let (session_id, section_id) = row?;
+        sections.entry(session_id).or_default().push(section_id);
+    }
+    Ok(sections)
+}
+
 pub fn list_projects(connection: &Connection) -> Result<Vec<Project>, HostError> {
+    let mut folders = load_folders(connection)?;
     let mut statement = connection.prepare(
         "SELECT id, path, name, created_at, updated_at FROM projects ORDER BY name COLLATE NOCASE",
     )?;
@@ -54,11 +101,19 @@ pub fn list_projects(connection: &Connection) -> Result<Vec<Project>, HostError>
             id: row.get(0)?,
             path: row.get(1)?,
             name: row.get(2)?,
+            folders: Vec::new(),
             created_at: row.get(3)?,
             updated_at: row.get(4)?,
         })
     })?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+
+    let mut projects = Vec::new();
+    for row in rows {
+        let mut project = row?;
+        project.folders = folders.remove(&project.id).unwrap_or_default();
+        projects.push(project);
+    }
+    Ok(projects)
 }
 
 pub fn add_project(
@@ -66,19 +121,7 @@ pub fn add_project(
     path: &str,
     name: Option<&str>,
 ) -> Result<Project, HostError> {
-    let trimmed = path.trim();
-    if trimmed.is_empty() {
-        return Err(HostError::InvalidParams("project path must not be empty".into()));
-    }
-
-    let candidate = Path::new(trimmed);
-    if !candidate.is_dir() {
-        return Err(HostError::InvalidParams(format!(
-            "project path is not a directory: {trimmed}"
-        )));
-    }
-
-    let canonical = candidate.canonicalize()?;
+    let canonical = canonical_directory(path, "project")?;
     let canonical_path = canonical.to_string_lossy().to_string();
 
     let existing: Option<String> = connection
@@ -105,6 +148,7 @@ pub fn add_project(
         id: uuid::Uuid::new_v4().to_string(),
         path: canonical_path,
         name: resolved_name,
+        folders: Vec::new(),
         created_at: now,
         updated_at: now,
     };
@@ -125,28 +169,214 @@ pub fn remove_project(connection: &Connection, id: &str) -> Result<(), HostError
     Ok(())
 }
 
+fn canonical_directory(raw: &str, what: &str) -> Result<std::path::PathBuf, HostError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(HostError::InvalidParams(format!("{what} path must not be empty")));
+    }
+
+    let candidate = Path::new(trimmed);
+    if !candidate.is_dir() {
+        return Err(HostError::InvalidParams(format!(
+            "{what} path is not a directory: {trimmed}"
+        )));
+    }
+
+    Ok(candidate.canonicalize()?)
+}
+
+fn require_project(connection: &Connection, project_id: &str) -> Result<(), HostError> {
+    let exists: Option<String> = connection
+        .query_row("SELECT id FROM projects WHERE id = ?1", params![project_id], |row| {
+            row.get(0)
+        })
+        .optional()?;
+    if exists.is_none() {
+        return Err(HostError::NotFound(format!("project {project_id}")));
+    }
+    Ok(())
+}
+
+pub fn list_project_folders(
+    connection: &Connection,
+    project_id: &str,
+) -> Result<Vec<String>, HostError> {
+    require_project(connection, project_id)?;
+    let mut statement = connection.prepare(
+        "SELECT path FROM project_folders WHERE project_id = ?1 ORDER BY position, path",
+    )?;
+    let rows = statement.query_map(params![project_id], |row| row.get::<_, String>(0))?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+pub fn add_project_folder(
+    connection: &Connection,
+    project_id: &str,
+    path: &str,
+) -> Result<Vec<String>, HostError> {
+    require_project(connection, project_id)?;
+    let canonical = canonical_directory(path, "folder")?;
+    let canonical_path = canonical.to_string_lossy().to_string();
+
+    let next_position: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM project_folders WHERE project_id = ?1",
+        params![project_id],
+        |row| row.get(0),
+    )?;
+
+    connection.execute(
+        "INSERT INTO project_folders (project_id, path, position) VALUES (?1, ?2, ?3)
+         ON CONFLICT(project_id, path) DO NOTHING",
+        params![project_id, canonical_path, next_position],
+    )?;
+
+    list_project_folders(connection, project_id)
+}
+
+pub fn remove_project_folder(
+    connection: &Connection,
+    project_id: &str,
+    path: &str,
+) -> Result<Vec<String>, HostError> {
+    require_project(connection, project_id)?;
+    connection.execute(
+        "DELETE FROM project_folders WHERE project_id = ?1 AND path = ?2",
+        params![project_id, path],
+    )?;
+    list_project_folders(connection, project_id)
+}
+
+pub fn list_sections(connection: &Connection) -> Result<Vec<Section>, HostError> {
+    let mut statement = connection.prepare(
+        "SELECT id, name, position, created_at FROM sections ORDER BY position, name COLLATE NOCASE",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(Section {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            position: row.get(2)?,
+            created_at: row.get(3)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+pub fn create_section(connection: &Connection, name: &str) -> Result<Section, HostError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(HostError::InvalidParams("section name must not be empty".into()));
+    }
+
+    let duplicate: Option<String> = connection
+        .query_row("SELECT id FROM sections WHERE name = ?1", params![trimmed], |row| {
+            row.get(0)
+        })
+        .optional()?;
+    if let Some(id) = duplicate {
+        return Err(HostError::Conflict(format!("section already exists: {id}")));
+    }
+
+    let next_position: i64 =
+        connection.query_row("SELECT COALESCE(MAX(position), -1) + 1 FROM sections", [], |row| {
+            row.get(0)
+        })?;
+
+    let section = Section {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: trimmed.to_string(),
+        position: next_position,
+        created_at: now_millis(),
+    };
+
+    connection.execute(
+        "INSERT INTO sections (id, name, position, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![section.id, section.name, section.position, section.created_at],
+    )?;
+
+    Ok(section)
+}
+
+pub fn rename_section(connection: &Connection, id: &str, name: &str) -> Result<Section, HostError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(HostError::InvalidParams("section name must not be empty".into()));
+    }
+
+    let duplicate: Option<String> = connection
+        .query_row(
+            "SELECT id FROM sections WHERE name = ?1 AND id <> ?2",
+            params![trimmed, id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if duplicate.is_some() {
+        return Err(HostError::Conflict(format!("section name already used: {trimmed}")));
+    }
+
+    let affected = connection.execute(
+        "UPDATE sections SET name = ?2 WHERE id = ?1",
+        params![id, trimmed],
+    )?;
+    if affected == 0 {
+        return Err(HostError::NotFound(format!("section {id}")));
+    }
+
+    get_section(connection, id)?.ok_or_else(|| HostError::NotFound(format!("section {id}")))
+}
+
+fn get_section(connection: &Connection, id: &str) -> Result<Option<Section>, HostError> {
+    let section = connection
+        .query_row(
+            "SELECT id, name, position, created_at FROM sections WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(Section {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    position: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(section)
+}
+
+pub fn remove_section(connection: &Connection, id: &str) -> Result<(), HostError> {
+    let affected = connection.execute("DELETE FROM sections WHERE id = ?1", params![id])?;
+    if affected == 0 {
+        return Err(HostError::NotFound(format!("section {id}")));
+    }
+    Ok(())
+}
+
 pub fn list_sessions(connection: &Connection, project_id: Option<&str>) -> Result<Vec<Session>, HostError> {
+    let mut sections = load_session_sections(connection)?;
     let mut sessions = Vec::new();
 
     match project_id {
         Some(project_id) => {
             let mut statement = connection.prepare(
-                "SELECT id, project_id, title, pi_session_id, created_at, updated_at
+                "SELECT id, project_id, title, pi_session_id, pinned, created_at, updated_at
                  FROM sessions WHERE project_id = ?1 ORDER BY updated_at DESC",
             )?;
             let rows = statement.query_map(params![project_id], map_session)?;
             for row in rows {
-                sessions.push(row?);
+                let mut session = row?;
+                session.section_ids = sections.remove(&session.id).unwrap_or_default();
+                sessions.push(session);
             }
         }
         None => {
             let mut statement = connection.prepare(
-                "SELECT id, project_id, title, pi_session_id, created_at, updated_at
+                "SELECT id, project_id, title, pi_session_id, pinned, created_at, updated_at
                  FROM sessions ORDER BY updated_at DESC",
             )?;
             let rows = statement.query_map([], map_session)?;
             for row in rows {
-                sessions.push(row?);
+                let mut session = row?;
+                session.section_ids = sections.remove(&session.id).unwrap_or_default();
+                sessions.push(session);
             }
         }
     }
@@ -160,19 +390,20 @@ fn map_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
         project_id: row.get(1)?,
         title: row.get(2)?,
         pi_session_id: row.get(3)?,
-        created_at: row.get(4)?,
-        updated_at: row.get(5)?,
+        pinned: row.get::<_, i64>(4)? != 0,
+        section_ids: Vec::new(),
+        created_at: row.get(5)?,
+        updated_at: row.get(6)?,
     })
 }
 
-pub fn create_session(connection: &Connection, project_id: &str, title: &str) -> Result<Session, HostError> {
-    let project_exists: Option<String> = connection
-        .query_row("SELECT id FROM projects WHERE id = ?1", params![project_id], |row| {
-            row.get(0)
-        })
-        .optional()?;
-    if project_exists.is_none() {
-        return Err(HostError::NotFound(format!("project {project_id}")));
+pub fn create_session(
+    connection: &Connection,
+    project_id: Option<&str>,
+    title: &str,
+) -> Result<Session, HostError> {
+    if let Some(project_id) = project_id {
+        require_project(connection, project_id)?;
     }
 
     let trimmed = title.trim();
@@ -183,16 +414,18 @@ pub fn create_session(connection: &Connection, project_id: &str, title: &str) ->
     let now = now_millis();
     let session = Session {
         id: uuid::Uuid::new_v4().to_string(),
-        project_id: project_id.to_string(),
+        project_id: project_id.map(str::to_string),
         title: trimmed.to_string(),
         pi_session_id: None,
+        pinned: false,
+        section_ids: Vec::new(),
         created_at: now,
         updated_at: now,
     };
 
     connection.execute(
-        "INSERT INTO sessions (id, project_id, title, pi_session_id, created_at, updated_at)
-         VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+        "INSERT INTO sessions (id, project_id, title, pi_session_id, pinned, created_at, updated_at)
+         VALUES (?1, ?2, ?3, NULL, 0, ?4, ?5)",
         params![session.id, session.project_id, session.title, session.created_at, session.updated_at],
     )?;
 
@@ -217,14 +450,20 @@ pub fn rename_session(connection: &Connection, id: &str, title: &str) -> Result<
 }
 
 pub fn get_session(connection: &Connection, id: &str) -> Result<Option<Session>, HostError> {
-    let session = connection
+    let mut sections = load_session_sections(connection)?;
+    let mut session = connection
         .query_row(
-            "SELECT id, project_id, title, pi_session_id, created_at, updated_at
+            "SELECT id, project_id, title, pi_session_id, pinned, created_at, updated_at
              FROM sessions WHERE id = ?1",
             params![id],
             map_session,
         )
         .optional()?;
+
+    if let Some(session) = session.as_mut() {
+        session.section_ids = sections.remove(&session.id).unwrap_or_default();
+    }
+
     Ok(session)
 }
 
@@ -239,6 +478,79 @@ pub fn bind_pi_session(
     )?;
     if updated == 0 {
         return Err(HostError::NotFound(format!("session {id}")));
+    }
+
+    get_session(connection, id)?.ok_or_else(|| HostError::NotFound(format!("session {id}")))
+}
+
+pub fn set_session_pinned(
+    connection: &Connection,
+    id: &str,
+    pinned: bool,
+) -> Result<Session, HostError> {
+    let updated = connection.execute(
+        "UPDATE sessions SET pinned = ?2 WHERE id = ?1",
+        params![id, i64::from(pinned)],
+    )?;
+    if updated == 0 {
+        return Err(HostError::NotFound(format!("session {id}")));
+    }
+
+    get_session(connection, id)?.ok_or_else(|| HostError::NotFound(format!("session {id}")))
+}
+
+pub fn set_session_project(
+    connection: &Connection,
+    id: &str,
+    project_id: Option<&str>,
+) -> Result<Session, HostError> {
+    if let Some(project_id) = project_id {
+        require_project(connection, project_id)?;
+    }
+
+    let updated = connection.execute(
+        "UPDATE sessions SET project_id = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, project_id, now_millis()],
+    )?;
+    if updated == 0 {
+        return Err(HostError::NotFound(format!("session {id}")));
+    }
+
+    get_session(connection, id)?.ok_or_else(|| HostError::NotFound(format!("session {id}")))
+}
+
+pub fn set_session_sections(
+    connection: &Connection,
+    id: &str,
+    section_ids: &[String],
+) -> Result<Session, HostError> {
+    let exists: Option<String> = connection
+        .query_row("SELECT id FROM sessions WHERE id = ?1", params![id], |row| row.get(0))
+        .optional()?;
+    if exists.is_none() {
+        return Err(HostError::NotFound(format!("session {id}")));
+    }
+
+    let unique: HashSet<&String> = section_ids.iter().collect();
+    for section_id in &unique {
+        let found: Option<String> = connection
+            .query_row(
+                "SELECT id FROM sections WHERE id = ?1",
+                params![section_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if found.is_none() {
+            return Err(HostError::NotFound(format!("section {section_id}")));
+        }
+    }
+
+    connection.execute("DELETE FROM session_sections WHERE session_id = ?1", params![id])?;
+    for section_id in unique {
+        connection.execute(
+            "INSERT INTO session_sections (session_id, section_id) VALUES (?1, ?2)",
+            params![id, section_id],
+        )?;
     }
 
     get_session(connection, id)?.ok_or_else(|| HostError::NotFound(format!("session {id}")))
@@ -384,6 +696,7 @@ mod tests {
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].id, project.id);
         assert_eq!(projects[0].name, "Demo");
+        assert!(projects[0].folders.is_empty());
     }
 
     #[test]
@@ -406,11 +719,33 @@ mod tests {
     }
 
     #[test]
+    fn adds_and_removes_project_folders() {
+        let directory = tempfile::tempdir().unwrap();
+        let extra = directory.path().join("extra");
+        std::fs::create_dir(&extra).unwrap();
+        let connection = connection();
+        let project = add_project(&connection, directory.path().to_str().unwrap(), None).unwrap();
+
+        let folders = add_project_folder(&connection, &project.id, extra.to_str().unwrap()).unwrap();
+        assert_eq!(folders.len(), 1);
+
+        // Adding the same folder twice must not duplicate the row.
+        let folders = add_project_folder(&connection, &project.id, extra.to_str().unwrap()).unwrap();
+        assert_eq!(folders.len(), 1);
+
+        let listed = list_projects(&connection).unwrap();
+        assert_eq!(listed[0].folders.len(), 1);
+
+        let folders = remove_project_folder(&connection, &project.id, &folders[0]).unwrap();
+        assert!(folders.is_empty());
+    }
+
+    #[test]
     fn removing_project_cascades_sessions() {
         let directory = tempfile::tempdir().unwrap();
         let connection = connection();
         let project = add_project(&connection, directory.path().to_str().unwrap(), None).unwrap();
-        create_session(&connection, &project.id, "First").unwrap();
+        create_session(&connection, Some(&project.id), "First").unwrap();
 
         remove_project(&connection, &project.id).unwrap();
 
@@ -422,7 +757,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let connection = connection();
         let project = add_project(&connection, directory.path().to_str().unwrap(), None).unwrap();
-        let session = create_session(&connection, &project.id, "  Draft  ").unwrap();
+        let session = create_session(&connection, Some(&project.id), "  Draft  ").unwrap();
 
         assert_eq!(session.title, "Draft");
 
@@ -432,11 +767,103 @@ mod tests {
     }
 
     #[test]
+    fn sessions_can_live_outside_a_project() {
+        let connection = connection();
+        let session = create_session(&connection, None, "Loose").unwrap();
+
+        assert_eq!(session.project_id, None);
+
+        let listed = list_sessions(&connection, None).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].project_id, None);
+    }
+
+    #[test]
+    fn moves_a_session_between_projects() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let connection = connection();
+        let project_a = add_project(&connection, first.path().to_str().unwrap(), Some("A")).unwrap();
+        let project_b = add_project(&connection, second.path().to_str().unwrap(), Some("B")).unwrap();
+        let session = create_session(&connection, Some(&project_a.id), "Draft").unwrap();
+
+        let moved = set_session_project(&connection, &session.id, Some(&project_b.id)).unwrap();
+        assert_eq!(moved.project_id.as_deref(), Some(project_b.id.as_str()));
+
+        let detached = set_session_project(&connection, &session.id, None).unwrap();
+        assert_eq!(detached.project_id, None);
+    }
+
+    #[test]
+    fn pins_and_unpins_a_session() {
+        let connection = connection();
+        let session = create_session(&connection, None, "Loose").unwrap();
+        assert!(!session.pinned);
+
+        let pinned = set_session_pinned(&connection, &session.id, true).unwrap();
+        assert!(pinned.pinned);
+
+        let unpinned = set_session_pinned(&connection, &session.id, false).unwrap();
+        assert!(!unpinned.pinned);
+    }
+
+    #[test]
+    fn files_a_session_under_multiple_sections() {
+        let connection = connection();
+        let session = create_session(&connection, None, "Loose").unwrap();
+        let design = create_section(&connection, "Design").unwrap();
+        let research = create_section(&connection, "Research").unwrap();
+
+        let updated = set_session_sections(
+            &connection,
+            &session.id,
+            &[design.id.clone(), research.id.clone(), design.id.clone()],
+        )
+        .unwrap();
+        assert_eq!(updated.section_ids.len(), 2);
+
+        let listed = list_sessions(&connection, None).unwrap();
+        assert_eq!(listed[0].section_ids.len(), 2);
+
+        let cleared = set_session_sections(&connection, &session.id, &[]).unwrap();
+        assert!(cleared.section_ids.is_empty());
+    }
+
+    #[test]
+    fn removes_sections_and_their_links() {
+        let connection = connection();
+        let session = create_session(&connection, None, "Loose").unwrap();
+        let section = create_section(&connection, "Design").unwrap();
+        set_session_sections(&connection, &session.id, &[section.id.clone()]).unwrap();
+
+        remove_section(&connection, &section.id).unwrap();
+
+        let listed = list_sessions(&connection, None).unwrap();
+        assert!(listed[0].section_ids.is_empty());
+    }
+
+    #[test]
+    fn rejects_duplicate_section_names() {
+        let connection = connection();
+        create_section(&connection, "Design").unwrap();
+        let error = create_section(&connection, "  Design  ").unwrap_err();
+        assert!(matches!(error, HostError::Conflict(_)));
+    }
+
+    #[test]
+    fn rejects_unknown_section_when_filing_a_session() {
+        let connection = connection();
+        let session = create_session(&connection, None, "Loose").unwrap();
+        let error = set_session_sections(&connection, &session.id, &["missing".to_string()]).unwrap_err();
+        assert!(matches!(error, HostError::NotFound(_)));
+    }
+
+    #[test]
     fn binds_a_pi_session_path() {
         let directory = tempfile::tempdir().unwrap();
         let connection = connection();
         let project = add_project(&connection, directory.path().to_str().unwrap(), None).unwrap();
-        let session = create_session(&connection, &project.id, "Draft").unwrap();
+        let session = create_session(&connection, Some(&project.id), "Draft").unwrap();
 
         let bound = bind_pi_session(&connection, &session.id, Some("/tmp/pi/session.jsonl")).unwrap();
         assert_eq!(bound.pi_session_id.as_deref(), Some("/tmp/pi/session.jsonl"));
@@ -448,7 +875,7 @@ mod tests {
     #[test]
     fn rejects_session_for_unknown_project() {
         let connection = connection();
-        let error = create_session(&connection, "missing", "Draft").unwrap_err();
+        let error = create_session(&connection, Some("missing"), "Draft").unwrap_err();
         assert!(matches!(error, HostError::NotFound(_)));
     }
 

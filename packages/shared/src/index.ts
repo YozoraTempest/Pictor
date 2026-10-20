@@ -11,20 +11,38 @@ export type JsonValue =
 
 export interface Project {
   id: string
+  /** Primary working directory for the agent. */
   path: string
   name: string
+  /** Extra working directories registered on the project. */
+  folders: string[]
   createdAt: number
   updatedAt: number
 }
 
 export interface Session {
   id: string
-  projectId: string
+  /** `null` when the session does not belong to any project. */
+  projectId: string | null
   title: string
   piSessionId: string | null
+  pinned: boolean
+  /** Sections (user-defined tags) the session is filed under. */
+  sectionIds: string[]
   createdAt: number
   updatedAt: number
 }
+
+/** A user-defined tag sessions can be filed under; purely a display grouping. */
+export interface Section {
+  id: string
+  name: string
+  position: number
+  createdAt: number
+}
+
+/** How the session list is grouped in the sidebar. */
+export type SessionGrouping = 'project' | 'section' | 'recent'
 
 export interface PluginRecord {
   id: string

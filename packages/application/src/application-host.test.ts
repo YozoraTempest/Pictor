@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { JsonValue, Project, Session, SettingsMap } from '@pictor/shared'
+import type { JsonValue, Project, Section, Session, SettingsMap } from '@pictor/shared'
 
 import { ApplicationHost } from './application-host.js'
 import type { ApplicationStore } from './application-host.js'
@@ -10,6 +10,21 @@ function project(overrides: Partial<Project> = {}): Project {
     id: 'p1',
     path: '/tmp/demo',
     name: 'Demo',
+    folders: [],
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  }
+}
+
+function session(overrides: Partial<Session> = {}): Session {
+  return {
+    id: 's1',
+    projectId: 'p1',
+    title: 'Draft',
+    piSessionId: null,
+    pinned: false,
+    sectionIds: [],
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -19,6 +34,7 @@ function project(overrides: Partial<Project> = {}): Project {
 class FakeStore implements ApplicationStore {
   projects: Project[] = []
   sessions: Session[] = []
+  sections: Section[] = []
   settings: SettingsMap = {}
 
   async listProjects(): Promise<Project[]> {
@@ -35,25 +51,72 @@ class FakeStore implements ApplicationStore {
     this.projects = this.projects.filter((entry) => entry.id !== id)
   }
 
+  async addProjectFolder(id: string, path: string): Promise<string[]> {
+    const target = this.projects.find((entry) => entry.id === id)
+    if (target !== undefined) target.folders = [...target.folders, path]
+    return target?.folders ?? []
+  }
+
+  async removeProjectFolder(id: string, path: string): Promise<string[]> {
+    const target = this.projects.find((entry) => entry.id === id)
+    if (target !== undefined) target.folders = target.folders.filter((entry) => entry !== path)
+    return target?.folders ?? []
+  }
+
   async listSessions(): Promise<Session[]> {
     return this.sessions
   }
 
-  async createSession(projectId: string, title: string): Promise<Session> {
-    const session: Session = {
-      id: 's1',
-      projectId,
-      title,
-      piSessionId: null,
-      createdAt: 1,
-      updatedAt: 1,
-    }
-    this.sessions.push(session)
-    return session
+  async createSession(projectId: string | null, title: string): Promise<Session> {
+    const created = session({ projectId, title })
+    this.sessions.push(created)
+    return created
+  }
+
+  async setSessionPinned(id: string, pinned: boolean): Promise<Session> {
+    const target = this.sessions.find((entry) => entry.id === id)
+    if (target === undefined) throw new Error(`session ${id}`)
+    target.pinned = pinned
+    return target
+  }
+
+  async setSessionProject(id: string, projectId: string | null): Promise<Session> {
+    const target = this.sessions.find((entry) => entry.id === id)
+    if (target === undefined) throw new Error(`session ${id}`)
+    target.projectId = projectId
+    return target
+  }
+
+  async setSessionSections(id: string, sectionIds: string[]): Promise<Session> {
+    const target = this.sessions.find((entry) => entry.id === id)
+    if (target === undefined) throw new Error(`session ${id}`)
+    target.sectionIds = sectionIds
+    return target
   }
 
   async deleteSession(id: string): Promise<void> {
-    this.sessions = this.sessions.filter((session) => session.id !== id)
+    this.sessions = this.sessions.filter((entry) => entry.id !== id)
+  }
+
+  async listSections(): Promise<Section[]> {
+    return this.sections
+  }
+
+  async createSection(name: string): Promise<Section> {
+    const created: Section = { id: `sec-${name}`, name, position: 0, createdAt: 1 }
+    this.sections.push(created)
+    return created
+  }
+
+  async renameSection(id: string, name: string): Promise<Section> {
+    const target = this.sections.find((entry) => entry.id === id)
+    if (target === undefined) throw new Error(`section ${id}`)
+    target.name = name
+    return target
+  }
+
+  async removeSection(id: string): Promise<void> {
+    this.sections = this.sections.filter((entry) => entry.id !== id)
   }
 
   async listSettings(): Promise<SettingsMap> {
@@ -69,9 +132,17 @@ describe('ApplicationHost', () => {
 
     expect(host.commands.list().map((command) => command.id)).toEqual([
       'project.add',
+      'project.addFolder',
       'project.remove',
+      'project.removeFolder',
+      'section.create',
+      'section.remove',
+      'section.rename',
       'session.create',
       'session.delete',
+      'session.setPinned',
+      'session.setProject',
+      'session.setSections',
     ])
   })
 
@@ -95,7 +166,57 @@ describe('ApplicationHost', () => {
 
     await expect(host.commands.execute('project.add', {})).rejects.toThrow(/non-empty path/)
     await expect(host.commands.execute('session.create', { projectId: 'p1' })).rejects.toThrow(
-      /projectId and title/,
+      /requires a title/,
+    )
+  })
+
+  it('creates a session without a project', async () => {
+    const store = new FakeStore()
+    const host = new ApplicationHost(store)
+
+    const created = await host.commands.execute<Session>('session.create', { title: 'Loose' })
+
+    expect(created.projectId).toBeNull()
+    expect(store.sessions).toHaveLength(1)
+  })
+
+  it('pins a session and emits session.updated', async () => {
+    const store = new FakeStore()
+    store.sessions = [session()]
+    const host = new ApplicationHost(store)
+    const listener = vi.fn()
+    host.events.on('session.updated', listener)
+
+    const updated = await host.commands.execute<Session>('session.setPinned', {
+      id: 's1',
+      pinned: true,
+    })
+
+    expect(updated.pinned).toBe(true)
+    expect(listener).toHaveBeenCalledWith(updated)
+  })
+
+  it('files a session under sections', async () => {
+    const store = new FakeStore()
+    store.sessions = [session()]
+    const host = new ApplicationHost(store)
+
+    const updated = await host.commands.execute<Session>('session.setSections', {
+      id: 's1',
+      sectionIds: ['sec-a', 'sec-b'],
+    })
+
+    expect(updated.sectionIds).toEqual(['sec-a', 'sec-b'])
+  })
+
+  it('creates a section through the command engine', async () => {
+    const host = new ApplicationHost(new FakeStore())
+
+    const created = await host.commands.execute<Section>('section.create', { name: 'Design' })
+
+    expect(created.name).toBe('Design')
+    await expect(host.commands.execute('section.create', { name: '  ' })).rejects.toThrow(
+      /non-empty name/,
     )
   })
 
@@ -107,6 +228,7 @@ describe('ApplicationHost', () => {
     await expect(host.snapshot()).resolves.toEqual({
       projects: [project()],
       sessions: [],
+      sections: [],
       settings: {},
     })
   })

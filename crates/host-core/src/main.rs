@@ -170,11 +170,11 @@ fn dispatch(
             .map_err(to_internal)?)
         }
         "session.create" => {
-            let project_id = required_str(&params, "projectId")?;
+            let project_id = optional_str(&params, "projectId");
             let title = required_str(&params, "title")?;
             Ok(serde_json::to_value(store::create_session(
                 connection,
-                &project_id,
+                project_id.as_deref(),
                 &title,
             )?)
             .map_err(to_internal)?)
@@ -199,6 +199,87 @@ fn dispatch(
             let id = required_str(&params, "id")?;
             store::delete_session(connection, &id)?;
             Ok(json!({ "deleted": id }))
+        }
+        "session.setPinned" => {
+            let id = required_str(&params, "id")?;
+            let pinned = params
+                .get("pinned")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| HostError::InvalidParams("missing param: pinned".into()))?;
+            Ok(serde_json::to_value(store::set_session_pinned(
+                connection, &id, pinned,
+            )?)
+            .map_err(to_internal)?)
+        }
+        "session.setProject" => {
+            let id = required_str(&params, "id")?;
+            let project_id = optional_str(&params, "projectId");
+            Ok(serde_json::to_value(store::set_session_project(
+                connection,
+                &id,
+                project_id.as_deref(),
+            )?)
+            .map_err(to_internal)?)
+        }
+        "session.setSections" => {
+            let id = required_str(&params, "id")?;
+            let section_ids: Vec<String> = params
+                .get("sectionIds")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(serde_json::to_value(store::set_session_sections(
+                connection,
+                &id,
+                &section_ids,
+            )?)
+            .map_err(to_internal)?)
+        }
+        "section.list" => {
+            Ok(serde_json::to_value(store::list_sections(connection)?).map_err(to_internal)?)
+        }
+        "section.create" => {
+            let name = required_str(&params, "name")?;
+            Ok(serde_json::to_value(store::create_section(connection, &name)?)
+                .map_err(to_internal)?)
+        }
+        "section.rename" => {
+            let id = required_str(&params, "id")?;
+            let name = required_str(&params, "name")?;
+            Ok(serde_json::to_value(store::rename_section(connection, &id, &name)?)
+                .map_err(to_internal)?)
+        }
+        "section.remove" => {
+            let id = required_str(&params, "id")?;
+            store::remove_section(connection, &id)?;
+            Ok(json!({ "removed": id }))
+        }
+        "project.folders" => {
+            let id = required_str(&params, "id")?;
+            Ok(serde_json::to_value(store::list_project_folders(connection, &id)?)
+                .map_err(to_internal)?)
+        }
+        "project.addFolder" => {
+            let id = required_str(&params, "id")?;
+            let path = required_str(&params, "path")?;
+            Ok(serde_json::to_value(store::add_project_folder(
+                connection, &id, &path,
+            )?)
+            .map_err(to_internal)?)
+        }
+        "project.removeFolder" => {
+            let id = required_str(&params, "id")?;
+            let path = required_str(&params, "path")?;
+            Ok(serde_json::to_value(store::remove_project_folder(
+                connection, &id, &path,
+            )?)
+            .map_err(to_internal)?)
         }
         "settings.list" => {
             let settings: Map<String, Value> = store::list_settings(connection)?

@@ -9,6 +9,7 @@ import type {
   ModelSettingsInput,
   PluginRecord,
   Project,
+  Section,
   Session,
   SettingsMap,
 } from '@pictor/shared'
@@ -25,6 +26,7 @@ export interface AppInfo {
 export interface HostSnapshot {
   projects: Project[]
   sessions: Session[]
+  sections: Section[]
   settings: SettingsMap
 }
 
@@ -72,9 +74,21 @@ export interface PictorBridge {
   getSnapshot(): Promise<HostSnapshot>
   addProject(path: string, name?: string): Promise<Project>
   removeProject(id: string): Promise<void>
-  createSession(projectId: string, title: string): Promise<Session>
+  addProjectFolder(id: string, path: string): Promise<string[]>
+  removeProjectFolder(id: string, path: string): Promise<string[]>
+  createSession(projectId: string | null, title: string): Promise<Session>
   deleteSession(id: string): Promise<void>
+  setSessionPinned(id: string, pinned: boolean): Promise<Session>
+  setSessionProject(id: string, projectId: string | null): Promise<Session>
+  setSessionSections(id: string, sectionIds: string[]): Promise<Session>
   pickDirectory(): Promise<string | null>
+
+  listSections(): Promise<Section[]>
+  createSection(name: string): Promise<Section>
+  renameSection(id: string, name: string): Promise<Section>
+  removeSection(id: string): Promise<void>
+
+  putSetting(key: string, value: JsonValue): Promise<void>
 
   listCommands(): Promise<CommandDescriptor[]>
   executeCommand(id: string, input?: JsonValue): Promise<unknown>

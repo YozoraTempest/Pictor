@@ -1,18 +1,21 @@
 import { create } from 'zustand'
 
-import type { PluginRecord, Project, Session } from '@pictor/shared'
+import type { PluginRecord, Project, Section, Session, SessionGrouping } from '@pictor/shared'
 
 import type { AppInfo, CommandDescriptor, PluginReport } from '../../../shared/bridge.js'
 
 interface WorkspaceState {
   projects: Project[]
   sessions: Session[]
+  sections: Section[]
   plugins: PluginRecord[]
   commands: CommandDescriptor[]
   report: PluginReport | null
   info: AppInfo | null
   selectedProjectId: string | null
   selectedSessionId: string | null
+  grouping: SessionGrouping
+  groupingExclusive: boolean
   busy: boolean
   error: string | null
   notice: string | null
@@ -22,12 +25,28 @@ interface WorkspaceState {
   selectSession: (id: string | null) => void
   addProject: () => Promise<void>
   removeProject: (id: string) => Promise<void>
-  createSession: (title: string) => Promise<void>
+  addProjectFolder: (id: string) => Promise<void>
+  removeProjectFolder: (id: string, path: string) => Promise<void>
+  createSession: (title: string, projectId?: string | null) => Promise<void>
   deleteSession: (id: string) => Promise<void>
+  setSessionPinned: (id: string, pinned: boolean) => Promise<void>
+  setSessionProject: (id: string, projectId: string | null) => Promise<void>
+  setSessionSections: (id: string, sectionIds: string[]) => Promise<void>
+  createSection: (name: string) => Promise<void>
+  renameSection: (id: string, name: string) => Promise<void>
+  removeSection: (id: string) => Promise<void>
+  setGrouping: (grouping: SessionGrouping) => Promise<void>
+  setGroupingExclusive: (exclusive: boolean) => Promise<void>
   setPluginEnabled: (id: string, enabled: boolean) => Promise<void>
   runCommand: (id: string) => Promise<void>
   setNotice: (notice: string | null) => void
   setError: (error: string | null) => void
+}
+
+const GROUPINGS: SessionGrouping[] = ['project', 'section', 'recent']
+
+function readGrouping(value: unknown): SessionGrouping {
+  return GROUPINGS.find((entry) => entry === value) ?? 'project'
 }
 
 async function guard(
@@ -47,12 +66,15 @@ async function guard(
 export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   projects: [],
   sessions: [],
+  sections: [],
   plugins: [],
   commands: [],
   report: null,
   info: null,
   selectedProjectId: null,
   selectedSessionId: null,
+  grouping: 'project',
+  groupingExclusive: false,
   busy: false,
   error: null,
   notice: null,
@@ -81,12 +103,15 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     set({
       projects: snapshot.projects,
       sessions: snapshot.sessions,
+      sections: snapshot.sections,
       plugins,
       commands,
       report,
       info,
       selectedProjectId: projectId,
       selectedSessionId: sessionId,
+      grouping: readGrouping(snapshot.settings['sessions.grouping']),
+      groupingExclusive: snapshot.settings['sessions.groupingExclusive'] === true,
     })
   },
 
@@ -116,12 +141,26 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     })
   },
 
-  async createSession(title) {
-    const projectId = get().selectedProjectId
-    if (projectId === null) return
-
+  async addProjectFolder(id) {
     await guard(set, async () => {
-      const session = await window.pictor.createSession(projectId, title)
+      const path = await window.pictor.pickDirectory()
+      if (path === null) return
+      await window.pictor.addProjectFolder(id, path)
+      await get().refresh()
+    })
+  },
+
+  async removeProjectFolder(id, path) {
+    await guard(set, async () => {
+      await window.pictor.removeProjectFolder(id, path)
+      await get().refresh()
+    })
+  },
+
+  async createSession(title, projectId) {
+    await guard(set, async () => {
+      const target = projectId === undefined ? get().selectedProjectId : projectId
+      const session = await window.pictor.createSession(target, title)
       set({ selectedSessionId: session.id })
       await get().refresh()
     })
@@ -133,6 +172,58 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       if (get().selectedSessionId === id) set({ selectedSessionId: null })
       await get().refresh()
     })
+  },
+
+  async setSessionPinned(id, pinned) {
+    await guard(set, async () => {
+      await window.pictor.setSessionPinned(id, pinned)
+      await get().refresh()
+    })
+  },
+
+  async setSessionProject(id, projectId) {
+    await guard(set, async () => {
+      await window.pictor.setSessionProject(id, projectId)
+      await get().refresh()
+    })
+  },
+
+  async setSessionSections(id, sectionIds) {
+    await guard(set, async () => {
+      await window.pictor.setSessionSections(id, sectionIds)
+      await get().refresh()
+    })
+  },
+
+  async createSection(name) {
+    await guard(set, async () => {
+      await window.pictor.createSection(name)
+      await get().refresh()
+    })
+  },
+
+  async renameSection(id, name) {
+    await guard(set, async () => {
+      await window.pictor.renameSection(id, name)
+      await get().refresh()
+    })
+  },
+
+  async removeSection(id) {
+    await guard(set, async () => {
+      await window.pictor.removeSection(id)
+      await get().refresh()
+    })
+  },
+
+  async setGrouping(grouping) {
+    set({ grouping })
+    await window.pictor.putSetting('sessions.grouping', grouping)
+  },
+
+  async setGroupingExclusive(groupingExclusive) {
+    set({ groupingExclusive })
+    await window.pictor.putSetting('sessions.groupingExclusive', groupingExclusive)
   },
 
   async setPluginEnabled(id, enabled) {

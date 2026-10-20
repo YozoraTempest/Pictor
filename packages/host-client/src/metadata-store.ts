@@ -7,6 +7,7 @@ import type {
   JsonValue,
   PluginRecord,
   Project,
+  Section,
   Session,
   SettingsMap,
 } from '@pictor/shared'
@@ -24,12 +25,22 @@ export interface MetadataStore {
   listProjects(): Promise<Project[]>
   addProject(path: string, name?: string): Promise<Project>
   removeProject(id: string): Promise<void>
+  addProjectFolder(id: string, path: string): Promise<string[]>
+  removeProjectFolder(id: string, path: string): Promise<string[]>
 
   listSessions(projectId?: string): Promise<Session[]>
-  createSession(projectId: string, title: string): Promise<Session>
+  createSession(projectId: string | null, title: string): Promise<Session>
   renameSession(id: string, title: string): Promise<Session>
   bindPiSession(id: string, piSessionId: string | null): Promise<Session>
+  setSessionPinned(id: string, pinned: boolean): Promise<Session>
+  setSessionProject(id: string, projectId: string | null): Promise<Session>
+  setSessionSections(id: string, sectionIds: string[]): Promise<Session>
   deleteSession(id: string): Promise<void>
+
+  listSections(): Promise<Section[]>
+  createSection(name: string): Promise<Section>
+  renameSection(id: string, name: string): Promise<Section>
+  removeSection(id: string): Promise<void>
 
   listSettings(): Promise<SettingsMap>
   putSetting(key: string, value: JsonValue): Promise<void>
@@ -77,6 +88,14 @@ export class HostCoreClient implements MetadataStore {
     await this.#rpc.request('project.remove', { id })
   }
 
+  addProjectFolder(id: string, path: string): Promise<string[]> {
+    return this.#rpc.request<string[]>('project.addFolder', { id, path })
+  }
+
+  removeProjectFolder(id: string, path: string): Promise<string[]> {
+    return this.#rpc.request<string[]>('project.removeFolder', { id, path })
+  }
+
   listSessions(projectId?: string): Promise<Session[]> {
     return this.#rpc.request<Session[]>(
       'session.list',
@@ -84,7 +103,7 @@ export class HostCoreClient implements MetadataStore {
     )
   }
 
-  createSession(projectId: string, title: string): Promise<Session> {
+  createSession(projectId: string | null, title: string): Promise<Session> {
     return this.#rpc.request<Session>('session.create', { projectId, title })
   }
 
@@ -96,8 +115,36 @@ export class HostCoreClient implements MetadataStore {
     return this.#rpc.request<Session>('session.bindPiSession', { id, piSessionId })
   }
 
+  setSessionPinned(id: string, pinned: boolean): Promise<Session> {
+    return this.#rpc.request<Session>('session.setPinned', { id, pinned })
+  }
+
+  setSessionProject(id: string, projectId: string | null): Promise<Session> {
+    return this.#rpc.request<Session>('session.setProject', { id, projectId })
+  }
+
+  setSessionSections(id: string, sectionIds: string[]): Promise<Session> {
+    return this.#rpc.request<Session>('session.setSections', { id, sectionIds })
+  }
+
   async deleteSession(id: string): Promise<void> {
     await this.#rpc.request('session.delete', { id })
+  }
+
+  listSections(): Promise<Section[]> {
+    return this.#rpc.request<Section[]>('section.list')
+  }
+
+  createSection(name: string): Promise<Section> {
+    return this.#rpc.request<Section>('section.create', { name })
+  }
+
+  renameSection(id: string, name: string): Promise<Section> {
+    return this.#rpc.request<Section>('section.rename', { id, name })
+  }
+
+  async removeSection(id: string): Promise<void> {
+    await this.#rpc.request('section.remove', { id })
   }
 
   listSettings(): Promise<SettingsMap> {

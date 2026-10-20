@@ -6,7 +6,7 @@ use crate::error::HostError;
 
 /// Current on-disk schema version. Bump when `SCHEMA_V1` changes shape and add a
 /// forward migration step in `migrate`.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS projects (
@@ -43,6 +43,52 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 "#;
 
+/// v2 makes a session's project optional, adds pinning, project folders and
+/// sections (user-defined tags a session can be filed under).
+const SCHEMA_V2: &str = r#"
+CREATE TABLE IF NOT EXISTS project_folders (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    path       TEXT NOT NULL,
+    position   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (project_id, path)
+);
+
+CREATE TABLE IF NOT EXISTS sections (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE,
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE sessions_v2 (
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    title         TEXT NOT NULL,
+    pi_session_id TEXT,
+    pinned        INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+
+INSERT INTO sessions_v2 (id, project_id, title, pi_session_id, pinned, created_at, updated_at)
+    SELECT id, project_id, title, pi_session_id, 0, created_at, updated_at FROM sessions;
+
+DROP TABLE sessions;
+
+ALTER TABLE sessions_v2 RENAME TO sessions;
+
+CREATE INDEX IF NOT EXISTS sessions_by_project ON sessions(project_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS sessions_by_updated ON sessions(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS session_sections (
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    section_id TEXT NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+    PRIMARY KEY (session_id, section_id)
+);
+
+CREATE INDEX IF NOT EXISTS session_sections_by_section ON session_sections(section_id);
+"#;
+
 pub fn open(path: &Path) -> Result<Connection, HostError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -74,6 +120,15 @@ fn migrate(connection: &Connection) -> Result<(), HostError> {
 
     if version < 1 {
         connection.execute_batch(SCHEMA_V1)?;
+    }
+
+    if version < 2 {
+        // Rebuilding `sessions` drops and recreates a table other rows point at;
+        // foreign keys are disabled for the duration so nothing cascades away.
+        connection.pragma_update(None, "foreign_keys", "OFF")?;
+        let result = connection.execute_batch(&format!("BEGIN;\n{SCHEMA_V2}\nCOMMIT;"));
+        connection.pragma_update(None, "foreign_keys", "ON")?;
+        result?;
     }
 
     connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -117,5 +172,44 @@ mod tests {
 
         let error = migrate(&connection).unwrap_err();
         assert!(matches!(error, HostError::Internal(_)));
+    }
+
+    #[test]
+    fn upgrades_a_v1_database_without_losing_sessions() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy.sqlite3");
+
+        {
+            let legacy = Connection::open(&path).unwrap();
+            legacy.pragma_update(None, "foreign_keys", "ON").unwrap();
+            legacy.execute_batch(SCHEMA_V1).unwrap();
+            legacy
+                .execute_batch(
+                    "INSERT INTO projects (id, path, name, created_at, updated_at)
+                        VALUES ('p1', '/tmp/p1', 'Legacy', 1, 1);
+                     INSERT INTO sessions (id, project_id, title, pi_session_id, created_at, updated_at)
+                        VALUES ('s1', 'p1', 'Old chat', NULL, 1, 1);",
+                )
+                .unwrap();
+            legacy.pragma_update(None, "user_version", 1).unwrap();
+        }
+
+        let upgraded = open(&path).unwrap();
+        let (project_id, title, pinned): (Option<String>, String, i64) = upgraded
+            .query_row(
+                "SELECT project_id, title, pinned FROM sessions WHERE id = 's1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        assert_eq!(project_id.as_deref(), Some("p1"));
+        assert_eq!(title, "Old chat");
+        assert_eq!(pinned, 0);
+
+        let version: i64 = upgraded
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
     }
 }

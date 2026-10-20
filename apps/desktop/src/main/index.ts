@@ -12,7 +12,7 @@ import {
   resolveActivationOrder,
 } from '@pictor/plugin-host'
 import { PROVIDER_ID, readApiKey, readModelSettings, writeModelsJson } from '@pictor/model-config'
-import type { JsonValue, PluginRecord } from '@pictor/shared'
+import type { JsonValue, PluginRecord, Section } from '@pictor/shared'
 
 import type { AppInfo, CommandDescriptor, HostSnapshot, PluginReport } from '../shared/bridge.js'
 import { ModelService } from './model-service.js'
@@ -248,7 +248,7 @@ function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:snapshot', async (): Promise<HostSnapshot> => {
     // The renderer can refresh while the app is quitting; answer with an empty
     // snapshot instead of surfacing a disposed-client error.
-    if (workspace.isDisposed()) return { projects: [], sessions: [], settings: {} }
+    if (workspace.isDisposed()) return { projects: [], sessions: [], sections: [], settings: {} }
     return workspace.appHost.snapshot()
   })
 
@@ -266,8 +266,9 @@ function registerIpc(workspace: Workspace): void {
   })
 
   ipcMain.handle('pictor:session.create', async (_event, projectId: unknown, title: unknown) => {
-    if (typeof projectId !== 'string' || typeof title !== 'string') {
-      throw new Error('projectId and title must be strings')
+    if (typeof title !== 'string') throw new Error('title must be a string')
+    if (projectId !== null && typeof projectId !== 'string') {
+      throw new Error('projectId must be a string or null')
     }
     return workspace.appHost.commands.execute('session.create', { projectId, title })
   })
@@ -275,6 +276,73 @@ function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:session.delete', async (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('id must be a string')
     return workspace.appHost.commands.execute('session.delete', { id })
+  })
+
+  ipcMain.handle('pictor:session.setPinned', async (_event, id: unknown, pinned: unknown) => {
+    if (typeof id !== 'string' || typeof pinned !== 'boolean') {
+      throw new Error('id must be a string and pinned a boolean')
+    }
+    return workspace.appHost.commands.execute('session.setPinned', { id, pinned })
+  })
+
+  ipcMain.handle('pictor:session.setProject', async (_event, id: unknown, projectId: unknown) => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    if (projectId !== null && typeof projectId !== 'string') {
+      throw new Error('projectId must be a string or null')
+    }
+    return workspace.appHost.commands.execute('session.setProject', { id, projectId })
+  })
+
+  ipcMain.handle('pictor:session.setSections', async (_event, id: unknown, sectionIds: unknown) => {
+    if (typeof id !== 'string' || !Array.isArray(sectionIds)) {
+      throw new Error('id must be a string and sectionIds an array')
+    }
+    return workspace.appHost.commands.execute('session.setSections', { id, sectionIds })
+  })
+
+  ipcMain.handle('pictor:project.addFolder', async (_event, id: unknown, path: unknown) => {
+    if (typeof id !== 'string' || typeof path !== 'string') {
+      throw new Error('id and path must be strings')
+    }
+    return workspace.appHost.commands.execute('project.addFolder', { id, path })
+  })
+
+  ipcMain.handle('pictor:project.removeFolder', async (_event, id: unknown, path: unknown) => {
+    if (typeof id !== 'string' || typeof path !== 'string') {
+      throw new Error('id and path must be strings')
+    }
+    return workspace.appHost.commands.execute('project.removeFolder', { id, path })
+  })
+
+  ipcMain.handle('pictor:sections.list', async (): Promise<Section[]> => {
+    if (workspace.isDisposed()) return []
+    return workspace.client.listSections()
+  })
+
+  ipcMain.handle('pictor:sections.create', async (_event, name: unknown) => {
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      throw new Error('name must be a non-empty string')
+    }
+    return workspace.appHost.commands.execute('section.create', { name })
+  })
+
+  ipcMain.handle('pictor:sections.rename', async (_event, id: unknown, name: unknown) => {
+    if (typeof id !== 'string' || typeof name !== 'string' || name.trim().length === 0) {
+      throw new Error('id and a non-empty name are required')
+    }
+    return workspace.appHost.commands.execute('section.rename', { id, name })
+  })
+
+  ipcMain.handle('pictor:sections.remove', async (_event, id: unknown) => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    return workspace.appHost.commands.execute('section.remove', { id })
+  })
+
+  ipcMain.handle('pictor:settings.put', async (_event, key: unknown, value: unknown) => {
+    if (typeof key !== 'string' || key.trim().length === 0) {
+      throw new Error('key must be a non-empty string')
+    }
+    await workspace.client.putSetting(key, value as JsonValue)
   })
 
   ipcMain.handle('pictor:pickDirectory', async (): Promise<string | null> => {
@@ -376,8 +444,7 @@ function registerIpc(workspace: Workspace): void {
     if (session === undefined) throw new Error('session not found')
 
     const projects = await workspace.client.listProjects()
-    const project = projects.find((entry) => entry.id === session.projectId)
-    if (project === undefined) throw new Error('project not found')
+    const project = projects.find((entry) => entry.id === session.projectId) ?? null
 
     const settings = await readModelSettings(workspace.client, workspace.model.authPath)
     if (settings.baseUrl.length === 0 || settings.modelId.length === 0) {
@@ -386,10 +453,10 @@ function registerIpc(workspace: Workspace): void {
 
     writeModelsJson(workspace.model.modelsPath, settings)
 
-    const sessionDir = join(app.getPath('userData'), 'pi', 'sessions', project.id)
+    const sessionDir = join(app.getPath('userData'), 'pi', 'sessions', project?.id ?? 'unfiled')
     const opened = await workspace.chat.open({
       sessionId,
-      cwd: project.path,
+      cwd: project?.path ?? app.getPath('home'),
       sessionDir,
       agentDir: workspace.model.agentDir,
       modelsPath: workspace.model.modelsPath,
