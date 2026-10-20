@@ -70,6 +70,15 @@
     background: transparent;
   }
 
+  /* Frameless window: the title bar drags, its buttons do not. */
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
   /* View transitions: only the main region participates, so the chrome stays put. */
   .view-main {
     view-transition-name: main;

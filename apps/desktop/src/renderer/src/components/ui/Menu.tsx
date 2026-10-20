@@ -20,6 +20,8 @@ export interface MenuProps {
   items: MenuEntry[]
   align?: 'left' | 'right'
   className?: string
+  /** Overrides the default square icon-button trigger. */
+  triggerClassName?: string
 }
 
 /**
@@ -32,6 +34,7 @@ export function Menu({
   items,
   align = 'right',
   className,
+  triggerClassName,
 }: MenuProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -64,7 +67,10 @@ export function Menu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="grid size-6 place-items-center rounded-sm text-faint transition-colors duration-150 hover:bg-surface-hover hover:text-text focus-visible:ring-2 focus-visible:ring-accent/40"
+        className={cn(
+          'grid size-6 place-items-center rounded-sm text-faint transition-colors duration-150 hover:bg-surface-hover hover:text-text focus-visible:ring-2 focus-visible:ring-accent/40',
+          triggerClassName,
+        )}
       >
         {trigger}
       </button>

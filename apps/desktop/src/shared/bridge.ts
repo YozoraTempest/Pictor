@@ -23,6 +23,26 @@ export interface AppInfo {
   database: string
 }
 
+export type WindowCommand =
+  | 'minimize'
+  | 'toggleMaximize'
+  | 'close'
+  | 'reload'
+  | 'toggleDevTools'
+  | 'zoomIn'
+  | 'zoomOut'
+  | 'zoomReset'
+  | 'undo'
+  | 'redo'
+  | 'cut'
+  | 'copy'
+  | 'paste'
+  | 'selectAll'
+
+export interface WindowState {
+  maximized: boolean
+}
+
 export interface HostSnapshot {
   projects: Project[]
   sessions: Session[]
@@ -94,6 +114,10 @@ export interface PictorBridge {
   removeSection(id: string): Promise<void>
 
   putSetting(key: string, value: JsonValue): Promise<void>
+
+  windowCommand(command: WindowCommand): Promise<void>
+  getWindowState(): Promise<WindowState>
+  onWindowState(listener: (state: WindowState) => void): () => void
 
   listCommands(): Promise<CommandDescriptor[]>
   executeCommand(id: string, input?: JsonValue): Promise<unknown>

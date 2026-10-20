@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -34,6 +34,8 @@ let disposeWorkspace: (() => Promise<void>) | null = null
 
 void app.whenReady().then(async () => {
   app.setAppUserModelId('dev.pictor.desktop')
+  // The renderer owns the whole title bar, including its menus.
+  Menu.setApplicationMenu(null)
 
   const workspace = await startWorkspace()
   if (workspace === null) {
@@ -210,6 +212,8 @@ function createWindow(): void {
     title: 'Pictor',
     backgroundColor: '#0f1115',
     show: false,
+    // The renderer draws its own title bar and window buttons.
+    frame: false,
     webPreferences: {
       preload: fileURLToPath(new URL('../preload/index.cjs', import.meta.url)),
       contextIsolation: true,
@@ -227,6 +231,14 @@ function createWindow(): void {
     }
     mainWindow?.show()
   })
+  const sendWindowState = (): void => {
+    mainWindow?.webContents.send('pictor:window.state', {
+      maximized: mainWindow.isMaximized(),
+    })
+  }
+  mainWindow.on('maximize', sendWindowState)
+  mainWindow.on('unmaximize', sendWindowState)
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -244,7 +256,87 @@ function createWindow(): void {
   }
 }
 
+const WINDOW_COMMANDS = [
+  'minimize',
+  'toggleMaximize',
+  'close',
+  'reload',
+  'toggleDevTools',
+  'zoomIn',
+  'zoomOut',
+  'zoomReset',
+  'undo',
+  'redo',
+  'cut',
+  'copy',
+  'paste',
+  'selectAll',
+] as const
+
+type WindowCommand = (typeof WINDOW_COMMANDS)[number]
+
+function isWindowCommand(value: unknown): value is WindowCommand {
+  return typeof value === 'string' && (WINDOW_COMMANDS as readonly string[]).includes(value)
+}
+
 function registerIpc(workspace: Workspace): void {
+  ipcMain.handle('pictor:window.command', (event, command: unknown) => {
+    if (!isWindowCommand(command)) throw new Error('unknown window command')
+
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const contents = event.sender
+
+    switch (command) {
+      case 'minimize':
+        window?.minimize()
+        break
+      case 'toggleMaximize':
+        if (window?.isMaximized() === true) window.unmaximize()
+        else window?.maximize()
+        break
+      case 'close':
+        window?.close()
+        break
+      case 'reload':
+        contents.reload()
+        break
+      case 'toggleDevTools':
+        contents.toggleDevTools()
+        break
+      case 'zoomIn':
+        contents.setZoomLevel(contents.getZoomLevel() + 0.5)
+        break
+      case 'zoomOut':
+        contents.setZoomLevel(contents.getZoomLevel() - 0.5)
+        break
+      case 'zoomReset':
+        contents.setZoomLevel(0)
+        break
+      case 'undo':
+        contents.undo()
+        break
+      case 'redo':
+        contents.redo()
+        break
+      case 'cut':
+        contents.cut()
+        break
+      case 'copy':
+        contents.copy()
+        break
+      case 'paste':
+        contents.paste()
+        break
+      case 'selectAll':
+        contents.selectAll()
+        break
+    }
+  })
+
+  ipcMain.handle('pictor:window.state', (event) => ({
+    maximized: BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false,
+  }))
+
   ipcMain.handle('pictor:snapshot', async (): Promise<HostSnapshot> => {
     // The renderer can refresh while the app is quitting; answer with an empty
     // snapshot instead of surfacing a disposed-client error.

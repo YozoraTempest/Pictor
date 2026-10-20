@@ -38,6 +38,18 @@ const bridge: PictorBridge = {
 
   putSetting: (key, value) => ipcRenderer.invoke('pictor:settings.put', key, value),
 
+  windowCommand: (command) => ipcRenderer.invoke('pictor:window.command', command),
+  getWindowState: () => ipcRenderer.invoke('pictor:window.state'),
+  onWindowState: (listener) => {
+    const handler = (_event: unknown, payload: unknown): void => {
+      listener(payload as Parameters<typeof listener>[0])
+    }
+    ipcRenderer.on('pictor:window.state', handler)
+    return () => {
+      ipcRenderer.removeListener('pictor:window.state', handler)
+    }
+  },
+
   listCommands: () => ipcRenderer.invoke('pictor:commands.list'),
   executeCommand: (id, input) =>
     ipcRenderer.invoke('pictor:commands.execute', id, input as JsonValue | undefined),
