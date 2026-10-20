@@ -14,8 +14,12 @@ pub struct Project {
     pub id: String,
     pub path: String,
     pub name: String,
+    /// Custom section the project is filed under; `None` means the built-in
+    /// "projects" section.
+    pub section_id: Option<String>,
     /// Extra folders the agent may work in, beyond the primary `path`.
     pub folders: Vec<String>,
+    pub position: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -95,16 +99,19 @@ fn load_session_sections(connection: &Connection) -> Result<HashMap<String, Vec<
 pub fn list_projects(connection: &Connection) -> Result<Vec<Project>, HostError> {
     let mut folders = load_folders(connection)?;
     let mut statement = connection.prepare(
-        "SELECT id, path, name, created_at, updated_at FROM projects ORDER BY name COLLATE NOCASE",
+        "SELECT id, path, name, section_id, position, created_at, updated_at
+         FROM projects ORDER BY position, name COLLATE NOCASE",
     )?;
     let rows = statement.query_map([], |row| {
         Ok(Project {
             id: row.get(0)?,
             path: row.get(1)?,
             name: row.get(2)?,
+            section_id: row.get(3)?,
             folders: Vec::new(),
-            created_at: row.get(3)?,
-            updated_at: row.get(4)?,
+            position: row.get(4)?,
+            created_at: row.get(5)?,
+            updated_at: row.get(6)?,
         })
     })?;
 
@@ -145,11 +152,18 @@ pub fn add_project(
         .to_string();
 
     let now = now_millis();
+    let next_position: i64 =
+        connection.query_row("SELECT COALESCE(MAX(position), -1) + 1 FROM projects", [], |row| {
+            row.get(0)
+        })?;
+
     let project = Project {
         id: uuid::Uuid::new_v4().to_string(),
         path: canonical_path,
         name: resolved_name,
+        section_id: None,
         folders: Vec::new(),
+        position: next_position,
         created_at: now,
         updated_at: now,
     };
@@ -160,6 +174,50 @@ pub fn add_project(
     )?;
 
     Ok(project)
+}
+
+pub fn set_project_section(
+    connection: &Connection,
+    id: &str,
+    section_id: Option<&str>,
+) -> Result<Project, HostError> {
+    if let Some(section_id) = section_id {
+        let found: Option<String> = connection
+            .query_row(
+                "SELECT id FROM sections WHERE id = ?1",
+                params![section_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let builtin = matches!(section_id, "pinned" | "projects" | "recent");
+        if found.is_none() && !builtin {
+            return Err(HostError::NotFound(format!("section {section_id}")));
+        }
+    }
+
+    let updated = connection.execute(
+        "UPDATE projects SET section_id = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, section_id, now_millis()],
+    )?;
+    if updated == 0 {
+        return Err(HostError::NotFound(format!("project {id}")));
+    }
+
+    list_projects(connection)?
+        .into_iter()
+        .find(|project| project.id == id)
+        .ok_or_else(|| HostError::NotFound(format!("project {id}")))
+}
+
+/// Applies a new order to custom sections; the index becomes the position.
+pub fn reorder_sections(connection: &Connection, ids: &[String]) -> Result<Vec<Section>, HostError> {
+    for (index, id) in ids.iter().enumerate() {
+        connection.execute(
+            "UPDATE sections SET position = ?2 WHERE id = ?1",
+            params![id, index as i64],
+        )?;
+    }
+    list_sections(connection)
 }
 
 pub fn remove_project(connection: &Connection, id: &str) -> Result<(), HostError> {

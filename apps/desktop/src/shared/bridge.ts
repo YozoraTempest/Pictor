@@ -74,6 +74,8 @@ export interface PictorBridge {
   getSnapshot(): Promise<HostSnapshot>
   addProject(path: string, name?: string): Promise<Project>
   removeProject(id: string): Promise<void>
+  setProjectSection(id: string, sectionId: string | null): Promise<Project>
+  reorderSections(ids: string[]): Promise<Section[]>
   addProjectFolder(id: string, path: string): Promise<string[]>
   removeProjectFolder(id: string, path: string): Promise<string[]>
   createSession(projectId: string | null, title: string): Promise<Session>

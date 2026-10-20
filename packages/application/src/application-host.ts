@@ -7,6 +7,8 @@ export interface ApplicationStore {
   listProjects(): Promise<Project[]>
   addProject(path: string, name?: string): Promise<Project>
   removeProject(id: string): Promise<void>
+  setProjectSection(id: string, sectionId: string | null): Promise<Project>
+  reorderSections(ids: string[]): Promise<Section[]>
   addProjectFolder(id: string, path: string): Promise<string[]>
   removeProjectFolder(id: string, path: string): Promise<string[]>
   listSessions(projectId?: string): Promise<Session[]>
@@ -108,6 +110,36 @@ export class ApplicationHost {
         await this.#store.removeProject(id)
         this.events.emit('project.removed', { id })
         return { removed: id }
+      },
+    })
+
+    this.commands.register<void, Project>({
+      id: 'project.setSection',
+      description: 'Move a project into a section, or back to the default one',
+      handler: async (input) => {
+        const params = input as { id?: unknown; sectionId?: unknown } | undefined
+        if (
+          params?.sectionId !== undefined &&
+          params.sectionId !== null &&
+          typeof params.sectionId !== 'string'
+        ) {
+          throw new Error('project.setSection sectionId must be a string or null')
+        }
+        const sectionId = typeof params?.sectionId === 'string' ? params.sectionId : null
+        return this.#store.setProjectSection(requireId(input, 'project.setSection'), sectionId)
+      },
+    })
+
+    this.commands.register<void, Section[]>({
+      id: 'section.reorder',
+      description: 'Persist a new order for the custom sections',
+      handler: async (input) => {
+        const params = input as { ids?: unknown } | undefined
+        if (!Array.isArray(params?.ids)) {
+          throw new Error('section.reorder requires an ids array')
+        }
+        const ids = params.ids.filter((value): value is string => typeof value === 'string')
+        return this.#store.reorderSections(ids)
       },
     })
 

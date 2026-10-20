@@ -12,6 +12,9 @@ const bridge: PictorBridge = {
   getSnapshot: () => ipcRenderer.invoke('pictor:snapshot'),
   addProject: (path, name) => ipcRenderer.invoke('pictor:project.add', path, name),
   removeProject: (id) => ipcRenderer.invoke('pictor:project.remove', id),
+  setProjectSection: (id, sectionId) =>
+    ipcRenderer.invoke('pictor:project.setSection', id, sectionId),
+  reorderSections: (ids) => ipcRenderer.invoke('pictor:sections.reorder', ids),
   addProjectFolder: (id, path) => ipcRenderer.invoke('pictor:project.addFolder', id, path),
   removeProjectFolder: (id, path) => ipcRenderer.invoke('pictor:project.removeFolder', id, path),
   createSession: (projectId, title) =>

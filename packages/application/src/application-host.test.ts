@@ -11,6 +11,8 @@ function project(overrides: Partial<Project> = {}): Project {
     path: '/tmp/demo',
     name: 'Demo',
     folders: [],
+    sectionId: null,
+    position: 0,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -50,6 +52,21 @@ class FakeStore implements ApplicationStore {
 
   async removeProject(id: string): Promise<void> {
     this.projects = this.projects.filter((entry) => entry.id !== id)
+  }
+
+  async setProjectSection(id: string, sectionId: string | null): Promise<Project> {
+    const target = this.projects.find((entry) => entry.id === id)
+    if (target === undefined) throw new Error(`project ${id}`)
+    target.sectionId = sectionId
+    return target
+  }
+
+  async reorderSections(ids: string[]): Promise<Section[]> {
+    this.sections = this.sections.map((entry) => {
+      const index = ids.indexOf(entry.id)
+      return index === -1 ? entry : { ...entry, position: index }
+    })
+    return this.sections
   }
 
   async addProjectFolder(id: string, path: string): Promise<string[]> {
@@ -154,9 +171,11 @@ describe('ApplicationHost', () => {
       'project.addFolder',
       'project.remove',
       'project.removeFolder',
+      'project.setSection',
       'section.create',
       'section.remove',
       'section.rename',
+      'section.reorder',
       'session.archiveMany',
       'session.create',
       'session.delete',

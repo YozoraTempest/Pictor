@@ -241,6 +241,16 @@ fn dispatch(
             )?)
             .map_err(to_internal)?)
         }
+        "project.setSection" => {
+            let id = required_str(&params, "id")?;
+            let section_id = optional_str(&params, "sectionId");
+            Ok(serde_json::to_value(store::set_project_section(
+                connection,
+                &id,
+                section_id.as_deref(),
+            )?)
+            .map_err(to_internal)?)
+        }
         "session.setArchived" => {
             let id = required_str(&params, "id")?;
             let archived = params
@@ -279,6 +289,21 @@ fn dispatch(
             let id = required_str(&params, "id")?;
             let name = required_str(&params, "name")?;
             Ok(serde_json::to_value(store::rename_section(connection, &id, &name)?)
+                .map_err(to_internal)?)
+        }
+        "section.reorder" => {
+            let ids: Vec<String> = params
+                .get("ids")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(serde_json::to_value(store::reorder_sections(connection, &ids)?)
                 .map_err(to_internal)?)
         }
         "section.remove" => {

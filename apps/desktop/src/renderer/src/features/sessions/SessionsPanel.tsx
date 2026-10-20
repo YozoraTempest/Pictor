@@ -22,6 +22,7 @@ import { cn } from '../../lib/cn.js'
 import {
   collectSectionSessionIds,
   groupSessions,
+  PROJECTS_ID,
   type ProjectNode,
   type SectionNode,
   type SectionSort,
@@ -31,6 +32,13 @@ function newSessionTitle(): string {
   const now = new Date()
   return `新会话 ${now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
 }
+
+type Dragged =
+  | { kind: 'section'; id: string }
+  | { kind: 'project'; id: string; sectionId: string | null }
+  | { kind: 'session'; id: string; sectionId: string | null }
+
+const DRAG_TYPE = 'application/x-pictor-item'
 
 export function SessionsPanel(): React.JSX.Element {
   const sessions = useWorkspaceStore((state) => state.sessions)
@@ -47,15 +55,20 @@ export function SessionsPanel(): React.JSX.Element {
   const setSessionPinned = useWorkspaceStore((state) => state.setSessionPinned)
   const setSessionArchived = useWorkspaceStore((state) => state.setSessionArchived)
   const setSessionSections = useWorkspaceStore((state) => state.setSessionSections)
+  const setSessionProject = useWorkspaceStore((state) => state.setSessionProject)
+  const setProjectSection = useWorkspaceStore((state) => state.setProjectSection)
   const archiveSessions = useWorkspaceStore((state) => state.archiveSessions)
   const createSection = useWorkspaceStore((state) => state.createSection)
   const renameSection = useWorkspaceStore((state) => state.renameSection)
   const removeSection = useWorkspaceStore((state) => state.removeSection)
   const removeProject = useWorkspaceStore((state) => state.removeProject)
   const setSectionSort = useWorkspaceStore((state) => state.setSectionSort)
+  const reorderSections = useWorkspaceStore((state) => state.reorderSections)
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null)
+  const [dragOver, setDragOver] = useState<string | null>(null)
+  const [dragging, setDragging] = useState<Dragged | null>(null)
 
   const nodes = useMemo(
     () => groupSessions({ sessions, projects, sections, exclusive, sorts }),
@@ -71,6 +84,58 @@ export function SessionsPanel(): React.JSX.Element {
     if (created !== null && sectionId !== null) {
       await setSessionSections(created.id, [sectionId])
     }
+  }
+
+  function beginDrag(event: React.DragEvent, payload: Dragged): void {
+    setDragging(payload)
+    event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(payload))
+    event.dataTransfer.effectAllowed = 'move'
+  }
+
+  function endDrag(): void {
+    setDragging(null)
+    setDragOver(null)
+  }
+
+  function readDrag(event: React.DragEvent): Dragged | null {
+    const raw = event.dataTransfer.getData(DRAG_TYPE)
+    if (raw.length === 0) return dragging
+    try {
+      return JSON.parse(raw) as Dragged
+    } catch {
+      return dragging
+    }
+  }
+
+  /** A session dropped on a section: pin it, tag it, or detach it from a project. */
+  async function dropSessionInSection(node: SectionNode, sessionId: string): Promise<void> {
+    if (node.kind === 'pinned') {
+      await setSessionPinned(sessionId, true)
+      return
+    }
+    if (node.kind === 'projects') {
+      await setSessionProject(sessionId, null)
+      return
+    }
+    if (node.kind === 'custom' && node.sectionId !== null) {
+      await setSessionSections(sessionId, [node.sectionId])
+    }
+  }
+
+  function reorderAround(targetId: string, draggedId: string): void {
+    const ids = sections
+      .slice()
+      .sort((a, b) => a.position - b.position)
+      .map((section) => section.id)
+      .filter((id) => id !== draggedId)
+
+    const index = ids.indexOf(targetId)
+    const next = [
+      ...ids.slice(0, index === -1 ? ids.length : index),
+      draggedId,
+      ...(index === -1 ? [] : ids.slice(index)),
+    ]
+    void reorderSections(next)
   }
 
   function sectionMenu(node: SectionNode): MenuEntry[] {
@@ -157,14 +222,51 @@ export function SessionsPanel(): React.JSX.Element {
           const isCollapsed = collapsed[node.id] === true
           const Chevron = isCollapsed ? ChevronRight : ChevronDown
           const isEditing = editing !== null && editing.id === node.sectionId
+          const isTarget = dragOver === node.id
 
           return (
             <div key={node.id} className="mb-0.5">
-              <div className="group/head flex items-center gap-0.5 rounded-md pr-0.5 hover:bg-surface-hover">
+              <div
+                onDragOver={(event) => {
+                  if (node.kind === 'archived' || node.kind === 'recent') return
+                  event.preventDefault()
+                  setDragOver(node.id)
+                }}
+                onDragLeave={() => setDragOver((current) => (current === node.id ? null : current))}
+                onDrop={(event) => {
+                  if (node.kind === 'archived' || node.kind === 'recent') return
+                  event.preventDefault()
+                  const dragged = readDrag(event)
+                  endDrag()
+                  if (dragged === null) return
+
+                  if (dragged.kind === 'section') {
+                    if (node.kind === 'custom') reorderAround(node.sectionId ?? '', dragged.id)
+                    return
+                  }
+                  if (dragged.kind === 'project') {
+                    void setProjectSection(
+                      dragged.id,
+                      node.kind === PROJECTS_ID ? null : node.sectionId,
+                    )
+                    return
+                  }
+                  void dropSessionInSection(node, dragged.id)
+                }}
+                className={cn(
+                  'group/head flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover',
+                  isTarget && 'ring-1 ring-accent/50',
+                )}
+              >
                 <button
                   type="button"
                   aria-expanded={!isCollapsed}
                   onClick={() => toggle(node.id)}
+                  draggable={node.kind === 'custom'}
+                  onDragStart={(event) =>
+                    beginDrag(event, { kind: 'section', id: node.sectionId ?? '' })
+                  }
+                  onDragEnd={endDrag}
                   className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left"
                 >
                   <Chevron className="size-3 shrink-0 text-faint" />
@@ -190,11 +292,10 @@ export function SessionsPanel(): React.JSX.Element {
                       {node.title}
                     </span>
                   )}
-                  <span className="ml-auto shrink-0 pr-1 text-2xs text-faint">{node.count}</span>
                 </button>
 
                 {!isEditing && node.kind !== 'archived' && (
-                  <>
+                  <div className="flex items-center opacity-0 transition-opacity group-hover/head:opacity-100 focus-within:opacity-100">
                     <Menu
                       label={`${node.title} 更多操作`}
                       trigger={<MoreHorizontal className="size-3.5" />}
@@ -208,7 +309,7 @@ export function SessionsPanel(): React.JSX.Element {
                     >
                       <Plus className="size-3.5" />
                     </IconButton>
-                  </>
+                  </div>
                 )}
               </div>
 
@@ -219,17 +320,30 @@ export function SessionsPanel(): React.JSX.Element {
                       <ProjectBlock
                         key={`${node.id}-${child.project.id}`}
                         node={child}
-                        sectionKey={node.id}
                         collapsed={collapsed}
                         onToggle={toggle}
                         selectedSessionId={selectedSessionId}
                         busy={busy}
+                        dragOver={dragOver}
+                        setDragOver={setDragOver}
+                        beginDrag={beginDrag}
+                        endDrag={endDrag}
+                        readDrag={readDrag}
                         menuItems={() => projectMenu(child.project, child)}
                         onCreate={() => void createIn(node.sectionId, child.project.id)}
                         onSelect={selectSession}
                         onPin={(session) => void setSessionPinned(session.id, !session.pinned)}
                         onArchive={(session) => void setSessionArchived(session.id, true)}
                         onDelete={(session) => void deleteSession(session.id)}
+                        onDropSession={(sessionId) =>
+                          void setSessionProject(sessionId, child.project.id)
+                        }
+                        onDropProject={(projectId) =>
+                          void setProjectSection(
+                            projectId,
+                            node.kind === PROJECTS_ID ? null : node.sectionId,
+                          )
+                        }
                       />
                     ) : (
                       <SessionRow
@@ -237,11 +351,19 @@ export function SessionsPanel(): React.JSX.Element {
                         session={child.session}
                         active={child.session.id === selectedSessionId}
                         busy={busy}
+                        sectionId={node.sectionId}
                         onSelect={() => selectSession(child.session.id)}
                         onPin={() => void setSessionPinned(child.session.id, !child.session.pinned)}
                         onArchive={() => void setSessionArchived(child.session.id, true)}
                         onDelete={() => void deleteSession(child.session.id)}
-                        indent={0}
+                        onDragStart={(event) =>
+                          beginDrag(event, {
+                            kind: 'session',
+                            id: child.session.id,
+                            sectionId: node.sectionId,
+                          })
+                        }
+                        onDragEnd={endDrag}
                       />
                     ),
                   )}
@@ -257,64 +379,106 @@ export function SessionsPanel(): React.JSX.Element {
 
 function ProjectBlock({
   node,
-  sectionKey,
   collapsed,
   onToggle,
   selectedSessionId,
   busy,
+  dragOver,
+  setDragOver,
+  beginDrag,
+  endDrag,
+  readDrag,
   menuItems,
   onCreate,
   onSelect,
   onPin,
   onArchive,
   onDelete,
+  onDropSession,
+  onDropProject,
 }: {
   node: ProjectNode
-  sectionKey: string
   collapsed: Record<string, boolean>
   onToggle: (key: string) => void
   selectedSessionId: string | null
   busy: boolean
+  dragOver: string | null
+  setDragOver: (value: string | null) => void
+  beginDrag: (event: React.DragEvent, payload: Dragged) => void
+  endDrag: () => void
+  readDrag: (event: React.DragEvent) => Dragged | null
   menuItems: () => MenuEntry[]
   onCreate: () => void
   onSelect: (id: string) => void
   onPin: (session: Session) => void
   onArchive: (session: Session) => void
   onDelete: (session: Session) => void
+  onDropSession: (sessionId: string) => void
+  onDropProject: (projectId: string) => void
 }): React.JSX.Element {
-  const key = `${sectionKey}-project-${node.project.id}`
+  const key = `project-${node.project.id}`
   const isCollapsed = collapsed[key] === true
   const Chevron = isCollapsed ? ChevronRight : ChevronDown
+  const isTarget = dragOver === key
 
   return (
     <div className="mb-0.5">
-      <div className="group/head flex items-center gap-0.5 rounded-md pr-0.5 hover:bg-surface-hover">
+      <div
+        onDragOver={(event) => {
+          event.preventDefault()
+          setDragOver(key)
+        }}
+        onDragLeave={() => setDragOver(null)}
+        onDrop={(event) => {
+          event.preventDefault()
+          const dragged = readDrag(event)
+          endDrag()
+          if (dragged === null) return
+          if (dragged.kind === 'session') onDropSession(dragged.id)
+          if (dragged.kind === 'project' && dragged.id !== node.project.id)
+            onDropProject(dragged.id)
+        }}
+        className={cn(
+          'group/head flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover',
+          isTarget && 'ring-1 ring-accent/50',
+        )}
+      >
         <button
           type="button"
           aria-expanded={!isCollapsed}
           onClick={() => onToggle(key)}
           title={node.project.path}
+          draggable
+          onDragStart={(event) =>
+            beginDrag(event, {
+              kind: 'project',
+              id: node.project.id,
+              sectionId: node.project.sectionId,
+            })
+          }
+          onDragEnd={endDrag}
           className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left"
         >
           <Chevron className="size-3 shrink-0 text-faint" />
           <FolderGit2 className="size-3.5 shrink-0 text-faint" />
           <span className="truncate text-xs text-muted">{node.project.name}</span>
-          <span className="ml-auto shrink-0 pr-1 text-2xs text-faint">{node.sessions.length}</span>
         </button>
 
-        <Menu
-          label={`${node.project.name} 更多操作`}
-          trigger={<MoreHorizontal className="size-3.5" />}
-          items={menuItems()}
-        />
-        <IconButton
-          label={`在${node.project.name}下新建会话`}
-          className="size-6"
-          disabled={busy}
-          onClick={onCreate}
-        >
-          <Plus className="size-3.5" />
-        </IconButton>
+        <div className="flex items-center opacity-0 transition-opacity group-hover/head:opacity-100 focus-within:opacity-100">
+          <Menu
+            label={`${node.project.name} 更多操作`}
+            trigger={<MoreHorizontal className="size-3.5" />}
+            items={menuItems()}
+          />
+          <IconButton
+            label={`在${node.project.name}下新建会话`}
+            className="size-6"
+            disabled={busy}
+            onClick={onCreate}
+          >
+            <Plus className="size-3.5" />
+          </IconButton>
+        </div>
       </div>
 
       {!isCollapsed && (
@@ -328,11 +492,19 @@ function ProjectBlock({
                 session={session}
                 active={session.id === selectedSessionId}
                 busy={busy}
+                sectionId={node.project.sectionId}
                 onSelect={() => onSelect(session.id)}
                 onPin={() => onPin(session)}
                 onArchive={() => onArchive(session)}
                 onDelete={() => onDelete(session)}
-                indent={0}
+                onDragStart={(event) =>
+                  beginDrag(event, {
+                    kind: 'session',
+                    id: session.id,
+                    sectionId: node.project.sectionId,
+                  })
+                }
+                onDragEnd={endDrag}
               />
             ))
           )}
@@ -346,20 +518,24 @@ function SessionRow({
   session,
   active,
   busy,
+  sectionId,
   onSelect,
   onPin,
   onArchive,
   onDelete,
-  indent,
+  onDragStart,
+  onDragEnd,
 }: {
   session: Session
   active: boolean
   busy: boolean
+  sectionId: string | null
   onSelect: () => void
   onPin: () => void
   onArchive: () => void
   onDelete: () => void
-  indent: number
+  onDragStart: (event: React.DragEvent) => void
+  onDragEnd: () => void
 }): React.JSX.Element {
   return (
     <div className="group/row relative">
@@ -367,9 +543,12 @@ function SessionRow({
         type="button"
         onClick={onSelect}
         title={session.title}
-        style={{ paddingLeft: `${String(8 + indent * 4)}px` }}
+        draggable
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        data-section={sectionId ?? ''}
         className={cn(
-          'flex w-full items-center gap-2 rounded-md py-1.5 pr-14 text-left text-xs transition-colors duration-150',
+          'flex w-full items-center gap-2 rounded-md py-1.5 pr-12 pl-2 text-left text-xs transition-colors duration-150',
           active
             ? 'bg-surface-raised text-text'
             : 'text-muted hover:bg-surface-hover hover:text-text',
@@ -377,7 +556,6 @@ function SessionRow({
       >
         <MessageSquare className={cn('size-3.5 shrink-0', active ? 'text-accent' : 'text-faint')} />
         <span className="truncate">{session.title}</span>
-        {session.pinned && <Pin className="size-3 shrink-0 text-accent" />}
       </button>
 
       <div className="absolute top-0.5 right-0.5 flex items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100">

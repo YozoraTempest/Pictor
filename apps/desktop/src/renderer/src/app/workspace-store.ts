@@ -31,6 +31,8 @@ interface WorkspaceState {
   createSession: (title: string, projectId?: string | null) => Promise<Session | null>
   deleteSession: (id: string) => Promise<void>
   setSessionPinned: (id: string, pinned: boolean) => Promise<void>
+  setProjectSection: (id: string, sectionId: string | null) => Promise<void>
+  reorderSections: (ids: string[]) => Promise<void>
   setSessionArchived: (id: string, archived: boolean) => Promise<void>
   archiveSessions: (ids: string[]) => Promise<void>
   setSessionProject: (id: string, projectId: string | null) => Promise<void>
@@ -188,6 +190,20 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   async setSessionPinned(id, pinned) {
     await guard(set, async () => {
       await window.pictor.setSessionPinned(id, pinned)
+      await get().refresh()
+    })
+  },
+
+  async setProjectSection(id, sectionId) {
+    await guard(set, async () => {
+      await window.pictor.setProjectSection(id, sectionId)
+      await get().refresh()
+    })
+  },
+
+  async reorderSections(ids) {
+    await guard(set, async () => {
+      await window.pictor.reorderSections(ids)
       await get().refresh()
     })
   },

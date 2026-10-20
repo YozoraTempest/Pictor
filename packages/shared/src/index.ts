@@ -16,6 +16,9 @@ export interface Project {
   name: string
   /** Extra working directories registered on the project. */
   folders: string[]
+  /** Section the project is filed under; `null` = the built-in 项目 section. */
+  sectionId: string | null
+  position: number
   createdAt: number
   updatedAt: number
 }

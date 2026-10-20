@@ -25,6 +25,8 @@ export interface MetadataStore {
   listProjects(): Promise<Project[]>
   addProject(path: string, name?: string): Promise<Project>
   removeProject(id: string): Promise<void>
+  setProjectSection(id: string, sectionId: string | null): Promise<Project>
+  reorderSections(ids: string[]): Promise<Section[]>
   addProjectFolder(id: string, path: string): Promise<string[]>
   removeProjectFolder(id: string, path: string): Promise<string[]>
 
@@ -88,6 +90,14 @@ export class HostCoreClient implements MetadataStore {
 
   async removeProject(id: string): Promise<void> {
     await this.#rpc.request('project.remove', { id })
+  }
+
+  setProjectSection(id: string, sectionId: string | null): Promise<Project> {
+    return this.#rpc.request<Project>('project.setSection', { id, sectionId })
+  }
+
+  reorderSections(ids: string[]): Promise<Section[]> {
+    return this.#rpc.request<Section[]>('section.reorder', { ids })
   }
 
   addProjectFolder(id: string, path: string): Promise<string[]> {

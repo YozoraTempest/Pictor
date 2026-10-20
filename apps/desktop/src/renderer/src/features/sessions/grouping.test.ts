@@ -8,7 +8,16 @@ const NOW = 1_700_000_000_000
 const HOUR = 3_600_000
 
 function project(id: string, name: string): Project {
-  return { id, path: `/tmp/${id}`, name, folders: [], createdAt: 0, updatedAt: 0 }
+  return {
+    id,
+    path: `/tmp/${id}`,
+    name,
+    folders: [],
+    sectionId: null,
+    position: 0,
+    createdAt: 0,
+    updatedAt: 0,
+  }
 }
 
 function section(id: string, name: string, position = 0): Section {
@@ -109,7 +118,7 @@ describe('groupSessions (section → project → session)', () => {
 
     const pinned = nodes.find((node) => node.id === 'pinned')
     expect(pinned?.count).toBe(1)
-    expect(pinned?.children[0]?.kind).toBe('project')
+    expect(pinned?.children[0]?.kind).toBe('session')
   })
 
   it('drops pinned sessions from other sections when exclusive', () => {
@@ -145,7 +154,7 @@ describe('groupSessions (section → project → session)', () => {
     expect(design?.count).toBe(0)
   })
 
-  it('groups custom sections by project', () => {
+  it('lists tagged sessions flat inside a custom section', () => {
     const nodes = groupSessions({
       sessions: [session({ id: 'tagged', projectId: 'p2', sectionIds: ['sec1'] })],
       projects,
@@ -157,7 +166,43 @@ describe('groupSessions (section → project → session)', () => {
     const design = nodes.find((node) => node.title === 'Design')
     expect(design?.kind).toBe('custom')
     expect(design?.sectionId).toBe('sec1')
+    expect(design?.children[0]?.kind).toBe('session')
+  })
+
+  it('nests a project only in the section it is filed under', () => {
+    const filed = [project('p1', 'Alpha'), { ...project('p2', 'Beta'), sectionId: 'sec1' }]
+    const nodes = groupSessions({
+      sessions: [session({ id: 'a', projectId: 'p1' }), session({ id: 'b', projectId: 'p2' })],
+      projects: filed,
+      sections: [section('sec1', 'Design')],
+      exclusive: false,
+      sorts: {},
+    })
+
+    const design = nodes.find((node) => node.title === 'Design')
+    expect(design?.children).toHaveLength(1)
     expect(design?.children[0]?.kind).toBe('project')
+    if (design?.children[0]?.kind === 'project') {
+      expect(design.children[0].project.id).toBe('p2')
+      expect(design.children[0].sessions.map((entry) => entry.id)).toEqual(['b'])
+    }
+
+    const projectsSection = nodes.find((node) => node.id === 'projects')
+    // p2 is filed under Design, so its session shows up as a loose leaf here.
+    expect(projectsSection?.children.map((child) => child.kind)).toEqual(['project', 'session'])
+  })
+
+  it('keeps the recent section flat', () => {
+    const nodes = groupSessions({
+      sessions: [session({ id: 'a', projectId: 'p1' })],
+      projects,
+      sections: [],
+      exclusive: false,
+      sorts: {},
+    })
+
+    const recent = nodes.find((node) => node.id === 'recent')
+    expect(recent?.children.every((child) => child.kind === 'session')).toBe(true)
   })
 
   it('orders by creation time when asked', () => {

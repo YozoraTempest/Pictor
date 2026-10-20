@@ -37,7 +37,6 @@ export interface GroupingInput {
   exclusive: boolean
   /** Sort preference per section id (built-in ids and custom section ids). */
   sorts: Record<string, SectionSort>
-  now?: number
 }
 
 export const PINNED_ID = 'pinned'
@@ -45,56 +44,16 @@ export const PROJECTS_ID = 'projects'
 export const RECENT_ID = 'recent'
 export const ARCHIVED_ID = 'archived'
 
-const DAY = 86_400_000
-
-const RECENT_BUCKETS: Array<{ id: string; title: string }> = [
-  { id: 'today', title: '今天' },
-  { id: 'yesterday', title: '昨天' },
-  { id: 'week', title: '最近 7 天' },
-  { id: 'older', title: '更早' },
-]
+/** 最近 and 已归档 always stay flat, even if a project is filed there. */
+const FLAT_SECTIONS = new Set<SectionNode['kind']>(['recent', 'archived'])
 
 function sortSessions(sessions: Session[], sort: SectionSort): Session[] {
   const field = sort === 'created' ? 'createdAt' : 'updatedAt'
   return [...sessions].sort((a, b) => b[field] - a[field])
 }
 
-/** Folds a session list into project nodes plus leaves for sessions without one. */
-function foldByProject(
-  sessions: Session[],
-  projects: Project[],
-  sort: SectionSort,
-  includeEmptyProjects: boolean,
-): SectionChild[] {
-  const byProject = new Map<string, Session[]>()
-  const loose: Session[] = []
-
-  for (const session of sessions) {
-    const projectId = session.projectId
-    if (projectId === null || !projects.some((project) => project.id === projectId)) {
-      loose.push(session)
-      continue
-    }
-    const bucket = byProject.get(projectId) ?? []
-    bucket.push(session)
-    byProject.set(projectId, bucket)
-  }
-
-  const children: SectionChild[] = []
-  for (const project of projects) {
-    const bucket = byProject.get(project.id)
-    if (bucket === undefined) {
-      if (includeEmptyProjects) children.push({ kind: 'project', project, sessions: [] })
-      continue
-    }
-    children.push({ kind: 'project', project, sessions: sortSessions(bucket, sort) })
-  }
-
-  for (const session of sortSessions(loose, sort)) {
-    children.push({ kind: 'session', session })
-  }
-
-  return children
+function pickSort(sorts: Record<string, SectionSort>, key: string): SectionSort {
+  return sorts[key] === 'created' ? 'created' : 'updated'
 }
 
 function countChildren(children: SectionChild[]): number {
@@ -104,15 +63,12 @@ function countChildren(children: SectionChild[]): number {
   )
 }
 
-function pickSort(sorts: Record<string, SectionSort>, key: string): SectionSort {
-  return sorts[key] === 'created' ? 'created' : 'updated'
-}
-
 /**
  * Three-level sidebar model: section → project → session.
  *
- * `置顶` / `项目` / `最近` are always present so their menus and "+" actions are
- * reachable even when empty. Archived sessions never leak into other sections.
+ * Only 项目 and 置顶 nest sessions under projects; every other section lists
+ * sessions directly so scanning stays flat. A project is placed in a section by
+ * `project.sectionId` (`null` meaning the built-in 项目 section).
  */
 export function groupSessions(input: GroupingInput): SectionNode[] {
   const { sessions, projects, sections, exclusive, sorts } = input
@@ -122,73 +78,60 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
   const pinned = active.filter((session) => session.pinned)
   const rest = exclusive ? active.filter((session) => !session.pinned) : active
 
-  const nodes: SectionNode[] = []
+  function buildsSection(
+    id: string,
+    title: string,
+    kind: SectionNode['kind'],
+    sectionId: string | null,
+    candidates: Session[],
+    projectPool: Session[],
+  ): SectionNode {
+    const sort = pickSort(sorts, id)
+    const projectsInSection = FLAT_SECTIONS.has(kind)
+      ? []
+      : projects.filter((project) => (project.sectionId ?? null) === sectionId)
+    const nested = projectsInSection.length > 0
+    const knownProjects = new Set(projectsInSection.map((project) => project.id))
 
-  const pinnedSort = pickSort(sorts, PINNED_ID)
-  nodes.push({
-    id: PINNED_ID,
-    title: '置顶',
-    kind: 'pinned',
-    builtin: true,
-    sectionId: null,
-    sort: pinnedSort,
-    children: foldByProject(pinned, projects, pinnedSort, false),
-    count: pinned.length,
-  })
+    const children: SectionChild[] = []
 
-  const projectsSort = pickSort(sorts, PROJECTS_ID)
-  nodes.push({
-    id: PROJECTS_ID,
-    title: '项目',
-    kind: 'projects',
-    builtin: true,
-    sectionId: null,
-    sort: projectsSort,
-    children: foldByProject(rest, projects, projectsSort, true),
-    count: rest.length,
-  })
+    for (const project of projectsInSection) {
+      const own = projectPool.filter((session) => session.projectId === project.id)
+      children.push({ kind: 'project', project, sessions: sortSessions(own, sort) })
+    }
 
-  const recentSort = pickSort(sorts, RECENT_ID)
-  nodes.push({
-    id: RECENT_ID,
-    title: '最近',
-    kind: 'recent',
-    builtin: true,
-    sectionId: null,
-    sort: recentSort,
-    children: sortSessions(rest, recentSort).map((session) => ({ kind: 'session', session })),
-    count: rest.length,
-  })
+    for (const session of sortSessions(candidates, sort)) {
+      if (nested && session.projectId !== null && knownProjects.has(session.projectId)) continue
+      children.push({ kind: 'session', session })
+    }
+
+    return {
+      id,
+      title,
+      kind,
+      builtin: kind === 'pinned' || kind === 'projects' || kind === 'recent',
+      sectionId,
+      sort,
+      children,
+      count: nested ? countChildren(children) : candidates.length,
+    }
+  }
+
+  const nodes: SectionNode[] = [
+    buildsSection(PINNED_ID, '置顶', 'pinned', PINNED_ID, pinned, active),
+    buildsSection(PROJECTS_ID, '项目', 'projects', null, rest, rest),
+    buildsSection(RECENT_ID, '最近', 'recent', null, rest, rest),
+  ]
 
   for (const section of [...sections].sort((a, b) => a.position - b.position)) {
     const tagged = rest.filter((session) => session.sectionIds.includes(section.id))
-    const sort = pickSort(sorts, section.id)
-    const children = foldByProject(tagged, projects, sort, false)
-
-    nodes.push({
-      id: `section:${section.id}`,
-      title: section.name,
-      kind: 'custom',
-      builtin: false,
-      sectionId: section.id,
-      sort,
-      children,
-      count: countChildren(children),
-    })
+    nodes.push(
+      buildsSection(`section:${section.id}`, section.name, 'custom', section.id, tagged, active),
+    )
   }
 
   if (archived.length > 0) {
-    const sort = pickSort(sorts, ARCHIVED_ID)
-    nodes.push({
-      id: ARCHIVED_ID,
-      title: '已归档',
-      kind: 'archived',
-      builtin: false,
-      sectionId: null,
-      sort,
-      children: sortSessions(archived, sort).map((session) => ({ kind: 'session', session })),
-      count: archived.length,
-    })
+    nodes.push(buildsSection(ARCHIVED_ID, '已归档', 'archived', null, archived, []))
   }
 
   return nodes
@@ -196,15 +139,13 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
 
 /** Sessions reachable from a section, used by "archive this section". */
 export function collectSectionSessionIds(node: SectionNode): string[] {
-  const ids: string[] = []
+  const ids = new Set<string>()
   for (const child of node.children) {
     if (child.kind === 'project') {
-      for (const session of child.sessions) ids.push(session.id)
+      for (const session of child.sessions) ids.add(session.id)
     } else {
-      ids.push(child.session.id)
+      ids.add(child.session.id)
     }
   }
-  return ids
+  return [...ids]
 }
-
-export { RECENT_BUCKETS, DAY }

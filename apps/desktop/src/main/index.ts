@@ -345,6 +345,19 @@ function registerIpc(workspace: Workspace): void {
     return workspace.appHost.commands.execute('section.rename', { id, name })
   })
 
+  ipcMain.handle('pictor:sections.reorder', async (_event, ids: unknown) => {
+    if (!Array.isArray(ids)) throw new Error('ids must be an array')
+    return workspace.appHost.commands.execute('section.reorder', { ids })
+  })
+
+  ipcMain.handle('pictor:project.setSection', async (_event, id: unknown, sectionId: unknown) => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    if (sectionId !== null && typeof sectionId !== 'string') {
+      throw new Error('sectionId must be a string or null')
+    }
+    return workspace.appHost.commands.execute('project.setSection', { id, sectionId })
+  })
+
   ipcMain.handle('pictor:sections.remove', async (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('id must be a string')
     return workspace.appHost.commands.execute('section.remove', { id })
