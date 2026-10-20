@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 
 import { useUiStore } from '../app/ui-store.js'
-import { ProjectsPanel } from '../features/projects/ProjectsPanel.js'
 import { SessionsPanel } from '../features/sessions/SessionsPanel.js'
 import { NavRail } from './NavRail.js'
 import { RightPanel } from './RightPanel.js'
@@ -39,7 +38,6 @@ export function AppShell({
           >
             <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-surface/30">
               <SessionsPanel />
-              <ProjectsPanel />
             </aside>
 
             <main className="view-main min-h-0 min-w-0 overflow-hidden">{children}</main>

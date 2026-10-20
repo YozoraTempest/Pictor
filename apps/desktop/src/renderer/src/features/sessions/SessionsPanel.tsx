@@ -15,6 +15,7 @@ import type { Session } from '@pictor/shared'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Button, IconButton, Input } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
+import { ProjectsPanel } from '../projects/ProjectsPanel.js'
 import { groupSessions } from './grouping.js'
 
 export function SessionsPanel(): React.JSX.Element {
@@ -156,6 +157,8 @@ export function SessionsPanel(): React.JSX.Element {
             )
           })
         )}
+
+        <ProjectsPanel />
       </div>
     </section>
   )
