@@ -13,6 +13,9 @@ export interface TranscriptProps {
   onLoadOlder: () => void
 }
 
+/** Distance from the bottom that still counts as "following the stream". */
+const FOLLOW_THRESHOLD = 56
+
 export function Transcript({
   messages,
   hasMore,
@@ -21,33 +24,35 @@ export function Transcript({
 }: TranscriptProps): React.JSX.Element {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [pinned, setPinned] = useState(true)
-  // The observer callback outlives a render, so it reads the latest value here.
-  const pinnedRef = useRef(pinned)
-  pinnedRef.current = pinned
-  // Set when the user scrolls deliberately; cleared once they are back at the
-  // bottom or send a new message.
-  const userScrolledRef = useRef(false)
-  const touchYRef = useRef(0)
+  // Mirror of `pinned` for callbacks that run between renders. Reading the state
+  // there would act on a stale value: the resize observer fired right after an
+  // upward scroll still saw `true` and dragged the view back down, which is why
+  // scrolling up took several attempts.
+  const pinnedRef = useRef(true)
+  const lastTopRef = useRef(0)
   const observerRef = useRef<ResizeObserver | null>(null)
+
+  const pin = useCallback((next: boolean) => {
+    pinnedRef.current = next
+    setPinned(next)
+  }, [])
 
   const stickToBottom = useCallback(() => {
     const scroller = scrollerRef.current
     if (scroller === null) return
     scroller.scrollTop = scroller.scrollHeight
+    lastTopRef.current = scroller.scrollTop
   }, [])
 
-  // Layout effect: follow the stream before the frame is painted, otherwise the
-  // transcript visibly lags a chunk behind and reads as "stuck".
+  // Follow before paint, otherwise the transcript visibly lags a chunk behind.
   useLayoutEffect(() => {
-    if (pinned) stickToBottom()
-  }, [messages, pinned, stickToBottom])
+    if (pinnedRef.current) stickToBottom()
+  }, [messages, stickToBottom])
 
-  // Growing content (streamed text, code blocks, images) changes the height
-  // without changing the message count, so height changes must follow too.
-  //
-  // The observer is attached from a ref callback: the scroller only exists once
-  // the transcript actually renders, and an effect keyed on the message count
-  // would miss that transition and silently stop following.
+  // Streamed text, code blocks and images change the height without changing the
+  // message count, so height changes have to be followed too. The observer is
+  // attached from a ref callback because the scroller only exists once the
+  // transcript actually renders.
   const attachScroller = useCallback(
     (node: HTMLDivElement | null) => {
       scrollerRef.current = node
@@ -71,56 +76,35 @@ export function Transcript({
   const lastRole = messages.at(-1)?.role
   useEffect(() => {
     if (lastRole !== 'user') return
-    userScrolledRef.current = false
-    setPinned(true)
-  }, [lastRole, messages.length])
+    pin(true)
+    stickToBottom()
+  }, [lastRole, messages.length, pin, stickToBottom])
 
-  // Browsers move scrollTop by themselves (scroll anchoring) while streamed
-  // content grows, so a changed position is not evidence of user intent. Only
-  // explicit input counts.
   function handleScroll(): void {
     const scroller = scrollerRef.current
     if (scroller === null) return
 
-    const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+    const previous = lastTopRef.current
+    lastTopRef.current = scroller.scrollTop
 
-    if (!userScrolledRef.current) {
-      // Nobody took over: keep the newest content in view.
-      if (gap > 0) stickToBottom()
+    // Only a real upward move counts as the user taking over. Content growth and
+    // scroll anchoring never move scrollTop up, so this cannot fire by accident —
+    // unlike a distance check, which unpins the view every time the reply grows.
+    if (scroller.scrollTop < previous - 2) {
+      pin(false)
       return
     }
 
-    setPinned(gap < 56)
-    if (gap < 56) userScrolledRef.current = false
-  }
+    const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
 
-  function handleWheel(event: React.WheelEvent<HTMLDivElement>): void {
-    // Only an upward wheel means "I want to read history". A downward wheel is a
-    // request to keep following, so it must never unpin the view — treating any
-    // wheel as takeover is what made the scrollbar stop following.
-    if (event.deltaY < 0) {
-      userScrolledRef.current = true
+    if (!pinnedRef.current) {
+      // Back at the bottom, by wheel, scrollbar or keyboard: resume following.
+      if (gap < FOLLOW_THRESHOLD) pin(true)
       return
     }
 
-    const scroller = scrollerRef.current
-    if (scroller === null) return
-    const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
-    if (gap < 56) {
-      userScrolledRef.current = false
-      setPinned(true)
-    }
-  }
-
-  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>): void {
-    touchYRef.current = event.touches[0]?.clientY ?? 0
-  }
-
-  function handleTouchMove(event: React.TouchEvent<HTMLDivElement>): void {
-    const y = event.touches[0]?.clientY ?? 0
-    // Dragging the content down reveals older messages, same as an upward wheel.
-    if (y > touchYRef.current) userScrolledRef.current = true
-    touchYRef.current = y
+    // Still following: absorb height that landed after our last scroll.
+    if (gap > 0) stickToBottom()
   }
 
   if (loading && messages.length === 0) {
@@ -143,9 +127,6 @@ export function Transcript({
       <div
         ref={attachScroller}
         onScroll={handleScroll}
-        onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
         className="h-full overflow-y-auto"
         role="log"
         aria-live="polite"
@@ -174,8 +155,8 @@ export function Transcript({
         <button
           type="button"
           onClick={() => {
+            pin(true)
             stickToBottom()
-            setPinned(true)
           }}
           className="absolute right-4 bottom-3 inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-2xs text-muted shadow-popover transition-colors duration-150 hover:text-text"
         >
