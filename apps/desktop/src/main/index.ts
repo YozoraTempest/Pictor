@@ -292,6 +292,11 @@ function registerIpc(workspace: Workspace): void {
     return workspace.appHost.commands.execute('session.setArchived', { id, archived })
   })
 
+  ipcMain.handle('pictor:session.reorder', async (_event, ids: unknown) => {
+    if (!Array.isArray(ids)) throw new Error('ids must be an array')
+    return workspace.appHost.commands.execute('session.reorder', { ids })
+  })
+
   ipcMain.handle('pictor:session.archiveMany', async (_event, ids: unknown) => {
     if (!Array.isArray(ids)) throw new Error('ids must be an array')
     return workspace.appHost.commands.execute('session.archiveMany', { ids })

@@ -32,6 +32,7 @@ function session(overrides: Partial<Session> = {}): Session {
     piSessionId: null,
     pinned: false,
     archived: false,
+    position: 0,
     sectionIds: [],
     createdAt: NOW - HOUR,
     updatedAt: NOW - HOUR,
@@ -237,6 +238,24 @@ describe('groupSessions (section → project → session)', () => {
     const recent = nodes.find((node) => node.id === 'recent')
     const ids = recent?.children.map((child) => (child.kind === 'session' ? child.session.id : ''))
     expect(ids).toEqual(['fresh', 'stale'])
+  })
+
+  it('honours the manual order when a section is sorted by hand', () => {
+    const nodes = groupSessions({
+      sessions: [
+        session({ id: 'third', position: 2, updatedAt: NOW }),
+        session({ id: 'first', position: 0, updatedAt: NOW - 5 * HOUR }),
+        session({ id: 'second', position: 1, updatedAt: NOW - 2 * HOUR }),
+      ],
+      projects: [],
+      sections: [],
+      exclusive: false,
+      sorts: { recent: 'manual' },
+    })
+
+    const recent = nodes.find((node) => node.id === 'recent')
+    const ids = recent?.children.map((child) => (child.kind === 'session' ? child.session.id : ''))
+    expect(ids).toEqual(['first', 'second', 'third'])
   })
 
   it('collects every session id of a section for archive actions', () => {

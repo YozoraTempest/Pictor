@@ -6,7 +6,7 @@ use crate::error::HostError;
 
 /// Current on-disk schema version. Bump when `SCHEMA_V1` changes shape and add a
 /// forward migration step in `migrate`.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS projects (
@@ -102,6 +102,11 @@ ALTER TABLE projects ADD COLUMN section_id TEXT REFERENCES sections(id) ON DELET
 ALTER TABLE projects ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
 "#;
 
+/// v5 gives sessions a manual position so the sidebar can be reordered by hand.
+const SCHEMA_V5: &str = r#"
+ALTER TABLE sessions ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+"#;
+
 pub fn open(path: &Path) -> Result<Connection, HostError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -150,6 +155,10 @@ fn migrate(connection: &Connection) -> Result<(), HostError> {
 
     if version < 4 {
         connection.execute_batch(SCHEMA_V4)?;
+    }
+
+    if version < 5 {
+        connection.execute_batch(SCHEMA_V5)?;
     }
 
     connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;

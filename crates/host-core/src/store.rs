@@ -33,6 +33,8 @@ pub struct Session {
     pub pi_session_id: Option<String>,
     pub pinned: bool,
     pub archived: bool,
+    /// Manual sort key, used when a section is ordered by hand.
+    pub position: i64,
     /// Sections (user-defined tags) this session is filed under.
     pub section_ids: Vec<String>,
     pub created_at: i64,
@@ -416,7 +418,7 @@ pub fn list_sessions(connection: &Connection, project_id: Option<&str>) -> Resul
     match project_id {
         Some(project_id) => {
             let mut statement = connection.prepare(
-                "SELECT id, project_id, title, pi_session_id, pinned, archived, created_at, updated_at
+                "SELECT id, project_id, title, pi_session_id, pinned, archived, position, created_at, updated_at
                  FROM sessions WHERE project_id = ?1 ORDER BY updated_at DESC",
             )?;
             let rows = statement.query_map(params![project_id], map_session)?;
@@ -428,7 +430,7 @@ pub fn list_sessions(connection: &Connection, project_id: Option<&str>) -> Resul
         }
         None => {
             let mut statement = connection.prepare(
-                "SELECT id, project_id, title, pi_session_id, pinned, archived, created_at, updated_at
+                "SELECT id, project_id, title, pi_session_id, pinned, archived, position, created_at, updated_at
                  FROM sessions ORDER BY updated_at DESC",
             )?;
             let rows = statement.query_map([], map_session)?;
@@ -451,9 +453,10 @@ fn map_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
         pi_session_id: row.get(3)?,
         pinned: row.get::<_, i64>(4)? != 0,
         archived: row.get::<_, i64>(5)? != 0,
+        position: row.get(6)?,
         section_ids: Vec::new(),
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
     })
 }
 
@@ -479,6 +482,7 @@ pub fn create_session(
         pi_session_id: None,
         pinned: false,
         archived: false,
+        position: 0,
         section_ids: Vec::new(),
         created_at: now,
         updated_at: now,
@@ -514,7 +518,7 @@ pub fn get_session(connection: &Connection, id: &str) -> Result<Option<Session>,
     let mut sections = load_session_sections(connection)?;
     let mut session = connection
         .query_row(
-            "SELECT id, project_id, title, pi_session_id, pinned, archived, created_at, updated_at
+            "SELECT id, project_id, title, pi_session_id, pinned, archived, position, created_at, updated_at
              FROM sessions WHERE id = ?1",
             params![id],
             map_session,
@@ -574,6 +578,17 @@ pub fn set_session_archived(
     }
 
     get_session(connection, id)?.ok_or_else(|| HostError::NotFound(format!("session {id}")))
+}
+
+/// Applies a manual order to the given sessions; the index becomes the position.
+pub fn reorder_sessions(connection: &Connection, ids: &[String]) -> Result<usize, HostError> {
+    for (index, id) in ids.iter().enumerate() {
+        connection.execute(
+            "UPDATE sessions SET position = ?2 WHERE id = ?1",
+            params![id, index as i64],
+        )?;
+    }
+    Ok(ids.len())
 }
 
 /// Archives every session in `ids`; used by "archive this section".

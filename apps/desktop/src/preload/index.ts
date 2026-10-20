@@ -24,6 +24,7 @@ const bridge: PictorBridge = {
   setSessionArchived: (id, archived) =>
     ipcRenderer.invoke('pictor:session.setArchived', id, archived),
   archiveSessions: (ids) => ipcRenderer.invoke('pictor:session.archiveMany', ids),
+  reorderSessions: (ids) => ipcRenderer.invoke('pictor:session.reorder', ids),
   setSessionProject: (id, projectId) =>
     ipcRenderer.invoke('pictor:session.setProject', id, projectId),
   setSessionSections: (id, sectionIds) =>

@@ -1,7 +1,7 @@
 import type { Project, Section, Session } from '@pictor/shared'
 
 /** How sessions inside a section are ordered. */
-export type SectionSort = 'created' | 'updated'
+export type SectionSort = 'created' | 'updated' | 'manual'
 
 export interface SessionLeaf {
   kind: 'session'
@@ -48,12 +48,17 @@ export const ARCHIVED_ID = 'archived'
 const FLAT_SECTIONS = new Set<SectionNode['kind']>(['recent', 'archived'])
 
 function sortSessions(sessions: Session[], sort: SectionSort): Session[] {
+  if (sort === 'manual') {
+    return [...sessions].sort((a, b) => a.position - b.position || b.updatedAt - a.updatedAt)
+  }
+
   const field = sort === 'created' ? 'createdAt' : 'updatedAt'
   return [...sessions].sort((a, b) => b[field] - a[field])
 }
 
 function pickSort(sorts: Record<string, SectionSort>, key: string): SectionSort {
-  return sorts[key] === 'created' ? 'created' : 'updated'
+  const value = sorts[key]
+  return value === 'created' || value === 'manual' ? value : 'updated'
 }
 
 function countChildren(children: SectionChild[]): number {

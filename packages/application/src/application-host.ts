@@ -16,6 +16,7 @@ export interface ApplicationStore {
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
   setSessionArchived(id: string, archived: boolean): Promise<Session>
   archiveSessions(ids: string[]): Promise<number>
+  reorderSessions(ids: string[]): Promise<number>
   setSessionProject(id: string, projectId: string | null): Promise<Session>
   setSessionSections(id: string, sectionIds: string[]): Promise<Session>
   deleteSession(id: string): Promise<void>
@@ -224,6 +225,20 @@ export class ApplicationHost {
         )
         this.events.emit('session.updated', session)
         return session
+      },
+    })
+
+    this.commands.register<void, { reordered: number }>({
+      id: 'session.reorder',
+      description: 'Persist a manual order for the given sessions',
+      handler: async (input) => {
+        const params = input as { ids?: unknown } | undefined
+        if (!Array.isArray(params?.ids)) {
+          throw new Error('session.reorder requires an ids array')
+        }
+        const ids = params.ids.filter((value): value is string => typeof value === 'string')
+        const reordered = await this.#store.reorderSessions(ids)
+        return { reordered }
       },
     })
 

@@ -58,6 +58,7 @@ export function SessionsPanel(): React.JSX.Element {
   const setSessionProject = useWorkspaceStore((state) => state.setSessionProject)
   const setProjectSection = useWorkspaceStore((state) => state.setProjectSection)
   const archiveSessions = useWorkspaceStore((state) => state.archiveSessions)
+  const reorderSessions = useWorkspaceStore((state) => state.reorderSessions)
   const createSection = useWorkspaceStore((state) => state.createSection)
   const renameSection = useWorkspaceStore((state) => state.renameSection)
   const removeSection = useWorkspaceStore((state) => state.removeSection)
@@ -68,6 +69,7 @@ export function SessionsPanel(): React.JSX.Element {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
+  const [gapIndex, setGapIndex] = useState<number | null>(null)
   const [dragging, setDragging] = useState<Dragged | null>(null)
 
   const nodes = useMemo(
@@ -138,6 +140,72 @@ export function SessionsPanel(): React.JSX.Element {
     void reorderSections(next)
   }
 
+  const customSections = [...sections].sort((a, b) => a.position - b.position)
+  const draggingSection = dragging?.kind === 'section'
+
+  /** Drops the dragged section at `index` among the custom sections. */
+  function dropAtGap(index: number): void {
+    const dragged = dragging
+    setGapIndex(null)
+    endDrag()
+    if (dragged === null || dragged.kind !== 'section') return
+
+    const order = customSections.map((section) => section.id).filter((id) => id !== dragged.id)
+    order.splice(Math.min(index, order.length), 0, dragged.id)
+    void reorderSections(order)
+  }
+
+  /** Session ids of a section in the order they are rendered. */
+  function orderedSessionIds(node: SectionNode): string[] {
+    const ids: string[] = []
+    for (const child of node.children) {
+      if (child.kind === 'project') {
+        for (const session of child.sessions) ids.push(session.id)
+      } else {
+        ids.push(child.session.id)
+      }
+    }
+    return ids
+  }
+
+  /** Re-inserts a dragged session right above `targetId` and pins the order. */
+  async function dropSessionOn(
+    node: SectionNode,
+    draggedId: string,
+    targetId: string,
+  ): Promise<void> {
+    if (draggedId === targetId) return
+
+    const ids = orderedSessionIds(node).filter((id) => id !== draggedId)
+    const index = ids.indexOf(targetId)
+    ids.splice(index === -1 ? ids.length : index, 0, draggedId)
+
+    await reorderSessions(ids)
+    await setSectionSort(node.id, 'manual')
+  }
+
+  /** Sliver rendered between two sections; only while dragging a section. */
+  function gapElement(index: number): React.JSX.Element {
+    const active = gapIndex === index
+    return (
+      <div
+        role="separator"
+        aria-label="插入到此位置"
+        onDragOver={(event) => {
+          event.preventDefault()
+          setGapIndex(index)
+        }}
+        onDragLeave={() => setGapIndex((current) => (current === index ? null : current))}
+        onDrop={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          dropAtGap(index)
+        }}
+        className={cn('relative -my-0.5 h-2', active ? 'bg-accent/60' : 'bg-transparent')}
+      />
+    )
+  }
+
   function sectionMenu(node: SectionNode): MenuEntry[] {
     if (node.kind === 'archived') return []
 
@@ -154,6 +222,7 @@ export function SessionsPanel(): React.JSX.Element {
           checked: node.sort === 'updated',
           onSelect: () => pick('updated'),
         },
+        { label: '手动排序', checked: node.sort === 'manual', onSelect: () => pick('manual') },
       ]
     }
 
@@ -223,9 +292,16 @@ export function SessionsPanel(): React.JSX.Element {
           const Chevron = isCollapsed ? ChevronRight : ChevronDown
           const isEditing = editing !== null && editing.id === node.sectionId
           const isTarget = dragOver === node.id
+          const gapBefore =
+            node.kind === 'custom'
+              ? customSections.findIndex((section) => section.id === node.sectionId)
+              : node.kind === 'archived'
+                ? customSections.length
+                : -1
 
           return (
             <div key={node.id} className="mb-0.5">
+              {draggingSection && gapBefore >= 0 && gapElement(gapBefore)}
               <div
                 onDragOver={(event) => {
                   if (node.kind === 'archived' || node.kind === 'recent') return
@@ -344,6 +420,9 @@ export function SessionsPanel(): React.JSX.Element {
                             node.kind === PROJECTS_ID ? null : node.sectionId,
                           )
                         }
+                        onReorderSession={(draggedId, targetId) =>
+                          void dropSessionOn(node, draggedId, targetId)
+                        }
                       />
                     ) : (
                       <SessionRow
@@ -364,6 +443,10 @@ export function SessionsPanel(): React.JSX.Element {
                           })
                         }
                         onDragEnd={endDrag}
+                        readDrag={readDrag}
+                        onDropSession={(draggedId) =>
+                          void dropSessionOn(node, draggedId, child.session.id)
+                        }
                       />
                     ),
                   )}
@@ -372,6 +455,10 @@ export function SessionsPanel(): React.JSX.Element {
             </div>
           )
         })}
+
+        {draggingSection && nodes.every((node) => node.kind !== 'archived') && (
+          <div className="px-1">{gapElement(customSections.length)}</div>
+        )}
       </div>
     </section>
   )
@@ -396,6 +483,7 @@ function ProjectBlock({
   onDelete,
   onDropSession,
   onDropProject,
+  onReorderSession,
 }: {
   node: ProjectNode
   collapsed: Record<string, boolean>
@@ -415,6 +503,7 @@ function ProjectBlock({
   onDelete: (session: Session) => void
   onDropSession: (sessionId: string) => void
   onDropProject: (projectId: string) => void
+  onReorderSession: (draggedId: string, targetId: string) => void
 }): React.JSX.Element {
   const key = `project-${node.project.id}`
   const isCollapsed = collapsed[key] === true
@@ -505,6 +594,8 @@ function ProjectBlock({
                   })
                 }
                 onDragEnd={endDrag}
+                readDrag={readDrag}
+                onDropSession={(draggedId) => onReorderSession(draggedId, session.id)}
               />
             ))
           )}
@@ -525,6 +616,8 @@ function SessionRow({
   onDelete,
   onDragStart,
   onDragEnd,
+  readDrag,
+  onDropSession,
 }: {
   session: Session
   active: boolean
@@ -536,9 +629,27 @@ function SessionRow({
   onDelete: () => void
   onDragStart: (event: React.DragEvent) => void
   onDragEnd: () => void
+  readDrag: (event: React.DragEvent) => Dragged | null
+  onDropSession: (draggedId: string) => void
 }): React.JSX.Element {
+  const [over, setOver] = useState(false)
+
   return (
-    <div className="group/row relative">
+    <div
+      className={cn('group/row relative rounded-md', over && 'ring-1 ring-accent/50')}
+      onDragOver={(event) => {
+        event.preventDefault()
+        setOver(true)
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        const dragged = readDrag(event)
+        setOver(false)
+        if (dragged !== null && dragged.kind === 'session') onDropSession(dragged.id)
+      }}
+    >
       <button
         type="button"
         onClick={onSelect}

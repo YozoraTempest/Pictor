@@ -32,6 +32,8 @@ export interface Session {
   pinned: boolean
   /** Archived sessions stay in the database but leave the working list. */
   archived: boolean
+  /** Manual sort key, used when a section is ordered by hand. */
+  position: number
   /** Sections (user-defined tags) the session is filed under. */
   sectionIds: string[]
   createdAt: number

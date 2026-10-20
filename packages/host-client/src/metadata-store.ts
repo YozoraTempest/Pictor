@@ -37,6 +37,7 @@ export interface MetadataStore {
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
   setSessionArchived(id: string, archived: boolean): Promise<Session>
   archiveSessions(ids: string[]): Promise<number>
+  reorderSessions(ids: string[]): Promise<number>
   setSessionProject(id: string, projectId: string | null): Promise<Session>
   setSessionSections(id: string, sectionIds: string[]): Promise<Session>
   deleteSession(id: string): Promise<void>
@@ -133,6 +134,11 @@ export class HostCoreClient implements MetadataStore {
 
   setSessionArchived(id: string, archived: boolean): Promise<Session> {
     return this.#rpc.request<Session>('session.setArchived', { id, archived })
+  }
+
+  async reorderSessions(ids: string[]): Promise<number> {
+    const result = await this.#rpc.request<{ reordered: number }>('session.reorder', { ids })
+    return result.reordered
   }
 
   async archiveSessions(ids: string[]): Promise<number> {

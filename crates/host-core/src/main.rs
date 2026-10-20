@@ -262,6 +262,21 @@ fn dispatch(
             )?)
             .map_err(to_internal)?)
         }
+        "session.reorder" => {
+            let ids: Vec<String> = params
+                .get("ids")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let reordered = store::reorder_sessions(connection, &ids)?;
+            Ok(json!({ "reordered": reordered }))
+        }
         "session.archiveMany" => {
             let ids: Vec<String> = params
                 .get("ids")

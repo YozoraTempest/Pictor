@@ -35,6 +35,7 @@ interface WorkspaceState {
   reorderSections: (ids: string[]) => Promise<void>
   setSessionArchived: (id: string, archived: boolean) => Promise<void>
   archiveSessions: (ids: string[]) => Promise<void>
+  reorderSessions: (ids: string[]) => Promise<void>
   setSessionProject: (id: string, projectId: string | null) => Promise<void>
   setSessionSections: (id: string, sectionIds: string[]) => Promise<void>
   createSection: (name: string) => Promise<void>
@@ -211,6 +212,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   async setSessionArchived(id, archived) {
     await guard(set, async () => {
       await window.pictor.setSessionArchived(id, archived)
+      await get().refresh()
+    })
+  },
+
+  async reorderSessions(ids) {
+    await guard(set, async () => {
+      if (ids.length === 0) return
+      await window.pictor.reorderSessions(ids)
       await get().refresh()
     })
   },
