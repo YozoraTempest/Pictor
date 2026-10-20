@@ -21,6 +21,37 @@ interface ChatState {
   handleEvent: (event: ChatEvent) => void
 }
 
+/**
+ * Index of the newest row for `tool` that is still waiting for a result, or -1.
+ *
+ * Scans backwards because the newest row belongs to the current call: matching
+ * forwards let an older row (for example a blocked one) steal a later call's
+ * result, which leaves that card spinning forever.
+ */
+function findPendingToolRow(messages: readonly ChatMessage[], tool: string): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message === undefined) continue
+    if (message.role !== 'tool' || message.toolName !== tool) continue
+    if (message.text === '') return index
+    // The newest row for this tool is already resolved, so this call has no
+    // pending row: anything older belongs to a previous call.
+    return -1
+  }
+
+  return -1
+}
+
+/** Index of the newest row for `tool`, whatever its state, or -1. */
+function findLastToolRow(messages: readonly ChatMessage[], tool: string): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'tool' && message.toolName === tool) return index
+  }
+
+  return -1
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessionId: null,
   path: null,
@@ -135,17 +166,25 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (event.type === 'message.delta') {
       set((state) => {
         const last = state.messages.at(-1)
-        if (last !== undefined && last.id === `stream-${event.runId}`) {
+        const streamId = `stream-${event.runId}`
+
+        // Continue the newest assistant bubble when it is still the last row.
+        if (last !== undefined && last.role === 'assistant' && last.id.startsWith(streamId)) {
           return {
             messages: [...state.messages.slice(0, -1), { ...last, text: last.text + event.text }],
           }
         }
 
+        // A tool row landed in between, so this is a new assistant segment. It
+        // needs its own id: reusing the run id would duplicate a React key and
+        // the transcript would stop updating until it remounted.
+        const segment = state.messages.filter((message) => message.id.startsWith(streamId)).length
+
         return {
           messages: [
             ...state.messages,
             {
-              id: `stream-${event.runId}`,
+              id: `${streamId}-${segment}`,
               role: 'assistant',
               text: event.text,
               timestamp: Date.now(),
@@ -175,20 +214,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (event.type === 'tool.finished') {
       set((state) => {
         const messages = [...state.messages]
-        const index = messages.findIndex(
-          (message) =>
-            message.role === 'tool' &&
-            message.toolName === event.tool &&
-            (message.text === '' || message.blocked === true),
-        )
+        const pending = findPendingToolRow(messages, event.tool)
 
-        if (index >= 0) {
-          const existing = messages[index]
-          // A guarded call already has its verdict; Pi still reports the tool as
-          // finished, and overwriting the reason with a generic error would hide
-          // the only explanation the user gets.
-          if (existing !== undefined && existing.blocked !== true) {
-            messages[index] = {
+        if (pending >= 0) {
+          const existing = messages[pending]
+          if (existing !== undefined) {
+            messages[pending] = {
               ...existing,
               text: event.output.slice(0, 4000),
               isError: event.isError,
@@ -196,6 +227,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           }
           return { messages }
         }
+
+        // A guarded call already carries its verdict; Pi still reports a finish,
+        // and appending another row would show the same call twice.
+        const last = findLastToolRow(messages, event.tool)
+        if (last >= 0 && messages[last]?.blocked === true) return { messages }
 
         return {
           messages: [
@@ -219,10 +255,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         const messages = [...state.messages]
         // The start event usually lands first; reuse that row so one call never
         // shows up twice (once as a failure, once as a blocked call).
-        const index = messages.findIndex(
-          (message) =>
-            message.role === 'tool' && message.toolName === event.tool && message.text === '',
-        )
+        const index = findPendingToolRow(messages, event.tool)
 
         if (index >= 0) {
           const existing = messages[index]
@@ -255,9 +288,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return
     }
 
-    set({
+    // The run is over: any tool row still waiting for a result would spin
+    // forever, so close it with an explicit outcome.
+    set((state) => ({
       running: false,
       ...(event.reason === 'error' ? { error: event.message ?? 'run failed' } : {}),
-    })
+      messages: state.messages.map((message) =>
+        message.role === 'tool' && message.text === ''
+          ? { ...message, text: '运行结束时没有拿到结果', isError: true }
+          : message,
+      ),
+    }))
   },
 }))
