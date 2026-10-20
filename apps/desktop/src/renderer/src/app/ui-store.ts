@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type AppView = 'chat' | 'settings'
+export type AppView = 'home' | 'settings'
 
 interface UiState {
   view: AppView
@@ -10,7 +10,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>()((set) => ({
-  view: 'chat',
+  view: 'home',
   rightPanelOpen: window.matchMedia('(min-width: 1080px)').matches,
   setView: (view) => set({ view }),
   toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),

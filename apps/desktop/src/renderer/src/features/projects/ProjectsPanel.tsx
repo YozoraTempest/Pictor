@@ -1,7 +1,7 @@
 import { FolderGit2, Plus, X } from 'lucide-react'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
-import { Button, EmptyState, IconButton } from '../../components/ui/index.js'
+import { IconButton } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 
 export function ProjectsPanel(): React.JSX.Element {
@@ -13,8 +13,8 @@ export function ProjectsPanel(): React.JSX.Element {
   const removeProject = useWorkspaceStore((state) => state.removeProject)
 
   return (
-    <section className="flex min-h-0 flex-col border-b border-border">
-      <header className="flex items-center justify-between gap-2 px-3 py-2">
+    <section className="flex max-h-56 shrink-0 flex-col border-t border-border">
+      <header className="flex items-center justify-between gap-2 px-3 py-1.5">
         <h2 className="text-2xs font-semibold tracking-wider text-faint uppercase">项目</h2>
         <IconButton
           label="添加项目"
@@ -28,17 +28,15 @@ export function ProjectsPanel(): React.JSX.Element {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
         {projects.length === 0 ? (
-          <EmptyState
-            title="还没有项目"
-            description="添加一个本地目录，Agent 会在其中工作。"
-            action={
-              <Button size="sm" variant="secondary" onClick={() => void addProject()}>
-                添加项目
-              </Button>
-            }
-          />
+          <button
+            type="button"
+            onClick={() => void addProject()}
+            className="w-full rounded-md px-2 py-1.5 text-left text-2xs text-faint transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+          >
+            添加本地目录作为项目
+          </button>
         ) : (
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-px">
             {projects.map((project) => {
               const active = project.id === selectedProjectId
               return (
@@ -48,7 +46,7 @@ export function ProjectsPanel(): React.JSX.Element {
                     onClick={() => selectProject(project.id)}
                     title={project.path}
                     className={cn(
-                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors duration-150',
+                      'flex w-full items-center gap-2 rounded-md py-1.5 pr-7 pl-2 text-left text-xs transition-colors duration-150',
                       active
                         ? 'bg-surface-raised text-text'
                         : 'text-muted hover:bg-surface-hover hover:text-text',
@@ -62,7 +60,7 @@ export function ProjectsPanel(): React.JSX.Element {
 
                   <IconButton
                     label="移除项目"
-                    className="absolute top-1 right-1 size-6 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
+                    className="absolute top-0.5 right-0.5 size-6 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
                     disabled={busy}
                     onClick={() => void removeProject(project.id)}
                   >

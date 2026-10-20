@@ -53,7 +53,7 @@ export function App(): React.JSX.Element {
 
   return (
     <AppShell notification={notification}>
-      {view === 'chat' ? <ChatView /> : <SettingsView />}
+      {view === 'home' ? <ChatView /> : <SettingsView />}
     </AppShell>
   )
 }
