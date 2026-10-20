@@ -1,3 +1,5 @@
+import { stripBlockedPrefix } from '@pictor/shared'
+
 import { loadHistoryPage } from './history.js'
 import { openPiChat } from './sdk-bridge.js'
 import type { BridgeEvent, OpenedAgent, ToolInterceptor } from './sdk-bridge.js'
@@ -55,7 +57,9 @@ export class ChatService {
           sessionId,
           runId: this.#runId(),
           tool: input.tool,
-          reason: decision.reason ?? 'blocked by a tool guard',
+          // Strip the marker the main process added for the JSONL: the live card
+          // should read like a sentence, not like a log line.
+          reason: stripBlockedPrefix(decision.reason ?? 'blocked by a tool guard'),
         })
       }
 

@@ -1,6 +1,8 @@
 import { createReadStream, existsSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 
+import { isBlockedReason, stripBlockedPrefix } from '@pictor/shared'
+
 import type { ChatHistoryPage, ChatMessage } from './types.js'
 
 /** Projects Pi JSONL entries into display messages. */
@@ -78,13 +80,20 @@ function projectEntry(entry: unknown, index: number): ChatMessage | null {
   }
 
   if (role === 'toolResult') {
+    const text = extractText(message.content)
+    // A guard denial is recorded by Pi as an ordinary tool failure; the marker in
+    // the reason is the only thing that survives a reload, so it decides whether
+    // the row reads 已拦截 or 失败.
+    const blocked = isBlockedReason(text)
+
     return {
       id: `m${index}`,
       role: 'tool',
-      text: extractText(message.content),
+      text: blocked ? stripBlockedPrefix(text) : text,
       timestamp,
       toolName: typeof message.toolName === 'string' ? message.toolName : 'tool',
       isError: message.isError === true,
+      ...(blocked ? { blocked: true } : {}),
     }
   }
 

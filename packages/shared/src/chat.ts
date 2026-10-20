@@ -46,3 +46,23 @@ export type ChatEvent =
       reason: 'stop' | 'cancelled' | 'error'
       message?: string
     }
+
+/**
+ * Marker prepended to a guard's reason before it is handed to the agent.
+ *
+ * The JSONL is written by Pi and only records "this tool failed", so a denied
+ * call would look like an ordinary failure after a reload. Carrying a stable
+ * marker in the reason is what lets the projection tell the two apart — and it
+ * also tells the agent that a policy refused the call rather than the command
+ * being wrong.
+ */
+export const BLOCKED_REASON_PREFIX = '[pictor:blocked] '
+
+export function isBlockedReason(text: string): boolean {
+  return text.startsWith(BLOCKED_REASON_PREFIX)
+}
+
+/** Removes the marker for display; a plain reason is returned unchanged. */
+export function stripBlockedPrefix(text: string): string {
+  return text.startsWith(BLOCKED_REASON_PREFIX) ? text.slice(BLOCKED_REASON_PREFIX.length) : text
+}

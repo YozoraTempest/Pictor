@@ -18,7 +18,12 @@ import {
   type PanelContribution,
 } from '@pictor/plugin-sdk'
 import { PROVIDER_ID, readApiKey, readModelSettings, writeModelsJson } from '@pictor/model-config'
-import type { JsonValue, PluginRecord, Section } from '@pictor/shared'
+import {
+  BLOCKED_REASON_PREFIX,
+  type JsonValue,
+  type PluginRecord,
+  type Section,
+} from '@pictor/shared'
 
 import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
 import { ModelService } from './model-service.js'
@@ -222,7 +227,12 @@ async function startWorkspace(): Promise<Workspace | null> {
       const verdict = await evaluateToolGuards(toolGuards, { tool, args })
       if (!verdict.blocked) return undefined
       console.warn(`[tool-guard] blocked ${tool}: ${verdict.reason ?? 'no reason given'}`)
-      return { block: true, reason: verdict.reason ?? 'blocked by a tool guard' }
+      // The marker travels into Pi's JSONL, which is the only way a reloaded
+      // session can still tell "a guard refused this" from "the command failed".
+      return {
+        block: true,
+        reason: `${BLOCKED_REASON_PREFIX}${verdict.reason ?? 'blocked by a tool guard'}`,
+      }
     })
   }
 
