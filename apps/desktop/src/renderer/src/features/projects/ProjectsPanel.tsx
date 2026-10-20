@@ -1,5 +1,6 @@
-import { FolderGit2, Plus, X } from 'lucide-react'
+import { FolderGit2, MoreHorizontal, Plus, X } from 'lucide-react'
 
+import { useUiStore } from '../../app/ui-store.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { IconButton } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
@@ -11,19 +12,25 @@ export function ProjectsPanel(): React.JSX.Element {
   const selectProject = useWorkspaceStore((state) => state.selectProject)
   const addProject = useWorkspaceStore((state) => state.addProject)
   const removeProject = useWorkspaceStore((state) => state.removeProject)
+  const setView = useUiStore((state) => state.setView)
 
   return (
     <section className="flex max-h-56 shrink-0 flex-col border-t border-border">
       <header className="flex items-center justify-between gap-2 px-3 py-1.5">
         <h2 className="text-2xs font-semibold tracking-wider text-faint uppercase">项目</h2>
-        <IconButton
-          label="添加项目"
-          className="size-6"
-          disabled={busy}
-          onClick={() => void addProject()}
-        >
-          <Plus className="size-3.5" />
-        </IconButton>
+        <div className="flex items-center">
+          <IconButton label="项目管理" className="size-6" onClick={() => setView('settings')}>
+            <MoreHorizontal className="size-3.5" />
+          </IconButton>
+          <IconButton
+            label="添加项目"
+            className="size-6"
+            disabled={busy}
+            onClick={() => void addProject()}
+          >
+            <Plus className="size-3.5" />
+          </IconButton>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">

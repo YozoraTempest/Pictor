@@ -1,18 +1,21 @@
-import { ChevronDown, MessageSquare, Pin, PinOff, SquarePen, Trash2, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  MessageSquare,
+  Pin,
+  PinOff,
+  SquarePen,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import type { Session, SessionGrouping } from '@pictor/shared'
+import type { Session } from '@pictor/shared'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Button, IconButton, Input } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { groupSessions } from './grouping.js'
-
-const MODES: Array<{ id: SessionGrouping; label: string; title: string }> = [
-  { id: 'project', label: '项目', title: '按项目分组' },
-  { id: 'section', label: '分区', title: '按分区分组' },
-  { id: 'recent', label: '最近', title: '按更新时间分组' },
-]
 
 export function SessionsPanel(): React.JSX.Element {
   const sessions = useWorkspaceStore((state) => state.sessions)
@@ -30,12 +33,11 @@ export function SessionsPanel(): React.JSX.Element {
   const setSessionPinned = useWorkspaceStore((state) => state.setSessionPinned)
   const setSessionProject = useWorkspaceStore((state) => state.setSessionProject)
   const setSessionSections = useWorkspaceStore((state) => state.setSessionSections)
-  const setGrouping = useWorkspaceStore((state) => state.setGrouping)
-  const setGroupingExclusive = useWorkspaceStore((state) => state.setGroupingExclusive)
 
   const [creating, setCreating] = useState(false)
   const [title, setTitle] = useState('')
   const [menuId, setMenuId] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   const groups = useMemo(
     () => groupSessions({ sessions, projects, sections, grouping, exclusive }),
@@ -92,80 +94,67 @@ export function SessionsPanel(): React.JSX.Element {
         )}
       </div>
 
-      <div className="flex items-center gap-1 px-2 pb-1.5">
-        <div
-          className="flex items-center gap-0.5 rounded-md bg-surface/70 p-0.5"
-          role="tablist"
-          aria-label="分组方式"
-        >
-          {MODES.map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              role="tab"
-              aria-selected={grouping === mode.id}
-              title={mode.title}
-              onClick={() => void setGrouping(mode.id)}
-              className={cn(
-                'rounded-sm px-1.5 py-0.5 text-2xs transition-colors duration-150',
-                grouping === mode.id
-                  ? 'bg-surface-raised text-text'
-                  : 'text-faint hover:text-muted',
-              )}
-            >
-              {mode.label}
-            </button>
-          ))}
-        </div>
-
-        <IconButton
-          label={
-            exclusive ? '分组互斥：一个会话只出现一次' : '分组可重复：一个会话可出现在多个分组'
-          }
-          className={cn('ml-auto size-6', exclusive ? 'text-accent' : 'text-faint')}
-          onClick={() => void setGroupingExclusive(!exclusive)}
-        >
-          {exclusive ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}
-        </IconButton>
-      </div>
-
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
         {groups.length === 0 ? (
           <p className="px-2 py-3 text-2xs text-faint">还没有会话，点击上方「新聊天」开始。</p>
         ) : (
-          groups.map((group) => (
-            <div key={group.id} className="mb-1">
-              <h3 className="px-2 pt-1.5 pb-1 text-2xs font-semibold tracking-wider text-faint uppercase">
-                {group.title}
-              </h3>
+          groups.map((group) => {
+            const isCollapsed = collapsed[group.id] === true
+            const Chevron = isCollapsed ? ChevronRight : ChevronDown
 
-              <ul className="flex flex-col gap-px">
-                {group.sessions.map((session) => (
-                  <SessionRow
-                    key={`${group.id}-${session.id}`}
-                    session={session}
-                    active={session.id === selectedSessionId}
-                    menuOpen={menuId === `${group.id}:${session.id}`}
-                    busy={busy}
-                    projects={projects}
-                    sections={sections}
-                    onSelect={() => selectSession(session.id)}
-                    onToggleMenu={() =>
-                      setMenuId(
-                        menuId === `${group.id}:${session.id}` ? null : `${group.id}:${session.id}`,
-                      )
-                    }
-                    onPinToggle={() => void setSessionPinned(session.id, !session.pinned)}
-                    onProjectChange={(projectId) => void setSessionProject(session.id, projectId)}
-                    onSectionsChange={(sectionIds) =>
-                      void setSessionSections(session.id, sectionIds)
-                    }
-                    onDelete={() => void deleteSession(session.id)}
-                  />
-                ))}
-              </ul>
-            </div>
-          ))
+            return (
+              <div key={group.id} className="mb-0.5">
+                <button
+                  type="button"
+                  aria-expanded={!isCollapsed}
+                  onClick={() =>
+                    setCollapsed((current) => ({ ...current, [group.id]: !isCollapsed }))
+                  }
+                  className="group/head flex w-full items-center gap-1 rounded-md px-2 py-1 text-left transition-colors duration-150 hover:bg-surface-hover"
+                >
+                  <Chevron className="size-3 shrink-0 text-faint" />
+                  <span className="truncate text-2xs font-semibold tracking-wider text-faint uppercase">
+                    {group.title}
+                  </span>
+                  <span className="ml-auto shrink-0 text-2xs text-faint">
+                    {group.sessions.length}
+                  </span>
+                </button>
+
+                {!isCollapsed && (
+                  <ul className="flex flex-col gap-px">
+                    {group.sessions.map((session) => (
+                      <SessionRow
+                        key={`${group.id}-${session.id}`}
+                        session={session}
+                        active={session.id === selectedSessionId}
+                        menuOpen={menuId === `${group.id}:${session.id}`}
+                        busy={busy}
+                        projects={projects}
+                        sections={sections}
+                        onSelect={() => selectSession(session.id)}
+                        onToggleMenu={() =>
+                          setMenuId(
+                            menuId === `${group.id}:${session.id}`
+                              ? null
+                              : `${group.id}:${session.id}`,
+                          )
+                        }
+                        onPinToggle={() => void setSessionPinned(session.id, !session.pinned)}
+                        onProjectChange={(projectId) =>
+                          void setSessionProject(session.id, projectId)
+                        }
+                        onSectionsChange={(sectionIds) =>
+                          void setSessionSections(session.id, sectionIds)
+                        }
+                        onDelete={() => void deleteSession(session.id)}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })
         )}
       </div>
     </section>
@@ -209,7 +198,7 @@ function SessionRow({
           onClick={onSelect}
           title={session.title}
           className={cn(
-            'flex w-full items-center gap-2 rounded-md py-1.5 pr-14 pl-2 text-left text-xs transition-colors duration-150',
+            'flex w-full items-center gap-2 rounded-md py-1.5 pr-12 pl-2 text-left text-xs transition-colors duration-150',
             active
               ? 'bg-surface-raised text-text'
               : 'text-muted hover:bg-surface-hover hover:text-text',
