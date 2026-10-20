@@ -52,7 +52,6 @@ packages/application/  ApplicationHost, Command Engine, Profile lock, events
 packages/plugin-sdk/   Manifest, Module and Contribution contract
 packages/plugin-host/  Discovery, SemVer resolution, lifecycle, installer
 packages/agent-runtime/AgentRuntime contract, Pi adapter, JSONL projection
-plugins/hello-workbench/Bundled reference plugin
 ```
 
 ## How it fits together

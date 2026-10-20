@@ -209,12 +209,6 @@ importers:
 
   packages/shared: {}
 
-  plugins/hello-workbench:
-    dependencies:
-      '@pictor/plugin-sdk':
-        specifier: workspace:*
-        version: link:../../packages/plugin-sdk
-
 packages:
 
   '@anthropic-ai/sdk@0.129.0':

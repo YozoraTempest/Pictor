@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "pnpm build:host:debug && pnpm --filter @pictor/desktop dev",
     "build": "pnpm build:js && pnpm build:host",
-    "build:js": "pnpm --filter @pictor/hello-workbench build && pnpm --filter @pictor/desktop build",
+    "build:js": "pnpm --filter @pictor/desktop build",
     "build:host": "cargo build --release -p pictor-host-core",
     "build:host:debug": "cargo build -p pictor-host-core",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
