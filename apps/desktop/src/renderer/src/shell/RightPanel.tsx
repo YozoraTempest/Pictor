@@ -1,74 +1,31 @@
-import { useState } from 'react'
+import { Wrench, X } from 'lucide-react'
 
-import { useWorkspaceStore } from '../app/workspace-store.js'
-import { CommandsPanel } from '../features/commands/CommandsPanel.js'
-import { PluginsPanel } from '../features/plugins/PluginsPanel.js'
-import { cn } from '../lib/cn.js'
+import { useUiStore } from '../app/ui-store.js'
+import { IconButton } from '../components/ui/index.js'
 
-type Tab = 'plugins' | 'commands' | 'about'
-
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'plugins', label: '插件' },
-  { id: 'commands', label: '命令' },
-  { id: 'about', label: '关于' },
-]
-
+/**
+ * The right panel is an extension surface: built-in tools (browser, side chat)
+ * and plugin-provided views land here. Until those exist it states the intent
+ * rather than listing dead entries.
+ */
 export function RightPanel(): React.JSX.Element {
-  const [tab, setTab] = useState<Tab>('plugins')
-  const info = useWorkspaceStore((state) => state.info)
-  const report = useWorkspaceStore((state) => state.report)
+  const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
 
   return (
-    <aside className="min-h-0 overflow-hidden border-l border-border bg-surface/30">
-      <div className="flex h-full w-full flex-col">
-        <nav
-          role="tablist"
-          aria-label="侧栏"
-          className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2"
-        >
-          {TABS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === entry.id}
-              onClick={() => setTab(entry.id)}
-              className={cn(
-                'inline-flex h-6 items-center rounded-sm px-2 text-2xs transition-colors duration-150',
-                tab === entry.id ? 'bg-surface-raised text-text' : 'text-faint hover:text-muted',
-              )}
-            >
-              {entry.label}
-            </button>
-          ))}
-        </nav>
+    <aside className="flex min-h-0 flex-col overflow-hidden border-l border-border bg-surface/30">
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-border pr-2 pl-3">
+        <h2 className="text-2xs font-semibold tracking-wider text-faint uppercase">工具</h2>
+        <IconButton label="收起工具面板" className="size-7" onClick={toggleRightPanel}>
+          <X className="size-3.5" />
+        </IconButton>
+      </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {tab === 'plugins' && <PluginsPanel />}
-          {tab === 'commands' && <CommandsPanel />}
-          {tab === 'about' && (
-            <dl className="flex flex-col gap-2 p-3 text-2xs">
-              {[
-                ['版本', info?.version],
-                ['Electron', info?.electron],
-                ['Node', info?.node],
-                ['host-core', info?.hostCore],
-                ['已激活插件', report === null ? null : String(report.activated.length)],
-              ].map(([label, value]) => (
-                <div key={label} className="flex items-center justify-between gap-2">
-                  <dt className="text-faint">{label}</dt>
-                  <dd className="truncate font-mono text-muted">{value ?? '—'}</dd>
-                </div>
-              ))}
-              <div className="mt-1 flex flex-col gap-1">
-                <dt className="text-faint">数据库</dt>
-                <dd className="selectable break-all font-mono text-muted">
-                  {info?.database ?? '—'}
-                </dd>
-              </div>
-            </dl>
-          )}
-        </div>
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+        <Wrench className="size-4 text-faint" aria-hidden />
+        <p className="text-sm text-muted">还没有可用工具</p>
+        <p className="text-2xs leading-relaxed text-faint">
+          内置浏览器、侧边聊天与插件提供的工具视图都会出现在这里。
+        </p>
       </div>
     </aside>
   )

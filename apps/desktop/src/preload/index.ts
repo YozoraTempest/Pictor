@@ -1,7 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-import type { JsonValue } from '@pictor/shared'
-
 import type { PictorBridge } from '../shared/bridge.js'
 
 /**
@@ -49,10 +47,6 @@ const bridge: PictorBridge = {
       ipcRenderer.removeListener('pictor:window.state', handler)
     }
   },
-
-  listCommands: () => ipcRenderer.invoke('pictor:commands.list'),
-  executeCommand: (id, input) =>
-    ipcRenderer.invoke('pictor:commands.execute', id, input as JsonValue | undefined),
 
   listPlugins: () => ipcRenderer.invoke('pictor:plugins.list'),
   setPluginEnabled: (id, enabled) => ipcRenderer.invoke('pictor:plugins.setEnabled', id, enabled),

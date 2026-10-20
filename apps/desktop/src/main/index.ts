@@ -14,7 +14,7 @@ import {
 import { PROVIDER_ID, readApiKey, readModelSettings, writeModelsJson } from '@pictor/model-config'
 import type { JsonValue, PluginRecord, Section } from '@pictor/shared'
 
-import type { AppInfo, CommandDescriptor, HostSnapshot, PluginReport } from '../shared/bridge.js'
+import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
 import { ModelService } from './model-service.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -470,23 +470,6 @@ function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:pickDirectory', async (): Promise<string | null> => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     return result.canceled ? null : (result.filePaths[0] ?? null)
-  })
-
-  ipcMain.handle('pictor:commands.list', async (): Promise<CommandDescriptor[]> => {
-    return workspace.appHost.commands.list().map((command) => ({
-      ...command,
-      source:
-        command.id.includes('.') &&
-        !command.id.startsWith('project.') &&
-        !command.id.startsWith('session.')
-          ? 'plugin'
-          : 'core',
-    }))
-  })
-
-  ipcMain.handle('pictor:commands.execute', async (_event, id: unknown, input: unknown) => {
-    if (typeof id !== 'string') throw new Error('id must be a string')
-    return workspace.appHost.commands.execute(id, input as JsonValue)
   })
 
   ipcMain.handle('pictor:plugins.list', async (): Promise<PluginRecord[]> => {

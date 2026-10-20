@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 import type { PluginRecord, Project, Section, Session } from '@pictor/shared'
 
-import type { AppInfo, CommandDescriptor, PluginReport } from '../../../shared/bridge.js'
+import type { AppInfo, PluginReport } from '../../../shared/bridge.js'
 import type { SectionSort } from '../features/sessions/grouping.js'
 
 interface WorkspaceState {
@@ -10,7 +10,6 @@ interface WorkspaceState {
   sessions: Session[]
   sections: Section[]
   plugins: PluginRecord[]
-  commands: CommandDescriptor[]
   report: PluginReport | null
   info: AppInfo | null
   selectedProjectId: string | null
@@ -44,7 +43,6 @@ interface WorkspaceState {
   setSectionSort: (key: string, sort: SectionSort) => Promise<void>
   setGroupingExclusive: (exclusive: boolean) => Promise<void>
   setPluginEnabled: (id: string, enabled: boolean) => Promise<void>
-  runCommand: (id: string) => Promise<void>
   setNotice: (notice: string | null) => void
   setError: (error: string | null) => void
 }
@@ -78,7 +76,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   sessions: [],
   sections: [],
   plugins: [],
-  commands: [],
   report: null,
   info: null,
   selectedProjectId: null,
@@ -90,10 +87,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   notice: null,
 
   async refresh() {
-    const [snapshot, plugins, commands, report, info] = await Promise.all([
+    const [snapshot, plugins, report, info] = await Promise.all([
       window.pictor.getSnapshot(),
       window.pictor.listPlugins(),
-      window.pictor.listCommands(),
       window.pictor.pluginReport(),
       window.pictor.getAppInfo(),
     ])
@@ -115,7 +111,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       sessions: snapshot.sessions,
       sections: snapshot.sections,
       plugins,
-      commands,
       report,
       info,
       selectedProjectId: projectId,
@@ -281,13 +276,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     await guard(set, async () => {
       await window.pictor.setPluginEnabled(id, enabled)
       await get().refresh()
-    })
-  },
-
-  async runCommand(id) {
-    await guard(set, async () => {
-      const result = await window.pictor.executeCommand(id, {})
-      set({ notice: `${id} → ${JSON.stringify(result)}` })
     })
   },
 

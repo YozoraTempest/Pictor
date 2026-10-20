@@ -63,7 +63,7 @@ export function TitleBar(): React.JSX.Element {
   const viewMenu: MenuEntry[] = [
     { label: '首页', checked: view === 'home', onSelect: () => setView('home') },
     { label: '设置', checked: view === 'settings', onSelect: () => setView('settings') },
-    { label: '显示右侧面板', checked: rightPanelOpen, onSelect: toggleRightPanel },
+    { label: '显示工具面板', checked: rightPanelOpen, onSelect: toggleRightPanel },
     'separator',
     { label: '重新加载', onSelect: () => command('reload') },
     { label: '开发者工具', onSelect: () => command('toggleDevTools') },
@@ -139,7 +139,7 @@ export function TitleBar(): React.JSX.Element {
       {view === 'home' && (
         <button
           type="button"
-          aria-label={rightPanelOpen ? '收起右侧面板' : '展开右侧面板'}
+          aria-label={rightPanelOpen ? '收起工具面板' : '展开工具面板'}
           onClick={toggleRightPanel}
           className={cn(
             'app-no-drag grid size-7 place-items-center rounded-sm transition-colors duration-150 hover:bg-surface-hover',

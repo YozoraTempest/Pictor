@@ -50,12 +50,6 @@ export interface HostSnapshot {
   settings: SettingsMap
 }
 
-export interface CommandDescriptor {
-  id: string
-  description: string
-  source: 'core' | 'plugin'
-}
-
 export interface CcSwitchScanResult {
   available: boolean
   path: string
@@ -118,9 +112,6 @@ export interface PictorBridge {
   windowCommand(command: WindowCommand): Promise<void>
   getWindowState(): Promise<WindowState>
   onWindowState(listener: (state: WindowState) => void): () => void
-
-  listCommands(): Promise<CommandDescriptor[]>
-  executeCommand(id: string, input?: JsonValue): Promise<unknown>
 
   listPlugins(): Promise<PluginRecord[]>
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginRecord>
