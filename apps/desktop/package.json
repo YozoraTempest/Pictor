@@ -1,0 +1,21 @@
+{
+  "name": "@pictor/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "@pictor/agent-runtime": "workspace:*",
+    "@pictor/application": "workspace:*",
+    "@pictor/host-client": "workspace:*",
+    "@pictor/plugin-host": "workspace:*",
+    "@pictor/plugin-sdk": "workspace:*",
+    "@pictor/shared": "workspace:*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

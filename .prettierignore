@@ -1,0 +1,8 @@
+node_modules
+dist
+out
+target
+release
+coverage
+pnpm-lock.yaml
+*.tsbuildinfo

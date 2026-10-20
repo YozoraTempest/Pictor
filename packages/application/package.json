@@ -1,0 +1,16 @@
+{
+  "name": "@pictor/application",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@pictor/host-client": "workspace:*",
+    "@pictor/plugin-host": "workspace:*",
+    "@pictor/plugin-sdk": "workspace:*",
+    "@pictor/shared": "workspace:*"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+target/
+release/
+coverage/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example
+.pictor/
+.DS_Store
