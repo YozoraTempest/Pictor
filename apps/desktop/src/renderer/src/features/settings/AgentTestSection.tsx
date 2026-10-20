@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 import type { AgentTestResult } from '../../../../shared/bridge.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
-import { Banner, Button, Input } from '../../components/ui/index.js'
+import { Banner, Button, Textarea } from '../../components/ui/index.js'
 import { Section } from './Section.js'
 
 export function AgentTestSection(): React.JSX.Element {
@@ -52,9 +52,10 @@ export function AgentTestSection(): React.JSX.Element {
     >
       {error !== null && <Banner tone="error">{error}</Banner>}
 
-      <Input
+      <Textarea
         value={prompt}
         aria-label="试运行提示词"
+        rows={3}
         onChange={(event) => setPrompt(event.target.value)}
       />
 

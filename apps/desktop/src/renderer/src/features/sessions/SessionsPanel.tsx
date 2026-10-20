@@ -12,12 +12,18 @@ import {
   SquarePen,
   Trash2,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
-
+import { useMemo, useState, type ReactNode } from 'react'
 import type { Project, Session } from '@pictor/shared'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
-import { IconButton, Input, Menu, type MenuEntry } from '../../components/ui/index.js'
+import {
+  Button,
+  Dialog,
+  IconButton,
+  Input,
+  Menu,
+  type MenuEntry,
+} from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import {
   collectSectionSessionIds,
@@ -38,7 +44,32 @@ type Dragged =
   | { kind: 'project'; id: string; sectionId: string | null }
   | { kind: 'session'; id: string; sectionId: string | null }
 
+/**
+ * Animated disclosure for the sidebar tree.
+ *
+ * The content stays mounted so the height transition has something to measure;
+ * `inert` keeps the collapsed rows out of the tab order and the accessibility
+ * tree. base.css already neutralises the transition under reduced motion.
+ */
+function Collapse({ open, children }: { open: boolean; children: ReactNode }): React.JSX.Element {
+  return (
+    <div
+      className={cn(
+        'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
+        open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+      )}
+    >
+      <div className="min-h-0 overflow-hidden" inert={!open}>
+        {children}
+      </div>
+    </div>
+  )
+}
 const DRAG_TYPE = 'application/x-pictor-item'
+
+/** A destructive action waiting for confirmation. */
+type PendingDelete =
+  { kind: 'project'; id: string; title: string } | { kind: 'session'; id: string; title: string }
 
 export function SessionsPanel(): React.JSX.Element {
   const sessions = useWorkspaceStore((state) => state.sessions)
@@ -71,6 +102,11 @@ export function SessionsPanel(): React.JSX.Element {
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [gapIndex, setGapIndex] = useState<number | null>(null)
   const [dragging, setDragging] = useState<Dragged | null>(null)
+  const [confirm, setConfirm] = useState<PendingDelete | null>(null)
+
+  function askDelete(target: PendingDelete): void {
+    setConfirm(target)
+  }
 
   const nodes = useMemo(
     () => groupSessions({ sessions, projects, sections, exclusive, sorts }),
@@ -267,7 +303,7 @@ export function SessionsPanel(): React.JSX.Element {
         label: '移除项目',
         icon: <Trash2 className="size-3" />,
         danger: true,
-        onSelect: () => void removeProject(project.id),
+        onSelect: () => askDelete({ kind: 'project', id: project.id, title: project.name }),
       },
     ]
   }
@@ -389,7 +425,7 @@ export function SessionsPanel(): React.JSX.Element {
                 )}
               </div>
 
-              {!isCollapsed && (
+              <Collapse open={!isCollapsed}>
                 <div className="pl-3">
                   {node.children.map((child) =>
                     child.kind === 'project' ? (
@@ -410,7 +446,9 @@ export function SessionsPanel(): React.JSX.Element {
                         onSelect={selectSession}
                         onPin={(session) => void setSessionPinned(session.id, !session.pinned)}
                         onArchive={(session) => void setSessionArchived(session.id, true)}
-                        onDelete={(session) => void deleteSession(session.id)}
+                        onDelete={(session) =>
+                          askDelete({ kind: 'session', id: session.id, title: session.title })
+                        }
                         onDropSession={(sessionId) =>
                           void setSessionProject(sessionId, child.project.id)
                         }
@@ -434,7 +472,13 @@ export function SessionsPanel(): React.JSX.Element {
                         onSelect={() => selectSession(child.session.id)}
                         onPin={() => void setSessionPinned(child.session.id, !child.session.pinned)}
                         onArchive={() => void setSessionArchived(child.session.id, true)}
-                        onDelete={() => void deleteSession(child.session.id)}
+                        onDelete={() =>
+                          askDelete({
+                            kind: 'session',
+                            id: child.session.id,
+                            title: child.session.title,
+                          })
+                        }
                         onDragStart={(event) =>
                           beginDrag(event, {
                             kind: 'session',
@@ -451,7 +495,7 @@ export function SessionsPanel(): React.JSX.Element {
                     ),
                   )}
                 </div>
-              )}
+              </Collapse>
             </div>
           )
         })}
@@ -460,6 +504,36 @@ export function SessionsPanel(): React.JSX.Element {
           <div className="px-1">{gapElement(customSections.length)}</div>
         )}
       </div>
+      <Dialog
+        open={confirm !== null}
+        title={confirm?.kind === 'project' ? '移除项目' : '删除会话'}
+        onClose={() => setConfirm(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirm(null)}>
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (confirm === null) return
+                const target = confirm
+                setConfirm(null)
+                if (target.kind === 'project') void removeProject(target.id)
+                else void deleteSession(target.id)
+              }}
+            >
+              {confirm?.kind === 'project' ? '移除项目' : '删除会话'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-relaxed text-muted">
+          {confirm?.kind === 'project'
+            ? `「${confirm.title}」及其下的会话都会被移除，此操作不可撤销。`
+            : `「${confirm?.title ?? ''}」的对话记录会被删除，此操作不可撤销。`}
+        </p>
+      </Dialog>
     </section>
   )
 }
@@ -570,7 +644,7 @@ function ProjectBlock({
         </div>
       </div>
 
-      {!isCollapsed && (
+      <Collapse open={!isCollapsed}>
         <div className="pl-4">
           {node.sessions.length === 0 ? (
             <p className="px-2 py-1 text-2xs text-faint">还没有会话</p>
@@ -600,7 +674,7 @@ function ProjectBlock({
             ))
           )}
         </div>
-      )}
+      </Collapse>
     </div>
   )
 }

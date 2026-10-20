@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import type { WindowCommand } from '../../../shared/bridge.js'
 import { useUiStore } from '../app/ui-store.js'
 import { useWorkspaceStore } from '../app/workspace-store.js'
-import { Menu, type MenuEntry } from '../components/ui/index.js'
+import { Menu, Tooltip, type MenuEntry } from '../components/ui/index.js'
 import { cn } from '../lib/cn.js'
 
 function newSessionTitle(): string {
@@ -137,17 +137,24 @@ export function TitleBar(): React.JSX.Element {
       </p>
 
       {view === 'home' && (
-        <button
-          type="button"
-          aria-label={rightPanelOpen ? '收起面板' : '展开面板'}
-          onClick={toggleRightPanel}
-          className={cn(
-            'app-no-drag grid size-7 place-items-center rounded-sm transition-colors duration-150 hover:bg-surface-hover',
-            rightPanelOpen ? 'text-muted hover:text-text' : 'text-faint',
-          )}
+        <Tooltip
+          label={rightPanelOpen ? '收起面板' : '展开面板'}
+          side="bottom"
+          align="end"
+          className="app-no-drag"
         >
-          <PanelRight className="size-3.5" />
-        </button>
+          <button
+            type="button"
+            aria-label={rightPanelOpen ? '收起面板' : '展开面板'}
+            onClick={toggleRightPanel}
+            className={cn(
+              'grid size-7 place-items-center rounded-sm transition-colors duration-150 hover:bg-surface-hover',
+              rightPanelOpen ? 'text-muted hover:text-text' : 'text-faint',
+            )}
+          >
+            <PanelRight className="size-3.5" />
+          </button>
+        </Tooltip>
       )}
 
       <div className="app-no-drag ml-1 flex items-center">

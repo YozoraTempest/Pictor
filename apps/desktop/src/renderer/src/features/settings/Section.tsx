@@ -1,5 +1,13 @@
 import type { ReactNode } from 'react'
 
+import { Panel } from '../../components/ui/index.js'
+
+/**
+ * A settings card: a titled panel with the settings-specific density.
+ *
+ * Kept as a named wrapper so the settings pages read as a list of sections,
+ * while the border, surface and header layout stay owned by `Panel`.
+ */
 export function Section({
   title,
   description,
@@ -12,15 +20,16 @@ export function Section({
   actions?: ReactNode
 }): React.JSX.Element {
   return (
-    <section className="rounded-lg border border-border bg-surface/40">
-      <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-medium">{title}</h2>
-          {description !== undefined && <p className="mt-0.5 text-xs text-faint">{description}</p>}
-        </div>
-        {actions !== undefined && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-      </header>
-      <div className="flex flex-col gap-4 px-4 py-4">{children}</div>
-    </section>
+    <Panel
+      title={title}
+      description={description}
+      actions={actions}
+      className="bg-surface/40"
+      headerClassName="border-b border-border px-4 py-3"
+      titleClassName="text-sm font-medium tracking-normal text-text normal-case"
+      bodyClassName="gap-4 px-4 py-4"
+    >
+      {children}
+    </Panel>
   )
 }

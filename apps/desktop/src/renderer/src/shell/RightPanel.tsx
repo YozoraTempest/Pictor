@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 
 import { useUiStore } from '../app/ui-store.js'
 import { useWorkspaceStore } from '../app/workspace-store.js'
-import { IconButton } from '../components/ui/index.js'
+import { IconButton, Tooltip } from '../components/ui/index.js'
 import {
   createBuiltinPanels,
   mergePanels,
@@ -28,7 +28,11 @@ function PanelRow({ panel }: { panel: PanelEntry }): React.JSX.Element {
             <span className="block truncate text-2xs text-faint">{panel.description}</span>
           )}
         </span>
-        {panel.source === 'plugin' && <span className="shrink-0 text-2xs text-faint">插件</span>}
+        {panel.source === 'plugin' && (
+          <Tooltip label="由插件提供" align="end">
+            <span className="text-2xs text-faint">插件</span>
+          </Tooltip>
+        )}
       </button>
     </li>
   )
