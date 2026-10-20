@@ -1,0 +1,42 @@
+/*
+ * Design tokens. This is the only file allowed to contain raw colours, font
+ * sizes and radii; everything else must reference these tokens.
+ */
+@theme {
+  --color-bg: #0a0c11;
+  --color-surface: #101319;
+  --color-surface-hover: #151922;
+  --color-surface-raised: #191e29;
+  --color-border: #232a38;
+  --color-border-strong: #333c4f;
+  --color-text: #e9ecf3;
+  --color-muted: #9aa3b8;
+  --color-faint: #6a7387;
+  --color-accent: #6ea8fe;
+  --color-accent-strong: #9cc4ff;
+  --color-danger: #ff6b6b;
+  --color-success: #5fd68f;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.125rem;
+  --text-2xl: 1.375rem;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Noto Sans SC', 'Noto Sans CJK SC',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono:
+    ui-monospace, 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  --shadow-panel: 0 16px 40px rgb(0 0 0 / 0.45);
+  --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.35);
+}

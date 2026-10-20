@@ -1,0 +1,132 @@
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Keep the rem base at 16px so spacing utilities stay at their design size;
+     the design scale itself lives in --text-* tokens. */
+  body {
+    font-size: var(--text-base);
+    user-select: none;
+  }
+
+  .selectable,
+  input,
+  textarea,
+  pre,
+  code,
+  .markdown {
+    user-select: text;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 32%, transparent);
+  }
+
+  :focus-visible {
+    outline: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-faint);
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* View transitions: only the main region participates, so the chrome stays put. */
+  .view-main {
+    view-transition-name: main;
+  }
+
+  ::view-transition-old(main) {
+    animation: view-out 90ms ease-out both;
+  }
+
+  ::view-transition-new(main) {
+    animation: view-in 180ms ease-out both;
+  }
+
+  /* Shiki emits its own theme colours; the surface comes from tokens instead. */
+  .shiki {
+    background-color: transparent !important;
+    margin: 0;
+    padding: 0.75rem 0.875rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.65;
+    overflow-x: auto;
+  }
+
+  .shiki code {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  @keyframes view-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  @keyframes view-out {
+    to {
+      opacity: 0;
+      transform: translateY(-3px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+
+    ::view-transition-old(main),
+    ::view-transition-new(main) {
+      animation: none;
+    }
+  }
+}
