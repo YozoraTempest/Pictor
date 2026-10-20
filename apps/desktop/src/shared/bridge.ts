@@ -1,4 +1,15 @@
-import type { JsonValue, PluginRecord, Project, Session, SettingsMap } from '@pictor/shared'
+import type {
+  CcSwitchProviderSummary,
+  JsonValue,
+  ModelEntry,
+  ModelProtocol,
+  ModelSettings,
+  ModelSettingsInput,
+  PluginRecord,
+  Project,
+  Session,
+  SettingsMap,
+} from '@pictor/shared'
 
 export interface AppInfo {
   name: string
@@ -19,6 +30,25 @@ export interface CommandDescriptor {
   id: string
   description: string
   source: 'core' | 'plugin'
+}
+
+export interface CcSwitchScanResult {
+  available: boolean
+  path: string
+  providers: CcSwitchProviderSummary[]
+}
+
+export interface ModelProbeResult {
+  ok: boolean
+  message: string
+  sample: string
+}
+
+export interface AgentTestResult {
+  ok: boolean
+  text: string
+  events: string[]
+  message?: string
 }
 
 export interface PluginReport {
@@ -47,4 +77,16 @@ export interface PictorBridge {
   pluginReport(): Promise<PluginReport>
 
   getAppInfo(): Promise<AppInfo>
+
+  getModelSettings(): Promise<ModelSettings>
+  saveModelSettings(input: ModelSettingsInput): Promise<ModelSettings>
+  fetchModels(input?: {
+    baseUrl?: string
+    protocol?: ModelProtocol
+    apiKey?: string
+  }): Promise<ModelEntry[]>
+  testModelConnection(): Promise<ModelProbeResult>
+  scanCcSwitch(): Promise<CcSwitchScanResult>
+  importCcSwitchProvider(id: string, includeApiKey: boolean): Promise<ModelSettings>
+  runAgentTest(prompt: string, workingDirectory: string): Promise<AgentTestResult>
 }

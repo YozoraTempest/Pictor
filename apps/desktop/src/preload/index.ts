@@ -26,6 +26,16 @@ const bridge: PictorBridge = {
   pluginReport: () => ipcRenderer.invoke('pictor:plugins.report'),
 
   getAppInfo: () => ipcRenderer.invoke('pictor:appInfo'),
+
+  getModelSettings: () => ipcRenderer.invoke('pictor:model.get'),
+  saveModelSettings: (input) => ipcRenderer.invoke('pictor:model.save', input),
+  fetchModels: (input) => ipcRenderer.invoke('pictor:model.fetch', input),
+  testModelConnection: () => ipcRenderer.invoke('pictor:model.test'),
+  scanCcSwitch: () => ipcRenderer.invoke('pictor:model.ccswitch.scan'),
+  importCcSwitchProvider: (id, includeApiKey) =>
+    ipcRenderer.invoke('pictor:model.ccswitch.import', id, includeApiKey),
+  runAgentTest: (prompt, workingDirectory) =>
+    ipcRenderer.invoke('pictor:model.agentTest', prompt, workingDirectory),
 }
 
 contextBridge.exposeInMainWorld('pictor', bridge)

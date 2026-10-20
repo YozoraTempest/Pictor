@@ -56,3 +56,5 @@ export const HOST_ERROR_CODES = {
 } as const
 
 export type HostErrorCode = (typeof HOST_ERROR_CODES)[keyof typeof HOST_ERROR_CODES]
+
+export * from './model.js'

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { PluginRecord, Project, Session } from '@pictor/shared'
 
 import type { AppInfo, CommandDescriptor, PluginReport } from '../../shared/bridge.js'
+import { ModelSettingsPanel } from './ModelSettings.js'
 
 export function App(): React.JSX.Element {
   const [projects, setProjects] = useState<Project[]>([])
@@ -16,6 +17,12 @@ export function App(): React.JSX.Element {
   const [output, setOutput] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const workingDirectory = useMemo(
+    () => projects.find((project) => project.id === selectedProject)?.path ?? '',
+    [projects, selectedProject],
+  )
 
   const visibleSessions = useMemo(
     () => sessions.filter((session) => session.projectId === selectedProject),
@@ -70,6 +77,9 @@ export function App(): React.JSX.Element {
               v{info.version} · host-core {info.hostCore} · Electron {info.electron}
             </span>
           )}
+          <button type="button" onClick={() => setSettingsOpen((open) => !open)}>
+            Model settings
+          </button>
           <button
             type="button"
             disabled={busy}
@@ -84,6 +94,8 @@ export function App(): React.JSX.Element {
           </button>
         </div>
       </header>
+
+      {settingsOpen && <ModelSettingsPanel workingDirectory={workingDirectory} />}
 
       {error !== null && (
         <div className="error" role="alert">

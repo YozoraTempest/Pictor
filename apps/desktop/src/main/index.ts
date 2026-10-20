@@ -13,6 +13,7 @@ import {
 import type { JsonValue, PluginRecord } from '@pictor/shared'
 
 import type { AppInfo, CommandDescriptor, HostSnapshot, PluginReport } from '../shared/bridge.js'
+import { ModelService } from './model-service.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const appRoot = resolve(here, '../..')
@@ -58,6 +59,7 @@ app.on('before-quit', () => {
 interface Workspace {
   appHost: ApplicationHost
   pluginHost: PluginHost
+  model: ModelService
   client: ReturnType<typeof startHostCore>['client']
   hostCore: string
   database: string
@@ -169,10 +171,12 @@ async function startWorkspace(): Promise<Workspace | null> {
   console.info(`pictor host core ${info.version} (schema ${info.schemaVersion})`)
 
   let disposed = false
+  const model = new ModelService({ store: running.client, userData })
 
   return {
     appHost,
     pluginHost,
+    model,
     client: running.client,
     hostCore,
     database,
@@ -299,6 +303,60 @@ function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:plugins.report', async (): Promise<PluginReport> => {
     return workspace.pluginHost.report()
   })
+
+  ipcMain.handle('pictor:model.get', async () => {
+    return workspace.model.settings()
+  })
+
+  ipcMain.handle('pictor:model.save', async (_event, input: unknown) => {
+    if (typeof input !== 'object' || input === null) throw new Error('invalid model settings')
+    return workspace.model.save(input as Parameters<ModelService['save']>[0])
+  })
+
+  ipcMain.handle('pictor:model.fetch', async (_event, input: unknown) => {
+    const override =
+      typeof input === 'object' && input !== null
+        ? (input as {
+            baseUrl?: string
+            protocol?: 'chat-completions' | 'responses'
+            apiKey?: string
+          })
+        : undefined
+    return workspace.model.fetchModels(override)
+  })
+
+  ipcMain.handle('pictor:model.test', async () => {
+    return workspace.model.test()
+  })
+
+  ipcMain.handle('pictor:model.ccswitch.scan', async () => {
+    return workspace.model.scanCcSwitch()
+  })
+
+  ipcMain.handle(
+    'pictor:model.ccswitch.import',
+    async (_event, id: unknown, includeApiKey: unknown) => {
+      if (typeof id !== 'string' || id.trim().length === 0)
+        throw new Error('provider id is required')
+      return workspace.model.importCcSwitchProvider(id, includeApiKey === true)
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:model.agentTest',
+    async (_event, prompt: unknown, workingDirectory: unknown) => {
+      if (typeof prompt !== 'string' || prompt.trim().length === 0) {
+        throw new Error('prompt is required')
+      }
+
+      const directory =
+        typeof workingDirectory === 'string' && workingDirectory.trim().length > 0
+          ? workingDirectory
+          : app.getPath('userData')
+
+      return workspace.model.runTest(prompt, directory)
+    },
+  )
 
   ipcMain.handle('pictor:appInfo', async (): Promise<AppInfo> => {
     const info = await workspace.client.info()

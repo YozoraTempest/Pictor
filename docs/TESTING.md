@@ -50,6 +50,28 @@ The process starts host-core, activates bundled plugins, waits for the renderer'
 keeps the real profile untouched, and `PICTOR_HOST_CORE` can point at a specific
 sidecar binary.
 
+## Live endpoint checks
+
+Both checks are skipped by default and read every value from the environment, so
+no endpoint or key is committed:
+
+```bash
+PICTOR_LIVE_TEST=1 \
+PICTOR_LIVE_BASE_URL=https://api.example.com/v1 \
+PICTOR_LIVE_MODEL=<model-id> \
+PICTOR_LIVE_API_KEY=<key> \
+pnpm vitest run packages/model-config/src/live.test.ts
+
+PICTOR_LIVE_AGENT=1 \
+PICTOR_LIVE_BASE_URL=https://api.example.com/v1 \
+PICTOR_LIVE_MODEL=<model-id> \
+PICTOR_LIVE_API_KEY=<key> \
+pnpm vitest run packages/agent-runtime/src/live.test.ts
+```
+
+The first validates `/models` plus one completion; the second drives the real Pi
+SDK adapter with tools disabled.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on Node 22.22.2 and stable Rust:

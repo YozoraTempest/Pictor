@@ -9,7 +9,7 @@ const shared = {
   bundle: true,
   platform: 'node',
   target: 'node22',
-  external: ['electron'],
+  external: ['electron', '@earendil-works/pi-coding-agent'],
   logLevel: 'info',
   sourcemap: true,
   minify: false,

@@ -2,17 +2,21 @@ import type { JsonValue } from '@pictor/shared'
 
 import type { AgentEvent, AgentRequest, AgentRunHandle, AgentRuntime } from './runtime.js'
 
-/**
- * Configuration for the Pi-backed runtime.
- *
- * It is read from the profile settings, never from the renderer, so the API key
- * cannot leak into the UI or a session transcript.
- */
+/** Provider id used inside the generated `models.json`. */
+export const PI_PROVIDER_ID = 'pictor'
+
+/** Environment variable Pi interpolates in `models.json`. */
+export const PI_API_KEY_ENV = 'PICTOR_PROVIDER_API_KEY'
+
 export interface PiRuntimeConfig {
-  baseUrl: string
+  /** Model id inside the `pictor` provider. */
   modelId: string
-  apiKey?: string
-  protocol?: 'chat-completions' | 'responses'
+  /** Path to the generated `models.json`. */
+  modelsPath: string
+  /** Isolated agent directory so Pictor never touches the user's `~/.pi/agent`. */
+  agentDir: string
+  apiKey: string | null
+  /** Working directory for the agent session. */
   workingDirectory: string
 }
 
@@ -23,17 +27,26 @@ export interface PiRuntimeOptions {
 /**
  * The slice of the Pi SDK this adapter uses.
  *
- * Declaring it locally keeps every SDK-specific detail in one file and lets the
- * adapter compile against a pinned-but-evolving upstream package. `createAgentSession`
- * is checked at runtime before use.
+ * Declaring it locally keeps every SDK-specific detail in one file. The SDK is
+ * imported lazily so a profile without model configuration can still start.
  */
 interface PiSdkModule {
+  ModelRuntime: {
+    create(options: { modelsPath?: string; refreshOnCreate?: boolean }): Promise<PiModelRuntime>
+  }
   createAgentSession(options: PiSessionOptions): Promise<{ session: PiSession }>
+}
+
+interface PiModelRuntime {
+  getModel(providerId: string, modelId: string): unknown
 }
 
 interface PiSessionOptions {
   cwd?: string
   model?: unknown
+  modelRuntime?: PiModelRuntime
+  agentDir?: string
+  noTools?: 'all' | 'builtin'
 }
 
 interface PiSession {
@@ -43,12 +56,6 @@ interface PiSession {
   dispose(): void
 }
 
-/**
- * Thin adapter over the Pi agent SDK.
- *
- * The SDK is imported lazily so a profile without model configuration can still
- * start, list projects and run plugins.
- */
 export class PiAgentRuntime implements AgentRuntime {
   readonly id = 'pi'
   readonly #options: PiRuntimeOptions
@@ -60,17 +67,38 @@ export class PiAgentRuntime implements AgentRuntime {
   async run(request: AgentRequest, onEvent: (event: AgentEvent) => void): Promise<AgentRunHandle> {
     const config = await this.#options.loadConfig()
     if (config === null) {
-      throw new Error('model is not configured; save an OpenAI-compatible endpoint first')
+      throw new Error('model is not configured; open model settings and save an endpoint first')
     }
 
     const sdk = (await import('@earendil-works/pi-coding-agent')) as unknown as PiSdkModule
-    if (typeof sdk.createAgentSession !== 'function') {
-      throw new Error('the installed pi-coding-agent version does not expose createAgentSession')
+    if (sdk.ModelRuntime?.create === undefined) {
+      throw new Error('the installed pi-coding-agent version does not expose ModelRuntime')
+    }
+
+    if (config.apiKey !== null && config.apiKey.length > 0) {
+      process.env[PI_API_KEY_ENV] = config.apiKey
+    }
+
+    const modelRuntime = await sdk.ModelRuntime.create({
+      modelsPath: config.modelsPath,
+      refreshOnCreate: false,
+    })
+
+    const model = modelRuntime.getModel(PI_PROVIDER_ID, config.modelId)
+    if (model === undefined) {
+      delete process.env[PI_API_KEY_ENV]
+      throw new Error(
+        `model ${config.modelId} is not present in ${config.modelsPath}; re-save model settings`,
+      )
     }
 
     const { session } = await sdk.createAgentSession({
       cwd: request.workingDirectory,
-      model: toPiModel(config),
+      model,
+      modelRuntime,
+      agentDir: config.agentDir,
+      // The scaffold's test run must not execute tools against the user's machine.
+      noTools: 'all',
     })
 
     let cancelled = false
@@ -100,6 +128,7 @@ export class PiAgentRuntime implements AgentRuntime {
       } finally {
         unsubscribe()
         session.dispose()
+        delete process.env[PI_API_KEY_ENV]
       }
     })()
 
@@ -110,31 +139,6 @@ export class PiAgentRuntime implements AgentRuntime {
         void session.abort()
       },
     }
-  }
-}
-
-/**
- * Maps the app configuration onto the model descriptor Pi expects.
- *
- * The upstream `Model` type carries catalog fields this scaffold does not have
- * yet, so the object is assembled from the documented shape and passed through
- * the adapter boundary rather than mirroring the full type.
- */
-export function toPiModel(config: PiRuntimeConfig): Record<string, unknown> {
-  const api = config.protocol === 'responses' ? 'openai-responses' : 'openai-completions'
-
-  return {
-    id: config.modelId,
-    name: config.modelId,
-    api,
-    provider: 'pictor-openai-compatible',
-    baseUrl: config.baseUrl,
-    reasoning: false,
-    input: ['text'],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128_000,
-    maxTokens: 8_192,
-    ...(config.apiKey === undefined ? {} : { apiKey: config.apiKey }),
   }
 }
 

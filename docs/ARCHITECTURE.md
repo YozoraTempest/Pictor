@@ -52,6 +52,18 @@ Plugin lifecycle: discovery -> manifest validation -> engine check -> dependency
 resolution -> topological order -> activation -> reverse disposal. Failures are
 isolated per plugin and surfaced in the plugin report.
 
+### Model configuration
+
+`@pictor/model-config` owns the settings contract:
+
+- Non-secret values (`pi.*`) go through `MetadataStore` into SQLite.
+- `auth.json` holds the key with `0600` permissions; only the main process reads
+  it, and the bridge exposes `hasApiKey` instead of the value.
+- `models.json` is generated for Pi with `apiKey: "$PICTOR_PROVIDER_API_KEY"`;
+  `PiAgentRuntime` injects the variable only for the run and deletes it after.
+- cc-switch access is read-only and implemented in Rust (`ccswitch.scan` /
+  `ccswitch.read`); the scan response never contains a key.
+
 ### Storage
 
 SQLite holds projects, sessions, plugin records and settings. Pi JSONL remains the

@@ -16,6 +16,7 @@
     "@pictor/plugin-sdk": "workspace:*",
     "@pictor/shared": "workspace:*",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "@pictor/model-config": "workspace:*"
   }
 }

@@ -74,6 +74,9 @@ importers:
       '@pictor/host-client':
         specifier: workspace:*
         version: link:../../packages/host-client
+      '@pictor/model-config':
+        specifier: workspace:*
+        version: link:../../packages/model-config
       '@pictor/plugin-host':
         specifier: workspace:*
         version: link:../../packages/plugin-host
@@ -119,6 +122,12 @@ importers:
       '@pictor/racp':
         specifier: workspace:*
         version: link:../racp
+      '@pictor/shared':
+        specifier: workspace:*
+        version: link:../shared
+
+  packages/model-config:
+    dependencies:
       '@pictor/shared':
         specifier: workspace:*
         version: link:../shared

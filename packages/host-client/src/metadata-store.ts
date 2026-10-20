@@ -1,6 +1,8 @@
 import { RpcClient } from '@pictor/racp'
 import type { RpcTransport } from '@pictor/racp'
 import type {
+  CcSwitchProviderDetail,
+  CcSwitchProviderSummary,
   HostInfo,
   JsonValue,
   PluginRecord,
@@ -40,6 +42,9 @@ export interface MetadataStore {
   }): Promise<PluginRecord>
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginRecord>
   removePlugin(id: string): Promise<void>
+
+  scanCcSwitch(path: string): Promise<CcSwitchProviderSummary[]>
+  readCcSwitchProvider(path: string, id: string): Promise<CcSwitchProviderDetail>
 
   dispose(): void
 }
@@ -124,6 +129,14 @@ export class HostCoreClient implements MetadataStore {
 
   async removePlugin(id: string): Promise<void> {
     await this.#rpc.request('plugin.remove', { id })
+  }
+
+  scanCcSwitch(path: string): Promise<CcSwitchProviderSummary[]> {
+    return this.#rpc.request<CcSwitchProviderSummary[]>('ccswitch.scan', { path })
+  }
+
+  readCcSwitchProvider(path: string, id: string): Promise<CcSwitchProviderDetail> {
+    return this.#rpc.request<CcSwitchProviderDetail>('ccswitch.read', { path, id })
   }
 
   dispose(): void {

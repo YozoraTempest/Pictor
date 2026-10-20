@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
-import { mapPiEvent, toPiModel } from './pi-adapter.js'
+import { mapPiEvent } from './pi-adapter.js'
 import { EchoAgentRuntime, type AgentEvent } from './runtime.js'
 import { projectSession } from './projection.js'
 
@@ -36,35 +36,6 @@ describe('EchoAgentRuntime', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(events.at(-1)).toEqual({ type: 'run.finished', runId: 'r1', reason: 'cancelled' })
-  })
-})
-
-describe('toPiModel', () => {
-  it('maps chat-completions configuration', () => {
-    const model = toPiModel({
-      baseUrl: 'https://api.example.com/v1',
-      modelId: 'demo',
-      workingDirectory: '/tmp',
-    })
-
-    expect(model).toMatchObject({
-      id: 'demo',
-      api: 'openai-completions',
-      baseUrl: 'https://api.example.com/v1',
-    })
-    expect(model).not.toHaveProperty('apiKey')
-  })
-
-  it('maps the responses protocol and includes the key when present', () => {
-    const model = toPiModel({
-      baseUrl: 'https://api.example.com/v1',
-      modelId: 'demo',
-      apiKey: 'secret',
-      protocol: 'responses',
-      workingDirectory: '/tmp',
-    })
-
-    expect(model).toMatchObject({ api: 'openai-responses', apiKey: 'secret' })
   })
 })
 

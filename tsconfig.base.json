@@ -24,7 +24,8 @@
       "@pictor/application": ["./packages/application/src/index.ts"],
       "@pictor/plugin-sdk": ["./packages/plugin-sdk/src/index.ts"],
       "@pictor/plugin-host": ["./packages/plugin-host/src/index.ts"],
-      "@pictor/agent-runtime": ["./packages/agent-runtime/src/index.ts"]
+      "@pictor/agent-runtime": ["./packages/agent-runtime/src/index.ts"],
+      "@pictor/model-config": ["./packages/model-config/src/index.ts"]
     }
   }
 }

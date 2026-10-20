@@ -1,3 +1,4 @@
+mod ccswitch;
 mod db;
 mod error;
 mod rpc;
@@ -234,6 +235,15 @@ fn dispatch(
                 connection, &id, enabled,
             )?)
             .map_err(to_internal)?)
+        }
+        "ccswitch.scan" => {
+            let path = required_str(&params, "path")?;
+            Ok(serde_json::to_value(ccswitch::scan(&path)?).map_err(to_internal)?)
+        }
+        "ccswitch.read" => {
+            let path = required_str(&params, "path")?;
+            let id = required_str(&params, "id")?;
+            Ok(serde_json::to_value(ccswitch::read(&path, &id)?).map_err(to_internal)?)
         }
         "plugin.remove" => {
             let id = required_str(&params, "id")?;

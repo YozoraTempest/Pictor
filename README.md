@@ -4,9 +4,9 @@ Pictor is an agent-native local development environment. This repository is the
 new implementation: an Electron shell, a Rust host core that owns SQLite, and a
 TypeScript application core shared by every frontend.
 
-> Status: runnable scaffold. The engine, storage, plugin host and UI shell work;
-> the agent runtime ships with a deterministic `echo` provider and a thin Pi SDK
-> adapter that has not yet been exercised against a live endpoint.
+> Status: runnable scaffold with a working model pipeline. Projects, sessions,
+> plugins, model settings, cc-switch import, endpoint probes and a real Pi SDK
+> agent test-run are implemented; the main chat surface is still to come.
 
 ## Requirements
 
@@ -69,14 +69,39 @@ plugins/hello-workbench/Bundled reference plugin
   object crosses the context bridge, and the window runs with sandbox, context isolation, no Node
   integration and a restrictive CSP.
 
+## Model settings
+
+Open **Model settings** in the top bar:
+
+- Service name, Base URL, API style (`Chat Completions` or `Responses`), model id
+  and API key.
+- **Fetch models** queries `GET <baseUrl>/models`.
+- **Test connection** sends one minimal completion.
+- **Import from cc-switch** scans `~/.cc-switch/cc-switch.db` for `app_type = 'pi'`
+  providers and can copy the stored key.
+- **Run agent** executes one Pi SDK turn with tools disabled and shows the
+  streamed text.
+
+Storage rules:
+
+- Non-secret settings live in SQLite (`pi.*` keys).
+- The API key is written to `<userData>/auth.json` with `0600` permissions and is
+  never returned to the renderer; the UI only sees `hasApiKey`.
+- `<userData>/pi/models.json` references the key as `$PICTOR_PROVIDER_API_KEY`;
+  the value is injected into the process only for the duration of a run.
+
+Override discovery for tests with `PICTOR_CCSWITCH_DB` (database path) and
+`PICTOR_USER_DATA` (profile directory).
+
 ## Current scope
 
 Implemented: profile locking, project/session metadata, plugin lifecycle,
-command dispatch, minimal shell UI, deterministic agent runtime.
+command dispatch, model settings with cc-switch import, endpoint discovery and
+connection test, real Pi SDK agent test-run, minimal shell UI.
 
-Not yet implemented: model settings UI, live Pi runs, session tree/navigation,
-remote hosts, packaging/auto-update, end-to-end tests. Plugin modules run
-in-process; there is no per-plugin process sandbox yet.
+Not yet implemented: persistent chat surface and session projection, session
+tree/navigation, remote hosts, packaging/auto-update, end-to-end UI tests. Plugin
+modules run in-process; there is no per-plugin process sandbox yet.
 
 ## License
 
