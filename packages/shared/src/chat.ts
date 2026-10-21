@@ -10,6 +10,10 @@ export interface ChatMessage {
   isError?: boolean
   /** True when a tool guard denied the call; the text holds the reason. */
   blocked?: boolean
+  /** Assistant content kind; defaults to the visible answer. */
+  kind?: 'text' | 'thinking'
+  /** Raw arguments a tool call was given; only tools carry this. */
+  input?: unknown
 }
 
 export interface ChatHistoryPage {
@@ -23,6 +27,7 @@ export interface ChatHistoryPage {
 export type ChatEvent =
   | { type: 'run.started'; sessionId: string; runId: string }
   | { type: 'message.delta'; sessionId: string; runId: string; text: string }
+  | { type: 'thinking.delta'; sessionId: string; runId: string; text: string }
   | { type: 'tool.started'; sessionId: string; runId: string; tool: string; input: unknown }
   | {
       type: 'tool.finished'

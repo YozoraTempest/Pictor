@@ -122,6 +122,9 @@ export class ChatService {
       case 'delta':
         this.#onEvent({ type: 'message.delta', sessionId, runId: this.#runId(), text: event.text })
         return
+      case 'thinking':
+        this.#onEvent({ type: 'thinking.delta', sessionId, runId: this.#runId(), text: event.text })
+        return
       case 'tool.start':
         this.#onEvent({
           type: 'tool.started',

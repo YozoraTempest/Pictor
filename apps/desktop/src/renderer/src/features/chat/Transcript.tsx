@@ -1,13 +1,17 @@
 import { ArrowDown, Loader2, MessagesSquare } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-import type { ChatMessage } from '@pictor/shared'
-
 import { Button, EmptyState } from '../../components/ui/index.js'
-import { MessageItem } from './MessageItem.js'
+import type { AgentPhase } from '../../lib/format-time.js'
+import { Timeline } from './Timeline.js'
+import { TurnBlock } from './TurnBlock.js'
+import type { Turn } from './turns.js'
 
 export interface TranscriptProps {
-  messages: ChatMessage[]
+  turns: Turn[]
+  running: boolean
+  phase: AgentPhase
+  currentTool: string | null
   hasMore: boolean
   loading: boolean
   onLoadOlder: () => void
@@ -17,7 +21,10 @@ export interface TranscriptProps {
 const FOLLOW_THRESHOLD = 56
 
 export function Transcript({
-  messages,
+  turns,
+  running,
+  phase,
+  currentTool,
   hasMore,
   loading,
   onLoadOlder,
@@ -47,7 +54,7 @@ export function Transcript({
   // Follow before paint, otherwise the transcript visibly lags a chunk behind.
   useLayoutEffect(() => {
     if (pinnedRef.current) stickToBottom()
-  }, [messages, stickToBottom])
+  }, [turns, stickToBottom])
 
   // Streamed text, code blocks and images change the height without changing the
   // message count, so height changes have to be followed too. The observer is
@@ -73,12 +80,12 @@ export function Transcript({
   )
 
   // Sending a message always means "I want to see what happens next".
-  const lastRole = messages.at(-1)?.role
+  const lastUser = turns.at(-1)?.user?.id
   useEffect(() => {
-    if (lastRole !== 'user') return
+    if (lastUser === undefined) return
     pin(true)
     stickToBottom()
-  }, [lastRole, messages.length, pin, stickToBottom])
+  }, [lastUser, pin, stickToBottom])
 
   function handleScroll(): void {
     const scroller = scrollerRef.current
@@ -107,7 +114,7 @@ export function Transcript({
     if (gap > 0) stickToBottom()
   }
 
-  if (loading && messages.length === 0) {
+  if (loading && turns.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center gap-2 text-xs text-faint">
         <Loader2 className="size-3.5 animate-spin" />
@@ -116,22 +123,22 @@ export function Transcript({
     )
   }
 
-  if (messages.length === 0) {
+  if (turns.length === 0) {
     return (
       <EmptyState title="还没有对话" description="在下方描述任务，Agent 会读取项目文件并执行。" />
     )
   }
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1">
       <div
         ref={attachScroller}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto"
+        className="h-full min-w-0 flex-1 overflow-y-auto"
         role="log"
         aria-live="polite"
       >
-        <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
+        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-6">
           {hasMore && (
             <div className="flex justify-center">
               <Button variant="ghost" size="sm" onClick={onLoadOlder} disabled={loading}>
@@ -145,11 +152,19 @@ export function Transcript({
             </div>
           )}
 
-          {messages.map((message) => (
-            <MessageItem key={message.id} message={message} />
+          {turns.map((turn, index) => (
+            <TurnBlock
+              key={turn.id}
+              turn={turn}
+              live={running && index === turns.length - 1}
+              phase={phase}
+              currentTool={currentTool}
+            />
           ))}
         </div>
       </div>
+
+      <Timeline turns={turns} />
 
       {!pinned && (
         <button
@@ -158,7 +173,7 @@ export function Transcript({
             pin(true)
             stickToBottom()
           }}
-          className="absolute right-4 bottom-3 inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-2xs text-muted shadow-popover transition-colors duration-150 hover:text-text"
+          className="absolute right-8 bottom-3 inline-flex items-center gap-1 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-2xs text-muted shadow-popover transition-colors duration-150 hover:text-text"
         >
           <ArrowDown className="size-3" />
           回到最新

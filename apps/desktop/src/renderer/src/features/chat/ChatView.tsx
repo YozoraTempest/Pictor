@@ -1,10 +1,14 @@
 import { AlertTriangle, MessageSquarePlus } from 'lucide-react'
+import { useMemo } from 'react'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
+import { formatDuration, phaseLabel } from '../../lib/format-time.js'
 import { useChatStore } from './chat-store.js'
 import { Composer } from './Composer.js'
 import { Transcript } from './Transcript.js'
+import { toolLabel } from './tool-presenters.js'
+import { buildTurns } from './turns.js'
 
 export function ChatView(): React.JSX.Element {
   const sessions = useWorkspaceStore((state) => state.sessions)
@@ -15,6 +19,10 @@ export function ChatView(): React.JSX.Element {
 
   const messages = useChatStore((state) => state.messages)
   const running = useChatStore((state) => state.running)
+  const phase = useChatStore((state) => state.phase)
+  const currentTool = useChatStore((state) => state.currentTool)
+  const runStartedAt = useChatStore((state) => state.runStartedAt)
+  const runFinishedAt = useChatStore((state) => state.runFinishedAt)
   const loading = useChatStore((state) => state.loading)
   const hasMore = useChatStore((state) => state.hasMore)
   const path = useChatStore((state) => state.path)
@@ -23,6 +31,7 @@ export function ChatView(): React.JSX.Element {
   const stop = useChatStore((state) => state.stop)
   const loadOlder = useChatStore((state) => state.loadOlder)
 
+  const turns = useMemo(() => buildTurns(messages), [messages])
   const session = sessions.find((entry) => entry.id === selectedSessionId) ?? null
   const project = projects.find((entry) => entry.id === selectedProjectId) ?? null
 
@@ -33,11 +42,15 @@ export function ChatView(): React.JSX.Element {
           {session?.title ?? (project === null ? 'Pictor' : `${project.name} · 新会话`)}
         </h1>
 
-        {running && (
+        {running ? (
           <Badge tone="accent" className="shrink-0">
-            运行中
+            {phaseLabel(phase, currentTool === null ? null : toolLabel(currentTool))}
           </Badge>
-        )}
+        ) : runStartedAt !== null && runFinishedAt !== null ? (
+          <span className="shrink-0 text-2xs text-faint">
+            用时 {formatDuration(runFinishedAt - runStartedAt)}
+          </span>
+        ) : null}
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
           {path !== null && (
@@ -83,7 +96,10 @@ export function ChatView(): React.JSX.Element {
       ) : (
         <>
           <Transcript
-            messages={messages}
+            turns={turns}
+            running={running}
+            phase={phase}
+            currentTool={currentTool}
             hasMore={hasMore}
             loading={loading}
             onLoadOlder={() => void loadOlder()}

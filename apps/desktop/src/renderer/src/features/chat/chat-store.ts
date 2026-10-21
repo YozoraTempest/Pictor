@@ -10,6 +10,12 @@ interface ChatState {
   hasMore: boolean
   loading: boolean
   running: boolean
+  /** Wall-clock start of the current run, for the "总时长" label. */
+  runStartedAt: number | null
+  runFinishedAt: number | null
+  /** Coarse phase of the running agent, shown next to its name. */
+  phase: 'idle' | 'connecting' | 'thinking' | 'tool' | 'writing'
+  currentTool: string | null
   error: string | null
   requestId: number
 
@@ -60,6 +66,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   hasMore: false,
   loading: false,
   running: false,
+  runStartedAt: null,
+  runFinishedAt: null,
+  phase: 'idle',
+  currentTool: null,
   error: null,
   requestId: 0,
 
@@ -73,6 +83,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       offset: 0,
       hasMore: false,
       running: false,
+      runStartedAt: null,
+      runFinishedAt: null,
+      phase: 'idle',
+      currentTool: null,
       error: null,
       loading: sessionId !== null,
     })
@@ -107,6 +121,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       path: null,
       messages: [],
       running: false,
+      phase: 'idle',
+      currentTool: null,
     })
     await window.pictor.closeChat()
   },
@@ -159,7 +175,45 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (event.sessionId !== get().sessionId) return
 
     if (event.type === 'run.started') {
-      set({ running: true, error: null })
+      set({
+        running: true,
+        error: null,
+        phase: 'connecting',
+        runStartedAt: Date.now(),
+        runFinishedAt: null,
+        currentTool: null,
+      })
+      return
+    }
+
+    if (event.type === 'thinking.delta') {
+      set((state) => {
+        const last = state.messages.at(-1)
+        const thinkingId = `thinking-${event.runId}`
+
+        if (last !== undefined && last.kind === 'thinking' && last.id.startsWith(thinkingId)) {
+          return {
+            phase: 'thinking' as const,
+            messages: [...state.messages.slice(0, -1), { ...last, text: last.text + event.text }],
+          }
+        }
+
+        const segment = state.messages.filter((message) => message.id.startsWith(thinkingId)).length
+
+        return {
+          phase: 'thinking' as const,
+          messages: [
+            ...state.messages,
+            {
+              id: `${thinkingId}-${segment}`,
+              role: 'assistant',
+              kind: 'thinking',
+              text: event.text,
+              timestamp: Date.now(),
+            },
+          ],
+        }
+      })
       return
     }
 
@@ -168,9 +222,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         const last = state.messages.at(-1)
         const streamId = `stream-${event.runId}`
 
-        // Continue the newest assistant bubble when it is still the last row.
+        // Continue the newest answer bubble when it is still the last row.
         if (last !== undefined && last.role === 'assistant' && last.id.startsWith(streamId)) {
           return {
+            phase: 'writing' as const,
             messages: [...state.messages.slice(0, -1), { ...last, text: last.text + event.text }],
           }
         }
@@ -181,6 +236,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         const segment = state.messages.filter((message) => message.id.startsWith(streamId)).length
 
         return {
+          phase: 'writing' as const,
           messages: [
             ...state.messages,
             {
@@ -197,6 +253,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     if (event.type === 'tool.started') {
       set((state) => ({
+        phase: 'tool' as const,
+        currentTool: event.tool,
         messages: [
           ...state.messages,
           {
@@ -205,6 +263,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             text: '',
             timestamp: Date.now(),
             toolName: event.tool,
+            input: event.input,
           },
         ],
       }))
@@ -292,6 +351,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     // forever, so close it with an explicit outcome.
     set((state) => ({
       running: false,
+      phase: 'idle',
+      currentTool: null,
+      runFinishedAt: Date.now(),
       ...(event.reason === 'error' ? { error: event.message ?? 'run failed' } : {}),
       messages: state.messages.map((message) =>
         message.role === 'tool' && message.text === ''

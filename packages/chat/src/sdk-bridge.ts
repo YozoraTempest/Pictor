@@ -25,6 +25,7 @@ export const PI_PROVIDER_ID = 'pictor'
 
 export type BridgeEvent =
   | { type: 'delta'; text: string }
+  | { type: 'thinking'; text: string }
   | { type: 'tool.start'; tool: string; input: unknown }
   | { type: 'tool.end'; tool: string; output: string; isError: boolean }
   | { type: 'error'; message: string }
@@ -160,6 +161,12 @@ export function mapPiEvent(event: unknown): BridgeEvent | null {
     if (typeof assistant !== 'object' || assistant === null) return null
 
     const delta = assistant as Record<string, unknown>
+    // Pi streams reasoning separately from the answer; both arrive as deltas and
+    // are rendered as different blocks, so they must not be merged into `delta`.
+    if (delta.type === 'thinking_delta' && typeof delta.delta === 'string') {
+      return { type: 'thinking', text: delta.delta }
+    }
+
     if (delta.type !== 'text_delta' || typeof delta.delta !== 'string') return null
     return { type: 'delta', text: delta.delta }
   }
