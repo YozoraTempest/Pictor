@@ -142,6 +142,7 @@ export class ChatService {
           tool: event.tool,
           output: event.output,
           isError: event.isError,
+          ...(event.diff === undefined ? {} : { diff: event.diff }),
         })
         return
       case 'error':

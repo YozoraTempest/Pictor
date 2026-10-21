@@ -1,9 +1,13 @@
 import type { ChatMessage } from '@pictor/shared'
 
+import { diffLines, formatDiff } from '../../lib/diff.js'
+
 /** One titled block inside an expanded tool call. */
 export interface ToolSection {
   title: string
   body: string
+  /** How to render the body; `diff` colours the unified +/- lines. */
+  format?: 'text' | 'diff'
 }
 
 /**
@@ -94,11 +98,17 @@ function prettyJson(value: unknown): string {
 
 // --- Built-in presenters -----------------------------------------------------
 
+/** Path argument: Pi's tools use `path`, older transcripts may carry `file_path`. */
+function pathArg(args: Record<string, unknown>): string {
+  const path = field(args, 'path')
+  return path.length > 0 ? path : field(args, 'file_path')
+}
+
 registerToolPresenter('read', (message) => {
   const args = asRecord(message.input)
   return {
     label: '阅读',
-    target: baseName(field(args, 'file_path')),
+    target: baseName(pathArg(args)),
     sections: [{ title: '文件内容', body: message.text }],
   }
 })
@@ -108,7 +118,7 @@ registerToolPresenter('write', (message) => {
   const written = field(args, 'content')
   return {
     label: '写入',
-    target: baseName(field(args, 'file_path')),
+    target: baseName(pathArg(args)),
     sections: [
       ...(written.length > 0 ? [{ title: '写入内容', body: written }] : []),
       { title: '结果', body: message.text },
@@ -118,18 +128,42 @@ registerToolPresenter('write', (message) => {
 
 registerToolPresenter('edit', (message) => {
   const args = asRecord(message.input)
-  const before = field(args, 'old_string')
-  const after = field(args, 'new_string')
+  // The tool already diffed the real file, so prefer its answer; the arguments
+  // are only a fallback for entries that arrive without details.
+  const diff = message.diff ?? diffFromArgs(args)
+
   return {
     label: '编辑',
-    target: baseName(field(args, 'file_path')),
+    target: baseName(pathArg(args)),
     sections: [
-      ...(before.length > 0 ? [{ title: '原内容', body: before }] : []),
-      ...(after.length > 0 ? [{ title: '新内容', body: after }] : []),
+      ...(diff === undefined ? [] : [{ title: '修改', body: diff, format: 'diff' as const }]),
       { title: '结果', body: message.text },
     ],
   }
 })
+
+/**
+ * Rebuilds a unified diff from the edit arguments.
+ *
+ * `edits` is a list of `{oldText,newText}` pairs; a single pair is also accepted
+ * directly so hand-written entries still render.
+ */
+function diffFromArgs(args: Record<string, unknown>): string | undefined {
+  const edits = Array.isArray(args.edits) ? args.edits : null
+  const pairs =
+    edits === null
+      ? [{ oldText: field(args, 'old_string'), newText: field(args, 'new_string') }]
+      : edits.map((entry) => {
+          const record = asRecord(entry)
+          return { oldText: field(record, 'oldText'), newText: field(record, 'newText') }
+        })
+
+  const rendered = pairs
+    .filter((pair) => pair.oldText.length > 0 || pair.newText.length > 0)
+    .map((pair) => formatDiff(diffLines(pair.oldText, pair.newText)))
+
+  return rendered.length === 0 ? undefined : rendered.join('\n')
+}
 
 registerToolPresenter('bash', (message) => {
   const args = asRecord(message.input)
@@ -166,7 +200,7 @@ registerToolPresenter('ls', (message) => {
   const args = asRecord(message.input)
   return {
     label: '列目录',
-    target: baseName(field(args, 'path')),
+    target: baseName(pathArg(args)),
     sections: [{ title: '目录内容', body: message.text }],
   }
 })

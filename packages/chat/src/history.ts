@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline'
 
 import { isBlockedReason, stripBlockedPrefix } from '@pictor/shared'
 
-import type { ChatHistoryPage, ChatMessage } from './types.js'
+import { readToolDiff, type ChatHistoryPage, type ChatMessage } from './types.js'
 
 /** Projects Pi JSONL entries into display messages. */
 export async function projectSessionFile(path: string): Promise<ChatMessage[]> {
@@ -140,6 +140,7 @@ function projectEntry(
     // the row reads 已拦截 or 失败.
     const blocked = isBlockedReason(text)
     const call = typeof message.toolCallId === 'string' ? calls.get(message.toolCallId) : undefined
+    const diff = readToolDiff(message.details)
 
     return [
       {
@@ -151,6 +152,7 @@ function projectEntry(
         isError: message.isError === true,
         ...(blocked ? { blocked: true } : {}),
         ...(call === undefined ? {} : { input: call.input }),
+        ...(diff === undefined ? {} : { diff }),
       },
     ]
   }

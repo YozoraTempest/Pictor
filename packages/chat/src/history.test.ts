@@ -132,3 +132,32 @@ describe('guard denials in the JSONL', () => {
     expect(messages[1]?.text).toBe('ENOENT: no such file')
   })
 })
+
+describe('edit diffs in the JSONL', () => {
+  function diffFixture(): string {
+    const directory = mkdtempSync(join(tmpdir(), 'pictor-history-diff-'))
+    const path = join(directory, 'session.jsonl')
+    const lines = [
+      {
+        type: 'message',
+        timestamp: 1,
+        message: {
+          role: 'toolResult',
+          toolName: 'edit',
+          isError: false,
+          content: [{ type: 'text', text: 'Successfully replaced 1 block(s).' }],
+          details: { diff: ' 1 alpha\n-2 beta\n+2 BETA', patch: '@@ -1,4 +1,4 @@' },
+        },
+      },
+    ]
+
+    writeFileSync(path, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`)
+    return path
+  }
+
+  it('keeps the diff the tool reported so a reload shows the same change', async () => {
+    const messages = await projectSessionFile(diffFixture())
+
+    expect(messages[0]?.diff).toBe(' 1 alpha\n-2 beta\n+2 BETA')
+  })
+})

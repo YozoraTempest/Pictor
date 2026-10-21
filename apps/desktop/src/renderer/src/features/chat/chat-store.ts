@@ -282,6 +282,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
               ...existing,
               text: event.output.slice(0, 4000),
               isError: event.isError,
+              ...(event.diff === undefined ? {} : { diff: event.diff }),
             }
           }
           return { messages }

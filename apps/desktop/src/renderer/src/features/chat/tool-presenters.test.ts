@@ -13,7 +13,7 @@ describe('presentTool', () => {
     const view = presentTool(
       call({
         toolName: 'read',
-        input: { file_path: '/repo/docs/ARCHITECTURE.md' },
+        input: { path: '/repo/docs/ARCHITECTURE.md' },
         text: '# Architecture',
       }),
     )
@@ -36,18 +36,39 @@ describe('presentTool', () => {
     ])
   })
 
-  it('turns an edit into before/after sections a diff can grow from', () => {
+  it('turns an edit into a colourised diff plus the result', () => {
     const view = presentTool(
       call({
         toolName: 'edit',
-        input: { file_path: 'src/a.ts', old_string: 'const a = 1', new_string: 'const a = 2' },
+        input: { path: 'src/a.ts', edits: [{ oldText: 'const a = 1', newText: 'const a = 2' }] },
         text: 'ok',
       }),
     )
 
     expect(view.label).toBe('编辑')
     expect(view.target).toBe('a.ts')
-    expect(view.sections.map((section) => section.title)).toEqual(['原内容', '新内容', '结果'])
+    expect(view.sections.map((section) => section.title)).toEqual(['修改', '结果'])
+
+    const diff = view.sections[0]
+    expect(diff?.format).toBe('diff')
+    expect(diff?.body.split('\n')).toEqual(['-const a = 1', '+const a = 2'])
+  })
+
+  it('prefers the diff the edit tool reported over one rebuilt from arguments', () => {
+    const view = presentTool(
+      call({
+        toolName: 'edit',
+        input: { path: 'a.txt', edits: [{ oldText: 'beta', newText: 'BETA' }] },
+        text: 'ok',
+        diff: ' 1 alpha\n-2 beta\n+2 BETA',
+      }),
+    )
+
+    expect(view.sections[0]).toEqual({
+      title: '修改',
+      body: ' 1 alpha\n-2 beta\n+2 BETA',
+      format: 'diff',
+    })
   })
 
   it('falls back to raw arguments and output for an unknown tool', () => {

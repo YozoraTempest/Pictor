@@ -1,7 +1,6 @@
 import { mkdirSync } from 'node:fs'
 
-import type { OpenChatInput } from './types.js'
-
+import { readToolDiff, type OpenChatInput } from './types.js'
 export const PI_API_KEY_ENV = 'PICTOR_PROVIDER_API_KEY'
 
 /**
@@ -27,7 +26,7 @@ export type BridgeEvent =
   | { type: 'delta'; text: string }
   | { type: 'thinking'; text: string }
   | { type: 'tool.start'; tool: string; input: unknown }
-  | { type: 'tool.end'; tool: string; output: string; isError: boolean }
+  | { type: 'tool.end'; tool: string; output: string; isError: boolean; diff?: string }
   | { type: 'error'; message: string }
 
 export type ToolInterceptor = (input: {
@@ -180,17 +179,18 @@ export function mapPiEvent(event: unknown): BridgeEvent | null {
   }
 
   if (record.type === 'tool_execution_end') {
+    const diff = readToolDiff((record.result as Record<string, unknown> | null)?.details)
     return {
       type: 'tool.end',
       tool: typeof record.toolName === 'string' ? record.toolName : 'tool',
       output: stringifyToolResult(record.result),
       isError: record.isError === true,
+      ...(diff === undefined ? {} : { diff }),
     }
   }
 
   return null
 }
-
 function stringifyToolResult(result: unknown): string {
   if (typeof result === 'string') return result
   if (typeof result !== 'object' || result === null) return ''

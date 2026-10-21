@@ -14,6 +14,13 @@ export interface ChatMessage {
   kind?: 'text' | 'thinking'
   /** Raw arguments a tool call was given; only tools carry this. */
   input?: unknown
+  /**
+   * Unified diff a tool reported for its change (`edit`).
+   *
+   * The tool computed it from the real file, so it is more trustworthy than
+   * diffing the call arguments, and it survives a reload via the JSONL entry.
+   */
+  diff?: string
 }
 
 export interface ChatHistoryPage {
@@ -36,6 +43,8 @@ export type ChatEvent =
       tool: string
       output: string
       isError: boolean
+      /** Unified diff the tool reported, when it made one. */
+      diff?: string
     }
   | {
       type: 'tool.blocked'

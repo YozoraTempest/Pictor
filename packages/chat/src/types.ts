@@ -28,3 +28,17 @@ export interface ChatMessagePageInput {
   /** Number of newest messages already loaded. */
   offset: number
 }
+
+/**
+ * Reads the unified diff a tool reported for the change it made.
+ *
+ * Pi records it on the result (`details.diff`), both live and in the JSONL, so
+ * one reader serves the streaming path and the reload path alike — and the
+ * transcript never has to guess by re-diffing call arguments.
+ */
+export function readToolDiff(details: unknown): string | undefined {
+  if (typeof details !== 'object' || details === null) return undefined
+
+  const diff = (details as Record<string, unknown>).diff
+  return typeof diff === 'string' && diff.length > 0 ? diff : undefined
+}

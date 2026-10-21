@@ -32,12 +32,12 @@ export function ToolGroup({
   const denied = messages.some((message) => message.blocked === true)
   const failed = messages.some((message) => message.isError === true && message.blocked !== true)
 
+  // While running the interesting thing is which tool is busy; once the group is
+  // done the only useful fact is how many calls it took, so the name is dropped.
   const summary =
     pending && running
       ? `正在调用 ${latestView?.label ?? '工具'}${latestView !== null && latestView.target.length > 0 ? ` ${latestView.target}` : ''}`
-      : messages.length === 1
-        ? `已运行 ${latestView?.label ?? '工具'}${latestView !== null && latestView.target.length > 0 ? ` ${latestView.target}` : ''}`
-        : `已运行 ${String(messages.length)} 个工具 · 最新 ${latestView?.label ?? '工具'}`
+      : `已运行 ${String(messages.length)} 个工具`
 
   return (
     <div
@@ -129,9 +129,13 @@ function ToolCallRow({ message }: { message: ChatMessage }): React.JSX.Element {
           {view.sections.map((section) => (
             <div key={section.title} className="flex flex-col gap-1">
               <span className="text-2xs text-faint">{section.title}</span>
-              <pre className="selectable max-h-48 overflow-auto rounded-md bg-bg px-2 py-1.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-muted">
-                {clipBody(section.body)}
-              </pre>
+              {section.format === 'diff' ? (
+                <DiffBlock body={section.body} />
+              ) : (
+                <pre className="selectable max-h-48 overflow-auto rounded-md bg-bg px-2 py-1.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-muted">
+                  {clipBody(section.body)}
+                </pre>
+              )}
             </div>
           ))}
         </div>
@@ -149,6 +153,26 @@ function CallStatus({ message }: { message: ChatMessage }): React.JSX.Element {
     return <TriangleAlert className="size-3 shrink-0 text-danger" aria-label="失败" />
   }
   return <Check className="size-3 shrink-0 text-success" aria-label="完成" />
+}
+
+/** Unified diff: added lines green, removed red, context muted. */
+function DiffBlock({ body }: { body: string }): React.JSX.Element {
+  const lines = body.split('\n')
+
+  return (
+    <pre className="selectable max-h-48 overflow-auto rounded-md bg-bg px-2 py-1.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap">
+      {lines.map((line, index) => {
+        const marker = line.charAt(0)
+        const tone = marker === '+' ? 'text-success' : marker === '-' ? 'text-danger' : 'text-muted'
+
+        return (
+          <div key={`${String(index)}-${line}`} className={tone}>
+            {line.length === 0 ? ' ' : line}
+          </div>
+        )
+      })}
+    </pre>
+  )
 }
 
 function clipBody(body: string): string {
