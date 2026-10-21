@@ -6,7 +6,7 @@ import { cn } from '../lib/cn.js'
 import { NavRail } from './NavRail.js'
 import { PanelResizer } from './PanelResizer.js'
 import { RightPanel } from './RightPanel.js'
-import { TitleBar } from './TitleBar.js'
+import { SidebarTools, TitleBar } from './TitleBar.js'
 
 /** Width bounds for the two side columns. */
 const SIDEBAR_DEFAULT = 240
@@ -43,23 +43,22 @@ export function AppShell({
 
       {/*
         The sidebar runs the full window height, so its divider reaches the top
-        edge instead of stopping at the title bar. The title bar itself only
-        spans the workspace column, which removes the line between the two.
+        edge instead of stopping at the title bar. The tools that belong to the
+        sidebar (app menu + switch) sit above the panel inside the same column;
+        the title bar over the workspace keeps only the session title.
       */}
       {view === 'home' && (
         <div
           className={cn(
-            'relative flex shrink-0',
+            'relative flex shrink-0 flex-col',
             dragging === null && 'transition-[width] duration-300 ease-out',
+            leftPanelOpen && 'border-r border-border',
           )}
           style={{ width: leftPanelOpen ? sidebarWidth : 0 }}
         >
-          <aside
-            className={cn(
-              'flex min-h-0 w-full flex-col overflow-hidden bg-surface/30',
-              leftPanelOpen && 'border-r border-border',
-            )}
-          >
+          {leftPanelOpen && <SidebarTools />}
+
+          <aside className="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface/30">
             <SessionsPanel />
           </aside>
 
