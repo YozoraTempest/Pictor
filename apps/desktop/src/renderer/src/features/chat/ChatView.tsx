@@ -50,6 +50,8 @@ export function ChatView(): React.JSX.Element {
   /** Distance from the column's left edge to the panel's right edge. */
   const [panelRight, setPanelRight] = useState(0)
   const [resizing, setResizing] = useState(false)
+  /** A timeline jump; the nonce lets the same turn be jumped to twice. */
+  const [jumpTo, setJumpTo] = useState<{ id: string; nonce: number } | null>(null)
 
   /** Keeps the panel inside its column, leaving the outer gutter for the scrollbar. */
   const clampWidth = useCallback((next: number): number => {
@@ -206,7 +208,7 @@ export function ChatView(): React.JSX.Element {
       ) : (
         <div className="relative flex min-h-0 flex-1">
           {/* Timeline lives outside the conversation panel, on the far left. */}
-          <Timeline turns={turns} />
+          <Timeline turns={turns} onJump={(id) => setJumpTo({ id, nonce: Date.now() })} />
           {/* min-w-0 keeps the column from being widened by the fixed-width panel,
               so opening the right panel narrows the conversation instead of letting
               it spill over the timeline. */}
@@ -225,6 +227,7 @@ export function ChatView(): React.JSX.Element {
               panelWidth={panelWidth}
               panelRef={attachPanel}
               animateWidth={!resizing}
+              jumpTo={jumpTo}
               footer={
                 <Composer
                   disabled={false}

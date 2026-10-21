@@ -23,6 +23,11 @@ export interface TranscriptProps {
   animateWidth?: boolean
   /** Input area pinned to the bottom of the panel. */
   footer?: React.ReactNode
+  /**
+   * A jump requested from the timeline. Carries a nonce so clicking the same turn
+   * twice still scrolls.
+   */
+  jumpTo?: { id: string; nonce: number } | null
 }
 
 /** Distance from the bottom that still counts as "following the stream". */
@@ -30,6 +35,9 @@ const FOLLOW_THRESHOLD = 56
 
 /** Horizontal breathing room between the panel and the column edges. */
 export const PANEL_GUTTER = 24
+
+/** Air left above a jumped-to prompt, so it reads as the top of the exchange. */
+const JUMP_TOP_GAP = 16
 
 export function Transcript({
   turns,
@@ -43,6 +51,7 @@ export function Transcript({
   panelRef,
   animateWidth = false,
   footer,
+  jumpTo = null,
 }: TranscriptProps): React.JSX.Element {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [pinned, setPinned] = useState(true)
@@ -52,6 +61,8 @@ export function Transcript({
   // scrolling up took several attempts.
   const pinnedRef = useRef(true)
   const lastTopRef = useRef(0)
+  /** True while a timeline jump animates; the follow rules must stay out of it. */
+  const jumpingRef = useRef(false)
   const observerRef = useRef<ResizeObserver | null>(null)
 
   const pin = useCallback((next: boolean) => {
@@ -70,6 +81,45 @@ export function Transcript({
   useLayoutEffect(() => {
     if (pinnedRef.current) stickToBottom()
   }, [turns, stickToBottom])
+
+  /**
+   * Timeline jumps live here, not in the rail, because they have to win against
+   * follow-the-stream.
+   *
+   * At the bottom `pinned` is true, and a smooth scroll's first frame moves only a
+   * pixel or two — not enough to trip the unpin threshold in `handleScroll`, whose
+   * "still following" branch would snap the view straight back to the bottom. So the
+   * jump unpins first and then scrolls itself.
+   */
+  useEffect(() => {
+    if (jumpTo === null) return
+
+    const scroller = scrollerRef.current
+    const target = document.getElementById(jumpTo.id)
+    if (scroller === null || target === null) return
+
+    pin(false)
+
+    const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+    const requested = scroller.scrollTop + top - JUMP_TOP_GAP
+    const max = scroller.scrollHeight - scroller.clientHeight
+    const next = Math.min(Math.max(requested, 0), max)
+
+    // Hold the follow rules off for the whole animation. Without this, the first
+    // scroll event still reports a position near the bottom (the animation has only
+    // just started), which re-pins the view and cancels the jump.
+    jumpingRef.current = true
+    lastTopRef.current = scroller.scrollTop
+
+    const release = (): void => {
+      jumpingRef.current = false
+      lastTopRef.current = scroller.scrollTop
+    }
+    scroller.addEventListener('scrollend', release, { once: true })
+    window.setTimeout(release, 800)
+
+    scroller.scrollTo({ top: next, behavior: 'smooth' })
+  }, [jumpTo, pin])
 
   // Streamed text, code blocks and images change the height without changing the
   // message count, so height changes have to be followed too. The observer is
@@ -105,6 +155,13 @@ export function Transcript({
   function handleScroll(): void {
     const scroller = scrollerRef.current
     if (scroller === null) return
+
+    // A jump drives the scroll itself; treating its frames as user input would
+    // re-pin the view and fight the animation.
+    if (jumpingRef.current) {
+      lastTopRef.current = scroller.scrollTop
+      return
+    }
 
     const previous = lastTopRef.current
     lastTopRef.current = scroller.scrollTop

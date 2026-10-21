@@ -9,9 +9,6 @@ interface Hovered {
   top: number
 }
 
-/** Air left above the jumped-to prompt, so it reads as the top of the exchange. */
-const JUMP_TOP_GAP = 16
-
 /**
  * Left-hand rail: one tick per exchange, centred in the column and growing up
  * and down from the middle.
@@ -19,7 +16,14 @@ const JUMP_TOP_GAP = 16
  * Clicking a tick jumps to that turn; hovering shows the prompt and the start of
  * the answer, which is how you find a conversation you half remember.
  */
-export function Timeline({ turns }: { turns: Turn[] }): React.JSX.Element | null {
+export function Timeline({
+  turns,
+  onJump,
+}: {
+  turns: Turn[]
+  /** Report the clicked turn; the transcript owns the scrolling and the unpin. */
+  onJump: (turnId: string) => void
+}): React.JSX.Element | null {
   const railRef = useRef<HTMLElement | null>(null)
   const [hovered, setHovered] = useState<Hovered | null>(null)
 
@@ -30,31 +34,6 @@ export function Timeline({ turns }: { turns: Turn[] }): React.JSX.Element | null
     if (rail === null) return
     const tick = event.currentTarget.getBoundingClientRect()
     setHovered({ turn, top: tick.top + tick.height / 2 - rail.getBoundingClientRect().top })
-  }
-
-  /**
-   * Scrolls the transcript so the clicked prompt sits near the top.
-   *
-   * `scrollIntoView` cannot express this: it aligns the whole turn, and the browser
-   * decides which ancestor to scroll. Computing the offset against the transcript's
-   * own scroller also lets the target be clamped to the last screenful, so picking a
-   * recent exchange simply lands at the bottom instead of stopping short.
-   */
-  function jumpTo(turnId: string): void {
-    const target = document.getElementById(turnId)
-    if (target === null) return
-
-    const scroller = target.closest<HTMLElement>('[role="log"]')
-    if (scroller === null) {
-      target.scrollIntoView({ block: 'start', behavior: 'smooth' })
-      return
-    }
-
-    const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top
-    const requested = scroller.scrollTop + top - JUMP_TOP_GAP
-    const max = scroller.scrollHeight - scroller.clientHeight
-
-    scroller.scrollTo({ top: Math.min(Math.max(requested, 0), max), behavior: 'smooth' })
   }
 
   return (
@@ -79,7 +58,7 @@ export function Timeline({ turns }: { turns: Turn[] }): React.JSX.Element | null
               onMouseLeave={() =>
                 setHovered((active) => (active?.turn.id === turn.id ? null : active))
               }
-              onClick={() => jumpTo(turn.id)}
+              onClick={() => onJump(turn.id)}
               className="group relative flex h-2 w-6 shrink-0 items-center"
             >
               <span
