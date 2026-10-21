@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react'
 
 import { useUiStore } from '../app/ui-store.js'
 import { SessionsPanel } from '../features/sessions/SessionsPanel.js'
+import { cn } from '../lib/cn.js'
 import { NavRail } from './NavRail.js'
 import { PanelResizer } from './PanelResizer.js'
 import { RightPanel } from './RightPanel.js'
@@ -27,6 +28,7 @@ export function AppShell({
   notification?: ReactNode
 }): React.JSX.Element {
   const view = useUiStore((state) => state.view)
+  const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
 
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT)
@@ -36,52 +38,71 @@ export function AppShell({
   const dragStart = useRef({ sidebar: SIDEBAR_DEFAULT, right: RIGHT_DEFAULT })
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-bg text-text">
-      <TitleBar />
+    <div className="flex h-full overflow-hidden bg-bg text-text">
+      <NavRail />
 
-      <div className="flex min-h-0 flex-1">
-        <NavRail />
+      {/*
+        The sidebar runs the full window height, so its divider reaches the top
+        edge instead of stopping at the title bar. The title bar itself only
+        spans the workspace column, which removes the line between the two.
+      */}
+      {view === 'home' && (
+        <div
+          className={cn(
+            'relative flex shrink-0',
+            dragging === null && 'transition-[width] duration-300 ease-out',
+          )}
+          style={{ width: leftPanelOpen ? sidebarWidth : 0 }}
+        >
+          <aside
+            className={cn(
+              'flex min-h-0 w-full flex-col overflow-hidden bg-surface/30',
+              leftPanelOpen && 'border-r border-border',
+            )}
+          >
+            <SessionsPanel />
+          </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+          {leftPanelOpen && (
+            <PanelResizer
+              attach="end"
+              style={{ right: 0 }}
+              label="调整侧栏宽度"
+              onStart={() => {
+                dragStart.current.sidebar = sidebarWidth
+                setDragging('sidebar')
+              }}
+              onMove={(deltaX) =>
+                setSidebarWidth(clamp(dragStart.current.sidebar + deltaX, SIDEBAR_MIN, SIDEBAR_MAX))
+              }
+              onEnd={() => setDragging(null)}
+              onReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
+            />
+          )}
+        </div>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TitleBar />
+
+        <div className="flex min-h-0 flex-1 flex-col">
           {notification !== undefined && <div className="px-3 pt-2">{notification}</div>}
 
           {view === 'home' ? (
             <div
-              className={`relative grid min-h-0 flex-1 ${
-                dragging === null ? 'transition-[grid-template-columns] duration-300 ease-out' : ''
-              }`}
+              className={cn(
+                'relative grid min-h-0 flex-1',
+                dragging === null && 'transition-[grid-template-columns] duration-300 ease-out',
+              )}
               style={{
-                gridTemplateColumns: `${String(sidebarWidth)}px minmax(0, 1fr) ${
+                gridTemplateColumns: `minmax(0, 1fr) ${
                   rightPanelOpen ? `${String(rightWidth)}px` : '0px'
                 }`,
               }}
             >
-              <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-surface/30">
-                <SessionsPanel />
-              </aside>
-
               <main className="view-main min-h-0 min-w-0 overflow-hidden">{children}</main>
 
               <RightPanel />
-
-              {/* Both separators sit on the panel edges; the middle column keeps its
-                  own handle inside the conversation panel. */}
-              <PanelResizer
-                attach="end"
-                style={{ left: sidebarWidth }}
-                label="调整侧栏宽度"
-                onStart={() => {
-                  dragStart.current.sidebar = sidebarWidth
-                  setDragging('sidebar')
-                }}
-                onMove={(deltaX) =>
-                  setSidebarWidth(
-                    clamp(dragStart.current.sidebar + deltaX, SIDEBAR_MIN, SIDEBAR_MAX),
-                  )
-                }
-                onEnd={() => setDragging(null)}
-                onReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
-              />
 
               {rightPanelOpen && (
                 <PanelResizer

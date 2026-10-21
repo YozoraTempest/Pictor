@@ -1,4 +1,4 @@
-import { Minus, PanelRight, Sparkles, Square, X } from 'lucide-react'
+import { Menu as MenuIcon, Minus, PanelLeft, PanelRight, Square, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { WindowCommand } from '../../../shared/bridge.js'
@@ -15,6 +15,8 @@ function newSessionTitle(): string {
 export function TitleBar(): React.JSX.Element {
   const view = useUiStore((state) => state.view)
   const setView = useUiStore((state) => state.setView)
+  const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
+  const toggleLeftPanel = useUiStore((state) => state.toggleLeftPanel)
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
   const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
 
@@ -41,39 +43,35 @@ export function TitleBar(): React.JSX.Element {
     void window.pictor.windowCommand(name)
   }
 
-  const fileMenu: MenuEntry[] = [
+  /**
+   * One overflow menu instead of a menu bar.
+   *
+   * A frameless window has no OS menu to fall back on, and four always-visible
+   * labels cost more attention than they earn: the same items live behind a single
+   * trigger, grouped by the separator lines the old menus used to draw.
+   */
+  const appMenu: MenuEntry[] = [
     { label: '新建聊天', onSelect: () => void createSession(newSessionTitle(), null) },
     { label: '添加项目', onSelect: () => void addProject() },
-    'separator',
     { label: '设置', onSelect: () => setView('settings') },
     'separator',
-    { label: '退出', danger: true, onSelect: () => command('close') },
-  ]
-
-  const editMenu: MenuEntry[] = [
     { label: '撤销', onSelect: () => command('undo') },
     { label: '重做', onSelect: () => command('redo') },
-    'separator',
     { label: '剪切', onSelect: () => command('cut') },
     { label: '复制', onSelect: () => command('copy') },
     { label: '粘贴', onSelect: () => command('paste') },
     { label: '全选', onSelect: () => command('selectAll') },
-  ]
-
-  const viewMenu: MenuEntry[] = [
+    'separator',
     { label: '首页', checked: view === 'home', onSelect: () => setView('home') },
-    { label: '设置', checked: view === 'settings', onSelect: () => setView('settings') },
+    { label: '显示侧栏', checked: leftPanelOpen, onSelect: toggleLeftPanel },
     { label: '显示面板', checked: rightPanelOpen, onSelect: toggleRightPanel },
     'separator',
     { label: '重新加载', onSelect: () => command('reload') },
     { label: '开发者工具', onSelect: () => command('toggleDevTools') },
-    'separator',
     { label: '放大', onSelect: () => command('zoomIn') },
     { label: '缩小', onSelect: () => command('zoomOut') },
     { label: '实际大小', onSelect: () => command('zoomReset') },
-  ]
-
-  const helpMenu: MenuEntry[] = [
+    'separator',
     {
       label: '关于 Pictor',
       onSelect: () =>
@@ -83,48 +81,35 @@ export function TitleBar(): React.JSX.Element {
             : `Pictor ${info.version} · Electron ${info.electron} · host-core ${info.hostCore}`,
         ),
     },
+    { label: '退出', danger: true, onSelect: () => command('close') },
   ]
 
-  const textTrigger = 'h-7 w-auto grid-flow-col auto-cols-max gap-1 px-2 text-xs'
-
   return (
-    <header className="app-drag flex h-9 shrink-0 items-center gap-1 border-b border-border bg-surface/60 pr-0 pl-2">
-      <div className="app-no-drag flex items-center gap-1.5 pr-1">
-        <div className="grid size-5 place-items-center rounded-sm bg-accent/15 text-accent">
-          <Sparkles className="size-3" />
-        </div>
-        <span className="text-xs font-semibold tracking-wide">Pictor</span>
-      </div>
-
+    <header className="app-drag flex h-9 shrink-0 items-center gap-1 border-b border-border bg-surface/60 pr-0 pl-1.5">
       <div className="app-no-drag flex items-center gap-0.5">
         <Menu
-          label="文件"
-          trigger="文件"
-          triggerClassName={textTrigger}
+          label="菜单"
+          trigger={<MenuIcon className="size-3.5" />}
+          triggerClassName="size-7"
+          items={appMenu}
           align="left"
-          items={fileMenu}
         />
-        <Menu
-          label="编辑"
-          trigger="编辑"
-          triggerClassName={textTrigger}
-          align="left"
-          items={editMenu}
-        />
-        <Menu
-          label="视图"
-          trigger="视图"
-          triggerClassName={textTrigger}
-          align="left"
-          items={viewMenu}
-        />
-        <Menu
-          label="帮助"
-          trigger="帮助"
-          triggerClassName={textTrigger}
-          align="left"
-          items={helpMenu}
-        />
+
+        {view === 'home' && (
+          <Tooltip label={leftPanelOpen ? '收起侧栏' : '展开侧栏'} side="bottom" align="start">
+            <button
+              type="button"
+              aria-label={leftPanelOpen ? '收起侧栏' : '展开侧栏'}
+              onClick={toggleLeftPanel}
+              className={cn(
+                'grid size-7 place-items-center rounded-sm transition-colors duration-150 hover:bg-surface-hover',
+                leftPanelOpen ? 'text-muted hover:text-text' : 'text-faint',
+              )}
+            >
+              <PanelLeft className="size-3.5" />
+            </button>
+          </Tooltip>
+        )}
       </div>
 
       <div className="mx-2 h-4 w-px bg-border" />
@@ -136,25 +121,27 @@ export function TitleBar(): React.JSX.Element {
         )}
       </p>
 
+      {/* The panel it controls sits on the right, so its switch lives there too. */}
       {view === 'home' && (
-        <Tooltip
-          label={rightPanelOpen ? '收起面板' : '展开面板'}
-          side="bottom"
-          align="end"
-          className="app-no-drag"
-        >
-          <button
-            type="button"
-            aria-label={rightPanelOpen ? '收起面板' : '展开面板'}
-            onClick={toggleRightPanel}
-            className={cn(
-              'grid size-7 place-items-center rounded-sm transition-colors duration-150 hover:bg-surface-hover',
-              rightPanelOpen ? 'text-muted hover:text-text' : 'text-faint',
-            )}
+        <div className="app-no-drag flex items-center">
+          <Tooltip
+            label={rightPanelOpen ? '收起右侧面板' : '展开右侧面板'}
+            side="bottom"
+            align="end"
           >
-            <PanelRight className="size-3.5" />
-          </button>
-        </Tooltip>
+            <button
+              type="button"
+              aria-label={rightPanelOpen ? '收起右侧面板' : '展开右侧面板'}
+              onClick={toggleRightPanel}
+              className={cn(
+                'grid size-7 place-items-center rounded-sm transition-colors duration-150 hover:bg-surface-hover',
+                rightPanelOpen ? 'text-muted hover:text-text' : 'text-faint',
+              )}
+            >
+              <PanelRight className="size-3.5" />
+            </button>
+          </Tooltip>
+        </div>
       )}
 
       <div className="app-no-drag ml-1 flex items-center">
