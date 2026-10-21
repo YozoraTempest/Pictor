@@ -7,8 +7,9 @@ import { cn } from '../../lib/cn.js'
 import { formatDuration, newSessionTitle, phaseLabel } from '../../lib/format-time.js'
 import { useChatStore } from './chat-store.js'
 import { Composer } from './Composer.js'
-import { Timeline } from './Timeline.js'
+import { ProjectPicker } from './ProjectPicker.js'
 import { PANEL_GUTTER, Transcript } from './Transcript.js'
+import { Timeline } from './Timeline.js'
 import { toolLabel } from './tool-presenters.js'
 import { buildTurns } from './turns.js'
 
@@ -26,7 +27,7 @@ export function ChatView(): React.JSX.Element {
   const draft = useWorkspaceStore((state) => state.draft)
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const clearDraft = useWorkspaceStore((state) => state.clearDraft)
-
+  const assignProject = useWorkspaceStore((state) => state.assignProject)
   const messages = useChatStore((state) => state.messages)
   const running = useChatStore((state) => state.running)
   const phase = useChatStore((state) => state.phase)
@@ -232,6 +233,10 @@ export function ChatView(): React.JSX.Element {
               footer={
                 <div className="flex flex-col gap-2">
                   {status}
+                  <ProjectPicker
+                    projectId={draft?.projectId ?? session?.projectId ?? null}
+                    onChange={assignProject}
+                  />
                   <Composer
                     disabled={false}
                     running={running}
