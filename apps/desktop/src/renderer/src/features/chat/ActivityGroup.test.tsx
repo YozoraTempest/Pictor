@@ -76,6 +76,18 @@ describe('a single call', () => {
     expect(rows[1]?.getAttribute('aria-expanded')).toBe('true')
     expect(rows[0]?.getAttribute('aria-expanded')).toBe('false')
   })
+
+  it('keeps the same frame a wrapped group uses', () => {
+    const single = render(<ActivityGroup messages={[call('x1', 'bash')]} running={false} />)
+    const singleFrame = single.container.firstElementChild?.className
+    single.unmount()
+
+    const many = render(
+      <ActivityGroup messages={[call('x1', 'read'), call('x2', 'bash')]} running={false} />,
+    )
+
+    expect(singleFrame).toBe(many.container.firstElementChild?.className)
+  })
 })
 
 describe('several calls', () => {

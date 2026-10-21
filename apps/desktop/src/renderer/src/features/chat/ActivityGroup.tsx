@@ -64,9 +64,25 @@ export function ActivityGroup({
     </AnimatePresence>
   )
 
+  // Both layouts share one frame, so a run that grows a second call keeps the
+  // same shape: only the summary row is added, not a different looking block.
+  const shell = cn(
+    'flex flex-col overflow-hidden rounded-lg border bg-surface/50',
+    denied || failed ? 'border-danger/40' : 'border-border',
+  )
+
   if (single) {
     // Nothing to fold: show the call itself rather than a header that hides it.
-    return <div className="flex flex-col">{rows}</div>
+    return (
+      <motion.div
+        initial={reduced === true ? false : { opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: reduced === true ? 0 : 0.18, ease: 'easeOut' }}
+        className={shell}
+      >
+        {rows}
+      </motion.div>
+    )
   }
 
   const summary = (() => {
@@ -92,10 +108,7 @@ export function ActivityGroup({
       initial={reduced === true ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduced === true ? 0 : 0.18, ease: 'easeOut' }}
-      className={cn(
-        'flex flex-col overflow-hidden rounded-lg border bg-surface/50',
-        denied || failed ? 'border-danger/40' : 'border-border',
-      )}
+      className={shell}
     >
       <button
         type="button"
