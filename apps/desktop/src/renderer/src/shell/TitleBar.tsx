@@ -1,4 +1,13 @@
-import { Menu as MenuIcon, Minus, PanelLeft, PanelRight, Square, X } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Menu as MenuIcon,
+  Minus,
+  PanelLeft,
+  PanelRight,
+  Square,
+  X,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { WindowCommand } from '../../../shared/bridge.js'
@@ -21,9 +30,9 @@ function useWindowCommand(): (name: WindowCommand) => void {
 /**
  * One overflow menu instead of a menu bar.
  *
- * A frameless window has no OS menu to fall back on, and four always-visible
- * labels cost more attention than they earn: the same items live behind a single
- * trigger, grouped by the separator lines the old menus used to draw.
+ * A frameless window has no OS menu to fall back on, and a row of always-visible
+ * labels costs more attention than it earns: the same groups live behind a single
+ * trigger, each opening its own second-level list.
  */
 function useAppMenu(): MenuEntry[] {
   const view = useUiStore((state) => state.view)
@@ -40,37 +49,67 @@ function useAppMenu(): MenuEntry[] {
   const command = useWindowCommand()
 
   return [
-    { label: '新建聊天', onSelect: () => void createSession(newSessionTitle(), null) },
-    { label: '添加项目', onSelect: () => void addProject() },
-    { label: '设置', onSelect: () => setView('settings') },
-    'separator',
-    { label: '撤销', onSelect: () => command('undo') },
-    { label: '重做', onSelect: () => command('redo') },
-    { label: '剪切', onSelect: () => command('cut') },
-    { label: '复制', onSelect: () => command('copy') },
-    { label: '粘贴', onSelect: () => command('paste') },
-    { label: '全选', onSelect: () => command('selectAll') },
-    'separator',
-    { label: '首页', checked: view === 'home', onSelect: () => setView('home') },
-    { label: '显示侧栏', checked: leftPanelOpen, onSelect: toggleLeftPanel },
-    { label: '显示面板', checked: rightPanelOpen, onSelect: toggleRightPanel },
-    'separator',
-    { label: '重新加载', onSelect: () => command('reload') },
-    { label: '开发者工具', onSelect: () => command('toggleDevTools') },
-    { label: '放大', onSelect: () => command('zoomIn') },
-    { label: '缩小', onSelect: () => command('zoomOut') },
-    { label: '实际大小', onSelect: () => command('zoomReset') },
-    'separator',
     {
-      label: '关于 Pictor',
-      onSelect: () =>
-        setNotice(
-          info === null
-            ? 'Pictor'
-            : `Pictor ${info.version} · Electron ${info.electron} · host-core ${info.hostCore}`,
-        ),
+      label: '文件',
+      children: [
+        {
+          label: '新建聊天',
+          shortcut: 'Ctrl+N',
+          onSelect: () => void createSession(newSessionTitle(), null),
+        },
+        { label: '添加项目', onSelect: () => void addProject() },
+        'separator',
+        { label: '设置', shortcut: 'Ctrl+,', onSelect: () => setView('settings') },
+        'separator',
+        { label: '关闭窗口', shortcut: 'Ctrl+W', danger: true, onSelect: () => command('close') },
+      ],
     },
-    { label: '退出', danger: true, onSelect: () => command('close') },
+    {
+      label: '编辑',
+      children: [
+        { label: '撤销', shortcut: 'Ctrl+Z', onSelect: () => command('undo') },
+        { label: '重做', shortcut: 'Ctrl+Shift+Z', onSelect: () => command('redo') },
+        'separator',
+        { label: '剪切', shortcut: 'Ctrl+X', onSelect: () => command('cut') },
+        { label: '复制', shortcut: 'Ctrl+C', onSelect: () => command('copy') },
+        { label: '粘贴', shortcut: 'Ctrl+V', onSelect: () => command('paste') },
+        { label: '全选', shortcut: 'Ctrl+A', onSelect: () => command('selectAll') },
+      ],
+    },
+    {
+      label: '视图',
+      children: [
+        { label: '首页', checked: view === 'home', onSelect: () => setView('home') },
+        {
+          label: '显示侧栏',
+          checked: leftPanelOpen,
+          shortcut: 'Ctrl+B',
+          onSelect: toggleLeftPanel,
+        },
+        { label: '显示面板', checked: rightPanelOpen, onSelect: toggleRightPanel },
+        'separator',
+        { label: '放大', shortcut: 'Ctrl+=', onSelect: () => command('zoomIn') },
+        { label: '缩小', shortcut: 'Ctrl+-', onSelect: () => command('zoomOut') },
+        { label: '实际大小', shortcut: 'Ctrl+0', onSelect: () => command('zoomReset') },
+      ],
+    },
+    {
+      label: '帮助',
+      children: [
+        {
+          label: '关于 Pictor',
+          onSelect: () =>
+            setNotice(
+              info === null
+                ? 'Pictor'
+                : `Pictor ${info.version} · Electron ${info.electron} · host-core ${info.hostCore}`,
+            ),
+        },
+        'separator',
+        { label: '重新加载', onSelect: () => command('reload') },
+        { label: '开发者工具', onSelect: () => command('toggleDevTools') },
+      ],
+    },
   ]
 }
 
@@ -80,19 +119,32 @@ export interface TitleBarProps {
    * while the drawer lives next to the content, so the handlers are passed down.
    */
   sidebarHover: { onEnter: () => void; onLeave: () => void }
+  /** Width of the pinned sidebar, so the divider lines up with the panel below. */
+  sidebarWidth: number
+  /** While the divider is dragged the width transition has to stay off. */
+  sidebarResizing: boolean
 }
 
-export function TitleBar({ sidebarHover }: TitleBarProps): React.JSX.Element {
+export function TitleBar({
+  sidebarHover,
+  sidebarWidth,
+  sidebarResizing,
+}: TitleBarProps): React.JSX.Element {
   const view = useUiStore((state) => state.view)
+  const setView = useUiStore((state) => state.setView)
   const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
   const toggleLeftPanel = useUiStore((state) => state.toggleLeftPanel)
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
   const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
+  const history = useUiStore((state) => state.history)
+  const historyIndex = useUiStore((state) => state.historyIndex)
+  const stepHistory = useUiStore((state) => state.stepHistory)
 
   const projects = useWorkspaceStore((state) => state.projects)
   const selectedProjectId = useWorkspaceStore((state) => state.selectedProjectId)
   const sessions = useWorkspaceStore((state) => state.sessions)
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
+  const selectSession = useWorkspaceStore((state) => state.selectSession)
 
   const [maximized, setMaximized] = useState(false)
 
@@ -106,17 +158,34 @@ export function TitleBar({ sidebarHover }: TitleBarProps): React.JSX.Element {
   const command = useWindowCommand()
   const appMenu = useAppMenu()
 
-  return (
-    <header className="app-drag flex h-9 shrink-0 items-center gap-1 border-b border-border bg-surface/60 pl-1.5">
-      <div className="app-no-drag flex items-center gap-0.5">
-        <Menu
-          label="菜单"
-          trigger={<MenuIcon className="size-3.5" />}
-          triggerClassName="size-7"
-          items={appMenu}
-          align="left"
-        />
+  const canGoBack = historyIndex > 0
+  const canGoForward = historyIndex >= 0 && historyIndex < history.length - 1
 
+  function go(direction: -1 | 1): void {
+    const location = stepHistory(direction)
+    if (location === null) return
+
+    setView(location.view)
+    selectSession(location.sessionId)
+  }
+
+  return (
+    <header className="app-drag flex h-9 shrink-0 items-center bg-surface/60">
+      {/*
+        The tools sit in the header, but the strip they occupy matches the sidebar
+        width while it is pinned: its right edge carries the divider, so the line
+        runs on through the title bar and the title starts past it. Collapsed, the
+        strip shrinks to the buttons, the divider goes away and the title slides
+        left.
+      */}
+      <div
+        className={cn(
+          'flex h-full items-center gap-0.5 pl-1.5',
+          leftPanelOpen && 'border-r border-border',
+          !sidebarResizing && 'transition-[width] duration-300 ease-out',
+        )}
+        style={leftPanelOpen ? { width: sidebarWidth } : undefined}
+      >
         <Tooltip
           label={leftPanelOpen ? '收起侧栏' : '悬停预览，点击展开侧栏'}
           side="bottom"
@@ -136,11 +205,45 @@ export function TitleBar({ sidebarHover }: TitleBarProps): React.JSX.Element {
             <PanelLeft className="size-3.5" />
           </button>
         </Tooltip>
+
+        <Tooltip label="返回" side="bottom" align="start">
+          <button
+            type="button"
+            aria-label="返回"
+            disabled={!canGoBack}
+            onClick={() => {
+              go(-1)
+            }}
+            className="grid size-7 place-items-center rounded-sm text-faint transition-colors duration-150 hover:bg-surface-hover hover:text-text disabled:pointer-events-none disabled:opacity-30"
+          >
+            <ArrowLeft className="size-3.5" />
+          </button>
+        </Tooltip>
+
+        <Tooltip label="前进" side="bottom" align="start">
+          <button
+            type="button"
+            aria-label="前进"
+            disabled={!canGoForward}
+            onClick={() => {
+              go(1)
+            }}
+            className="grid size-7 place-items-center rounded-sm text-faint transition-colors duration-150 hover:bg-surface-hover hover:text-text disabled:pointer-events-none disabled:opacity-30"
+          >
+            <ArrowRight className="size-3.5" />
+          </button>
+        </Tooltip>
+
+        <Menu
+          label="更多"
+          trigger={<MenuIcon className="size-3.5" />}
+          triggerClassName="size-7"
+          items={appMenu}
+          align="left"
+        />
       </div>
 
-      <div className="mx-2 h-4 w-px bg-border" />
-
-      <p className="min-w-0 flex-1 truncate text-2xs text-faint">
+      <p className="mx-2 min-w-0 flex-1 truncate text-2xs text-faint">
         {view === 'settings' ? '设置' : (project?.name ?? '未选择项目')}
         {view === 'home' && session !== null && (
           <span className="text-muted"> / {session.title}</span>

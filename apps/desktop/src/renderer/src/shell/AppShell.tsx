@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { useUiStore } from '../app/ui-store.js'
+import { useWorkspaceStore } from '../app/workspace-store.js'
 import { SessionsPanel } from '../features/sessions/SessionsPanel.js'
 import { cn } from '../lib/cn.js'
 import { NavRail } from './NavRail.js'
@@ -32,6 +33,8 @@ export function AppShell({
   const view = useUiStore((state) => state.view)
   const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
+  const recordLocation = useUiStore((state) => state.recordLocation)
+  const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
 
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT)
   const [rightWidth, setRightWidth] = useState(RIGHT_DEFAULT)
@@ -75,6 +78,11 @@ export function AppShell({
 
   useEffect(() => cancelHide, [cancelHide])
 
+  // Every place we land on feeds the title bar's back/forward buttons.
+  useEffect(() => {
+    recordLocation({ view, sessionId: selectedSessionId })
+  }, [view, selectedSessionId, recordLocation])
+
   const sidebarVisible = leftPanelOpen || peeking
 
   return (
@@ -82,7 +90,11 @@ export function AppShell({
       <NavRail />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TitleBar sidebarHover={{ onEnter: showPeek, onLeave: hidePeek }} />
+        <TitleBar
+          sidebarHover={{ onEnter: showPeek, onLeave: hidePeek }}
+          sidebarWidth={sidebarWidth}
+          sidebarResizing={dragging === 'sidebar'}
+        />
 
         <div className="flex min-h-0 flex-1 flex-col">
           {notification !== undefined && <div className="px-3 pt-2">{notification}</div>}

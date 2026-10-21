@@ -6,9 +6,12 @@ import { useChatStore } from '../features/chat/chat-store.js'
 import { SettingsView } from '../features/settings/SettingsView.js'
 import { AppShell } from '../shell/AppShell.js'
 import { useUiStore } from './ui-store.js'
+import { useAppShortcuts } from './use-app-shortcuts.js'
 import { useWorkspaceStore } from './workspace-store.js'
 
 export function App(): React.JSX.Element {
+  useAppShortcuts()
+
   const view = useUiStore((state) => state.view)
 
   const refresh = useWorkspaceStore((state) => state.refresh)
