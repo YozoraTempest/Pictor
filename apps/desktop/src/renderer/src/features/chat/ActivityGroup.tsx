@@ -1,23 +1,26 @@
-import { Check, ChevronDown, ShieldX, Terminal, TriangleAlert } from 'lucide-react'
+import { Brain, Check, ChevronDown, ShieldX, Terminal, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 
 import type { ChatMessage } from '@pictor/shared'
 
 import { Spinner } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
+import { ThinkingBlock } from './ThinkingBlock.js'
 import { presentTool } from './tool-presenters.js'
+import { groupActivityItems } from './turns.js'
 
 const BODY_LIMIT = 4000
 
 /**
- * A run of adjacent tool calls.
+ * Everything the agent did between two answers: its reasoning interleaved with
+ * the tool calls it made.
  *
- * The outer row summarizes the group; expanding it lists each call, and each
- * call expands again into the sections its own tool defines (`文件内容`,
- * `执行的命令`, a future diff, …). Names and targets come from the presenter
+ * One collapsed row stands for the whole trail; expanding it lists the reasoning
+ * and each call, and a call expands again into the sections its own tool defines
+ * (`文件内容`, `执行的命令`, a diff, …). Names and targets come from the presenter
  * registry, so a new tool can describe itself without touching this file.
  */
-export function ToolGroup({
+export function ActivityGroup({
   messages,
   running,
 }: {
@@ -25,19 +28,29 @@ export function ToolGroup({
   running: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  const latest = messages.at(-1)
+  const items = groupActivityItems(messages)
+  const last = items.at(-1)
+
+  const tools = messages.filter((message) => message.role === 'tool')
+  const latest = tools.at(-1)
   const latestView = latest === undefined ? null : presentTool(latest)
+  const pending = tools.some((message) => message.text === '')
+  const denied = tools.some((message) => message.blocked === true)
+  const failed = tools.some((message) => message.isError === true && message.blocked !== true)
 
-  const pending = messages.some((message) => message.text === '')
-  const denied = messages.some((message) => message.blocked === true)
-  const failed = messages.some((message) => message.isError === true && message.blocked !== true)
+  // Reasoning streams in last while the model thinks; that is the moment to say
+  // so instead of repeating the previous tool's name.
+  const thinking = running && last?.kind === 'thinking'
 
-  // While running the interesting thing is which tool is busy; once the group is
-  // done the only useful fact is how many calls it took, so the name is dropped.
-  const summary =
-    pending && running
-      ? `正在调用 ${latestView?.label ?? '工具'}${latestView !== null && latestView.target.length > 0 ? ` ${latestView.target}` : ''}`
-      : `已运行 ${String(messages.length)} 个工具`
+  const summary = (() => {
+    if (running && pending && latestView !== null) {
+      const target = latestView.target.length === 0 ? '' : ` ${latestView.target}`
+      return `正在调用 ${latestView.label}${target}`
+    }
+    if (thinking) return '正在思考'
+    if (tools.length === 0) return '思考过程'
+    return `已运行 ${String(tools.length)} 个工具`
+  })()
 
   return (
     <div
@@ -59,7 +72,7 @@ export function ToolGroup({
         )}
         <span className="truncate text-xs text-muted">{summary}</span>
 
-        <GroupStatus pending={pending} running={running} denied={denied} failed={failed} />
+        <GroupStatus running={running} denied={denied} failed={failed} empty={tools.length === 0} />
 
         <ChevronDown
           className={cn(
@@ -71,9 +84,13 @@ export function ToolGroup({
 
       {open && (
         <ul className="flex flex-col border-t border-border">
-          {messages.map((message) => (
-            <ToolCallRow key={message.id} message={message} />
-          ))}
+          {items.map((item) =>
+            item.kind === 'thinking' ? (
+              <ThinkingBlock key={item.id} text={item.text} live={running && item === last} />
+            ) : (
+              <ToolCallRow key={item.message.id} message={item.message} />
+            ),
+          )}
         </ul>
       )}
     </div>
@@ -81,19 +98,23 @@ export function ToolGroup({
 }
 
 function GroupStatus({
-  pending,
   running,
   denied,
   failed,
+  empty,
 }: {
-  pending: boolean
   running: boolean
   denied: boolean
   failed: boolean
+  empty: boolean
 }): React.JSX.Element {
   if (denied) return <ShieldX className="size-3 shrink-0 text-danger" aria-label="已拦截" />
   if (failed) return <TriangleAlert className="size-3 shrink-0 text-danger" aria-label="含失败" />
-  if (pending && running) return <Spinner className="size-3" />
+  // While the run is live the trail is still moving, whatever it holds so far.
+  if (running) return <Spinner className="size-3" />
+  // A finished trail with no tool calls is pure reasoning; a check mark would
+  // claim work that never happened.
+  if (empty) return <Brain className="size-3 shrink-0 text-faint" aria-label="仅思考" />
   return <Check className="size-3 shrink-0 text-success" aria-label="已完成" />
 }
 

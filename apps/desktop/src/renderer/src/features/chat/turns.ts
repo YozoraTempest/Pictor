@@ -2,9 +2,9 @@ import type { ChatMessage } from '@pictor/shared'
 
 /** One visual segment inside an agent turn. */
 export type TurnPart =
-  | { kind: 'thinking'; id: string; text: string }
+  /** Reasoning and tool calls, in the order they happened. */
+  | { kind: 'activity'; id: string; messages: ChatMessage[] }
   | { kind: 'text'; id: string; text: string }
-  | { kind: 'tools'; id: string; messages: ChatMessage[] }
 
 export interface Turn {
   id: string
@@ -62,26 +62,20 @@ export function buildTurns(messages: readonly ChatMessage[]): Turn[] {
 }
 
 function appendPart(turn: Turn, message: ChatMessage): void {
-  const last = turn.parts.at(-1)
-
-  if (message.role === 'tool') {
-    if (last?.kind === 'tools') {
+  // Reasoning belongs to the work the agent did, not to a block of its own: it
+  // joins the same list as the tool calls, so one group holds the whole trail
+  // and the transcript stays a short column instead of a stack of boxes.
+  if (message.role === 'tool' || message.kind === 'thinking') {
+    const last = turn.parts.at(-1)
+    if (last?.kind === 'activity') {
       last.messages.push(message)
     } else {
-      turn.parts.push({ kind: 'tools', id: `tools-${message.id}`, messages: [message] })
+      turn.parts.push({ kind: 'activity', id: `activity-${message.id}`, messages: [message] })
     }
     return
   }
 
-  if (message.kind === 'thinking') {
-    if (last?.kind === 'thinking') {
-      last.text += message.text
-    } else {
-      turn.parts.push({ kind: 'thinking', id: `thinking-${message.id}`, text: message.text })
-    }
-    return
-  }
-
+  const last = turn.parts.at(-1)
   if (last?.kind === 'text') {
     last.text += message.text
   } else {
@@ -90,13 +84,44 @@ function appendPart(turn: Turn, message: ChatMessage): void {
   turn.answer += message.text
 }
 
+/** One row inside an activity group. */
+export type ActivityItem =
+  { kind: 'thinking'; id: string; text: string } | { kind: 'tool'; message: ChatMessage }
+
+/**
+ * Splits an activity group into rows.
+ *
+ * Reasoning streams as many small messages; neighbouring ones are merged so the
+ * group shows one `思考过程` row, while its position relative to the tool calls
+ * it was interleaved with stays exact.
+ */
+export function groupActivityItems(messages: readonly ChatMessage[]): ActivityItem[] {
+  const items: ActivityItem[] = []
+
+  for (const message of messages) {
+    if (message.kind === 'thinking') {
+      const last = items.at(-1)
+      if (last?.kind === 'thinking') {
+        last.text += message.text
+        continue
+      }
+      items.push({ kind: 'thinking', id: `thinking-${message.id}`, text: message.text })
+      continue
+    }
+
+    items.push({ kind: 'tool', message })
+  }
+
+  return items
+}
+
 /** Index of the turn a message belongs to, or -1. */
 export function findTurnIndex(turns: readonly Turn[], messageId: string): number {
   return turns.findIndex(
     (turn) =>
       turn.user?.id === messageId ||
       turn.parts.some((part) =>
-        part.kind === 'tools'
+        part.kind === 'activity'
           ? part.messages.some((message) => message.id === messageId)
           : part.id.endsWith(messageId),
       ),

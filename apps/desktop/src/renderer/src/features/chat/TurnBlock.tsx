@@ -3,8 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { formatClock, formatDuration, phaseLabel, type AgentPhase } from '../../lib/format-time.js'
 import { Markdown } from './Markdown.js'
-import { ThinkingBlock } from './ThinkingBlock.js'
-import { ToolGroup } from './ToolGroup.js'
+import { ActivityGroup } from './ActivityGroup.js'
 import { toolLabel } from './tool-presenters.js'
 import type { Turn } from './turns.js'
 
@@ -56,11 +55,8 @@ export function TurnBlock({ turn, live, phase, currentTool }: TurnBlockProps): R
           </div>
 
           {turn.parts.map((part) => {
-            if (part.kind === 'thinking') {
-              return <ThinkingBlock key={part.id} text={part.text} running={live} />
-            }
-            if (part.kind === 'tools') {
-              return <ToolGroup key={part.id} messages={part.messages} running={live} />
+            if (part.kind === 'activity') {
+              return <ActivityGroup key={part.id} messages={part.messages} running={live} />
             }
             return (
               <div key={part.id} className="selectable text-sm leading-relaxed">

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ChatMessage } from '@pictor/shared'
 
-import { buildTurns } from './turns.js'
+import { buildTurns, groupActivityItems } from './turns.js'
 
 function msg(partial: Partial<ChatMessage> & Pick<ChatMessage, 'id' | 'role'>): ChatMessage {
   return { text: '', timestamp: null, ...partial }
@@ -27,7 +27,7 @@ describe('buildTurns', () => {
     expect(turns[1]).toMatchObject({ prompt: '第二个问题', answer: '第二个回答' })
   })
 
-  it('keeps reasoning and answer as separate parts', () => {
+  it('keeps reasoning inside the activity group and out of the answer', () => {
     const turns = buildTurns([
       msg({ id: 'u1', role: 'user', text: '问题' }),
       msg({ id: 't1', role: 'assistant', kind: 'thinking', text: '先想' }),
@@ -35,33 +35,37 @@ describe('buildTurns', () => {
       msg({ id: 'a1', role: 'assistant', text: '回答' }),
     ])
 
-    expect(turns[0]?.parts).toEqual([
-      { kind: 'thinking', id: 'thinking-t1', text: '先想再想' },
-      { kind: 'text', id: 'text-a1', text: '回答' },
+    const parts = turns[0]?.parts ?? []
+    expect(parts.map((part) => part.kind)).toEqual(['activity', 'text'])
+    expect(parts[0]?.kind === 'activity' && parts[0].messages.map((m) => m.id)).toEqual([
+      't1',
+      't2',
     ])
     // Reasoning must not leak into the answer summary.
     expect(turns[0]?.answer).toBe('回答')
   })
 
-  it('merges adjacent tool calls into one group', () => {
+  it('keeps reasoning and tool calls in one group, in order', () => {
     const turns = buildTurns([
       msg({ id: 'u1', role: 'user', text: '问题' }),
+      msg({ id: 't1', role: 'assistant', kind: 'thinking', text: '先想' }),
       msg({ id: 'x1', role: 'tool', toolName: 'read', text: 'a' }),
+      msg({ id: 't2', role: 'assistant', kind: 'thinking', text: '再想' }),
       msg({ id: 'x2', role: 'tool', toolName: 'bash', text: 'b' }),
       msg({ id: 'a1', role: 'assistant', text: '回答' }),
     ])
 
     const parts = turns[0]?.parts ?? []
-    expect(parts).toHaveLength(2)
-    expect(parts[0]).toMatchObject({ kind: 'tools' })
-    expect(parts[0]?.kind === 'tools' && parts[0].messages.map((m) => m.toolName)).toEqual([
-      'read',
-      'bash',
+    expect(parts.map((part) => part.kind)).toEqual(['activity', 'text'])
+    expect(parts[0]?.kind === 'activity' && parts[0].messages.map((m) => m.id)).toEqual([
+      't1',
+      'x1',
+      't2',
+      'x2',
     ])
-    expect(parts[1]).toMatchObject({ kind: 'text', text: '回答' })
   })
 
-  it('splits tool groups that a text block interrupts', () => {
+  it('splits activity that a text block interrupts', () => {
     const turns = buildTurns([
       msg({ id: 'u1', role: 'user', text: '问题' }),
       msg({ id: 'x1', role: 'tool', toolName: 'read', text: 'a' }),
@@ -69,7 +73,11 @@ describe('buildTurns', () => {
       msg({ id: 'x2', role: 'tool', toolName: 'bash', text: 'b' }),
     ])
 
-    expect((turns[0]?.parts ?? []).map((part) => part.kind)).toEqual(['tools', 'text', 'tools'])
+    expect((turns[0]?.parts ?? []).map((part) => part.kind)).toEqual([
+      'activity',
+      'text',
+      'activity',
+    ])
   })
 
   it('keeps a reply that arrives without a loaded prompt', () => {
@@ -77,5 +85,26 @@ describe('buildTurns', () => {
 
     expect(turns).toHaveLength(1)
     expect(turns[0]).toMatchObject({ user: null, prompt: '', answer: '只有回答' })
+  })
+})
+
+describe('groupActivityItems', () => {
+  it('merges neighbouring reasoning into one row', () => {
+    const items = groupActivityItems([
+      msg({ id: 't1', role: 'assistant', kind: 'thinking', text: '先想' }),
+      msg({ id: 't2', role: 'assistant', kind: 'thinking', text: '再想' }),
+    ])
+
+    expect(items).toEqual([{ kind: 'thinking', id: 'thinking-t1', text: '先想再想' }])
+  })
+
+  it('keeps reasoning and tool calls in the order they arrived', () => {
+    const items = groupActivityItems([
+      msg({ id: 't1', role: 'assistant', kind: 'thinking', text: '想' }),
+      msg({ id: 'x1', role: 'tool', toolName: 'read', text: 'a' }),
+      msg({ id: 't2', role: 'assistant', kind: 'thinking', text: '又想' }),
+    ])
+
+    expect(items.map((item) => item.kind)).toEqual(['thinking', 'tool', 'thinking'])
   })
 })
