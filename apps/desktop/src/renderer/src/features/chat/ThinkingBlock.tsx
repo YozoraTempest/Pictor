@@ -31,7 +31,7 @@ export function ThinkingBlock({ text, live }: { text: string; live: boolean }): 
         className="flex w-full items-center gap-2 px-3 py-1 text-left transition-colors duration-150 hover:bg-surface-hover"
       >
         <Brain className={cn('size-3 shrink-0', live ? 'text-accent' : 'text-faint')} aria-hidden />
-        <span className="shrink-0 text-2xs text-muted">{live ? '思考中…' : '思考过程'}</span>
+        <span className="shrink-0 text-2xs text-muted">{live ? '思考中…' : '思考'}</span>
         <span className="shrink-0 text-2xs text-faint">{text.length} 字</span>
 
         <ChevronDown

@@ -41,9 +41,10 @@ describe('ActivityGroup', () => {
   it('does not claim tool work for a reasoning-only trail', () => {
     render(<ActivityGroup messages={[thinking('t1', '只想了')]} running={false} />)
 
-    expect(screen.getByRole('button', { name: /思考过程/ })).toBeTruthy()
+    const header = screen.getByRole('button', { name: /^思考/ })
     expect(screen.queryByLabelText('已完成')).toBeNull()
     expect(screen.getByLabelText('仅思考')).toBeTruthy()
+    expect(header.querySelector('svg.lucide-brain')).not.toBeNull()
   })
 
   it('lists reasoning and tool calls together when expanded', async () => {
@@ -56,16 +57,52 @@ describe('ActivityGroup', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /已运行 1 个工具/ }))
 
-    const rows = screen.getAllByRole('button', { name: /思考过程|阅读/ })
-    expect(rows.map((row) => row.textContent?.trim().slice(0, 3))).toEqual([
-      '思考过',
-      '阅读',
-      '思考过',
-    ])
+    const rows = screen.getAllByRole('button', { name: /思考|阅读/ })
+    expect(rows.map((row) => row.textContent?.trim().slice(0, 2))).toEqual(['思考', '阅读', '思考'])
 
     // Reasoning bodies stay folded until asked for.
     expect(screen.queryByText('先读文件')).toBeNull()
     await userEvent.click(rows[0] as HTMLElement)
     expect(screen.getByText('先读文件')).toBeTruthy()
+  })
+})
+
+describe('tool icons', () => {
+  it('renders the icon the presenter registered for the tool', async () => {
+    render(<ActivityGroup messages={[call('x1', 'bash')]} running={false} />)
+    await userEvent.click(screen.getByRole('button', { name: /已运行 1 个工具/ }))
+
+    const row = screen.getByRole('button', { name: /^运行/ })
+    // Tool icon, status mark and the disclosure chevron.
+    expect(row.querySelectorAll('svg')).toHaveLength(3)
+    expect(row.querySelector('svg.lucide-terminal')).not.toBeNull()
+  })
+
+  it('leaves an unregistered tool with only its status mark', async () => {
+    render(<ActivityGroup messages={[call('x1', 'mystery')]} running={false} />)
+    await userEvent.click(screen.getByRole('button', { name: /已运行 1 个工具/ }))
+
+    const row = screen.getByRole('button', { name: /^mystery/ })
+    expect(row.querySelectorAll('svg')).toHaveLength(2)
+  })
+})
+
+describe('single call groups', () => {
+  it('opens the only call together with the group', async () => {
+    render(<ActivityGroup messages={[call('x1', 'bash')]} running={false} />)
+    await userEvent.click(screen.getByRole('button', { name: /已运行 1 个工具/ }))
+
+    const row = screen.getByRole('button', { name: /^运行/ })
+    expect(row.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('输出')).toBeTruthy()
+  })
+
+  it('still asks for a second click when several calls share the group', async () => {
+    render(<ActivityGroup messages={[call('x1', 'read'), call('x2', 'bash')]} running={false} />)
+    await userEvent.click(screen.getByRole('button', { name: /已运行 2 个工具/ }))
+
+    for (const row of screen.getAllByRole('button', { name: /^(阅读|运行)/ })) {
+      expect(row.getAttribute('aria-expanded')).toBe('false')
+    }
   })
 })

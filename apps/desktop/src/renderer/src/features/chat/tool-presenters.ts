@@ -1,3 +1,14 @@
+import {
+  FileDiff,
+  FilePen,
+  FileText,
+  FolderOpen,
+  FolderSearch,
+  Search,
+  Terminal,
+  type LucideIcon,
+} from 'lucide-react'
+
 import type { ChatMessage } from '@pictor/shared'
 
 import { diffLines, formatDiff } from '../../lib/diff.js'
@@ -14,13 +25,16 @@ export interface ToolSection {
  * How a tool wants its call to be shown.
  *
  * `label` names the action (`阅读`), `target` names the object it acted on
- * (`README.md`), and `sections` is what the expanded row reveals. Keeping all
- * three on the tool means a new tool can teach the transcript how to present it
- * without touching this component.
+ * (`README.md`), `icon` is the mark the transcript puts next to it, and
+ * `sections` is what the expanded row reveals. Keeping all of it on the tool
+ * means a new tool can teach the transcript how to present it without touching
+ * these components.
  */
 export interface ToolPresentation {
   label: string
   target: string
+  /** Row icon; a tool without a presenter or an icon falls back to a terminal. */
+  icon?: LucideIcon
   sections: ToolSection[]
 }
 
@@ -108,6 +122,7 @@ registerToolPresenter('read', (message) => {
   const args = asRecord(message.input)
   return {
     label: '阅读',
+    icon: FileText,
     target: baseName(pathArg(args)),
     sections: [{ title: '文件内容', body: message.text }],
   }
@@ -118,6 +133,7 @@ registerToolPresenter('write', (message) => {
   const written = field(args, 'content')
   return {
     label: '写入',
+    icon: FilePen,
     target: baseName(pathArg(args)),
     sections: [
       ...(written.length > 0 ? [{ title: '写入内容', body: written }] : []),
@@ -134,6 +150,7 @@ registerToolPresenter('edit', (message) => {
 
   return {
     label: '编辑',
+    icon: FileDiff,
     target: baseName(pathArg(args)),
     sections: [
       ...(diff === undefined ? [] : [{ title: '修改', body: diff, format: 'diff' as const }]),
@@ -170,6 +187,7 @@ registerToolPresenter('bash', (message) => {
   const command = field(args, 'command')
   return {
     label: '运行',
+    icon: Terminal,
     target: clip(command),
     sections: [
       ...(command.length > 0 ? [{ title: '执行的命令', body: command }] : []),
@@ -182,6 +200,7 @@ registerToolPresenter('grep', (message) => {
   const args = asRecord(message.input)
   return {
     label: '搜索',
+    icon: Search,
     target: clip(field(args, 'pattern')),
     sections: [{ title: '匹配结果', body: message.text }],
   }
@@ -191,6 +210,7 @@ registerToolPresenter('find', (message) => {
   const args = asRecord(message.input)
   return {
     label: '查找文件',
+    icon: FolderSearch,
     target: clip(field(args, 'pattern')),
     sections: [{ title: '匹配结果', body: message.text }],
   }
@@ -200,6 +220,7 @@ registerToolPresenter('ls', (message) => {
   const args = asRecord(message.input)
   return {
     label: '列目录',
+    icon: FolderOpen,
     target: baseName(pathArg(args)),
     sections: [{ title: '目录内容', body: message.text }],
   }

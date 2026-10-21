@@ -48,9 +48,17 @@ export function ActivityGroup({
       return `正在调用 ${latestView.label}${target}`
     }
     if (thinking) return '正在思考'
-    if (tools.length === 0) return '思考过程'
+    if (tools.length === 0) return '思考'
     return `已运行 ${String(tools.length)} 个工具`
   })()
+
+  // The group wears the mark of the tool it is showing, so a scan of the
+  // transcript says what kind of work happened without expanding anything.
+  // A reasoning-only trail wears the reasoning mark instead of pretending a tool
+  // ran.
+  const HeaderIcon = denied
+    ? ShieldX
+    : (latestView?.icon ?? (tools.length === 0 ? Brain : Terminal))
 
   return (
     <div
@@ -65,11 +73,11 @@ export function ActivityGroup({
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-surface-hover"
       >
-        {denied ? (
-          <ShieldX className="size-3.5 shrink-0 text-danger" aria-label="已拦截" />
-        ) : (
-          <Terminal className="size-3.5 shrink-0 text-faint" aria-hidden />
-        )}
+        <HeaderIcon
+          className={cn('size-3.5 shrink-0', denied ? 'text-danger' : 'text-faint')}
+          aria-hidden={denied ? undefined : true}
+          {...(denied ? { 'aria-label': '已拦截' } : {})}
+        />
         <span className="truncate text-xs text-muted">{summary}</span>
 
         <GroupStatus running={running} denied={denied} failed={failed} empty={tools.length === 0} />
@@ -88,7 +96,13 @@ export function ActivityGroup({
             item.kind === 'thinking' ? (
               <ThinkingBlock key={item.id} text={item.text} live={running && item === last} />
             ) : (
-              <ToolCallRow key={item.message.id} message={item.message} />
+              // With a single call there is nothing to choose between, so opening
+              // the group opens that call too instead of asking for a second click.
+              <ToolCallRow
+                key={item.message.id}
+                message={item.message}
+                startOpen={tools.length === 1}
+              />
             ),
           )}
         </ul>
@@ -118,9 +132,17 @@ function GroupStatus({
   return <Check className="size-3 shrink-0 text-success" aria-label="已完成" />
 }
 
-function ToolCallRow({ message }: { message: ChatMessage }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
+function ToolCallRow({
+  message,
+  startOpen = false,
+}: {
+  message: ChatMessage
+  /** Expand on first render, used when the group holds a single call. */
+  startOpen?: boolean
+}): React.JSX.Element {
+  const [open, setOpen] = useState(startOpen)
   const view = presentTool(message)
+  const Icon = view.icon
 
   return (
     <li className="border-b border-border/60 last:border-b-0">
@@ -130,13 +152,12 @@ function ToolCallRow({ message }: { message: ChatMessage }): React.JSX.Element {
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-3 py-1 text-left transition-colors duration-150 hover:bg-surface-hover"
       >
+        {Icon !== undefined && <Icon className="size-3 shrink-0 text-faint" aria-hidden />}
         <span className="shrink-0 text-2xs text-muted">{view.label}</span>
         {view.target.length > 0 && (
           <span className="truncate font-mono text-2xs text-faint">{view.target}</span>
         )}
-
         <CallStatus message={message} />
-
         <ChevronDown
           className={cn(
             'ml-auto size-3 shrink-0 text-faint transition-transform duration-150',

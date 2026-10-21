@@ -92,7 +92,7 @@ export type ActivityItem =
  * Splits an activity group into rows.
  *
  * Reasoning streams as many small messages; neighbouring ones are merged so the
- * group shows one `思考过程` row, while its position relative to the tool calls
+ * group shows one `思考` row, while its position relative to the tool calls
  * it was interleaved with stays exact.
  */
 export function groupActivityItems(messages: readonly ChatMessage[]): ActivityItem[] {
