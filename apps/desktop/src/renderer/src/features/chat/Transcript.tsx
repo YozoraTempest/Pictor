@@ -186,21 +186,6 @@ export function Transcript({
     if (gap > 0) stickToBottom()
   }
 
-  if (loading && turns.length === 0) {
-    return (
-      <div className="flex flex-1 items-center justify-center gap-2 text-xs text-faint">
-        <Loader2 className="size-3.5 animate-spin" />
-        正在打开会话…
-      </div>
-    )
-  }
-
-  if (turns.length === 0) {
-    return (
-      <EmptyState title="还没有对话" description="在下方描述任务，Agent 会读取项目文件并执行。" />
-    )
-  }
-
   return (
     <div className="relative flex min-h-0 flex-1">
       {/* The scroller spans the whole column, so its scrollbar sits outside the
@@ -228,31 +213,47 @@ export function Transcript({
             )}
             style={{ width: panelWidth }}
           >
-            <div className="flex-1 px-6 pt-6 pb-2">
-              {hasMore && (
-                <div className="flex justify-center pb-4">
-                  <Button variant="ghost" size="sm" onClick={onLoadOlder} disabled={loading}>
-                    {loading ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <MessagesSquare className="size-3.5" />
-                    )}
-                    加载更早的消息
-                  </Button>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-6">
-                {turns.map((turn, index) => (
-                  <TurnBlock
-                    key={turn.id}
-                    turn={turn}
-                    live={running && index === turns.length - 1}
-                    phase={phase}
-                    currentTool={currentTool}
+            <div className="flex min-h-0 flex-1 flex-col px-6 pt-6 pb-2">
+              {turns.length === 0 ? (
+                loading ? (
+                  <div className="flex flex-1 items-center justify-center gap-2 text-xs text-faint">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    正在打开会话…
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="还没有对话"
+                    description="在下方描述任务，Agent 会读取项目文件并执行。"
                   />
-                ))}
-              </div>
+                )
+              ) : (
+                <>
+                  {hasMore && (
+                    <div className="flex justify-center pb-4">
+                      <Button variant="ghost" size="sm" onClick={onLoadOlder} disabled={loading}>
+                        {loading ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <MessagesSquare className="size-3.5" />
+                        )}
+                        加载更早的消息
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-6">
+                    {turns.map((turn, index) => (
+                      <TurnBlock
+                        key={turn.id}
+                        turn={turn}
+                        live={running && index === turns.length - 1}
+                        phase={phase}
+                        currentTool={currentTool}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* The input stays put while the transcript scrolls; its own surface
