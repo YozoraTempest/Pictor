@@ -10,6 +10,7 @@ import {
   readApiKey,
   readModelSettings,
   saveModelSettings,
+  selectModel,
   testConnection,
   writeModelsJson,
 } from '@pictor/model-config'
@@ -82,6 +83,11 @@ export class ModelService {
 
   async save(input: ModelSettingsInput): Promise<ModelSettings> {
     return saveModelSettings(this.#store, this.#authPath, input)
+  }
+
+  /** Switches the active model; the endpoint and key stay as they are. */
+  async selectModel(modelId: string): Promise<ModelSettings> {
+    return selectModel(this.#store, this.#authPath, modelId)
   }
 
   /**

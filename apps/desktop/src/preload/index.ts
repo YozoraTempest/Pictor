@@ -59,6 +59,7 @@ const bridge: PictorBridge = {
   getAppInfo: () => ipcRenderer.invoke('pictor:appInfo'),
 
   getModelSettings: () => ipcRenderer.invoke('pictor:model.get'),
+  selectModel: (modelId) => ipcRenderer.invoke('pictor:model.select', modelId),
   saveModelSettings: (input) => ipcRenderer.invoke('pictor:model.save', input),
   fetchModels: (input) => ipcRenderer.invoke('pictor:model.fetch', input),
   testModelConnection: () => ipcRenderer.invoke('pictor:model.test'),

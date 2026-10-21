@@ -124,3 +124,27 @@ export async function saveModelSettings(
 
   return readModelSettings(store, authPath)
 }
+
+/**
+ * Switches the active model without touching the endpoint or the key.
+ *
+ * The stored list is the source of truth: an id that is not in it is rejected so
+ * a typo cannot silently break every conversation opened afterwards. A profile
+ * saved before the list existed keeps working, because then any id is accepted.
+ */
+export async function selectModel(
+  store: SettingsStore,
+  authPath: string,
+  modelId: string,
+): Promise<ModelSettings> {
+  const trimmed = modelId.trim()
+  if (trimmed.length === 0) throw new Error('Model id is required')
+
+  const settings = await readModelSettings(store, authPath)
+  if (settings.models.length > 0 && !settings.models.some((model) => model.id === trimmed)) {
+    throw new Error(`unknown model: ${trimmed}`)
+  }
+
+  await store.putSetting(SETTING_KEYS.modelId, trimmed)
+  return readModelSettings(store, authPath)
+}

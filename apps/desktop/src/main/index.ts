@@ -578,6 +578,13 @@ function registerIpc(workspace: Workspace): void {
     return workspace.model.save(input as Parameters<ModelService['save']>[0])
   })
 
+  ipcMain.handle('pictor:model.select', async (_event, modelId: unknown) => {
+    if (typeof modelId !== 'string' || modelId.trim().length === 0) {
+      throw new Error('modelId must be a non-empty string')
+    }
+    return workspace.model.selectModel(modelId)
+  })
+
   ipcMain.handle('pictor:model.fetch', async (_event, input: unknown) => {
     const override =
       typeof input === 'object' && input !== null

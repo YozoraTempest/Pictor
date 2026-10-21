@@ -183,6 +183,20 @@ export function ChatView(): React.JSX.Element {
     await useChatStore.getState().send(prompt)
   }
 
+  /**
+   * The host reads the model when a chat is opened, so a switch only lands on the
+   * next open. Reopening here makes it apply to the conversation in view — unless
+   * a run is in flight, where reopening would cancel it.
+   */
+  async function handleModelChanged(): Promise<void> {
+    if (running) return
+    const sessionId = useWorkspaceStore.getState().selectedSessionId
+    if (sessionId === null) return
+
+    await window.pictor.closeChat()
+    await useChatStore.getState().open(sessionId)
+  }
+
   return (
     <section className="flex h-full min-h-0 flex-col bg-bg">
       {error !== null && (
@@ -239,6 +253,7 @@ export function ChatView(): React.JSX.Element {
                   />
                   <Composer
                     disabled={false}
+                    onModelChanged={() => void handleModelChanged()}
                     running={running}
                     onSend={(prompt) => void submit(prompt)}
                     onStop={() => void stop()}

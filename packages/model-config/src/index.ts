@@ -9,6 +9,7 @@ export {
   parseProtocol,
   readModelSettings,
   saveModelSettings,
+  selectModel,
   type SettingsStore,
 } from './settings.js'
 export {

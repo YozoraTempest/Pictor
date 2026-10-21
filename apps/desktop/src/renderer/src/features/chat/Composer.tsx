@@ -2,15 +2,24 @@ import { ArrowUp, Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button, Kbd } from '../../components/ui/index.js'
+import { ModelPicker } from './ModelPicker.js'
 
 export interface ComposerProps {
   disabled: boolean
   running: boolean
   onSend: (prompt: string) => void
   onStop: () => void
+  /** Called after the active model changed, so the chat can be reopened. */
+  onModelChanged?: () => void
 }
 
-export function Composer({ disabled, running, onSend, onStop }: ComposerProps): React.JSX.Element {
+export function Composer({
+  disabled,
+  running,
+  onSend,
+  onStop,
+  onModelChanged,
+}: ComposerProps): React.JSX.Element {
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
@@ -48,13 +57,15 @@ export function Composer({ disabled, running, onSend, onStop }: ComposerProps): 
       />
 
       <div className="flex items-center gap-2 px-1 pt-1">
-        <span className="flex items-center gap-1 text-2xs text-faint">
+        <ModelPicker onChanged={onModelChanged} />
+
+        <span className="ml-auto hidden min-w-0 items-center gap-1 truncate text-2xs text-faint sm:flex">
           <Kbd>Enter</Kbd> 发送
           <span className="px-1">·</span>
           <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> 换行
         </span>
 
-        <div className="ml-auto">
+        <div className="ml-2 shrink-0">
           {running ? (
             <Button variant="secondary" size="sm" onClick={onStop}>
               <Square className="size-3 fill-current" />
