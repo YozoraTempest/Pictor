@@ -207,20 +207,21 @@ export function ChatView(): React.JSX.Element {
               }
             />
 
-            {/* Drag handle on the panel's right edge: a short rule appears on hover. */}
+            {/* Drag handle on the panel's right edge. The rule is faintly visible so
+                the edge reads as draggable, and brightens on hover or during a drag. */}
             <div
               role="separator"
               aria-orientation="vertical"
               aria-label="调整对话区宽度"
               onPointerDown={startResize}
               onDoubleClick={() => setPanelWidth(clampWidth(DEFAULT_PANEL_WIDTH))}
-              className="group absolute top-0 bottom-0 z-10 w-3 -translate-x-1/2 cursor-col-resize touch-none"
+              className="group absolute top-0 bottom-0 z-10 w-4 -translate-x-1/2 cursor-col-resize touch-none"
               style={{ left: panelRight }}
             >
               <span
                 className={cn(
-                  'absolute top-1/2 left-1/2 h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border-strong opacity-0 transition-opacity duration-150 group-hover:opacity-100',
-                  resizing && 'opacity-100',
+                  'absolute top-1/2 left-1/2 h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border-strong opacity-60 transition-all duration-150 group-hover:h-16 group-hover:opacity-100',
+                  resizing && 'h-16 opacity-100',
                 )}
               />
             </div>
