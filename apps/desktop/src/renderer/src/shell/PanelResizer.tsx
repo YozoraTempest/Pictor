@@ -79,7 +79,7 @@ export function PanelResizer({
       onDoubleClick={onReset}
       style={style}
       className={cn(
-        'group absolute top-0 bottom-0 z-20 w-4 cursor-col-resize touch-none',
+        'group absolute top-0 bottom-0 z-40 w-4 cursor-col-resize touch-none',
         attach === 'end' ? '-translate-x-1/2' : 'translate-x-1/2',
       )}
     >

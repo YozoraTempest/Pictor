@@ -108,7 +108,7 @@ export function AppShell({
               */}
               <div
                 className={cn(
-                  'flex flex-col bg-surface/30',
+                  'flex flex-col overflow-hidden bg-bg',
                   leftPanelOpen
                     ? 'relative shrink-0 border-r border-border'
                     : 'absolute inset-y-0 left-0 z-30',
@@ -119,29 +119,34 @@ export function AppShell({
                 onPointerEnter={cancelHide}
                 onPointerLeave={hidePeek}
               >
-                <aside className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <SessionsPanel />
-                </aside>
-
-                {sidebarVisible && (
-                  <PanelResizer
-                    attach="end"
-                    style={{ left: '100%' }}
-                    label="调整侧栏宽度"
-                    onStart={() => {
-                      dragStart.current.sidebar = sidebarWidth
-                      setDragging('sidebar')
-                    }}
-                    onMove={(deltaX) =>
-                      setSidebarWidth(
-                        clamp(dragStart.current.sidebar + deltaX, SIDEBAR_MIN, SIDEBAR_MAX),
-                      )
-                    }
-                    onEnd={() => setDragging(null)}
-                    onReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
-                  />
-                )}
+                {/* The content keeps its width while the drawer narrows, so a
+                    collapsing panel clips its labels instead of wrapping them. */}
+                <div className="flex min-h-0 flex-1 flex-col" style={{ width: sidebarWidth }}>
+                  <aside className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface/30">
+                    <SessionsPanel />
+                  </aside>
+                </div>
               </div>
+
+              {/* Outside the drawer so clipping never eats the handle. */}
+              {sidebarVisible && (
+                <PanelResizer
+                  attach="end"
+                  style={{ left: sidebarWidth }}
+                  label="调整侧栏宽度"
+                  onStart={() => {
+                    dragStart.current.sidebar = sidebarWidth
+                    setDragging('sidebar')
+                  }}
+                  onMove={(deltaX) =>
+                    setSidebarWidth(
+                      clamp(dragStart.current.sidebar + deltaX, SIDEBAR_MIN, SIDEBAR_MAX),
+                    )
+                  }
+                  onEnd={() => setDragging(null)}
+                  onReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
+                />
+              )}
 
               <div
                 className={cn(
