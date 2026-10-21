@@ -251,7 +251,7 @@ export function ChatView(): React.JSX.Element {
             >
               <span
                 className={cn(
-                  'absolute top-1/2 left-1/2 h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border-strong opacity-60 transition-all duration-150 group-hover:h-16 group-hover:opacity-100',
+                  'absolute top-1/2 left-1/2 h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border-strong opacity-0 transition-all duration-150 group-hover:h-16 group-hover:opacity-100',
                   resizing && 'h-16 opacity-100',
                 )}
               />

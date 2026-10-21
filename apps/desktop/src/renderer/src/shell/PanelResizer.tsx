@@ -24,9 +24,8 @@ export interface PanelResizerProps {
 /**
  * Draggable border between two panels.
  *
- * A short rule is always faintly visible so the edge reads as draggable, and it
- * brightens and grows while hovered or dragged — the same affordance the
- * conversation panel uses, so all three columns feel alike.
+ * The rule stays hidden until the pointer is over the edge (or a drag is running),
+ * so the columns read as plain surfaces and only reveal the affordance on approach.
  */
 export function PanelResizer({
   attach,
@@ -86,7 +85,7 @@ export function PanelResizer({
     >
       <span
         className={cn(
-          'absolute top-1/2 left-1/2 h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border-strong opacity-60 transition-all duration-150 group-hover:h-16 group-hover:opacity-100',
+          'absolute top-1/2 left-1/2 h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border-strong opacity-0 transition-all duration-150 group-hover:h-16 group-hover:opacity-100',
           dragging && 'h-16 opacity-100',
         )}
       />
