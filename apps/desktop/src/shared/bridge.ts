@@ -61,6 +61,18 @@ export interface PanelDescriptor {
   command: string
 }
 
+/**
+ * Presentation for one agent tool, contributed by a plugin.
+ *
+ * Data only: the renderer maps `icon` to its own icon set, so a plugin never
+ * ships a component and the transcript never renders plugin code.
+ */
+export interface ToolViewDescriptor {
+  id: string
+  tools: string[]
+  label?: string
+  icon?: string
+}
 export interface CcSwitchScanResult {
   available: boolean
   path: string
@@ -126,6 +138,7 @@ export interface PictorBridge {
 
   listPanels(): Promise<PanelDescriptor[]>
   invokePanel(id: string): Promise<unknown>
+  listToolViews(): Promise<ToolViewDescriptor[]>
 
   listPlugins(): Promise<PluginRecord[]>
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginRecord>

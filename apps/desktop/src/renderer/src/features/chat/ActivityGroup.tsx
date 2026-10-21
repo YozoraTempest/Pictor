@@ -1,4 +1,5 @@
 import { Brain, Check, ChevronDown, ShieldX, Terminal, TriangleAlert } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useState } from 'react'
 
 import type { ChatMessage } from '@pictor/shared'
@@ -7,7 +8,7 @@ import { Spinner } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { ThinkingBlock } from './ThinkingBlock.js'
 import { presentTool } from './tool-presenters.js'
-import { groupActivityItems } from './turns.js'
+import { groupActivityItems, type ActivityItem } from './turns.js'
 
 const BODY_LIMIT = 4000
 
@@ -15,10 +16,10 @@ const BODY_LIMIT = 4000
  * Everything the agent did between two answers: its reasoning interleaved with
  * the tool calls it made.
  *
- * One collapsed row stands for the whole trail; expanding it lists the reasoning
- * and each call, and a call expands again into the sections its own tool defines
- * (`文件内容`, `执行的命令`, a diff, …). Names and targets come from the presenter
- * registry, so a new tool can describe itself without touching this file.
+ * A single call needs no summary line — the call itself is the summary, so the
+ * rows are rendered bare. From two calls on, a wrapping row appears that can
+ * fold the whole trail away; the switch is animated so a run that grows a second
+ * call slides into its wrapper instead of jumping.
  */
 export function ActivityGroup({
   messages,
@@ -28,6 +29,7 @@ export function ActivityGroup({
   running: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const reduced = useReducedMotion()
   const items = groupActivityItems(messages)
   const last = items.at(-1)
 
@@ -41,6 +43,31 @@ export function ActivityGroup({
   // Reasoning streams in last while the model thinks; that is the moment to say
   // so instead of repeating the previous tool's name.
   const thinking = running && last?.kind === 'thinking'
+  const single = tools.length === 1
+
+  const rows = <ActivityRows items={items} running={running} last={last} startOpen={single} />
+
+  const body = (
+    <AnimatePresence initial={false}>
+      {open && (
+        <motion.div
+          key="body"
+          className="overflow-hidden border-t border-border"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={reduced === true ? { duration: 0 } : { duration: 0.18, ease: 'easeOut' }}
+        >
+          {rows}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+
+  if (single) {
+    // Nothing to fold: show the call itself rather than a header that hides it.
+    return <div className="flex flex-col">{rows}</div>
+  }
 
   const summary = (() => {
     if (running && pending && latestView !== null) {
@@ -53,17 +80,20 @@ export function ActivityGroup({
   })()
 
   // The group wears the mark of the tool it is showing, so a scan of the
-  // transcript says what kind of work happened without expanding anything.
-  // A reasoning-only trail wears the reasoning mark instead of pretending a tool
+  // transcript says what kind of work happened without expanding anything. A
+  // reasoning-only trail wears the reasoning mark instead of pretending a tool
   // ran.
   const HeaderIcon = denied
     ? ShieldX
     : (latestView?.icon ?? (tools.length === 0 ? Brain : Terminal))
 
   return (
-    <div
+    <motion.div
+      initial={reduced === true ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: reduced === true ? 0 : 0.18, ease: 'easeOut' }}
       className={cn(
-        'overflow-hidden rounded-lg border bg-surface/50',
+        'flex flex-col overflow-hidden rounded-lg border bg-surface/50',
         denied || failed ? 'border-danger/40' : 'border-border',
       )}
     >
@@ -90,24 +120,33 @@ export function ActivityGroup({
         />
       </button>
 
-      {open && (
-        <ul className="flex flex-col border-t border-border">
-          {items.map((item) =>
-            item.kind === 'thinking' ? (
-              <ThinkingBlock key={item.id} text={item.text} live={running && item === last} />
-            ) : (
-              // With a single call there is nothing to choose between, so opening
-              // the group opens that call too instead of asking for a second click.
-              <ToolCallRow
-                key={item.message.id}
-                message={item.message}
-                startOpen={tools.length === 1}
-              />
-            ),
-          )}
-        </ul>
+      {body}
+    </motion.div>
+  )
+}
+
+/** The rows a group shows, shared by the bare and the wrapped layouts. */
+function ActivityRows({
+  items,
+  running,
+  last,
+  startOpen,
+}: {
+  items: ActivityItem[]
+  running: boolean
+  last: ActivityItem | undefined
+  startOpen: boolean
+}): React.JSX.Element {
+  return (
+    <ul className="flex flex-col">
+      {items.map((item) =>
+        item.kind === 'thinking' ? (
+          <ThinkingBlock key={item.id} text={item.text} live={running && item === last} />
+        ) : (
+          <ToolCallRow key={item.message.id} message={item.message} startOpen={startOpen} />
+        ),
       )}
-    </div>
+    </ul>
   )
 }
 
@@ -141,6 +180,7 @@ function ToolCallRow({
   startOpen?: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(startOpen)
+  const reduced = useReducedMotion()
   const view = presentTool(message)
   const Icon = view.icon
 
@@ -166,22 +206,33 @@ function ToolCallRow({
         />
       </button>
 
-      {open && view.sections.length > 0 && (
-        <div className="flex flex-col gap-2 px-3 pb-2">
-          {view.sections.map((section) => (
-            <div key={section.title} className="flex flex-col gap-1">
-              <span className="text-2xs text-faint">{section.title}</span>
-              {section.format === 'diff' ? (
-                <DiffBlock body={section.body} />
-              ) : (
-                <pre className="selectable max-h-48 overflow-auto rounded-md bg-bg px-2 py-1.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-muted">
-                  {clipBody(section.body)}
-                </pre>
-              )}
+      <AnimatePresence initial={false}>
+        {open && view.sections.length > 0 && (
+          <motion.div
+            key="sections"
+            className="overflow-hidden"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={reduced === true ? { duration: 0 } : { duration: 0.16, ease: 'easeOut' }}
+          >
+            <div className="flex flex-col gap-2 px-3 pb-2">
+              {view.sections.map((section) => (
+                <div key={section.title} className="flex flex-col gap-1">
+                  <span className="text-2xs text-faint">{section.title}</span>
+                  {section.format === 'diff' ? (
+                    <DiffBlock body={section.body} />
+                  ) : (
+                    <pre className="selectable max-h-48 overflow-auto rounded-md bg-bg px-2 py-1.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-muted">
+                      {clipBody(section.body)}
+                    </pre>
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </li>
   )
 }

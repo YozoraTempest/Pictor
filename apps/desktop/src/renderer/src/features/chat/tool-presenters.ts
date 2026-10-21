@@ -49,6 +49,37 @@ export function registerToolPresenter(tool: string, presenter: ToolPresenter): (
     if (presenters.get(tool) === presenter) presenters.delete(tool)
   }
 }
+/**
+ * Overrides the label and icon of a tool without losing its sections.
+ *
+ * A plugin contributes presentation, not rendering: its view is layered on top
+ * of whatever presenter already exists, so `编辑` keeps its diff while a plugin
+ * renames the row.
+ */
+export function decorateToolPresentation(
+  tool: string,
+  patch: { label?: string; icon?: LucideIcon },
+): () => void {
+  const base = presenters.get(tool)
+  const presenter: ToolPresenter = (message) => {
+    const view = base === undefined ? fallbackPresentation(message, tool) : base(message)
+    return {
+      ...view,
+      ...(patch.label === undefined ? {} : { label: patch.label }),
+      ...(patch.icon === undefined ? {} : { icon: patch.icon }),
+    }
+  }
+
+  registerToolPresenter(tool, presenter)
+
+  // Undoing an override must put the previous presenter back: deleting the entry
+  // would drop the built-in one and leave the tool with the generic fallback.
+  return () => {
+    if (presenters.get(tool) !== presenter) return
+    if (base === undefined) presenters.delete(tool)
+    else presenters.set(tool, base)
+  }
+}
 
 /** Presentation for a tool call; unknown tools fall back to args + output. */
 export function presentTool(message: ChatMessage): ToolPresentation {

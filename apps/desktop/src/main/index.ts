@@ -15,7 +15,9 @@ import {
   evaluateToolGuards,
   parsePanelContributions,
   parseToolGuardContributions,
+  parseToolViewContributions,
   type PanelContribution,
+  type ToolViewContribution,
 } from '@pictor/plugin-sdk'
 import { PROVIDER_ID, readApiKey, readModelSettings, writeModelsJson } from '@pictor/model-config'
 import {
@@ -78,6 +80,8 @@ interface Workspace {
   chat: ChatService
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
   panels: PanelContribution[]
+  /** Presentation for agent tools; the renderer applies them to its presenters. */
+  toolViews: ToolViewContribution[]
   client: ReturnType<typeof startHostCore>['client']
   hostCore: string
   database: string
@@ -204,6 +208,14 @@ async function startWorkspace(): Promise<Workspace | null> {
   }
   const panels: PanelContribution[] = parsedPanels.panels
 
+  // Tool views are presentation data: a plugin names the label and icon for its
+  // tool. The renderer owns the components, so nothing here is executable.
+  const parsedViews = parseToolViewContributions(pluginHost.contributions('toolViews'))
+  for (const failure of parsedViews.failures) {
+    console.warn(`[plugin] tool view ignored: ${failure.reason}`)
+  }
+  const toolViews: ToolViewContribution[] = parsedViews.views
+
   // Guards run in contribution order and fail closed. With no guard installed
   // the interceptor stays null, so the default policy costs nothing.
   const parsedGuards = parseToolGuardContributions(pluginHost.contributions('toolGuards'))
@@ -241,11 +253,12 @@ async function startWorkspace(): Promise<Workspace | null> {
     pluginHost,
     model,
     chat,
-    panels,
+    isDisposed: () => disposed,
     client: running.client,
     hostCore,
     database,
-    isDisposed: () => disposed,
+    panels,
+    toolViews,
     dispose: async () => {
       if (disposed) return
       disposed = true
@@ -528,6 +541,10 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:panels.list', async (): Promise<PanelContribution[]> => {
     return workspace.panels
+  })
+
+  ipcMain.handle('pictor:toolViews.list', async (): Promise<ToolViewContribution[]> => {
+    return workspace.toolViews
   })
 
   ipcMain.handle('pictor:panels.invoke', async (_event, id: unknown) => {

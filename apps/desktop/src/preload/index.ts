@@ -50,6 +50,7 @@ const bridge: PictorBridge = {
 
   listPanels: () => ipcRenderer.invoke('pictor:panels.list'),
   invokePanel: (id) => ipcRenderer.invoke('pictor:panels.invoke', id),
+  listToolViews: () => ipcRenderer.invoke('pictor:toolViews.list'),
 
   listPlugins: () => ipcRenderer.invoke('pictor:plugins.list'),
   setPluginEnabled: (id, enabled) => ipcRenderer.invoke('pictor:plugins.setEnabled', id, enabled),

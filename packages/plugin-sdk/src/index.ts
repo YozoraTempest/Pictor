@@ -25,3 +25,10 @@ export {
   type ToolGuardFailure,
   type ToolGuardVerdict,
 } from './tool-guards.js'
+export {
+  ToolViewContributionError,
+  parseToolViewContribution,
+  parseToolViewContributions,
+  type ToolViewContribution,
+  type ToolViewContributionFailure,
+} from './tool-views.js'

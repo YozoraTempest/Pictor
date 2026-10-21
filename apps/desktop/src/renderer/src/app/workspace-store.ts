@@ -3,7 +3,11 @@ import { create } from 'zustand'
 import type { PluginRecord, Project, Section, Session } from '@pictor/shared'
 
 import type { AppInfo, PanelDescriptor, PluginReport } from '../../../shared/bridge.js'
+import { applyToolViews } from '../features/chat/tool-views.js'
 import type { SectionSort } from '../features/sessions/grouping.js'
+
+/** Presenter overrides applied from the last refresh, so a refresh can undo them. */
+let disposeToolViews: (() => void) | null = null
 
 interface WorkspaceState {
   projects: Project[]
@@ -90,13 +94,19 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   notice: null,
 
   async refresh() {
-    const [snapshot, plugins, panels, report, info] = await Promise.all([
+    const [snapshot, plugins, panels, toolViews, report, info] = await Promise.all([
       window.pictor.getSnapshot(),
       window.pictor.listPlugins(),
       window.pictor.listPanels(),
+      window.pictor.listToolViews(),
       window.pictor.pluginReport(),
       window.pictor.getAppInfo(),
     ])
+
+    // Views are presentation overrides, so re-applying them must replace the
+    // previous set instead of stacking another layer on every refresh.
+    disposeToolViews?.()
+    disposeToolViews = applyToolViews(toolViews)
 
     const currentProject = get().selectedProjectId
     const projectId =
