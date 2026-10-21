@@ -2,6 +2,7 @@ import { ArrowDown, Loader2, MessagesSquare } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { Button, EmptyState } from '../../components/ui/index.js'
+import { cn } from '../../lib/cn.js'
 import type { AgentPhase } from '../../lib/format-time.js'
 import { TurnBlock } from './TurnBlock.js'
 import type { Turn } from './turns.js'
@@ -18,6 +19,8 @@ export interface TranscriptProps {
   panelWidth: number
   /** Exposed so the resizer can sit exactly on the panel's edge. */
   panelRef?: React.Ref<HTMLDivElement>
+  /** Animates width changes (window resizes); off while the user drags. */
+  animateWidth?: boolean
   /** Input area pinned to the bottom of the panel. */
   footer?: React.ReactNode
 }
@@ -38,6 +41,7 @@ export function Transcript({
   onLoadOlder,
   panelWidth,
   panelRef,
+  animateWidth = false,
   footer,
 }: TranscriptProps): React.JSX.Element {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
@@ -159,7 +163,12 @@ export function Transcript({
               the panel can be resized while the scrollbar stays outside it. */}
           <div
             ref={panelRef}
-            className="mx-auto flex min-h-full flex-col"
+            className={cn(
+              'mx-auto flex min-h-full max-w-full flex-col',
+              // Width changes from the window or the right panel glide; a drag must
+              // track the pointer without lag.
+              animateWidth && 'transition-[width] duration-300 ease-out',
+            )}
             style={{ width: panelWidth }}
           >
             <div className="flex-1 px-6 pt-6 pb-2">

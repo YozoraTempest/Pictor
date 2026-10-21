@@ -185,8 +185,13 @@ export function ChatView(): React.JSX.Element {
         <div className="relative flex min-h-0 flex-1">
           {/* Timeline lives outside the conversation panel, on the far left. */}
           <Timeline turns={turns} />
-
-          <div ref={columnRef} className="relative flex min-h-0 flex-1 flex-col">
+          {/* min-w-0 keeps the column from being widened by the fixed-width panel,
+              so opening the right panel narrows the conversation instead of letting
+              it spill over the timeline. */}
+          <div
+            ref={columnRef}
+            className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          >
             <Transcript
               turns={turns}
               running={running}
@@ -197,6 +202,7 @@ export function ChatView(): React.JSX.Element {
               onLoadOlder={() => void loadOlder()}
               panelWidth={panelWidth}
               panelRef={panelRef}
+              animateWidth={!resizing}
               footer={
                 <Composer
                   disabled={false}
