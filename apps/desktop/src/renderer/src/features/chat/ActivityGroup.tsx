@@ -234,7 +234,10 @@ function ToolCallRow({
         aria-expanded={open}
         className={cn(
           'flex w-full items-center gap-2 px-3 text-left transition-colors duration-150 hover:bg-surface-hover',
-          prominent ? 'py-1.5' : 'py-1',
+          // A fixed height for the single-call row: it must match the summary row
+          // exactly, and a tight line-height (which would clip glyphs) is not an
+          // option. The content is shorter than the row, so nothing is cut.
+          prominent ? 'h-7' : 'py-1',
         )}
       >
         {Icon !== undefined && (
@@ -247,7 +250,7 @@ function ToolCallRow({
           {view.label}
         </span>
         {view.target.length > 0 && (
-          <span className="truncate font-mono text-2xs leading-none text-faint">{view.target}</span>
+          <span className="truncate font-mono text-2xs text-faint">{view.target}</span>
         )}
         <CallStatus message={message} />
         <ChevronDown
