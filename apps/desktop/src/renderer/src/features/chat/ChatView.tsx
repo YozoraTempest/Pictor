@@ -43,10 +43,11 @@ export function ChatView(): React.JSX.Element {
   const project = projects.find((entry) => entry.id === selectedProjectId) ?? null
 
   const columnRef = useRef<HTMLDivElement | null>(null)
-  const panelRef = useRef<HTMLDivElement | null>(null)
+  const panelNodeRef = useRef<HTMLDivElement | null>(null)
+  const panelObserverRef = useRef<ResizeObserver | null>(null)
 
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
-  /** Left offset of the panel inside its column; keeps the handle on the edge. */
+  /** Distance from the column's left edge to the panel's right edge. */
   const [panelRight, setPanelRight] = useState(0)
   const [resizing, setResizing] = useState(false)
 
@@ -60,13 +61,41 @@ export function ChatView(): React.JSX.Element {
 
   /** Places the handle on the panel's right edge, wherever centring put it. */
   const measurePanel = useCallback(() => {
-    const panel = panelRef.current
+    const panel = panelNodeRef.current
     if (panel === null) return
     setPanelRight(panel.offsetLeft + panel.offsetWidth)
   }, [])
 
-  // A narrower window must not leave the panel wider than its column, and the
-  // handle has to follow whatever width and centring the panel ends up with.
+  /**
+   * Observes the panel from a ref callback rather than an effect.
+   *
+   * The panel animates its width, and window or panel toggles move it without any
+   * React render, so measuring on render alone left the handle behind at a stale
+   * position. A ResizeObserver on the node itself reports every frame of the
+   * transition, which keeps the handle glued to the edge.
+   */
+  const attachPanel = useCallback(
+    (node: HTMLDivElement | null) => {
+      panelObserverRef.current?.disconnect()
+      panelObserverRef.current = null
+      panelNodeRef.current?.removeEventListener('transitionend', measurePanel)
+      panelNodeRef.current = node
+      if (node === null) return
+
+      measurePanel()
+      const observer = new ResizeObserver(() => measurePanel())
+      observer.observe(node)
+      panelObserverRef.current = observer
+
+      // The width can reach its final value while the column is still widening, so
+      // the last resize callback may run before centring settles. The end of the
+      // transition is the one moment guaranteed to be after the final layout.
+      node.addEventListener('transitionend', measurePanel)
+    },
+    [measurePanel],
+  )
+
+  // A narrower window must not leave the panel wider than its column.
   useEffect(() => {
     const column = columnRef.current
     if (column === null) return
@@ -79,13 +108,6 @@ export function ChatView(): React.JSX.Element {
     measurePanel()
     return () => observer.disconnect()
   }, [clampWidth, measurePanel])
-
-  // Centring is a layout result, so the edge is measured after every render: the
-  // panel only exists once the transcript has mounted, which rules out a one-shot
-  // measurement. Setting the same value again is a no-op.
-  useEffect(() => {
-    measurePanel()
-  })
 
   /**
    * Drags the right edge: the panel stays centred, so moving right widens it by
@@ -201,7 +223,7 @@ export function ChatView(): React.JSX.Element {
               loading={loading}
               onLoadOlder={() => void loadOlder()}
               panelWidth={panelWidth}
-              panelRef={panelRef}
+              panelRef={attachPanel}
               animateWidth={!resizing}
               footer={
                 <Composer
