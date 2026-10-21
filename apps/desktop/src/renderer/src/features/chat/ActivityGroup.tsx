@@ -45,7 +45,15 @@ export function ActivityGroup({
   const thinking = running && last?.kind === 'thinking'
   const single = tools.length === 1
 
-  const rows = <ActivityRows items={items} running={running} last={last} startOpen={single} />
+  const rows = (
+    <ActivityRows
+      items={items}
+      running={running}
+      last={last}
+      startOpen={single}
+      prominent={single}
+    />
+  )
 
   const body = (
     <AnimatePresence initial={false}>
@@ -138,25 +146,43 @@ export function ActivityGroup({
   )
 }
 
-/** The rows a group shows, shared by the bare and the wrapped layouts. */
+/**
+ * The rows a group shows, shared by the single-call and the wrapped layouts.
+ *
+ * `prominent` matches the size of the summary row: a group with one call shows
+ * that call where the summary would be, so it uses the same padding and type
+ * scale and the block reads the same height as a folded group.
+ */
 function ActivityRows({
   items,
   running,
   last,
   startOpen,
+  prominent,
 }: {
   items: ActivityItem[]
   running: boolean
   last: ActivityItem | undefined
   startOpen: boolean
+  prominent: boolean
 }): React.JSX.Element {
   return (
     <ul className="flex flex-col">
       {items.map((item) =>
         item.kind === 'thinking' ? (
-          <ThinkingBlock key={item.id} text={item.text} live={running && item === last} />
+          <ThinkingBlock
+            key={item.id}
+            text={item.text}
+            live={running && item === last}
+            prominent={prominent}
+          />
         ) : (
-          <ToolCallRow key={item.message.id} message={item.message} startOpen={startOpen} />
+          <ToolCallRow
+            key={item.message.id}
+            message={item.message}
+            startOpen={startOpen}
+            prominent={prominent}
+          />
         ),
       )}
     </ul>
@@ -187,10 +213,13 @@ function GroupStatus({
 function ToolCallRow({
   message,
   startOpen = false,
+  prominent = false,
 }: {
   message: ChatMessage
   /** Expand on first render, used when the group holds a single call. */
   startOpen?: boolean
+  /** Match the summary row's height and type scale (single-call groups). */
+  prominent?: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(startOpen)
   const reduced = useReducedMotion()
@@ -203,17 +232,28 @@ function ToolCallRow({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3 py-1 text-left transition-colors duration-150 hover:bg-surface-hover"
+        className={cn(
+          'flex w-full items-center gap-2 px-3 text-left transition-colors duration-150 hover:bg-surface-hover',
+          prominent ? 'py-1.5' : 'py-1',
+        )}
       >
-        {Icon !== undefined && <Icon className="size-3 shrink-0 text-faint" aria-hidden />}
-        <span className="shrink-0 text-2xs text-muted">{view.label}</span>
+        {Icon !== undefined && (
+          <Icon
+            className={cn('shrink-0 text-faint', prominent ? 'size-3.5' : 'size-3')}
+            aria-hidden
+          />
+        )}
+        <span className={cn('shrink-0 text-muted', prominent ? 'text-xs' : 'text-2xs')}>
+          {view.label}
+        </span>
         {view.target.length > 0 && (
-          <span className="truncate font-mono text-2xs text-faint">{view.target}</span>
+          <span className="truncate font-mono text-2xs leading-none text-faint">{view.target}</span>
         )}
         <CallStatus message={message} />
         <ChevronDown
           className={cn(
-            'ml-auto size-3 shrink-0 text-faint transition-transform duration-150',
+            'ml-auto shrink-0 text-faint transition-transform duration-150',
+            prominent ? 'size-3.5' : 'size-3',
             open && 'rotate-180',
           )}
         />
