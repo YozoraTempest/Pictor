@@ -180,7 +180,7 @@ export function TitleBar({
       */}
       <div
         className={cn(
-          'flex h-full items-center gap-0.5 pl-1.5',
+          'app-no-drag flex h-full items-center gap-0.5 pl-1.5',
           leftPanelOpen && 'border-r border-border',
           !sidebarResizing && 'transition-[width] duration-300 ease-out',
         )}

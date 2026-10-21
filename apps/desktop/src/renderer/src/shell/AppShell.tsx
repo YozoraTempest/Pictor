@@ -126,7 +126,7 @@ export function AppShell({
                 {sidebarVisible && (
                   <PanelResizer
                     attach="end"
-                    style={{ right: 0 }}
+                    style={{ left: '100%' }}
                     label="调整侧栏宽度"
                     onStart={() => {
                       dragStart.current.sidebar = sidebarWidth
