@@ -74,55 +74,18 @@ function useAppMenu(): MenuEntry[] {
   ]
 }
 
-/** The app menu plus the sidebar switch — the tools that live over the sidebar. */
-function PanelTools(): React.JSX.Element {
-  const appMenu = useAppMenu()
-  const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
-  const toggleLeftPanel = useUiStore((state) => state.toggleLeftPanel)
-
-  return (
-    <div className="app-no-drag flex items-center gap-0.5">
-      <Menu
-        label="菜单"
-        trigger={<MenuIcon className="size-3.5" />}
-        triggerClassName="size-7"
-        items={appMenu}
-        align="left"
-      />
-
-      <Tooltip label={leftPanelOpen ? '收起侧栏' : '展开侧栏'} side="bottom" align="start">
-        <button
-          type="button"
-          aria-label={leftPanelOpen ? '收起侧栏' : '展开侧栏'}
-          onClick={toggleLeftPanel}
-          className={cn(
-            'grid size-7 place-items-center rounded-sm transition-colors duration-150 hover:bg-surface-hover',
-            leftPanelOpen ? 'text-muted hover:text-text' : 'text-faint',
-          )}
-        >
-          <PanelLeft className="size-3.5" />
-        </button>
-      </Tooltip>
-    </div>
-  )
+export interface TitleBarProps {
+  /**
+   * Hovering the sidebar switch previews the panel; the header owns the trigger
+   * while the drawer lives next to the content, so the handlers are passed down.
+   */
+  sidebarHover: { onEnter: () => void; onLeave: () => void }
 }
 
-/**
- * Toolbar above the sidebar. It shares the title bar's height and background, so
- * the top strip reads as one bar that the sidebar's divider cuts through — with
- * no horizontal line between the tools and the panel below them.
- */
-export function SidebarTools(): React.JSX.Element {
-  return (
-    <div className="app-drag flex h-9 shrink-0 items-center bg-surface/60 pl-1.5">
-      <PanelTools />
-    </div>
-  )
-}
-
-export function TitleBar(): React.JSX.Element {
+export function TitleBar({ sidebarHover }: TitleBarProps): React.JSX.Element {
   const view = useUiStore((state) => state.view)
   const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
+  const toggleLeftPanel = useUiStore((state) => state.toggleLeftPanel)
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
   const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
 
@@ -141,18 +104,43 @@ export function TitleBar(): React.JSX.Element {
   const project = projects.find((entry) => entry.id === selectedProjectId) ?? null
   const session = sessions.find((entry) => entry.id === selectedSessionId) ?? null
   const command = useWindowCommand()
-
-  // With the sidebar open, its toolbar (menu + switch) sits above the panel and
-  // the header carries only the title. Once the sidebar is gone — collapsed, or
-  // on the settings view — the tools fall back here so they stay reachable.
-  const showTools = view !== 'home' || !leftPanelOpen
+  const appMenu = useAppMenu()
 
   return (
     <header className="app-drag flex h-9 shrink-0 items-center gap-1 border-b border-border bg-surface/60 pl-1.5">
-      {showTools && <PanelTools />}
-      {showTools && <div className="mx-2 h-4 w-px bg-border" />}
+      <div className="app-no-drag flex items-center gap-0.5">
+        <Menu
+          label="菜单"
+          trigger={<MenuIcon className="size-3.5" />}
+          triggerClassName="size-7"
+          items={appMenu}
+          align="left"
+        />
 
-      <p className={cn('min-w-0 flex-1 truncate text-2xs text-faint', !showTools && 'ml-1')}>
+        <Tooltip
+          label={leftPanelOpen ? '收起侧栏' : '悬停预览，点击展开侧栏'}
+          side="bottom"
+          align="start"
+        >
+          <button
+            type="button"
+            aria-label={leftPanelOpen ? '收起侧栏' : '展开侧栏'}
+            onClick={toggleLeftPanel}
+            onPointerEnter={sidebarHover.onEnter}
+            onPointerLeave={sidebarHover.onLeave}
+            className={cn(
+              'grid size-7 place-items-center rounded-sm transition-colors duration-150 hover:bg-surface-hover',
+              leftPanelOpen ? 'text-muted hover:text-text' : 'text-faint',
+            )}
+          >
+            <PanelLeft className="size-3.5" />
+          </button>
+        </Tooltip>
+      </div>
+
+      <div className="mx-2 h-4 w-px bg-border" />
+
+      <p className="min-w-0 flex-1 truncate text-2xs text-faint">
         {view === 'settings' ? '设置' : (project?.name ?? '未选择项目')}
         {view === 'home' && session !== null && (
           <span className="text-muted"> / {session.title}</span>
