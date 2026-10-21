@@ -39,8 +39,8 @@ interface WorkspaceState {
 
   refresh: () => Promise<void>
   selectProject: (id: string) => void
-  /** Points the current conversation — draft or saved — at another project. */
-  assignProject: (projectId: string | null) => void
+  /** Points the draft at another project; saved sessions keep the one they have. */
+  setDraftProject: (projectId: string | null) => void
   selectSession: (id: string | null) => void
   addProject: () => Promise<void>
   removeProject: (id: string) => Promise<void>
@@ -195,19 +195,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     set({ draft: null })
   },
 
-  /**
-   * Points the current conversation at another project. A draft only records the
-   * choice; a saved session is moved on the host, which refreshes the sidebar.
-   */
-  assignProject(projectId) {
-    const { draft, selectedSessionId } = get()
-    set({ selectedProjectId: projectId })
+  setDraftProject(projectId) {
+    const draft = get().draft
+    if (draft === null) return
 
-    if (draft !== null) {
-      set({ draft: { ...draft, projectId } })
-      return
-    }
-    if (selectedSessionId !== null) void get().setSessionProject(selectedSessionId, projectId)
+    set({ draft: { ...draft, projectId }, selectedProjectId: projectId })
   },
 
   async addProject() {

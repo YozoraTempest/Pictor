@@ -27,7 +27,7 @@ export function ChatView(): React.JSX.Element {
   const draft = useWorkspaceStore((state) => state.draft)
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const clearDraft = useWorkspaceStore((state) => state.clearDraft)
-  const assignProject = useWorkspaceStore((state) => state.assignProject)
+  const setDraftProject = useWorkspaceStore((state) => state.setDraftProject)
   const messages = useChatStore((state) => state.messages)
   const running = useChatStore((state) => state.running)
   const phase = useChatStore((state) => state.phase)
@@ -247,10 +247,9 @@ export function ChatView(): React.JSX.Element {
               footer={
                 <div className="flex flex-col gap-2">
                   {status}
-                  <ProjectPicker
-                    projectId={draft?.projectId ?? session?.projectId ?? null}
-                    onChange={assignProject}
-                  />
+                  {draft !== null && (
+                    <ProjectPicker projectId={draft.projectId} onChange={setDraftProject} />
+                  )}
                   <Composer
                     disabled={false}
                     onModelChanged={() => void handleModelChanged()}
