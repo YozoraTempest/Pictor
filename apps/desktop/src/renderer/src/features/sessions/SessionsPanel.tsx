@@ -34,11 +34,6 @@ import {
   type SectionSort,
 } from './grouping.js'
 
-function newSessionTitle(): string {
-  const now = new Date()
-  return `新会话 ${now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-}
-
 type Dragged =
   | { kind: 'section'; id: string }
   | { kind: 'project'; id: string; sectionId: string | null }
@@ -81,7 +76,7 @@ export function SessionsPanel(): React.JSX.Element {
   const busy = useWorkspaceStore((state) => state.busy)
 
   const selectSession = useWorkspaceStore((state) => state.selectSession)
-  const createSession = useWorkspaceStore((state) => state.createSession)
+  const startDraft = useWorkspaceStore((state) => state.startDraft)
   const deleteSession = useWorkspaceStore((state) => state.deleteSession)
   const setSessionPinned = useWorkspaceStore((state) => state.setSessionPinned)
   const setSessionArchived = useWorkspaceStore((state) => state.setSessionArchived)
@@ -117,11 +112,8 @@ export function SessionsPanel(): React.JSX.Element {
     setCollapsed((current) => ({ ...current, [key]: current[key] !== true }))
   }
 
-  async function createIn(sectionId: string | null, projectId: string | null): Promise<void> {
-    const created = await createSession(newSessionTitle(), projectId)
-    if (created !== null && sectionId !== null) {
-      await setSessionSections(created.id, [sectionId])
-    }
+  function createIn(sectionId: string | null, projectId?: string | null): void {
+    startDraft({ sectionId, projectId })
   }
 
   function beginDrag(event: React.DragEvent, payload: Dragged): void {
@@ -160,34 +152,31 @@ export function SessionsPanel(): React.JSX.Element {
     }
   }
 
-  function reorderAround(targetId: string, draggedId: string): void {
-    const ids = sections
-      .slice()
-      .sort((a, b) => a.position - b.position)
-      .map((section) => section.id)
-      .filter((id) => id !== draggedId)
-
-    const index = ids.indexOf(targetId)
-    const next = [
-      ...ids.slice(0, index === -1 ? ids.length : index),
-      draggedId,
-      ...(index === -1 ? [] : ids.slice(index)),
-    ]
-    void reorderSections(next)
-  }
-
   const customSections = [...sections].sort((a, b) => a.position - b.position)
   const draggingSection = dragging?.kind === 'section'
 
-  /** Drops the dragged section at `index` among the custom sections. */
+  /**
+   * Drops the dragged section at `index` among the custom sections.
+   *
+   * The gap list must round-trip exactly: if the dragged section is missing from
+   * the current snapshot, or the rebuilt order would drop or duplicate an id, the
+   * reorder is abandoned rather than written with a partial list.
+   */
   function dropAtGap(index: number): void {
     const dragged = dragging
     setGapIndex(null)
     endDrag()
     if (dragged === null || dragged.kind !== 'section') return
 
-    const order = customSections.map((section) => section.id).filter((id) => id !== dragged.id)
-    order.splice(Math.min(index, order.length), 0, dragged.id)
+    const current = customSections.map((section) => section.id)
+    if (!current.includes(dragged.id)) return
+
+    const order = current.filter((id) => id !== dragged.id)
+    order.splice(Math.max(0, Math.min(index, order.length)), 0, dragged.id)
+
+    const sameSet = order.length === current.length && order.every((id) => current.includes(id))
+    if (!sameSet) return
+
     void reorderSections(order)
   }
 
@@ -314,7 +303,7 @@ export function SessionsPanel(): React.JSX.Element {
         <button
           type="button"
           disabled={busy}
-          onClick={() => void createIn(null, null)}
+          onClick={() => createIn(null)}
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text disabled:pointer-events-none disabled:opacity-50"
         >
           <SquarePen className="size-3.5 shrink-0 text-faint" />
@@ -341,6 +330,9 @@ export function SessionsPanel(): React.JSX.Element {
               <div
                 onDragOver={(event) => {
                   if (node.kind === 'archived' || node.kind === 'recent') return
+                  // A dragged section has no business on a section head: only the
+                  // gaps accept it, so this must not advertise itself as a target.
+                  if (dragging?.kind === 'section') return
                   event.preventDefault()
                   setDragOver(node.id)
                 }}
@@ -353,7 +345,9 @@ export function SessionsPanel(): React.JSX.Element {
                   if (dragged === null) return
 
                   if (dragged.kind === 'section') {
-                    if (node.kind === 'custom') reorderAround(node.sectionId ?? '', dragged.id)
+                    // Sections are only reorderable through the gaps between them;
+                    // dropping one onto a section head would silently reshuffle the
+                    // list, which is how a section used to vanish from the sidebar.
                     return
                   }
                   if (dragged.kind === 'project') {
@@ -417,7 +411,7 @@ export function SessionsPanel(): React.JSX.Element {
                       label={`在${node.title}下新建会话`}
                       className="size-6"
                       disabled={busy}
-                      onClick={() => void createIn(node.sectionId, null)}
+                      onClick={() => createIn(node.sectionId)}
                     >
                       <Plus className="size-3.5" />
                     </IconButton>
@@ -442,7 +436,7 @@ export function SessionsPanel(): React.JSX.Element {
                         endDrag={endDrag}
                         readDrag={readDrag}
                         menuItems={() => projectMenu(child.project, child)}
-                        onCreate={() => void createIn(node.sectionId, child.project.id)}
+                        onCreate={() => createIn(node.sectionId, child.project.id)}
                         onSelect={selectSession}
                         onPin={(session) => void setSessionPinned(session.id, !session.pinned)}
                         onArchive={(session) => void setSessionArchived(session.id, true)}
@@ -588,6 +582,7 @@ function ProjectBlock({
     <div className="mb-0.5">
       <div
         onDragOver={(event) => {
+          if (readDrag(event)?.kind === 'section') return
           event.preventDefault()
           setDragOver(key)
         }}
@@ -712,6 +707,7 @@ function SessionRow({
     <div
       className={cn('group/row relative rounded-md', over && 'ring-1 ring-accent/50')}
       onDragOver={(event) => {
+        if (readDrag(event)?.kind === 'section') return
         event.preventDefault()
         setOver(true)
       }}

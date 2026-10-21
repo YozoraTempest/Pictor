@@ -74,6 +74,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   requestId: 0,
 
   async open(sessionId) {
+    // Re-opening the session we are already showing would reset the transcript and
+    // drop the message that was just appended optimistically, so it is a no-op.
+    if (sessionId !== null && sessionId === get().sessionId && get().path !== null) return
+
     const requestId = get().requestId + 1
     set({
       requestId,

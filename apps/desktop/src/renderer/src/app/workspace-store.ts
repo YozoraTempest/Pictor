@@ -8,6 +8,12 @@ import type { SectionSort } from '../features/sessions/grouping.js'
 
 /** Presenter overrides applied from the last refresh, so a refresh can undo them. */
 let disposeToolViews: (() => void) | null = null
+/** A conversation that exists only in the UI until its first prompt is sent. */
+export interface DraftSession {
+  /** Section the new conversation should be filed under, when started from one. */
+  sectionId: string | null
+  projectId: string | null
+}
 
 interface WorkspaceState {
   projects: Project[]
@@ -19,6 +25,12 @@ interface WorkspaceState {
   info: AppInfo | null
   selectedProjectId: string | null
   selectedSessionId: string | null
+  /**
+   * A new conversation that has not been written yet. The session row only
+   * appears once the first prompt is sent, so opening 新聊天 does not litter the
+   * sidebar with empty sessions.
+   */
+  draft: DraftSession | null
   sorts: Record<string, SectionSort>
   groupingExclusive: boolean
   busy: boolean
@@ -33,6 +45,8 @@ interface WorkspaceState {
   addProjectFolder: (id: string) => Promise<void>
   removeProjectFolder: (id: string, path: string) => Promise<void>
   createSession: (title: string, projectId?: string | null) => Promise<Session | null>
+  startDraft: (input: { sectionId: string | null; projectId?: string | null }) => void
+  clearDraft: () => void
   deleteSession: (id: string) => Promise<void>
   setSessionPinned: (id: string, pinned: boolean) => Promise<void>
   setProjectSection: (id: string, sectionId: string | null) => Promise<void>
@@ -87,6 +101,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   info: null,
   selectedProjectId: null,
   selectedSessionId: null,
+  draft: null,
   sorts: {},
   groupingExclusive: false,
   busy: false,
@@ -144,11 +159,38 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
   selectProject(id) {
     const sessionId = get().sessions.find((session) => session.projectId === id)?.id ?? null
-    set({ selectedProjectId: id, selectedSessionId: sessionId })
+    set({ selectedProjectId: id, selectedSessionId: sessionId, draft: null })
   },
 
   selectSession(id) {
-    set({ selectedSessionId: id })
+    set({ selectedSessionId: id, draft: null })
+  },
+
+  /**
+   * Opens an unsaved conversation. The project defaults to the one the user is
+   * already in, or — when started from a section — the project of that section's
+   * most recent conversation.
+   */
+  startDraft({ sectionId, projectId }) {
+    const state = get()
+    const fromSection =
+      sectionId === null
+        ? null
+        : ([...state.sessions]
+            .filter((session) => !session.archived && session.sectionIds.includes(sectionId))
+            .sort((a, b) => b.updatedAt - a.updatedAt)[0]?.projectId ?? null)
+
+    set({
+      draft: {
+        sectionId,
+        projectId: projectId === undefined ? (fromSection ?? state.selectedProjectId) : projectId,
+      },
+      selectedSessionId: null,
+    })
+  },
+
+  clearDraft() {
+    set({ draft: null })
   },
 
   async addProject() {

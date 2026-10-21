@@ -35,3 +35,12 @@ export function phaseLabel(phase: AgentPhase, tool: string | null): string {
       return '空闲'
   }
 }
+
+/**
+ * Default title for a conversation the user has not named: the moment it started.
+ * Shared so the sidebar, the title bar and a draft all agree on the wording.
+ */
+export function newSessionTitle(): string {
+  const now = new Date()
+  return `新会话 ${now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+}

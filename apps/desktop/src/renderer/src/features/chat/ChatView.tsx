@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
-import { formatDuration, phaseLabel } from '../../lib/format-time.js'
+import { formatDuration, newSessionTitle, phaseLabel } from '../../lib/format-time.js'
 import { useChatStore } from './chat-store.js'
 import { Composer } from './Composer.js'
 import { Timeline } from './Timeline.js'
@@ -21,8 +21,11 @@ export function ChatView(): React.JSX.Element {
   const sessions = useWorkspaceStore((state) => state.sessions)
 
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
-  const selectedProjectId = useWorkspaceStore((state) => state.selectedProjectId)
   const createSession = useWorkspaceStore((state) => state.createSession)
+  const setSessionSections = useWorkspaceStore((state) => state.setSessionSections)
+  const draft = useWorkspaceStore((state) => state.draft)
+  const startDraft = useWorkspaceStore((state) => state.startDraft)
+  const clearDraft = useWorkspaceStore((state) => state.clearDraft)
 
   const messages = useChatStore((state) => state.messages)
   const running = useChatStore((state) => state.running)
@@ -157,6 +160,28 @@ export function ChatView(): React.JSX.Element {
     </span>
   ) : null
 
+  /**
+   * Sends a prompt. A draft has no session yet, so the first prompt creates one —
+   * with the project the draft carries — and files it into its section.
+   */
+  async function submit(prompt: string): Promise<void> {
+    if (draft === null) {
+      await send(prompt)
+      return
+    }
+
+    const created = await createSession(newSessionTitle(), draft.projectId)
+    if (created === null) return
+
+    if (draft.sectionId !== null) await setSessionSections(created.id, [draft.sectionId])
+    clearDraft()
+
+    // Open explicitly: the store's own effect may not have run yet, and `send`
+    // needs the session's transcript path.
+    await useChatStore.getState().open(created.id)
+    await useChatStore.getState().send(prompt)
+  }
+
   return (
     <section className="flex h-full min-h-0 flex-col bg-bg">
       {error !== null && (
@@ -170,17 +195,15 @@ export function ChatView(): React.JSX.Element {
         </div>
       )}
 
-      {session === null ? (
+      {session === null && draft === null ? (
         <EmptyState
           title="选择或新建会话"
           description="在左侧项目下新建一个会话，然后开始对话。"
           action={
-            selectedProjectId === null ? undefined : (
-              <Button size="sm" variant="secondary" onClick={() => void createSession('新会话')}>
-                <MessageSquarePlus className="size-3.5" />
-                新建会话
-              </Button>
-            )
+            <Button size="sm" variant="secondary" onClick={() => startDraft({ sectionId: null })}>
+              <MessageSquarePlus className="size-3.5" />
+              新建会话
+            </Button>
           }
         />
       ) : (
@@ -212,7 +235,7 @@ export function ChatView(): React.JSX.Element {
                   <Composer
                     disabled={false}
                     running={running}
-                    onSend={(prompt) => void send(prompt)}
+                    onSend={(prompt) => void submit(prompt)}
                     onStop={() => void stop()}
                   />
                 </div>
