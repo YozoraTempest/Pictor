@@ -3,7 +3,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 
 import { Button, EmptyState } from '../../components/ui/index.js'
 import type { AgentPhase } from '../../lib/format-time.js'
-import { Timeline } from './Timeline.js'
 import { TurnBlock } from './TurnBlock.js'
 import type { Turn } from './turns.js'
 
@@ -15,10 +14,19 @@ export interface TranscriptProps {
   hasMore: boolean
   loading: boolean
   onLoadOlder: () => void
+  /** Width of the conversation panel; the scroller spans the whole column. */
+  panelWidth: number
+  /** Exposed so the resizer can sit exactly on the panel's edge. */
+  panelRef?: React.Ref<HTMLDivElement>
+  /** Input area pinned to the bottom of the panel. */
+  footer?: React.ReactNode
 }
 
 /** Distance from the bottom that still counts as "following the stream". */
 const FOLLOW_THRESHOLD = 56
+
+/** Horizontal breathing room between the panel and the column edges. */
+export const PANEL_GUTTER = 24
 
 export function Transcript({
   turns,
@@ -28,6 +36,9 @@ export function Transcript({
   hasMore,
   loading,
   onLoadOlder,
+  panelWidth,
+  panelRef,
+  footer,
 }: TranscriptProps): React.JSX.Element {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [pinned, setPinned] = useState(true)
@@ -131,6 +142,8 @@ export function Transcript({
 
   return (
     <div className="relative flex min-h-0 flex-1">
+      {/* The scroller spans the whole column, so its scrollbar sits outside the
+          panel, hard against the column's right edge. */}
       <div
         ref={attachScroller}
         onScroll={handleScroll}
@@ -138,33 +151,52 @@ export function Transcript({
         role="log"
         aria-live="polite"
       >
-        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-6">
-          {hasMore && (
-            <div className="flex justify-center">
-              <Button variant="ghost" size="sm" onClick={onLoadOlder} disabled={loading}>
-                {loading ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <MessagesSquare className="size-3.5" />
-                )}
-                加载更早的消息
-              </Button>
-            </div>
-          )}
+        <div
+          className="flex min-h-full flex-col"
+          style={{ paddingLeft: PANEL_GUTTER, paddingRight: PANEL_GUTTER }}
+        >
+          {/* One width-constrained column holds the transcript and the input, so
+              the panel can be resized while the scrollbar stays outside it. */}
+          <div
+            ref={panelRef}
+            className="mx-auto flex min-h-full flex-col"
+            style={{ width: panelWidth }}
+          >
+            <div className="flex-1 px-6 pt-6 pb-2">
+              {hasMore && (
+                <div className="flex justify-center pb-4">
+                  <Button variant="ghost" size="sm" onClick={onLoadOlder} disabled={loading}>
+                    {loading ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <MessagesSquare className="size-3.5" />
+                    )}
+                    加载更早的消息
+                  </Button>
+                </div>
+              )}
 
-          {turns.map((turn, index) => (
-            <TurnBlock
-              key={turn.id}
-              turn={turn}
-              live={running && index === turns.length - 1}
-              phase={phase}
-              currentTool={currentTool}
-            />
-          ))}
+              <div className="flex flex-col gap-6">
+                {turns.map((turn, index) => (
+                  <TurnBlock
+                    key={turn.id}
+                    turn={turn}
+                    live={running && index === turns.length - 1}
+                    phase={phase}
+                    currentTool={currentTool}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* The input stays put while the transcript scrolls; its own surface
+                keeps the text that passes underneath from showing through. */}
+            {footer !== undefined && (
+              <div className="sticky bottom-0 bg-bg px-6 pt-3 pb-4">{footer}</div>
+            )}
+          </div>
         </div>
       </div>
-
-      <Timeline turns={turns} />
 
       {!pinned && (
         <button

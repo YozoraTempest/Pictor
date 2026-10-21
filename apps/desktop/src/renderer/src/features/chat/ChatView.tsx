@@ -1,14 +1,21 @@
 import { AlertTriangle, MessageSquarePlus } from 'lucide-react'
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
+import { cn } from '../../lib/cn.js'
 import { formatDuration, phaseLabel } from '../../lib/format-time.js'
 import { useChatStore } from './chat-store.js'
 import { Composer } from './Composer.js'
-import { Transcript } from './Transcript.js'
+import { Timeline } from './Timeline.js'
+import { PANEL_GUTTER, Transcript } from './Transcript.js'
 import { toolLabel } from './tool-presenters.js'
 import { buildTurns } from './turns.js'
+
+/** Panel width bounds; the upper one also yields to the column's own width. */
+const MIN_PANEL_WIDTH = 520
+const MAX_PANEL_WIDTH = 1200
+const DEFAULT_PANEL_WIDTH = 860
 
 export function ChatView(): React.JSX.Element {
   const sessions = useWorkspaceStore((state) => state.sessions)
@@ -34,6 +41,87 @@ export function ChatView(): React.JSX.Element {
   const turns = useMemo(() => buildTurns(messages), [messages])
   const session = sessions.find((entry) => entry.id === selectedSessionId) ?? null
   const project = projects.find((entry) => entry.id === selectedProjectId) ?? null
+
+  const columnRef = useRef<HTMLDivElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
+  /** Left offset of the panel inside its column; keeps the handle on the edge. */
+  const [panelRight, setPanelRight] = useState(0)
+  const [resizing, setResizing] = useState(false)
+
+  /** Keeps the panel inside its column, leaving the outer gutter for the scrollbar. */
+  const clampWidth = useCallback((next: number): number => {
+    const column = columnRef.current
+    const available = column === null ? MAX_PANEL_WIDTH : column.clientWidth - PANEL_GUTTER * 2 - 8
+    const ceiling = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, available))
+    return Math.max(MIN_PANEL_WIDTH, Math.min(next, ceiling))
+  }, [])
+
+  /** Places the handle on the panel's right edge, wherever centring put it. */
+  const measurePanel = useCallback(() => {
+    const panel = panelRef.current
+    if (panel === null) return
+    setPanelRight(panel.offsetLeft + panel.offsetWidth)
+  }, [])
+
+  // A narrower window must not leave the panel wider than its column, and the
+  // handle has to follow whatever width and centring the panel ends up with.
+  useEffect(() => {
+    const column = columnRef.current
+    if (column === null) return
+
+    const observer = new ResizeObserver(() => {
+      setPanelWidth((width) => clampWidth(width))
+      measurePanel()
+    })
+    observer.observe(column)
+    measurePanel()
+    return () => observer.disconnect()
+  }, [clampWidth, measurePanel])
+
+  // Centring is a layout result, so the edge is measured after every render: the
+  // panel only exists once the transcript has mounted, which rules out a one-shot
+  // measurement. Setting the same value again is a no-op.
+  useEffect(() => {
+    measurePanel()
+  })
+
+  /**
+   * Drags the right edge: the panel stays centred, so moving right widens it by
+   * twice the distance travelled.
+   */
+
+  function startResize(event: React.PointerEvent<HTMLDivElement>): void {
+    const handle = event.currentTarget
+    const startX = event.clientX
+    const startWidth = panelWidth
+
+    // Capture keeps the drag alive when the pointer leaves the handle; a synthetic
+    // pointer id has no active pointer, so the throw must not abort the drag.
+    try {
+      handle.setPointerCapture(event.pointerId)
+    } catch {
+      // No active pointer to capture (tests, synthetic events) — window listeners
+      // below still drive the drag.
+    }
+    setResizing(true)
+
+    const move = (moveEvent: PointerEvent): void => {
+      setPanelWidth(clampWidth(startWidth + (moveEvent.clientX - startX) * 2))
+    }
+
+    const finish = (): void => {
+      setResizing(false)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+    }
+
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+  }
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-bg">
@@ -94,23 +182,50 @@ export function ChatView(): React.JSX.Element {
           }
         />
       ) : (
-        <>
-          <Transcript
-            turns={turns}
-            running={running}
-            phase={phase}
-            currentTool={currentTool}
-            hasMore={hasMore}
-            loading={loading}
-            onLoadOlder={() => void loadOlder()}
-          />
-          <Composer
-            disabled={false}
-            running={running}
-            onSend={(prompt) => void send(prompt)}
-            onStop={() => void stop()}
-          />
-        </>
+        <div className="relative flex min-h-0 flex-1">
+          {/* Timeline lives outside the conversation panel, on the far left. */}
+          <Timeline turns={turns} />
+
+          <div ref={columnRef} className="relative flex min-h-0 flex-1 flex-col">
+            <Transcript
+              turns={turns}
+              running={running}
+              phase={phase}
+              currentTool={currentTool}
+              hasMore={hasMore}
+              loading={loading}
+              onLoadOlder={() => void loadOlder()}
+              panelWidth={panelWidth}
+              panelRef={panelRef}
+              footer={
+                <Composer
+                  disabled={false}
+                  running={running}
+                  onSend={(prompt) => void send(prompt)}
+                  onStop={() => void stop()}
+                />
+              }
+            />
+
+            {/* Drag handle on the panel's right edge: a short rule appears on hover. */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整对话区宽度"
+              onPointerDown={startResize}
+              onDoubleClick={() => setPanelWidth(clampWidth(DEFAULT_PANEL_WIDTH))}
+              className="group absolute top-0 bottom-0 z-10 w-3 -translate-x-1/2 cursor-col-resize touch-none"
+              style={{ left: panelRight }}
+            >
+              <span
+                className={cn(
+                  'absolute top-1/2 left-1/2 h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-border-strong opacity-0 transition-opacity duration-150 group-hover:opacity-100',
+                  resizing && 'opacity-100',
+                )}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </section>
   )
