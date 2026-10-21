@@ -146,25 +146,19 @@ export function ChatView(): React.JSX.Element {
     window.addEventListener('pointercancel', finish)
   }
 
+  /** Live run state; it belongs beside the composer, not over the transcript. */
+  const status = running ? (
+    <Badge tone="accent" className="self-start">
+      {phaseLabel(phase, currentTool === null ? null : toolLabel(currentTool))}
+    </Badge>
+  ) : runStartedAt !== null && runFinishedAt !== null ? (
+    <span className="self-start text-2xs text-faint">
+      用时 {formatDuration(runFinishedAt - runStartedAt)}
+    </span>
+  ) : null
+
   return (
     <section className="flex h-full min-h-0 flex-col bg-bg">
-      {/* The conversation header shows only live state: the running phase or how long
-          the last run took. The session title, its file path and the project badge
-          were noise — the sidebar already names the session and its project. */}
-      {running ? (
-        <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
-          <Badge tone="accent" className="shrink-0">
-            {phaseLabel(phase, currentTool === null ? null : toolLabel(currentTool))}
-          </Badge>
-        </header>
-      ) : runStartedAt !== null && runFinishedAt !== null ? (
-        <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
-          <span className="shrink-0 text-2xs text-faint">
-            用时 {formatDuration(runFinishedAt - runStartedAt)}
-          </span>
-        </header>
-      ) : null}
-
       {error !== null && (
         <div className="px-4 pt-3">
           <Banner tone="error">
@@ -213,12 +207,15 @@ export function ChatView(): React.JSX.Element {
               animateWidth={!resizing}
               jumpTo={jumpTo}
               footer={
-                <Composer
-                  disabled={false}
-                  running={running}
-                  onSend={(prompt) => void send(prompt)}
-                  onStop={() => void stop()}
-                />
+                <div className="flex flex-col gap-2">
+                  {status}
+                  <Composer
+                    disabled={false}
+                    running={running}
+                    onSend={(prompt) => void send(prompt)}
+                    onStop={() => void stop()}
+                  />
+                </div>
               }
             />
 
