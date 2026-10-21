@@ -74,7 +74,7 @@ export function Timeline({ turns }: { turns: Turn[] }): React.JSX.Element | null
         // one ellipsised line, the answer exactly three, and the box is sized so the
         // third line is clamped rather than cut off by the edge.
         <span
-          className="pointer-events-none absolute left-full z-20 ml-1 flex h-24 w-96 -translate-y-1/2 flex-col gap-1 overflow-hidden rounded-lg border border-border bg-surface-raised p-2 text-left shadow-popover"
+          className="pointer-events-none absolute left-full z-20 ml-1 flex h-24 w-80 -translate-y-1/2 flex-col gap-1 overflow-hidden rounded-lg border border-border bg-surface-raised p-2 text-left shadow-popover"
           style={{ top: hovered.top }}
         >
           <span className="truncate text-xs text-text">{hovered.turn.prompt || '（无提问）'}</span>
