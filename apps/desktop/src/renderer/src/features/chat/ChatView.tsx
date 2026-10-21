@@ -19,7 +19,7 @@ const DEFAULT_PANEL_WIDTH = 860
 
 export function ChatView(): React.JSX.Element {
   const sessions = useWorkspaceStore((state) => state.sessions)
-  const projects = useWorkspaceStore((state) => state.projects)
+
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
   const selectedProjectId = useWorkspaceStore((state) => state.selectedProjectId)
   const createSession = useWorkspaceStore((state) => state.createSession)
@@ -32,7 +32,7 @@ export function ChatView(): React.JSX.Element {
   const runFinishedAt = useChatStore((state) => state.runFinishedAt)
   const loading = useChatStore((state) => state.loading)
   const hasMore = useChatStore((state) => state.hasMore)
-  const path = useChatStore((state) => state.path)
+
   const error = useChatStore((state) => state.error)
   const send = useChatStore((state) => state.send)
   const stop = useChatStore((state) => state.stop)
@@ -40,7 +40,6 @@ export function ChatView(): React.JSX.Element {
 
   const turns = useMemo(() => buildTurns(messages), [messages])
   const session = sessions.find((entry) => entry.id === selectedSessionId) ?? null
-  const project = projects.find((entry) => entry.id === selectedProjectId) ?? null
 
   const columnRef = useRef<HTMLDivElement | null>(null)
   const panelNodeRef = useRef<HTMLDivElement | null>(null)
@@ -149,37 +148,22 @@ export function ChatView(): React.JSX.Element {
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-bg">
-      <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
-        <h1 className="truncate text-sm font-medium">
-          {session?.title ?? (project === null ? 'Pictor' : `${project.name} · 新会话`)}
-        </h1>
-
-        {running ? (
+      {/* The conversation header shows only live state: the running phase or how long
+          the last run took. The session title, its file path and the project badge
+          were noise — the sidebar already names the session and its project. */}
+      {running ? (
+        <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
           <Badge tone="accent" className="shrink-0">
             {phaseLabel(phase, currentTool === null ? null : toolLabel(currentTool))}
           </Badge>
-        ) : runStartedAt !== null && runFinishedAt !== null ? (
+        </header>
+      ) : runStartedAt !== null && runFinishedAt !== null ? (
+        <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border px-4">
           <span className="shrink-0 text-2xs text-faint">
             用时 {formatDuration(runFinishedAt - runStartedAt)}
           </span>
-        ) : null}
-
-        <div className="ml-auto flex min-w-0 items-center gap-2">
-          {path !== null && (
-            <span
-              title={path}
-              className="hidden max-w-72 truncate font-mono text-2xs text-faint sm:inline"
-            >
-              {path}
-            </span>
-          )}
-          {project !== null && (
-            <Badge tone="neutral" className="shrink-0">
-              {project.name}
-            </Badge>
-          )}
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       {error !== null && (
         <div className="px-4 pt-3">
