@@ -206,7 +206,10 @@ export function Transcript({
           <div
             ref={panelRef}
             className={cn(
-              'mx-auto flex min-h-full max-w-full flex-col',
+              // flex-1 fills the scroller when the conversation is short, so the
+              // composer sits at the bottom even before the first message. Its
+              // min-height keeps a long transcript from being squeezed.
+              'mx-auto flex min-h-full max-w-full flex-1 flex-col',
               // Width changes from the window or the right panel glide; a drag must
               // track the pointer without lag.
               animateWidth && 'transition-[width] duration-300 ease-out',

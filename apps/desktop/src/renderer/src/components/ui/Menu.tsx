@@ -1,5 +1,6 @@
 import { ChevronRight } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 import { cn } from '../../lib/cn.js'
 
@@ -35,11 +36,20 @@ export interface MenuProps {
 const ITEM_CLASS =
   'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors duration-150'
 
+const MENU_WIDTH = 192
+/** Gap between the trigger and the menu, and the least distance to the viewport. */
+const OFFSET = 4
+const VIEWPORT_MARGIN = 8
+
 /**
  * Small popover menu used by the title bar and the sidebar's `···` buttons.
  * Closes on outside click, on Escape and after a selection. Rows with children
  * open a second-level menu on hover; one level is enough for an app menu and
  * keeps the keyboard model simple.
+ *
+ * The popover renders into a portal: sidebar rows are hover-revealed (opacity)
+ * inside a scrolling list, and both of those would otherwise clip the menu or
+ * paint later rows over it.
  */
 export function Menu({
   label,
@@ -52,36 +62,76 @@ export function Menu({
   const [open, setOpen] = useState(false)
   /** Key of the row whose submenu is showing. */
   const [submenu, setSubmenu] = useState<string | null>(null)
-  const rootRef = useRef<HTMLDivElement | null>(null)
+  /** Viewport coordinates once the popover has been measured. */
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  const close = useCallback((): void => {
+    setOpen(false)
+    setSubmenu(null)
+    setPosition(null)
+  }, [])
+
+  const place = useCallback((): void => {
+    const trigger = triggerRef.current
+    if (trigger === null) return
+
+    const rect = trigger.getBoundingClientRect()
+    const menu = menuRef.current
+    const width = menu?.offsetWidth ?? MENU_WIDTH
+    const height = menu?.offsetHeight ?? 0
+
+    const wanted = align === 'right' ? rect.right - width : rect.left
+    const left = Math.min(
+      Math.max(VIEWPORT_MARGIN, wanted),
+      window.innerWidth - width - VIEWPORT_MARGIN,
+    )
+
+    // Open upwards when there is no room below, which is the common case for the
+    // rows near the bottom of the sidebar.
+    const below = rect.bottom + OFFSET
+    const above = rect.top - OFFSET - height
+    const top =
+      height > 0 && below + height > window.innerHeight - VIEWPORT_MARGIN
+        ? Math.max(VIEWPORT_MARGIN, above)
+        : below
+
+    setPosition({ top, left })
+  }, [align])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    place()
+  }, [open, place])
 
   useEffect(() => {
     if (!open) return
 
     const onPointerDown = (event: MouseEvent): void => {
-      if (rootRef.current !== null && !rootRef.current.contains(event.target as Node)) {
-        setOpen(false)
-        setSubmenu(null)
-      }
+      const target = event.target as Node
+      if (triggerRef.current?.contains(target) === true) return
+      if (menuRef.current?.contains(target) === true) return
+      close()
     }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        setOpen(false)
-        setSubmenu(null)
-      }
+      if (event.key === 'Escape') close()
+    }
+    const onViewportChange = (): void => {
+      place()
     }
 
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', onViewportChange)
+    window.addEventListener('scroll', onViewportChange, true)
     return () => {
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', onViewportChange)
+      window.removeEventListener('scroll', onViewportChange, true)
     }
-  }, [open])
-
-  function close(): void {
-    setOpen(false)
-    setSubmenu(null)
-  }
+  }, [open, close, place])
 
   function renderLeaf(entry: MenuItem, key: string): React.JSX.Element {
     return (
@@ -166,18 +216,21 @@ export function Menu({
   }
 
   return (
-    <div ref={rootRef} className={cn('relative', className)}>
+    <div className={cn('relative', className)}>
       <button
+        ref={triggerRef}
         type="button"
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => {
-          if (open) close()
-          else {
-            setSubmenu(null)
-            setOpen(true)
+          if (open) {
+            close()
+            return
           }
+          setSubmenu(null)
+          setPosition(null)
+          setOpen(true)
         }}
         className={cn(
           'grid size-6 place-items-center rounded-sm text-faint transition-colors duration-150 hover:bg-surface-hover hover:text-text focus-visible:ring-2 focus-visible:ring-accent/40',
@@ -187,18 +240,23 @@ export function Menu({
         {trigger}
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label={label}
-          className={cn(
-            'absolute top-full z-50 mt-1 flex w-48 flex-col gap-0.5 rounded-lg border border-border bg-surface-raised p-1 shadow-popover',
-            align === 'right' ? 'right-0' : 'left-0',
-          )}
-        >
-          {items.map((item, index) => renderEntry(item, `entry-${String(index)}`))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label={label}
+            style={{
+              top: position?.top ?? 0,
+              left: position?.left ?? 0,
+              visibility: position === null ? 'hidden' : 'visible',
+            }}
+            className="fixed z-50 flex w-48 flex-col gap-0.5 rounded-lg border border-border bg-surface-raised p-1 shadow-popover"
+          >
+            {items.map((item, index) => renderEntry(item, `entry-${String(index)}`))}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
