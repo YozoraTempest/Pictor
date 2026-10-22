@@ -121,9 +121,17 @@ function legacyProvider(settings: Record<string, JsonValue>): ModelProvider | nu
   }
 }
 
-function readStored(settings: Record<string, JsonValue>): ModelProvider[] {
+/**
+ * The stored list, or `null` when the key was never written.
+ *
+ * The difference matters: an empty array means the user removed every provider,
+ * while a missing key means this profile still uses the single-provider layout.
+ * Treating both as "empty" made the last provider reappear from the legacy keys
+ * the moment it was deleted.
+ */
+function readStored(settings: Record<string, JsonValue>): ModelProvider[] | null {
   const value = settings[PROVIDERS_KEY]
-  if (!Array.isArray(value)) return []
+  if (!Array.isArray(value)) return null
 
   return value.flatMap((entry): ModelProvider[] => {
     const provider = parseProvider(entry)
@@ -140,12 +148,12 @@ function readStored(settings: Record<string, JsonValue>): ModelProvider[] {
 export async function readProviders(store: SettingsStore, authPath: string): Promise<ProviderList> {
   const settings = await store.listSettings()
   const stored = readStored(settings)
+  // `null` means the key was never written, so this profile still uses the
+  // single-provider layout and derives its first provider. An empty array is a
+  // decision the user made by removing every provider, and must stay empty.
   const providers =
-    stored.length > 0
-      ? stored
-      : [legacyProvider(settings)].filter(
-          (provider): provider is ModelProvider => provider !== null,
-        )
+    stored ??
+    [legacyProvider(settings)].filter((provider): provider is ModelProvider => provider !== null)
   if (providers.length === 0) return EMPTY_PROVIDER_LIST
 
   const storedActive = settings[ACTIVE_PROVIDER_KEY]
@@ -193,7 +201,9 @@ async function writeProviders(
   activeId: string | null,
 ): Promise<void> {
   await store.putSetting(PROVIDERS_KEY, providers.map(writeProvider))
-  if (activeId !== null) await store.putSetting(ACTIVE_PROVIDER_KEY, activeId)
+  // Written even when null: a stale active id would survive deleting the last
+  // provider and make it look alive again on the next read.
+  await store.putSetting(ACTIVE_PROVIDER_KEY, activeId)
 }
 
 /** Adds a provider, or updates the one `input.id` names. */

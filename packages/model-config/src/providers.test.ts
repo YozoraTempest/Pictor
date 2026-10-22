@@ -10,6 +10,7 @@ import { readApiKey, writeApiKey } from './auth.js'
 import {
   LEGACY_KEYS,
   LEGACY_PROVIDER_ID,
+  PROVIDERS_KEY,
   activateProvider,
   readProviders,
   removeProvider,
@@ -142,6 +143,30 @@ describe('provider list', () => {
     expect(after.activeId).toBe(b?.id)
     expect(readApiKey(path, a?.id ?? '')).toBeNull()
     expect(readApiKey(path, b?.id ?? '')).toBe('key-b')
+  })
+
+  it('stays empty after the last provider is removed, even with legacy keys', async () => {
+    const store = new MemorySettings()
+    const path = authPath()
+
+    // A profile that predates the list still carries the single-provider keys,
+    // and the user has since removed every provider.
+    store.values[LEGACY_KEYS.name] = 'Old'
+    store.values[LEGACY_KEYS.baseUrl] = 'https://legacy.example.com'
+    store.values[LEGACY_KEYS.modelId] = 'legacy-model'
+    store.values[PROVIDERS_KEY] = []
+
+    // Empty means the user removed everything; a missing key means "never
+    // migrated". Conflating them resurrected the provider from the legacy keys.
+    expect((await readProviders(store, path)).providers).toEqual([])
+
+    const list = await saveProvider(store, path, input({ name: 'Only', apiKey: 'key' }))
+    expect(list.providers).toHaveLength(1)
+
+    const after = await removeProvider(store, path, list.activeId ?? '')
+    expect(after.providers).toEqual([])
+    expect(after.activeId).toBeNull()
+    expect((await readProviders(store, path)).providers).toEqual([])
   })
 
   it('records the model of a provider, refusing ids it never reported', async () => {
