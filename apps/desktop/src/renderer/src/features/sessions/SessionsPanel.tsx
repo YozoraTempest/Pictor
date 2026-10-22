@@ -334,6 +334,26 @@ export function SessionsPanel(): React.JSX.Element {
     return target !== null && target.ring === list
   }
 
+  /**
+   * The section as the store has it right now.
+   *
+   * Every store write refreshes the whole workspace, so a node captured during
+   * render is a snapshot of the past. Re-grouping from the live state is cheap
+   * and gives the post-write truth the drop has to order against.
+   */
+  function currentSection(id: string): SectionNode | null {
+    const state = useWorkspaceStore.getState()
+    const live = groupSessions({
+      sessions: state.sessions,
+      projects: state.projects,
+      sections: state.sections,
+      mode: state.groupingMode,
+      order: state.sectionOrder,
+      sorts: state.sorts,
+    })
+    return live.find((node) => node.id === id) ?? null
+  }
+
   /** Session ids of a section in the order they are rendered. */
   function orderedSessionIds(node: SectionNode): string[] {
     const ids: string[] = []
@@ -386,17 +406,23 @@ export function SessionsPanel(): React.JSX.Element {
    * slot the preview promised.
    */
   async function dropSessionAt(node: SectionNode, draggedId: string, slot: GapRef): Promise<void> {
-    const ids = orderedSessionIds(node)
-    const targetId = ids[flatIndexAt(node, slot.list, slot.gap)] ?? null
-
-    const next = ids.filter((id) => id !== draggedId)
-    if (targetId === null) next.push(draggedId)
-    else {
-      const index = next.indexOf(targetId)
-      next.splice(index === -1 ? next.length : index, 0, draggedId)
-    }
+    // Anchor on the session the slot points at, not on an index: filing the
+    // session rewrites the section, so an index taken here would be stale.
+    const anchorId = orderedSessionIds(node)[flatIndexAt(node, slot.list, slot.gap)] ?? null
 
     await dropSessionInSection(node, draggedId)
+
+    // Re-read the section after filing. Building the order before the filing
+    // used a list that no longer existed once the store refreshed, so the first
+    // drop wrote a stale order and only the second one — where filing had become
+    // a no-op — actually moved the row.
+    const fresh = currentSection(node.id)
+    const ids = orderedSessionIds(fresh ?? node)
+    const next = ids.filter((id) => id !== draggedId)
+    const index = anchorId === null ? -1 : next.indexOf(anchorId)
+    if (index === -1) next.push(draggedId)
+    else next.splice(index, 0, draggedId)
+
     await reorderSessions(next)
     await setSectionSort(node.id, 'manual')
   }
