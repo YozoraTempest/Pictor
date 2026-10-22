@@ -533,7 +533,7 @@ export function SessionsPanel(): React.JSX.Element {
                   void dropSessionAt(node, dragged.id, tail)
                 }}
                 className={cn(
-                  'mb-0.5 rounded-lg bg-surface/40 p-1 transition-colors duration-150',
+                  'mb-0.5 rounded-lg p-1 transition-colors duration-150',
                   isSource && 'opacity-40',
                   framed && 'ring-1 ring-accent',
                 )}
