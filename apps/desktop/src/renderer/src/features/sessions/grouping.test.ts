@@ -261,6 +261,37 @@ describe('groupSessions (section → project → session)', () => {
     expect(new Set(seen).size).toBe(4)
   })
 
+  it('lets a session label outrank the section its project is filed under', () => {
+    const filed = [
+      { ...project('p1', 'Alpha'), sectionId: 'sec1' },
+      { ...project('p2', 'Beta'), sectionId: 'sec2' },
+    ]
+    const nodes = groupSessions({
+      sessions: [
+        // No label: follows its project into Design.
+        session({ id: 'follows', projectId: 'p1' }),
+        // Labelled Ops: the label wins even though the project sits in Design.
+        session({ id: 'relabelled', projectId: 'p1', sectionIds: ['sec2'] }),
+      ],
+      projects: filed,
+      sections: [section('sec1', 'Design'), section('sec2', 'Ops', 1)],
+      mode: 'exclusive',
+      sorts: {},
+    })
+
+    const design = nodes.find((node) => node.id === 'section:sec1')
+    const alpha = design?.children.find((child) => child.kind === 'project')
+    expect(alpha?.kind).toBe('project')
+    if (alpha?.kind === 'project') expect(alpha.sessions.map((s) => s.id)).toEqual(['follows'])
+
+    const ops = nodes.find((node) => node.id === 'section:sec2')
+    expect(
+      ops?.children.map((child) =>
+        child.kind === 'project' ? child.project.id : child.session.id,
+      ),
+    ).toEqual(['p2', 'relabelled'])
+  })
+
   it('keeps archived sessions in their own section only', () => {
     const nodes = groupSessions({
       sessions: [

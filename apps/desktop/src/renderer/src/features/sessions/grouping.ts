@@ -102,19 +102,24 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
    * The one section a session belongs to in `exclusive` mode.
    *
    * Pinning wins over everything (the user asked for it explicitly), then the
-   * section its project is filed under, then the first section it was tagged
-   * with, then 项目 for project sessions and 最近 for the rest.
+   * first section the session itself was tagged with, then the section its
+   * project is filed under, then 项目 for project sessions and 最近 for the rest.
+   *
+   * The session's own label outranks its project on purpose: a project is the
+   * directory the agent works in, while a section is only where the conversation
+   * is filed. Tagging a project session therefore moves the row without taking
+   * it out of its project.
    */
   function homeOf(session: Session): string {
     if (session.pinned) return PINNED_ID
 
+    for (const section of orderedSections) {
+      if (session.sectionIds.includes(section.id)) return `section:${section.id}`
+    }
+
     if (session.projectId !== null) {
       const sectionId = projectSection.get(session.projectId) ?? null
       if (sectionId !== null) return `section:${sectionId}`
-    }
-
-    for (const section of orderedSections) {
-      if (session.sectionIds.includes(section.id)) return `section:${section.id}`
     }
 
     return session.projectId === null ? RECENT_ID : PROJECTS_ID

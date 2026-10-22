@@ -273,11 +273,12 @@ export function SessionsPanel(): React.JSX.Element {
   }
 
   /**
-   * A session dropped into a section: pin it, detach it, or tag it.
+   * A session dropped into a section: pin it, or relabel it.
    *
-   * A session that still belongs to a project follows that project, so tagging
-   * is not enough — the project wins and the row stays where it was. Detaching
-   * first is what actually lets a project session live in a section.
+   * A section is only a label the row is filed under, so dropping into one never
+   * touches the project: the agent keeps working in the same directory. 项目 is
+   * the default bucket, so dropping there clears the label and lets the session
+   * fall back to its project's section.
    */
   async function dropSessionInSection(node: SectionNode, sessionId: string): Promise<void> {
     if (node.kind === 'pinned') {
@@ -285,13 +286,10 @@ export function SessionsPanel(): React.JSX.Element {
       return
     }
     if (node.kind === 'projects') {
-      await setSessionProject(sessionId, null)
+      await setSessionSections(sessionId, [])
       return
     }
     if (node.kind === 'custom' && node.sectionId !== null) {
-      const session = useWorkspaceStore.getState().sessions.find((entry) => entry.id === sessionId)
-      if (session !== undefined && session.projectId !== null)
-        await setSessionProject(sessionId, null)
       await setSessionSections(sessionId, [node.sectionId])
     }
   }
@@ -418,10 +416,11 @@ export function SessionsPanel(): React.JSX.Element {
   /**
    * Drops a session into a container at a slot.
    *
-   * Membership comes first: dropping into a project has to join that project and
-   * dropping into a section has to leave it, otherwise the row follows whatever
-   * it belonged to before and snaps back. The order is then rebuilt so the
-   * session lands at the slot the preview promised.
+   * The drop target decides where the row is filed, the project decides what the
+   * agent works on. Landing inside a project block joins that project and drops
+   * any section label, so the row follows the project; landing anywhere else only
+   * relabels the session and leaves its project alone. The order is rebuilt last,
+   * so the session lands at the slot the preview promised.
    */
   async function dropSessionAt(node: SectionNode, draggedId: string, slot: GapRef): Promise<void> {
     // Anchor on the session the slot points at, not on an index: filing the
@@ -429,8 +428,12 @@ export function SessionsPanel(): React.JSX.Element {
     const anchorId = orderedSessionIds(node)[flatIndexAt(node, slot.list, slot.gap)] ?? null
 
     const projectId = projectOfSlot(node, slot.list)
-    if (projectId === null) await dropSessionInSection(node, draggedId)
-    else await setSessionProject(draggedId, projectId)
+    if (projectId === null) {
+      await dropSessionInSection(node, draggedId)
+    } else {
+      await setSessionProject(draggedId, projectId)
+      await setSessionSections(draggedId, [])
+    }
 
     // Re-read the section after filing. Building the order before the filing
     // used a list that no longer existed once the store refreshed, so the first
