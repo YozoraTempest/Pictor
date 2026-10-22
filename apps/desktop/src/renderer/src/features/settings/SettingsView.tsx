@@ -9,7 +9,7 @@ import {
   Settings2,
   type LucideIcon,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 
 import { Input } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
@@ -21,14 +21,14 @@ import { ModelSection } from './ModelSection.js'
 import { PluginsSection } from './PluginsSection.js'
 import { SectionsSection } from './SectionsSection.js'
 
-type SettingsId = 'general' | 'model' | 'plugins' | 'import' | 'sections' | 'agent' | 'about'
-
 interface SettingsItem {
-  id: SettingsId
+  id: string
   label: string
   icon: LucideIcon
   description: string
   keywords: string
+  /** Rendered when the item is selected; the list above is the only index. */
+  render: () => ReactNode
 }
 
 const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
@@ -37,6 +37,7 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
     items: [
       {
         id: 'general',
+        render: () => <GeneralSection />,
         label: '常规',
         icon: Settings2,
         description: '会话列表与置顶行为',
@@ -44,6 +45,7 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
       },
       {
         id: 'model',
+        render: () => <ModelSection />,
         label: '模型服务',
         icon: Cpu,
         description: 'OpenAI 兼容端点与 API Key',
@@ -56,6 +58,7 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
     items: [
       {
         id: 'plugins',
+        render: () => <PluginsSection />,
         label: '插件',
         icon: Blocks,
         description: '已安装插件的启停与加载状态',
@@ -63,6 +66,7 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
       },
       {
         id: 'import',
+        render: () => <CcSwitchSection />,
         label: '导入配置',
         icon: Download,
         description: '从 cc-switch 只读导入 provider',
@@ -75,6 +79,7 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
     items: [
       {
         id: 'sections',
+        render: () => <SectionsSection />,
         label: '分区',
         icon: FolderTree,
         description: '自定义分区的增删改',
@@ -82,6 +87,7 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
       },
       {
         id: 'agent',
+        render: () => <AgentTestSection />,
         label: 'Agent 试运行',
         icon: FlaskConical,
         description: '端到端验证当前模型配置',
@@ -94,6 +100,7 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
     items: [
       {
         id: 'about',
+        render: () => <AboutSection />,
         label: '关于 Pictor',
         icon: Info,
         description: '版本、运行时与数据库位置',
@@ -105,27 +112,8 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
 
 const ITEMS = GROUPS.flatMap((group) => group.items)
 
-function renderContent(id: SettingsId): React.JSX.Element {
-  switch (id) {
-    case 'general':
-      return <GeneralSection />
-    case 'model':
-      return <ModelSection />
-    case 'plugins':
-      return <PluginsSection />
-    case 'import':
-      return <CcSwitchSection />
-    case 'sections':
-      return <SectionsSection />
-    case 'agent':
-      return <AgentTestSection />
-    case 'about':
-      return <AboutSection />
-  }
-}
-
 export function SettingsView(): React.JSX.Element {
-  const [active, setActive] = useState<SettingsId>('general')
+  const [active, setActive] = useState<string>('general')
   const [query, setQuery] = useState('')
 
   const filtered = useMemo(() => {
@@ -213,7 +201,7 @@ export function SettingsView(): React.JSX.Element {
             <p className="mt-0.5 text-xs text-faint">{current?.description ?? ''}</p>
           </header>
 
-          {renderContent(active)}
+          {current?.render()}
         </div>
       </section>
     </div>
