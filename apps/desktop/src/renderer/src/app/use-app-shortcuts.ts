@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 
+import { openView } from './open-view.js'
 import { useUiStore } from './ui-store.js'
 import { useWorkspaceStore } from './workspace-store.js'
 
@@ -31,7 +32,7 @@ export function useAppShortcuts(): void {
           return
         case ',':
           event.preventDefault()
-          setView('settings')
+          openView('settings')
           return
         case 'b':
           event.preventDefault()

@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from 'react'
 
 import type { WindowCommand } from '../../../shared/bridge.js'
+import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
 import { APP_VIEWS, sortedViews } from '../app/views.js'
 import { useWorkspaceStore } from '../app/workspace-store.js'
@@ -37,7 +38,6 @@ function useWindowCommand(): (name: WindowCommand) => void {
  */
 function useAppMenu(): MenuEntry[] {
   const view = useUiStore((state) => state.view)
-  const setView = useUiStore((state) => state.setView)
   const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
   const toggleLeftPanel = useUiStore((state) => state.toggleLeftPanel)
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
@@ -83,7 +83,7 @@ function useAppMenu(): MenuEntry[] {
           label: entry.label,
           checked: view === entry.id,
           shortcut: 'shortcut' in entry ? entry.shortcut : undefined,
-          onSelect: () => setView(entry.id),
+          onSelect: () => openView(entry.id),
         })),
         {
           label: '显示侧栏',

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { X } from 'lucide-react'
 
+import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
 import { useWorkspaceStore } from '../app/workspace-store.js'
 import { IconButton, Tooltip } from '../components/ui/index.js'
@@ -59,7 +60,7 @@ export function RightPanel(): React.JSX.Element {
               `新会话 ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`,
             )
           },
-          openSettings: () => setView('settings'),
+          openSettings: () => openView('settings'),
         }),
         pluginPanelEntries(pluginPanels, (id, title) => {
           void invokePanel(id, title)

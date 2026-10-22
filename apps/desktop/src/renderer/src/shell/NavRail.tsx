@@ -1,10 +1,9 @@
+import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
 import { sortedViews, type AppViewEntry } from '../app/views.js'
 import { cn } from '../lib/cn.js'
-import { withViewTransition } from '../lib/view-transition.js'
 
 function RailButton({ view, active }: { view: AppViewEntry; active: boolean }): React.JSX.Element {
-  const setView = useUiStore((state) => state.setView)
   const Icon = view.icon
 
   return (
@@ -14,7 +13,7 @@ function RailButton({ view, active }: { view: AppViewEntry; active: boolean }): 
       aria-label={view.label}
       aria-current={active ? 'page' : undefined}
       onClick={() => {
-        withViewTransition(() => setView(view.id))
+        openView(view.id)
       }}
       className={cn(
         'grid size-9 place-items-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/40',
