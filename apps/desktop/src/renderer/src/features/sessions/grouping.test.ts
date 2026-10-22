@@ -46,6 +46,35 @@ function titles(nodes: ReturnType<typeof groupSessions>): string[] {
   return nodes.map((node) => node.title)
 }
 
+describe('section order', () => {
+  it('renders sections in the stored order, built-ins included', () => {
+    const nodes = groupSessions({
+      sessions: [],
+      projects: [],
+      sections: [section('sec1', 'Design'), section('sec2', 'Ops', 1)],
+      mode: 'overlap',
+      order: ['sec2', 'recent', 'pinned', 'sec1', 'projects'],
+      sorts: {},
+    })
+
+    expect(nodes.map((node) => node.title)).toEqual(['Ops', '最近', '置顶', 'Design', '项目'])
+  })
+
+  it('appends sections the stored order does not mention', () => {
+    const nodes = groupSessions({
+      sessions: [],
+      projects: [],
+      sections: [section('sec1', 'Design')],
+      mode: 'overlap',
+      order: ['recent'],
+      sorts: {},
+    })
+
+    // Unlisted built-ins keep their default order ahead of custom sections.
+    expect(nodes.map((node) => node.title)).toEqual(['最近', '置顶', '项目', 'Design'])
+  })
+})
+
 describe('groupSessions (section → project → session)', () => {
   it('always exposes the three built-in sections first', () => {
     const nodes = groupSessions({

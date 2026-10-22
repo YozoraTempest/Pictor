@@ -34,6 +34,8 @@ interface WorkspaceState {
   sorts: Record<string, SectionSort>
   /** How sections share sessions; see `GroupingMode`. */
   groupingMode: GroupingMode
+  /** Sidebar section order, built-ins included (see `sectionKey`). */
+  sectionOrder: string[]
   busy: boolean
   error: string | null
   notice: string | null
@@ -64,10 +66,19 @@ interface WorkspaceState {
   removeSection: (id: string) => Promise<void>
   setSectionSort: (key: string, sort: SectionSort) => Promise<void>
   setGroupingMode: (mode: GroupingMode) => Promise<void>
+  setSectionOrder: (order: string[]) => Promise<void>
   setPluginEnabled: (id: string, enabled: boolean) => Promise<void>
   invokePanel: (id: string, title: string) => Promise<void>
   setNotice: (notice: string | null) => void
   setError: (error: string | null) => void
+}
+
+/** Sidebar section order; any non-string entry is dropped rather than trusted. */
+function readSectionOrder(settings: Record<string, unknown>): string[] {
+  const value = settings['sessions.sectionOrder']
+  if (!Array.isArray(value)) return []
+
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
 }
 
 /** Reads the grouping mode, falling back to the old pinned-only flag. */
@@ -117,6 +128,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   draft: null,
   sorts: {},
   groupingMode: 'overlap',
+  sectionOrder: [],
   busy: false,
   error: null,
   notice: null,
@@ -160,6 +172,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       selectedSessionId: sessionId,
       sorts: readSorts(snapshot.settings),
       groupingMode: readGroupingMode(snapshot.settings),
+      sectionOrder: readSectionOrder(snapshot.settings),
     })
   },
 
@@ -349,6 +362,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   async setSectionSort(key, sort) {
     set((state) => ({ sorts: { ...state.sorts, [key]: sort } }))
     await window.pictor.putSetting(`sessions.sort.${key}`, sort)
+  },
+
+  async setSectionOrder(sectionOrder) {
+    set({ sectionOrder })
+    await window.pictor.putSetting('sessions.sectionOrder', sectionOrder)
   },
 
   async setGroupingMode(groupingMode) {

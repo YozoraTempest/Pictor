@@ -33,6 +33,7 @@ import {
   PROJECTS_ID,
   type ProjectNode,
   type SectionNode,
+  sectionKey,
   type SectionSort,
 } from './grouping.js'
 
@@ -75,6 +76,8 @@ export function SessionsPanel(): React.JSX.Element {
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
   const sorts = useWorkspaceStore((state) => state.sorts)
   const groupingMode = useWorkspaceStore((state) => state.groupingMode)
+  const sectionOrder = useWorkspaceStore((state) => state.sectionOrder)
+  const setSectionOrder = useWorkspaceStore((state) => state.setSectionOrder)
   const busy = useWorkspaceStore((state) => state.busy)
 
   const selectSession = useWorkspaceStore((state) => state.selectSession)
@@ -92,7 +95,6 @@ export function SessionsPanel(): React.JSX.Element {
   const removeSection = useWorkspaceStore((state) => state.removeSection)
   const removeProject = useWorkspaceStore((state) => state.removeProject)
   const setSectionSort = useWorkspaceStore((state) => state.setSectionSort)
-  const reorderSections = useWorkspaceStore((state) => state.reorderSections)
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null)
@@ -106,8 +108,16 @@ export function SessionsPanel(): React.JSX.Element {
   }
 
   const nodes = useMemo(
-    () => groupSessions({ sessions, projects, sections, mode: groupingMode, sorts }),
-    [sessions, projects, sections, groupingMode, sorts],
+    () =>
+      groupSessions({
+        sessions,
+        projects,
+        sections,
+        mode: groupingMode,
+        order: sectionOrder,
+        sorts,
+      }),
+    [sessions, projects, sections, groupingMode, sectionOrder, sorts],
   )
 
   function toggle(key: string): void {
@@ -154,8 +164,11 @@ export function SessionsPanel(): React.JSX.Element {
     }
   }
 
-  const customSections = [...sections].sort((a, b) => a.position - b.position)
   const draggingSection = dragging?.kind === 'section'
+  /** Sections the user can reorder; 已归档 is pinned to the bottom. */
+  const movableSections = nodes.filter((node) => node.kind !== 'archived')
+  const movableIndex = (node: SectionNode): number =>
+    movableSections.findIndex((entry) => sectionKey(entry) === sectionKey(node))
 
   /**
    * Drops the dragged section at `index` among the custom sections.
@@ -170,16 +183,7 @@ export function SessionsPanel(): React.JSX.Element {
     endDrag()
     if (dragged === null || dragged.kind !== 'section') return
 
-    const current = customSections.map((section) => section.id)
-    if (!current.includes(dragged.id)) return
-
-    const order = current.filter((id) => id !== dragged.id)
-    order.splice(Math.max(0, Math.min(index, order.length)), 0, dragged.id)
-
-    const sameSet = order.length === current.length && order.every((id) => current.includes(id))
-    if (!sameSet) return
-
-    void reorderSections(order)
+    moveSection(dragged.id, index)
   }
 
   /** Session ids of a section in the order they are rendered. */
@@ -212,26 +216,24 @@ export function SessionsPanel(): React.JSX.Element {
   }
 
   /**
-   * Moves a dragged section onto another section's slot.
+   * Reorders every section — built-ins included — through one rule.
    *
-   * Dropping on a header is the natural way to reorder — the gaps are thin — so
-   * this is the main path. The rebuilt order must round-trip the same ids: a
-   * partial list used to leave sections without a position, which made them
-   * disappear from the sidebar while staying in the database.
+   * The dragged section is removed from the current key list and inserted at the
+   * target index. The rebuilt list must round-trip the same keys: a partial list
+   * used to leave a section without a position, which made it disappear from the
+   * sidebar while staying in the database.
    */
-  function moveSectionTo(draggedId: string, targetId: string): void {
-    if (draggedId === targetId) return
+  function moveSection(draggedKey: string, targetIndex: number): void {
+    const keys = nodes.filter((node) => node.kind !== 'archived').map(sectionKey)
+    if (!keys.includes(draggedKey)) return
 
-    const current = customSections.map((section) => section.id)
-    if (!current.includes(draggedId) || !current.includes(targetId)) return
+    const order = keys.filter((key) => key !== draggedKey)
+    order.splice(Math.max(0, Math.min(targetIndex, order.length)), 0, draggedKey)
 
-    const order = current.filter((id) => id !== draggedId)
-    order.splice(order.indexOf(targetId), 0, draggedId)
-
-    const sameSet = order.length === current.length && order.every((id) => current.includes(id))
+    const sameSet = order.length === keys.length && order.every((key) => keys.includes(key))
     if (!sameSet) return
 
-    void reorderSections(order)
+    void setSectionOrder(order)
   }
 
   /** Sliver rendered between two sections; only while dragging a section. */
@@ -342,22 +344,14 @@ export function SessionsPanel(): React.JSX.Element {
           const Chevron = isCollapsed ? ChevronRight : ChevronDown
           const isEditing = editing !== null && editing.id === node.sectionId
           const isTarget = dragOver === node.id
-          const gapBefore =
-            node.kind === 'custom'
-              ? customSections.findIndex((section) => section.id === node.sectionId)
-              : node.kind === 'archived'
-                ? customSections.length
-                : -1
+          const gapBefore = node.kind === 'archived' ? -1 : movableIndex(node)
 
           return (
             <div key={node.id} className="mb-0.5">
               {draggingSection && gapBefore >= 0 && gapElement(gapBefore)}
               <div
                 onDragOver={(event) => {
-                  if (node.kind === 'archived' || node.kind === 'recent') return
-                  // A dragged section has no business on a section head: only the
-                  // gaps accept it, so this must not advertise itself as a target.
-                  if (dragging?.kind === 'section') return
+                  if (node.kind === 'archived') return
                   event.preventDefault()
                   setDragOver(node.id)
                 }}
@@ -371,9 +365,8 @@ export function SessionsPanel(): React.JSX.Element {
 
                   if (dragged.kind === 'section') {
                     // Dropping a section on another one reorders them: the dragged
-                    // section takes the target's slot.
-                    const target = node.sectionId
-                    if (target !== null) moveSectionTo(dragged.id, target)
+                    // section takes the target's slot. Built-ins move the same way.
+                    moveSection(dragged.id, movableIndex(node))
                     return
                   }
                   if (dragged.kind === 'project') {
@@ -394,9 +387,9 @@ export function SessionsPanel(): React.JSX.Element {
                   type="button"
                   aria-expanded={!isCollapsed}
                   onClick={() => toggle(node.id)}
-                  draggable={node.kind === 'custom'}
+                  draggable={node.kind !== 'archived'}
                   onDragStart={(event) =>
-                    beginDrag(event, { kind: 'section', id: node.sectionId ?? '' })
+                    beginDrag(event, { kind: 'section', id: sectionKey(node) })
                   }
                   onDragEnd={endDrag}
                   className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left"
@@ -520,7 +513,7 @@ export function SessionsPanel(): React.JSX.Element {
           )
         })}
 
-        {draggingSection && <div className="px-1">{gapElement(customSections.length)}</div>}
+        {draggingSection && <div className="px-1">{gapElement(movableSections.length)}</div>}
       </div>
       <Dialog
         open={confirm !== null}

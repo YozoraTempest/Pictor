@@ -45,6 +45,11 @@ export interface GroupingInput {
   projects: Project[]
   sections: Section[]
   mode: GroupingMode
+  /**
+   * Section order, built-ins included. Keys are `pinned` / `projects` / `recent`
+   * or a custom section id; anything missing falls back to the default order.
+   */
+  order?: string[]
   /** Sort preference per section id (built-in ids and custom section ids). */
   sorts: Record<string, SectionSort>
 }
@@ -176,7 +181,7 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
   // A project nests only its own sessions, so its pool is the section's own
   // candidates. Outside `exclusive` a filed project still lists all its
   // sessions, which is why the pool there is every active conversation.
-  const nodes: SectionNode[] = [
+  const builtins: SectionNode[] = [
     buildsSection(PINNED_ID, '置顶', 'pinned', PINNED_ID, pinnedCandidates, active),
     buildsSection(
       PROJECTS_ID,
@@ -196,15 +201,37 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
     ),
   ]
 
-  for (const section of orderedSections) {
-    const key = `section:${section.id}`
+  const customs = orderedSections.map((section) => {
+    const key = `${section.id}`
     const tagged = assigned
-      ? candidatesFor(key)
+      ? candidatesFor(`section:${key}`)
       : rest.filter((session) => session.sectionIds.includes(section.id))
 
-    nodes.push(
-      buildsSection(key, section.name, 'custom', section.id, tagged, assigned ? tagged : active),
+    return buildsSection(
+      `section:${key}`,
+      section.name,
+      'custom',
+      section.id,
+      tagged,
+      assigned ? tagged : active,
     )
+  })
+
+  // Movement is one logic for every section, built-ins included, so the order is
+  // driven by `order`; sections it does not mention keep their default spot at
+  // the end (built-ins first, then custom sections by position).
+  const pending = new Map<string, SectionNode>()
+  for (const node of [...builtins, ...customs]) pending.set(sectionKey(node), node)
+
+  const nodes: SectionNode[] = []
+  for (const key of input.order ?? []) {
+    const node = pending.get(key)
+    if (node === undefined) continue
+    pending.delete(key)
+    nodes.push(node)
+  }
+  for (const node of [...builtins, ...customs]) {
+    if (pending.delete(sectionKey(node))) nodes.push(node)
   }
 
   if (archived.length > 0) {
@@ -212,6 +239,11 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
   }
 
   return nodes
+}
+
+/** Key a section is stored under when the user reorders the sidebar. */
+export function sectionKey(node: SectionNode): string {
+  return node.kind === 'custom' ? (node.sectionId ?? '') : node.id
 }
 
 /** Sessions reachable from a section, used by "archive this section". */
