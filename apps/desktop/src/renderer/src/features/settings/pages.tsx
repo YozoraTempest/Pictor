@@ -1,11 +1,9 @@
-import { Blocks, Cpu, Download, FlaskConical, Info, Settings2, type LucideIcon } from 'lucide-react'
+import { Blocks, Cpu, Info, Settings2, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { AboutSection } from './AboutSection.js'
-import { AgentTestSection } from './AgentTestSection.js'
-import { CcSwitchSection } from './CcSwitchSection.js'
+import { AgentModelActions, AgentModelPage } from './AgentModelPage.js'
 import { GeneralSection } from './GeneralSection.js'
-import { ModelSection } from './ModelSection.js'
 import { PluginsSection } from './PluginsSection.js'
 
 /** One page in the settings sidebar. */
@@ -19,6 +17,8 @@ export interface SettingsPage {
   group: string
   order: number
   render: () => ReactNode
+  /** Shown beside the page title, for page-level actions. */
+  actions?: () => ReactNode
 }
 
 const PAGES = [
@@ -28,19 +28,20 @@ const PAGES = [
     icon: Settings2,
     description: '会话列表与置顶行为',
     keywords: '常规 通用 互斥 置顶',
-    group: '个人',
+    group: '偏好',
     order: 0,
     render: () => <GeneralSection />,
   },
   {
     id: 'model',
-    label: '模型服务',
+    label: '模型',
     icon: Cpu,
-    description: 'OpenAI 兼容端点与 API Key',
-    keywords: '模型 api key base url 端点',
-    group: '个人',
-    order: 1,
-    render: () => <ModelSection />,
+    description: 'AI 服务、模型目录与试运行',
+    keywords: '模型 api key base url 端点 导入 cc-switch 试运行 agent 服务',
+    group: '智能体',
+    order: 0,
+    render: () => <AgentModelPage />,
+    actions: () => <AgentModelActions />,
   },
   {
     id: 'plugins',
@@ -48,29 +49,9 @@ const PAGES = [
     icon: Blocks,
     description: '插件与面板的启用状态',
     keywords: '插件 plugin 拓展 面板',
-    group: '集成',
+    group: '扩展',
     order: 0,
     render: () => <PluginsSection />,
-  },
-  {
-    id: 'import',
-    label: '导入配置',
-    icon: Download,
-    description: '从 cc-switch 只读导入 provider',
-    keywords: '导入 cc-switch 配置',
-    group: '集成',
-    order: 1,
-    render: () => <CcSwitchSection />,
-  },
-  {
-    id: 'agent',
-    label: 'Agent 试运行',
-    icon: FlaskConical,
-    description: '端到端验证当前模型配置',
-    keywords: 'agent 试运行 测试',
-    group: '编码',
-    order: 0,
-    render: () => <AgentTestSection />,
   },
   {
     id: 'about',
@@ -78,7 +59,7 @@ const PAGES = [
     icon: Info,
     description: '版本、运行时与数据库位置',
     keywords: '关于 版本 version',
-    group: '关于',
+    group: '系统',
     order: 0,
     render: () => <AboutSection />,
   },
@@ -156,7 +137,7 @@ export const SETTING_ROWS: readonly SettingRowEntry[] = [
   },
   {
     id: 'agent.prompt',
-    page: 'agent',
+    page: 'model',
     title: '提示词',
     description: '试运行时发给模型的内容',
     keywords: '提示词 prompt 试运行 测试',

@@ -160,9 +160,16 @@ export function SettingsView(): React.JSX.Element {
 
       <section className="min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-4 px-8 py-7">
-          <header>
-            <h2 className="text-lg font-semibold">{current?.label ?? '设置'}</h2>
-            <p className="mt-0.5 text-xs text-faint">{current?.description ?? ''}</p>
+          <header className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold">{current?.label ?? '设置'}</h2>
+              <p className="mt-0.5 text-xs text-faint">{current?.description ?? ''}</p>
+            </div>
+            {current?.actions !== undefined && (
+              <div className="app-no-drag flex shrink-0 items-center gap-2">
+                {current.actions()}
+              </div>
+            )}
           </header>
 
           <SettingHighlight.Provider value={highlight}>
