@@ -19,7 +19,7 @@ import {
   type PanelContribution,
   type ToolViewContribution,
 } from '@pictor/plugin-sdk'
-import { PROVIDER_ID, readApiKey, readModelSettings, writeModelsJson } from '@pictor/model-config'
+import { readModelSettings, writeModelsJson } from '@pictor/model-config'
 import {
   BLOCKED_REASON_PREFIX,
   type JsonValue,
@@ -631,6 +631,25 @@ function registerIpc(workspace: Workspace): void {
     return workspace.model.test()
   })
 
+  ipcMain.handle('pictor:provider.list', async () => {
+    return workspace.model.providers()
+  })
+
+  ipcMain.handle('pictor:provider.save', async (_event, input: unknown) => {
+    if (typeof input !== 'object' || input === null) throw new Error('invalid provider')
+    return workspace.model.saveProvider(input as Parameters<ModelService['saveProvider']>[0])
+  })
+
+  ipcMain.handle('pictor:provider.remove', async (_event, id: unknown) => {
+    if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
+    return workspace.model.removeProvider(id)
+  })
+
+  ipcMain.handle('pictor:provider.activate', async (_event, id: unknown) => {
+    if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
+    return workspace.model.activateProvider(id)
+  })
+
   ipcMain.handle('pictor:model.ccswitch.scan', async () => {
     return workspace.model.scanCcSwitch()
   })
@@ -685,7 +704,7 @@ function registerIpc(workspace: Workspace): void {
       agentDir: workspace.model.agentDir,
       modelsPath: workspace.model.modelsPath,
       modelId: settings.modelId,
-      apiKey: readApiKey(workspace.model.authPath, PROVIDER_ID),
+      apiKey: await workspace.model.activeApiKey(),
       sessionPath: session.piSessionId,
     })
 

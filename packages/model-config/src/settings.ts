@@ -1,31 +1,21 @@
-import type {
-  JsonValue,
-  ModelEntry,
-  ModelProtocol,
-  ModelSettings,
-  ModelSettingsInput,
-  SettingsMap,
-} from '@pictor/shared'
+import type { ModelSettings, ModelSettingsInput } from '@pictor/shared'
 
-import { clearApiKey, readApiKey, writeApiKey } from './auth.js'
+import {
+  EMPTY_PROVIDER_LIST,
+  readProviders,
+  saveProvider,
+  setProviderModel,
+  type ProviderList,
+  type SettingsStore,
+} from './providers.js'
 
-/** Provider id written into Pi's `models.json`. */
+export { normalizeBaseUrl, parseModels } from './providers.js'
+
+/** Id the runtime's single `models.json` entry is written under. */
 export const PROVIDER_ID = 'pictor'
 
-export const SETTING_KEYS = {
-  providerName: 'pi.providerName',
-  baseUrl: 'pi.baseUrl',
-  protocol: 'pi.protocol',
-  modelId: 'pi.modelId',
-  models: 'pi.models',
-} as const
-
-export interface SettingsStore {
-  listSettings(): Promise<SettingsMap>
-  putSetting(key: string, value: JsonValue): Promise<void>
-}
-
 export const EMPTY_MODEL_SETTINGS: ModelSettings = {
+  providerId: null,
   providerName: '',
   baseUrl: '',
   protocol: 'chat-completions',
@@ -34,117 +24,79 @@ export const EMPTY_MODEL_SETTINGS: ModelSettings = {
   hasApiKey: false,
 }
 
-export function normalizeBaseUrl(value: string): string {
-  return value.trim().replace(/\/+$/, '')
-}
-
-export function parseProtocol(value: JsonValue | undefined): ModelProtocol {
-  return value === 'responses' ? 'responses' : 'chat-completions'
-}
-
-export function parseModels(value: JsonValue | undefined): ModelEntry[] {
-  if (!Array.isArray(value)) return []
-
-  const models: ModelEntry[] = []
-  for (const entry of value) {
-    if (typeof entry !== 'object' || entry === null) continue
-
-    const record = entry as Record<string, unknown>
-    if (typeof record.id !== 'string' || record.id.trim().length === 0) continue
-
-    models.push({
-      id: record.id.trim(),
-      name: typeof record.name === 'string' ? record.name : null,
-      reasoning: typeof record.reasoning === 'boolean' ? record.reasoning : null,
-      input: Array.isArray(record.input)
-        ? record.input.filter((item): item is string => typeof item === 'string')
-        : null,
-      contextWindow: typeof record.contextWindow === 'number' ? record.contextWindow : null,
-      maxTokens: typeof record.maxTokens === 'number' ? record.maxTokens : null,
-    })
-  }
-
-  return models
-}
-
+/**
+ * The configuration the runtime should use: the providers list collapsed onto
+ * whichever provider is active.
+ *
+ * Pi is configured with one provider entry, so multi-provider is a settings-level
+ * idea — the active one is what gets written to `models.json` and what the chat
+ * client resolves models against.
+ */
 export async function readModelSettings(
   store: SettingsStore,
   authPath: string,
 ): Promise<ModelSettings> {
-  const settings = await store.listSettings()
+  return toSettings(await readProviders(store, authPath))
+}
+
+function toSettings(list: ProviderList): ModelSettings {
+  const active =
+    list.providers.find((provider) => provider.id === list.activeId) ?? list.providers[0] ?? null
+  if (active === null) return EMPTY_MODEL_SETTINGS
 
   return {
-    providerName:
-      typeof settings[SETTING_KEYS.providerName] === 'string'
-        ? (settings[SETTING_KEYS.providerName] as string)
-        : '',
-    baseUrl:
-      typeof settings[SETTING_KEYS.baseUrl] === 'string'
-        ? (settings[SETTING_KEYS.baseUrl] as string)
-        : '',
-    protocol: parseProtocol(settings[SETTING_KEYS.protocol]),
-    modelId:
-      typeof settings[SETTING_KEYS.modelId] === 'string'
-        ? (settings[SETTING_KEYS.modelId] as string)
-        : '',
-    models: parseModels(settings[SETTING_KEYS.models]),
-    hasApiKey: readApiKey(authPath, PROVIDER_ID) !== null,
+    providerId: active.id,
+    providerName: active.name,
+    baseUrl: active.baseUrl,
+    protocol: active.protocol,
+    modelId: active.modelId,
+    models: active.models,
+    hasApiKey: active.hasApiKey,
   }
 }
 
+/**
+ * Saves the active provider, adding one when none exists.
+ *
+ * The page edits providers individually through `saveProvider`; this entry point
+ * stays for the flows that describe "the model I am using" instead of a record.
+ */
 export async function saveModelSettings(
   store: SettingsStore,
   authPath: string,
   input: ModelSettingsInput,
 ): Promise<ModelSettings> {
-  const baseUrl = normalizeBaseUrl(input.baseUrl)
-  if (baseUrl.length === 0) {
-    throw new Error('Base URL is required')
-  }
-  if (!/^https?:\/\//i.test(baseUrl)) {
-    throw new Error('Base URL must start with http:// or https://')
-  }
-  if (input.modelId.trim().length === 0) {
-    throw new Error('Model id is required')
-  }
-
-  await store.putSetting(SETTING_KEYS.providerName, input.providerName.trim())
-  await store.putSetting(SETTING_KEYS.baseUrl, baseUrl)
-  await store.putSetting(SETTING_KEYS.protocol, input.protocol)
-  await store.putSetting(SETTING_KEYS.modelId, input.modelId.trim())
-  await store.putSetting(SETTING_KEYS.models, input.models as unknown as JsonValue)
-
-  if (input.apiKey !== undefined) {
-    if (input.apiKey.trim().length === 0) {
-      clearApiKey(authPath, PROVIDER_ID)
-    } else {
-      writeApiKey(authPath, PROVIDER_ID, input.apiKey.trim())
-    }
-  }
+  const current = await readProviders(store, authPath)
+  await saveProvider(store, authPath, {
+    ...(current.activeId === null ? {} : { id: current.activeId }),
+    name: input.providerName,
+    baseUrl: input.baseUrl,
+    protocol: input.protocol,
+    modelId: input.modelId,
+    models: input.models,
+    ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
+  })
 
   return readModelSettings(store, authPath)
 }
 
 /**
- * Switches the active model without touching the endpoint or the key.
+ * Switches the model of the active provider.
  *
  * The stored list is the source of truth: an id that is not in it is rejected so
- * a typo cannot silently break every conversation opened afterwards. A profile
- * saved before the list existed keeps working, because then any id is accepted.
+ * a typo cannot silently break every conversation opened afterwards.
  */
 export async function selectModel(
   store: SettingsStore,
   authPath: string,
   modelId: string,
 ): Promise<ModelSettings> {
-  const trimmed = modelId.trim()
-  if (trimmed.length === 0) throw new Error('Model id is required')
+  const current = await readProviders(store, authPath)
+  const activeId = current.activeId ?? current.providers[0]?.id ?? null
+  if (activeId === null) throw new Error('no provider configured')
 
-  const settings = await readModelSettings(store, authPath)
-  if (settings.models.length > 0 && !settings.models.some((model) => model.id === trimmed)) {
-    throw new Error(`unknown model: ${trimmed}`)
-  }
-
-  await store.putSetting(SETTING_KEYS.modelId, trimmed)
+  await setProviderModel(store, authPath, activeId, modelId)
   return readModelSettings(store, authPath)
 }
+
+export { EMPTY_PROVIDER_LIST }

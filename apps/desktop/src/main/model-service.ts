@@ -5,14 +5,19 @@ import { join } from 'node:path'
 import { PiAgentRuntime } from '@pictor/agent-runtime'
 import type { MetadataStore } from '@pictor/host-client'
 import {
-  PROVIDER_ID,
+  activateProvider,
   fetchModels,
   readApiKey,
   readModelSettings,
+  readProviders,
+  removeProvider,
   saveModelSettings,
+  saveProvider,
   selectModel,
   testConnection,
   writeModelsJson,
+  type ProviderInput,
+  type ProviderList,
 } from '@pictor/model-config'
 import type {
   CcSwitchProviderSummary,
@@ -90,6 +95,30 @@ export class ModelService {
     return selectModel(this.#store, this.#authPath, modelId)
   }
 
+  /** Every configured provider, with whether each one holds a key. */
+  async providers(): Promise<ProviderList> {
+    return readProviders(this.#store, this.#authPath)
+  }
+
+  async saveProvider(input: ProviderInput): Promise<ProviderList> {
+    return saveProvider(this.#store, this.#authPath, input)
+  }
+
+  async removeProvider(id: string): Promise<ProviderList> {
+    return removeProvider(this.#store, this.#authPath, id)
+  }
+
+  /** Makes a provider the one conversations use. */
+  async activateProvider(id: string): Promise<ProviderList> {
+    return activateProvider(this.#store, this.#authPath, id)
+  }
+
+  /** Key of the provider the runtime would use, if any. */
+  async activeApiKey(): Promise<string | null> {
+    const settings = await this.settings()
+    return settings.providerId === null ? null : readApiKey(this.#authPath, settings.providerId)
+  }
+
   /**
    * Queries `/models`. The override lets the settings form test unsaved values;
    * `apiKey` falls back to the stored key.
@@ -106,7 +135,7 @@ export class ModelService {
     const apiKey =
       override?.apiKey !== undefined && override.apiKey.trim().length > 0
         ? override.apiKey.trim()
-        : readApiKey(this.#authPath, PROVIDER_ID)
+        : await this.activeApiKey()
 
     return fetchModels({
       baseUrl,
@@ -120,7 +149,7 @@ export class ModelService {
     return testConnection({
       baseUrl: settings.baseUrl,
       protocol: settings.protocol,
-      apiKey: readApiKey(this.#authPath, PROVIDER_ID),
+      apiKey: await this.activeApiKey(),
       modelId: settings.modelId,
     })
   }
@@ -169,7 +198,7 @@ export class ModelService {
     mkdirSync(this.#agentDir, { recursive: true })
     writeModelsJson(this.#modelsPath, settings)
 
-    const apiKey = readApiKey(this.#authPath, PROVIDER_ID)
+    const apiKey = await this.activeApiKey()
     const runtime = new PiAgentRuntime({
       loadConfig: async () => ({
         modelId: settings.modelId,

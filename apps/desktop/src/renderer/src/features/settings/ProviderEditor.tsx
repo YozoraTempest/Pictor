@@ -1,15 +1,14 @@
 import { Check, Loader2, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
-import type { ModelEntry, ModelProtocol, ModelSettings } from '@pictor/shared'
+import type { ModelEntry, ModelProtocol, ProviderList, ProviderView } from '@pictor/shared'
 
-import type { ModelProbeResult } from '../../../../shared/bridge.js'
 import { Badge, Banner, Button, Input, Select } from '../../components/ui/index.js'
 import { Section } from './Section.js'
 import { SettingActions, SettingRow } from './SettingRow.js'
 
 interface FormState {
-  providerName: string
+  name: string
   baseUrl: string
   protocol: ModelProtocol
   modelId: string
@@ -17,57 +16,57 @@ interface FormState {
   apiKey: string
 }
 
-const EMPTY: FormState = {
-  providerName: '',
-  baseUrl: '',
-  protocol: 'chat-completions',
-  modelId: '',
-  models: [],
-  apiKey: '',
-}
-
-function toForm(settings: ModelSettings): FormState {
+function toForm(provider: ProviderView | null): FormState {
   return {
-    providerName: settings.providerName,
-    baseUrl: settings.baseUrl,
-    protocol: settings.protocol,
-    modelId: settings.modelId,
-    models: settings.models,
+    name: provider?.name ?? '',
+    baseUrl: provider?.baseUrl ?? '',
+    protocol: provider?.protocol ?? 'chat-completions',
+    modelId: provider?.modelId ?? '',
+    models: provider?.models ?? [],
     apiKey: '',
   }
 }
 
-/** True when the draft differs from what is stored, including a new API Key. */
-function isDirty(form: FormState, saved: ModelSettings | null): boolean {
-  if (saved === null) return false
+function isDirty(form: FormState, provider: ProviderView | null): boolean {
+  if (provider === null) return form.baseUrl.trim().length > 0
   if (form.apiKey.trim().length > 0) return true
 
   return (
-    form.providerName.trim() !== saved.providerName ||
-    form.baseUrl.trim().replace(/\/+$/, '') !== saved.baseUrl ||
-    form.protocol !== saved.protocol ||
-    form.modelId.trim() !== saved.modelId ||
-    JSON.stringify(form.models) !== JSON.stringify(saved.models)
+    form.name.trim() !== provider.name ||
+    form.baseUrl.trim().replace(/\/+$/, '') !== provider.baseUrl ||
+    form.protocol !== provider.protocol ||
+    form.modelId.trim() !== provider.modelId ||
+    JSON.stringify(form.models) !== JSON.stringify(provider.models)
   )
 }
 
-export function ModelSection(): React.JSX.Element {
-  const [form, setForm] = useState<FormState>(EMPTY)
-  const [saved, setSaved] = useState<ModelSettings | null>(null)
+/**
+ * Edits one provider.
+ *
+ * Saving writes the whole record at once, including the model list, so a fetch
+ * and a rename cannot land in two different versions of the same provider.
+ */
+export function ProviderEditor({
+  provider,
+  active,
+  onSaved,
+  onDismiss,
+}: {
+  provider: ProviderView | null
+  active: boolean
+  onSaved: (list: ProviderList) => void
+  onDismiss: () => void
+}): React.JSX.Element {
+  const [form, setForm] = useState<FormState>(() => toForm(provider))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [probe, setProbe] = useState<ModelProbeResult | null>(null)
 
-  useEffect(() => {
-    void (async () => {
-      const settings = await window.pictor.getModelSettings()
-      setSaved(settings)
-      setForm(toForm(settings))
-    })().catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : String(reason))
-    })
-  }, [])
+  const dirty = isDirty(form, provider)
+
+  function patch(changes: Partial<FormState>): void {
+    setForm((current) => ({ ...current, ...changes }))
+  }
 
   async function run(action: () => Promise<void>): Promise<void> {
     setBusy(true)
@@ -82,44 +81,47 @@ export function ModelSection(): React.JSX.Element {
     }
   }
 
-  function patch(changes: Partial<FormState>): void {
-    setForm((current) => ({ ...current, ...changes }))
-  }
-
-  const dirty = isDirty(form, saved)
-
   return (
     <Section
-      title="连接"
-      description="Pictor 通过 OpenAI 兼容端点调用模型；API Key 只保存在本机的 auth.json。"
+      title={provider === null ? '添加服务' : '连接'}
+      description={
+        provider === null
+          ? '填写端点后保存；保存后可在服务列表里切换使用。'
+          : 'Pictor 通过 OpenAI 兼容端点调用模型；API Key 只保存在本机的 auth.json。'
+      }
       actions={
-        <Badge tone={saved?.hasApiKey === true ? 'success' : 'neutral'}>
-          {saved?.hasApiKey === true ? '密钥已保存' : '未设置密钥'}
-        </Badge>
+        provider === null ? undefined : (
+          <Badge tone={provider.hasApiKey ? 'success' : 'neutral'}>
+            {provider.hasApiKey ? '密钥已保存' : '未设置密钥'}
+          </Badge>
+        )
       }
       padded={false}
       footer={
         <SettingActions
           dirty={dirty}
           busy={busy}
+          saveLabel={provider === null ? '添加' : '保存'}
           onDiscard={() => {
-            setForm(saved === null ? EMPTY : toForm(saved))
+            setForm(toForm(provider))
             setError(null)
             setNotice(null)
+            if (provider === null) onDismiss()
           }}
           onSave={() =>
             void run(async () => {
-              const next = await window.pictor.saveModelSettings({
-                providerName: form.providerName,
+              const list = await window.pictor.saveProvider({
+                ...(provider === null ? {} : { id: provider.id }),
+                name: form.name,
                 baseUrl: form.baseUrl,
                 protocol: form.protocol,
                 modelId: form.modelId,
                 models: form.models,
                 ...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey } : {}),
               })
-              setSaved(next)
-              setForm(toForm(next))
-              setNotice('模型配置已保存')
+              onSaved(list)
+              setForm((current) => ({ ...current, apiKey: '' }))
+              setNotice('已保存')
             })
           }
         />
@@ -137,22 +139,20 @@ export function ModelSection(): React.JSX.Element {
       )}
 
       <SettingRow
-        id="pi.providerName"
         title="服务名称"
         description="只用于辨认这条配置。"
         control={
           <Input
             className="w-56"
-            value={form.providerName}
+            value={form.name}
             placeholder="Neko / DeepSeek / 自建"
             aria-label="服务名称"
-            onChange={(event) => patch({ providerName: event.target.value })}
+            onChange={(event) => patch({ name: event.target.value })}
           />
         }
       />
 
       <SettingRow
-        id="pi.protocol"
         title="API 风格"
         description="取决于端点实现的是 Chat Completions 还是 Responses。"
         control={
@@ -169,10 +169,9 @@ export function ModelSection(): React.JSX.Element {
       />
 
       <SettingRow
-        id="pi.baseUrl"
         stacked
         title="Base URL"
-        description="不含末尾的 /v1 也可以，保存时会去掉多余的斜杠。"
+        description="末尾的斜杠会去掉。"
         control={
           <Input
             value={form.baseUrl}
@@ -185,14 +184,13 @@ export function ModelSection(): React.JSX.Element {
       />
 
       <SettingRow
-        id="pi.models"
-        title="已获取的模型"
-        description="从端点拉取的列表，选择后会填入模型 ID。"
+        title="模型"
+        description={`已获取 ${String(form.models.length)} 个；选择后会填入模型 ID。`}
         control={
           <Select
             className="w-56"
             value={form.models.some((model) => model.id === form.modelId) ? form.modelId : ''}
-            aria-label="已获取的模型"
+            aria-label="模型"
             onChange={(event) => patch({ modelId: event.target.value })}
           >
             <option value="">手动输入 / 未选择</option>
@@ -206,7 +204,6 @@ export function ModelSection(): React.JSX.Element {
       />
 
       <SettingRow
-        id="pi.modelId"
         title="模型 ID"
         description="发送给端点的 model 字段。"
         control={
@@ -221,17 +218,16 @@ export function ModelSection(): React.JSX.Element {
       />
 
       <SettingRow
-        id="pi.apiKey"
         stacked
         title="API Key"
         description={
-          saved?.hasApiKey === true ? '已保存；留空表示不修改。' : '只写入本机 auth.json。'
+          provider?.hasApiKey === true ? '已保存；留空表示不修改。' : '只写入本机 auth.json。'
         }
         control={
           <Input
             type="password"
             value={form.apiKey}
-            placeholder={saved?.hasApiKey === true ? '••••••••' : '粘贴 API Key'}
+            placeholder={provider?.hasApiKey === true ? '••••••••' : '粘贴 API Key'}
             aria-label="API Key"
             onChange={(event) => patch({ apiKey: event.target.value })}
           />
@@ -269,10 +265,11 @@ export function ModelSection(): React.JSX.Element {
         <Button
           variant="secondary"
           size="sm"
-          disabled={busy || saved === null || dirty}
+          disabled={busy || !active || dirty}
           onClick={() =>
             void run(async () => {
-              setProbe(await window.pictor.testModelConnection())
+              const result = await window.pictor.testModelConnection()
+              setNotice(result.ok ? '连接成功' : `连接失败 · ${result.message}`)
             })
           }
         >
@@ -280,27 +277,9 @@ export function ModelSection(): React.JSX.Element {
           测试连接
         </Button>
 
-        {dirty && <span className="text-2xs text-faint">先保存再测试</span>}
+        {!active && <span className="text-2xs text-faint">设为使用中后可测试</span>}
+        {active && dirty && <span className="text-2xs text-faint">先保存再测试</span>}
       </div>
-
-      {probe !== null && (
-        <div className="px-4 pb-3">
-          <div
-            className={
-              probe.ok
-                ? 'rounded-md border border-success/30 bg-success/5 px-3 py-2'
-                : 'rounded-md border border-danger/30 bg-danger/5 px-3 py-2'
-            }
-          >
-            <p className={probe.ok ? 'text-xs text-success' : 'text-xs text-danger'}>
-              {probe.ok ? '连接成功' : '连接失败'} · {probe.message}
-            </p>
-            {probe.sample.length > 0 && (
-              <p className="mt-1 font-mono text-2xs text-muted">{probe.sample}</p>
-            )}
-          </div>
-        </div>
-      )}
     </Section>
   )
 }

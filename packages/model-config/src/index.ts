@@ -1,16 +1,30 @@
 export { API_KEY_ENV, buildModelsJson, piApiName, writeModelsJson } from './models-json.js'
 export { clearApiKey, readApiKey, readAuthFile, writeApiKey, type AuthFile } from './auth.js'
 export {
-  EMPTY_MODEL_SETTINGS,
-  PROVIDER_ID,
-  SETTING_KEYS,
+  ACTIVE_PROVIDER_KEY,
+  LEGACY_KEYS,
+  LEGACY_PROVIDER_ID,
+  PROVIDERS_KEY,
+  activateProvider,
   normalizeBaseUrl,
   parseModels,
-  parseProtocol,
+  readProviders,
+  removeProvider,
+  saveProvider,
+  setProviderModel,
+  type ModelProvider,
+  type ProviderInput,
+  type ProviderList,
+  type ProviderView,
+  type SettingsStore,
+} from './providers.js'
+export {
+  EMPTY_MODEL_SETTINGS,
+  EMPTY_PROVIDER_LIST,
+  PROVIDER_ID,
   readModelSettings,
   saveModelSettings,
   selectModel,
-  type SettingsStore,
 } from './settings.js'
 export {
   fetchModels,

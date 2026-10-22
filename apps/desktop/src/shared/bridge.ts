@@ -1,5 +1,7 @@
 import type {
   CcSwitchProviderSummary,
+  ProviderInput,
+  ProviderList,
   ChatEvent,
   ChatHistoryPage,
   JsonValue,
@@ -147,6 +149,11 @@ export interface PictorBridge {
   getAppInfo(): Promise<AppInfo>
 
   getModelSettings(): Promise<ModelSettings>
+  /** Every configured provider, with whether each holds a key. */
+  listProviders(): Promise<ProviderList>
+  saveProvider(input: ProviderInput): Promise<ProviderList>
+  removeProvider(id: string): Promise<ProviderList>
+  activateProvider(id: string): Promise<ProviderList>
   saveModelSettings(input: ModelSettingsInput): Promise<ModelSettings>
   /** Switches the active model, leaving the endpoint and key untouched. */
   selectModel(modelId: string): Promise<ModelSettings>

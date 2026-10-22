@@ -8,13 +8,8 @@ import type { JsonValue, ModelSettings, SettingsMap } from '@pictor/shared'
 
 import { buildModelsJson } from './models-json.js'
 import { readApiKey, writeApiKey } from './auth.js'
-import {
-  normalizeBaseUrl,
-  parseModels,
-  readModelSettings,
-  saveModelSettings,
-  type SettingsStore,
-} from './settings.js'
+import { normalizeBaseUrl, parseModels, type SettingsStore } from './providers.js'
+import { readModelSettings, saveModelSettings } from './settings.js'
 
 class MemorySettings implements SettingsStore {
   readonly values: SettingsMap = {}
@@ -33,6 +28,7 @@ function authPath(): string {
 }
 
 const settings: ModelSettings = {
+  providerId: 'pictor',
   providerName: 'Neko',
   baseUrl: 'https://api.example.com',
   protocol: 'chat-completions',
@@ -171,15 +167,16 @@ describe('settings', () => {
       }),
     ).rejects.toThrow(/http/)
 
-    await expect(
-      saveModelSettings(store, path, {
-        providerName: '',
-        baseUrl: 'https://example.com',
-        protocol: 'chat-completions',
-        modelId: ' ',
-        models: [],
-      }),
-    ).rejects.toThrow(/Model id/)
+    // An empty model id is allowed on purpose: a provider can be saved before a
+    // model is picked, and the page marks it as not usable until one is.
+    const saved = await saveModelSettings(store, path, {
+      providerName: '',
+      baseUrl: 'https://example.com',
+      protocol: 'chat-completions',
+      modelId: ' ',
+      models: [],
+    })
+    expect(saved.modelId).toBe('')
   })
 })
 
