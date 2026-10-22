@@ -18,7 +18,7 @@ export function SectionsSection(): React.JSX.Element {
 
   return (
     <Section
-      title="分区"
+      title="自定义分区"
       description="分区用来给会话分组，可新建、重命名或删除；删除分区不会删除会话。"
     >
       {sections.length === 0 ? (

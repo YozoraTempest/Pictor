@@ -14,7 +14,7 @@ export function PluginsSection(): React.JSX.Element {
 
   return (
     <Section
-      title="插件"
+      title="已安装插件"
       description="插件可以扩展命令与工具；停用后不会在启动时激活。"
       actions={
         <Badge tone="neutral">

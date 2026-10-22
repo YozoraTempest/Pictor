@@ -73,7 +73,7 @@ export function ModelSection(): React.JSX.Element {
 
   return (
     <Section
-      title="模型服务"
+      title="连接"
       description="Pictor 通过 OpenAI 兼容端点调用模型；API Key 只保存在本机的 auth.json。"
       actions={
         <Badge tone={saved?.hasApiKey === true ? 'success' : 'neutral'}>

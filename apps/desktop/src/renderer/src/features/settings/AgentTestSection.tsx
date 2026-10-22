@@ -32,7 +32,7 @@ export function AgentTestSection(): React.JSX.Element {
 
   return (
     <Section
-      title="Agent 试运行"
+      title="试运行"
       description="以当前模型配置跑一次最简 Agent 调用，用于验证端到端链路。"
       actions={
         <Button

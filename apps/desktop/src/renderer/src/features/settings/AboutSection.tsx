@@ -18,7 +18,7 @@ export function AboutSection(): React.JSX.Element {
   ]
 
   return (
-    <Section title="关于 Pictor" description="运行版本与本地数据位置。">
+    <Section title="版本信息" description="运行版本与本地数据位置。">
       <dl className="flex flex-col gap-2">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-center justify-between gap-3">
