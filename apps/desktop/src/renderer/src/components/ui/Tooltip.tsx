@@ -6,7 +6,7 @@ import { cn } from '../../lib/cn.js'
 export interface TooltipProps {
   label: string
   children: ReactNode
-  side?: 'top' | 'bottom'
+  side?: 'top' | 'bottom' | 'left' | 'right'
   /** Which edge of the anchor the bubble is aligned to. Use `end` near the right edge. */
   align?: 'center' | 'start' | 'end'
   className?: string
@@ -51,6 +51,23 @@ export function Tooltip({
     const rect = anchor.getBoundingClientRect()
     const width = bubble.offsetWidth
     const height = bubble.offsetHeight
+
+    // Horizontal sides sit beside the anchor, vertically centred on it; `align`
+    // only has meaning for top and bottom.
+    if (side === 'left' || side === 'right') {
+      const beside = side === 'left' ? rect.left - width - GAP : rect.right + GAP
+      const left = Math.min(
+        Math.max(EDGE, beside),
+        Math.max(EDGE, window.innerWidth - width - EDGE),
+      )
+      const centre = rect.top + rect.height / 2 - height / 2
+      const top = Math.min(
+        Math.max(EDGE, centre),
+        Math.max(EDGE, window.innerHeight - height - EDGE),
+      )
+      setPlacement({ top, left })
+      return
+    }
 
     const preferred =
       align === 'start'

@@ -1,5 +1,6 @@
 export { Button, IconButton, type ButtonProps, type IconButtonProps } from './Button.js'
-export { Input, Select, Textarea } from './Input.js'
+export { Input, Textarea } from './Input.js'
+export { Select, type SelectOption, type SelectProps } from './Select.js'
 export { Switch, type SwitchProps } from './Switch.js'
 export { Field, type FieldProps } from './Field.js'
 export { Panel, type PanelProps } from './Panel.js'

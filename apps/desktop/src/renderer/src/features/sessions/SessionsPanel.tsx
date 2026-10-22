@@ -25,6 +25,7 @@ import {
   Input,
   Menu,
   type MenuEntry,
+  Tooltip,
 } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import {
@@ -172,6 +173,8 @@ export function SessionsPanel(): React.JSX.Element {
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null)
+  /** Naming a new section, which used to be a blocking `window.prompt`. */
+  const [creating, setCreating] = useState<string | null>(null)
   /** What the pointer is over right now; drives every drop preview. */
   const [target, setTarget] = useState<DropTarget | null>(null)
   const [dragging, setDragging] = useState<Dragged | null>(null)
@@ -493,10 +496,7 @@ export function SessionsPanel(): React.JSX.Element {
       {
         label: '新建分区',
         icon: <Plus className="size-3" />,
-        onSelect: () => {
-          const name = window.prompt('新分区名称')
-          if (name !== null && name.trim().length > 0) void createSection(name.trim())
-        },
+        onSelect: () => setCreating(''),
       },
       {
         label: '归档聊天',
@@ -852,6 +852,46 @@ export function SessionsPanel(): React.JSX.Element {
             : `「${confirm?.title ?? ''}」的对话记录会被删除，此操作不可撤销。`}
         </p>
       </Dialog>
+
+      <Dialog
+        open={creating !== null}
+        title="新建分区"
+        onClose={() => setCreating(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setCreating(null)}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              disabled={creating === null || creating.trim().length === 0}
+              onClick={() => {
+                if (creating === null || creating.trim().length === 0) return
+                const name = creating.trim()
+                setCreating(null)
+                void createSection(name)
+              }}
+            >
+              添加
+            </Button>
+          </>
+        }
+      >
+        <Input
+          value={creating ?? ''}
+          aria-label="分区名称"
+          placeholder="分区名称"
+          autoFocus
+          onChange={(event) => setCreating(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            const name = (creating ?? '').trim()
+            if (name.length === 0) return
+            setCreating(null)
+            void createSection(name)
+          }}
+        />
+      </Dialog>
     </section>
   )
 }
@@ -958,30 +998,31 @@ function ProjectBlock({
       )}
     >
       <div className="group/head relative flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover">
-        <button
-          type="button"
-          aria-expanded={!isCollapsed}
-          onClick={() => onToggle(key)}
-          title={node.project.path}
-          draggable
-          onDragStart={(event) =>
-            beginDrag(
-              event,
-              {
-                kind: 'project',
-                id: node.project.id,
-                sectionId: node.project.sectionId,
-              },
-              node.project.name,
-            )
-          }
-          onDragEnd={endDrag}
-          className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left"
-        >
-          <Chevron className="size-3 shrink-0 text-faint" />
-          <FolderGit2 className="size-3.5 shrink-0 text-faint" />
-          <span className="truncate text-xs text-muted">{node.project.name}</span>
-        </button>
+        <Tooltip label={node.project.path} className="min-w-0 flex-1">
+          <button
+            type="button"
+            aria-expanded={!isCollapsed}
+            onClick={() => onToggle(key)}
+            draggable
+            onDragStart={(event) =>
+              beginDrag(
+                event,
+                {
+                  kind: 'project',
+                  id: node.project.id,
+                  sectionId: node.project.sectionId,
+                },
+                node.project.name,
+              )
+            }
+            onDragEnd={endDrag}
+            className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left"
+          >
+            <Chevron className="size-3 shrink-0 text-faint" />
+            <FolderGit2 className="size-3.5 shrink-0 text-faint" />
+            <span className="truncate text-xs text-muted">{node.project.name}</span>
+          </button>
+        </Tooltip>
 
         <div className="flex items-center opacity-0 transition-opacity group-hover/head:opacity-100 focus-within:opacity-100">
           <Menu
@@ -1133,30 +1174,31 @@ function SessionRow({
         if (dragged !== null && dragged.kind === 'session') onDropSession(dragged.id, slot)
       }}
     >
-      <button
-        type="button"
-        onClick={onSelect}
-        title={session.title}
-        draggable
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        data-section={sectionId ?? ''}
-        className={cn(
-          'flex w-full items-center gap-2 rounded-md py-1.5 pr-12 pl-2 text-left text-xs transition-colors duration-150',
-          active
-            ? 'bg-surface-raised text-text'
-            : 'text-muted hover:bg-surface-hover hover:text-text',
-        )}
-      >
-        {running ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-accent" aria-label="正在运行" />
-        ) : (
-          <MessageSquare
-            className={cn('size-3.5 shrink-0', active ? 'text-accent' : 'text-faint')}
-          />
-        )}
-        <span className="truncate">{session.title}</span>
-      </button>
+      <Tooltip label={session.title} className="w-full">
+        <button
+          type="button"
+          onClick={onSelect}
+          draggable
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          data-section={sectionId ?? ''}
+          className={cn(
+            'flex w-full items-center gap-2 rounded-md py-1.5 pr-12 pl-2 text-left text-xs transition-colors duration-150',
+            active
+              ? 'bg-surface-raised text-text'
+              : 'text-muted hover:bg-surface-hover hover:text-text',
+          )}
+        >
+          {running ? (
+            <Loader2 className="size-3.5 shrink-0 animate-spin text-accent" aria-label="正在运行" />
+          ) : (
+            <MessageSquare
+              className={cn('size-3.5 shrink-0', active ? 'text-accent' : 'text-faint')}
+            />
+          )}
+          <span className="truncate">{session.title}</span>
+        </button>
+      </Tooltip>
 
       <div className="absolute top-0.5 right-0.5 flex items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100">
         <IconButton

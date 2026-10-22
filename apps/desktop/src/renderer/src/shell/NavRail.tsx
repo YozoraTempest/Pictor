@@ -2,6 +2,7 @@ import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
 import { sortedViews, type AppView, type AppViewDescriptor } from '../app/views.js'
 import { cn } from '../lib/cn.js'
+import { Tooltip } from '../components/ui/index.js'
 
 function RailButton({
   view,
@@ -13,23 +14,24 @@ function RailButton({
   const Icon = view.icon
 
   return (
-    <button
-      type="button"
-      title={view.label}
-      aria-label={view.label}
-      aria-current={active ? 'page' : undefined}
-      onClick={() => {
-        openView(view.id)
-      }}
-      className={cn(
-        'grid size-9 place-items-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/40',
-        active
-          ? 'bg-surface-raised text-text'
-          : 'text-faint hover:bg-surface-hover hover:text-muted',
-      )}
-    >
-      <Icon className="size-4.5" />
-    </button>
+    <Tooltip label={view.label} side="right">
+      <button
+        type="button"
+        aria-label={view.label}
+        aria-current={active ? 'page' : undefined}
+        onClick={() => {
+          openView(view.id)
+        }}
+        className={cn(
+          'grid size-9 place-items-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/40',
+          active
+            ? 'bg-surface-raised text-text'
+            : 'text-faint hover:bg-surface-hover hover:text-muted',
+        )}
+      >
+        <Icon className="size-4.5" />
+      </button>
+    </Tooltip>
   )
 }
 

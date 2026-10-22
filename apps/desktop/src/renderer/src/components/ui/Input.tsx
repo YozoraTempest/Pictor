@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
+import type { InputHTMLAttributes, TextareaHTMLAttributes } from 'react'
 
 import { cn } from '../../lib/cn.js'
 
@@ -10,18 +10,6 @@ export function Input({
   ...props
 }: InputHTMLAttributes<HTMLInputElement>): React.JSX.Element {
   return <input className={cn(fieldBase, 'h-9', className)} {...props} />
-}
-
-export function Select({
-  className,
-  children,
-  ...props
-}: SelectHTMLAttributes<HTMLSelectElement>): React.JSX.Element {
-  return (
-    <select className={cn(fieldBase, 'h-9 pr-8', className)} {...props}>
-      {children}
-    </select>
-  )
 }
 
 export function Textarea({

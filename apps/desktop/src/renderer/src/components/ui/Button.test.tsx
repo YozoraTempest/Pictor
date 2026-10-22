@@ -40,13 +40,16 @@ describe('Button', () => {
 })
 
 describe('IconButton', () => {
-  it('exposes its label to assistive technology', () => {
+  it('exposes its label to assistive technology and to the styled tooltip', () => {
     render(
       <IconButton label="关闭面板">
         <span aria-hidden="true">x</span>
       </IconButton>,
     )
 
-    expect(screen.getByRole('button', { name: '关闭面板' })).toHaveProperty('title', '关闭面板')
+    const button = screen.getByRole('button', { name: '关闭面板' })
+    // The native `title` used to render the OS tooltip next to the themed one.
+    expect(button.getAttribute('title')).toBeNull()
+    expect(screen.getByRole('tooltip').textContent).toBe('关闭面板')
   })
 })

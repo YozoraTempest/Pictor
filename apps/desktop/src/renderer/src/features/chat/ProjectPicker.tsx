@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
+import { Tooltip } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 
 export interface ProjectPickerProps {
@@ -144,9 +145,9 @@ export function ProjectPicker({ projectId, onChange }: ProjectPickerProps): Reac
             <span className="h-3.5 w-px shrink-0 bg-border" />
             <span className="flex min-w-0 items-center gap-1.5 text-muted">
               <FolderGit2 className="size-3.5 shrink-0 text-faint" />
-              <span className="truncate" title={active.path}>
-                {active.path}
-              </span>
+              <Tooltip label={active.path} className="min-w-0">
+                <span className="truncate">{active.path}</span>
+              </Tooltip>
             </span>
           </>
         )}

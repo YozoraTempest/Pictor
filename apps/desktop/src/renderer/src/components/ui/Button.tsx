@@ -2,6 +2,7 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 import { cn } from '../../lib/cn.js'
+import { Tooltip } from './Tooltip.js'
 
 const button = cva(
   'inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-50',
@@ -45,13 +46,14 @@ export function IconButton({
   ...props
 }: IconButtonProps): React.JSX.Element {
   return (
-    <Button
-      aria-label={label}
-      title={label}
-      variant={variant}
-      size={size}
-      className={cn('shrink-0', className)}
-      {...props}
-    />
+    <Tooltip label={label}>
+      <Button
+        aria-label={label}
+        variant={variant}
+        size={size}
+        className={cn('shrink-0', className)}
+        {...props}
+      />
+    </Tooltip>
   )
 }

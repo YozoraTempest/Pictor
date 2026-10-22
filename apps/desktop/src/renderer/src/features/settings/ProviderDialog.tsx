@@ -165,11 +165,12 @@ export function ProviderDialog({
               className="w-56"
               value={form.protocol}
               aria-label="API 风格"
-              onChange={(event) => patch({ protocol: event.target.value as ModelProtocol })}
-            >
-              <option value="chat-completions">Chat Completions</option>
-              <option value="responses">Responses</option>
-            </Select>
+              onChange={(next) => patch({ protocol: next as ModelProtocol })}
+              options={[
+                { value: 'chat-completions', label: 'Chat Completions' },
+                { value: 'responses', label: 'Responses' },
+              ]}
+            />
           }
         />
 
@@ -198,15 +199,12 @@ export function ProviderDialog({
               className="w-56"
               value={form.models.some((model) => model.id === form.modelId) ? form.modelId : ''}
               aria-label="模型"
-              onChange={(event) => patch({ modelId: event.target.value })}
-            >
-              <option value="">手动输入 / 未选择</option>
-              {form.models.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name ?? model.id}
-                </option>
-              ))}
-            </Select>
+              onChange={(next) => patch({ modelId: next })}
+              options={[
+                { value: '', label: '手动输入 / 未选择' },
+                ...form.models.map((model) => ({ value: model.id, label: model.name ?? model.id })),
+              ]}
+            />
           }
         />
 
