@@ -211,6 +211,29 @@ export function SessionsPanel(): React.JSX.Element {
     await setSectionSort(node.id, 'manual')
   }
 
+  /**
+   * Moves a dragged section onto another section's slot.
+   *
+   * Dropping on a header is the natural way to reorder — the gaps are thin — so
+   * this is the main path. The rebuilt order must round-trip the same ids: a
+   * partial list used to leave sections without a position, which made them
+   * disappear from the sidebar while staying in the database.
+   */
+  function moveSectionTo(draggedId: string, targetId: string): void {
+    if (draggedId === targetId) return
+
+    const current = customSections.map((section) => section.id)
+    if (!current.includes(draggedId) || !current.includes(targetId)) return
+
+    const order = current.filter((id) => id !== draggedId)
+    order.splice(order.indexOf(targetId), 0, draggedId)
+
+    const sameSet = order.length === current.length && order.every((id) => current.includes(id))
+    if (!sameSet) return
+
+    void reorderSections(order)
+  }
+
   /** Sliver rendered between two sections; only while dragging a section. */
   function gapElement(index: number): React.JSX.Element {
     const active = gapIndex === index
@@ -347,9 +370,10 @@ export function SessionsPanel(): React.JSX.Element {
                   if (dragged === null) return
 
                   if (dragged.kind === 'section') {
-                    // Sections are only reorderable through the gaps between them;
-                    // dropping one onto a section head would silently reshuffle the
-                    // list, which is how a section used to vanish from the sidebar.
+                    // Dropping a section on another one reorders them: the dragged
+                    // section takes the target's slot.
+                    const target = node.sectionId
+                    if (target !== null) moveSectionTo(dragged.id, target)
                     return
                   }
                   if (dragged.kind === 'project') {
@@ -496,9 +520,7 @@ export function SessionsPanel(): React.JSX.Element {
           )
         })}
 
-        {draggingSection && nodes.every((node) => node.kind !== 'archived') && (
-          <div className="px-1">{gapElement(customSections.length)}</div>
-        )}
+        {draggingSection && <div className="px-1">{gapElement(customSections.length)}</div>}
       </div>
       <Dialog
         open={confirm !== null}
