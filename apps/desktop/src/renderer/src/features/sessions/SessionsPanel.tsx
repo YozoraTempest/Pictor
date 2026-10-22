@@ -97,13 +97,15 @@ function pointerLeft(event: React.DragEvent<HTMLElement>): boolean {
 /**
  * The one line a list draws for a slot.
  *
- * A zero-height block, so the line sits exactly on the boundary and adds no
- * layout: nothing moves while a drag is in flight, and the line spans the full
- * width of the list that owns the slot.
+ * The box is one pixel tall and the line fills it, so the line is part of the
+ * flow instead of hanging on the edge: a zero-height box put the line exactly on
+ * the boundary of the collapsing container, where `overflow-hidden` ate it — the
+ * bottom slot of every list was invisible because of that. One pixel per slot is
+ * also constant across drag states, so nothing shifts when a drag starts.
  */
 function InsertGap({ show }: { show: boolean }): React.JSX.Element {
   return (
-    <div className="relative h-0">
+    <div className="relative h-px">
       <span
         aria-hidden
         className={cn(
@@ -200,10 +202,35 @@ export function SessionsPanel(): React.JSX.Element {
     startDraft({ sectionId, projectId })
   }
 
-  function beginDrag(event: React.DragEvent, payload: Dragged): void {
+  /**
+   * Starts a drag and hands the browser a small chip as the drag image.
+   *
+   * The default image is a snapshot of the row, so it lands under the pointer and
+   * covers the very line that says where the item will go — plus it inherits the
+   * row's hover buttons, which reads as a second, floating copy of the list. A
+   * chip pinned to the cursor's top-left corner keeps the insertion line visible.
+   */
+  function beginDrag(event: React.DragEvent, payload: Dragged, label: string): void {
     setDragging(payload)
     event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(payload))
     event.dataTransfer.effectAllowed = 'move'
+
+    const chip = document.createElement('div')
+    chip.textContent = label
+    chip.className = 'truncate rounded-md px-2 py-1 text-xs'
+    Object.assign(chip.style, {
+      position: 'fixed',
+      top: '-100px',
+      left: '-100px',
+      maxWidth: '220px',
+      color: 'var(--color-text)',
+      background: 'var(--color-surface-raised)',
+      boxShadow: 'var(--shadow-popover)',
+    })
+    document.body.append(chip)
+    event.dataTransfer.setDragImage(chip, 0, 0)
+    // Chromium snapshots the image synchronously, so the node can leave at once.
+    requestAnimationFrame(() => chip.remove())
   }
 
   function endDrag(): void {
@@ -593,7 +620,7 @@ export function SessionsPanel(): React.JSX.Element {
                     onClick={() => toggle(node.id)}
                     draggable={node.kind !== 'archived'}
                     onDragStart={(event) =>
-                      beginDrag(event, { kind: 'section', id: sectionKey(node) })
+                      beginDrag(event, { kind: 'section', id: sectionKey(node) }, node.title)
                     }
                     onDragEnd={endDrag}
                     className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left"
@@ -716,11 +743,15 @@ export function SessionsPanel(): React.JSX.Element {
                                 })
                               }
                               onDragStart={(event) =>
-                                beginDrag(event, {
-                                  kind: 'session',
-                                  id: child.session.id,
-                                  sectionId: node.sectionId,
-                                })
+                                beginDrag(
+                                  event,
+                                  {
+                                    kind: 'session',
+                                    id: child.session.id,
+                                    sectionId: node.sectionId,
+                                  },
+                                  child.session.title,
+                                )
                               }
                               onDragEnd={endDrag}
                               readDrag={readDrag}
@@ -812,7 +843,7 @@ function ProjectBlock({
   isGap: (ref: GapRef) => boolean
   mark: (next: DropTarget) => void
   clearPreview: () => void
-  beginDrag: (event: React.DragEvent, payload: Dragged) => void
+  beginDrag: (event: React.DragEvent, payload: Dragged, label: string) => void
   endDrag: () => void
   readDrag: (event: React.DragEvent) => Dragged | null
   menuItems: () => MenuEntry[]
@@ -885,11 +916,15 @@ function ProjectBlock({
           title={node.project.path}
           draggable
           onDragStart={(event) =>
-            beginDrag(event, {
-              kind: 'project',
-              id: node.project.id,
-              sectionId: node.project.sectionId,
-            })
+            beginDrag(
+              event,
+              {
+                kind: 'project',
+                id: node.project.id,
+                sectionId: node.project.sectionId,
+              },
+              node.project.name,
+            )
           }
           onDragEnd={endDrag}
           className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left"
@@ -946,11 +981,15 @@ function ProjectBlock({
                     onArchive={() => onArchive(session)}
                     onDelete={() => onDelete(session)}
                     onDragStart={(event) =>
-                      beginDrag(event, {
-                        kind: 'session',
-                        id: session.id,
-                        sectionId: node.project.sectionId,
-                      })
+                      beginDrag(
+                        event,
+                        {
+                          kind: 'session',
+                          id: session.id,
+                          sectionId: node.project.sectionId,
+                        },
+                        session.title,
+                      )
                     }
                     onDragEnd={endDrag}
                     readDrag={readDrag}
