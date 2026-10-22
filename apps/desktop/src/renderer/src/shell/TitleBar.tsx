@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 
 import type { WindowCommand } from '../../../shared/bridge.js'
 import { useUiStore } from '../app/ui-store.js'
+import { APP_VIEWS, sortedViews } from '../app/views.js'
 import { useWorkspaceStore } from '../app/workspace-store.js'
 import { Menu, Tooltip, type MenuEntry } from '../components/ui/index.js'
 import { cn } from '../lib/cn.js'
@@ -42,6 +43,7 @@ function useAppMenu(): MenuEntry[] {
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
   const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
 
+  const views = sortedViews()
   const info = useWorkspaceStore((state) => state.info)
   const createSession = useWorkspaceStore((state) => state.createSession)
   const addProject = useWorkspaceStore((state) => state.addProject)
@@ -58,8 +60,6 @@ function useAppMenu(): MenuEntry[] {
           onSelect: () => void createSession(newSessionTitle(), null),
         },
         { label: '添加项目', onSelect: () => void addProject() },
-        'separator',
-        { label: '设置', shortcut: 'Ctrl+,', onSelect: () => setView('settings') },
         'separator',
         { label: '关闭窗口', shortcut: 'Ctrl+W', danger: true, onSelect: () => command('close') },
       ],
@@ -79,7 +79,12 @@ function useAppMenu(): MenuEntry[] {
     {
       label: '视图',
       children: [
-        { label: '首页', checked: view === 'home', onSelect: () => setView('home') },
+        ...views.map((entry) => ({
+          label: entry.label,
+          checked: view === entry.id,
+          shortcut: 'shortcut' in entry ? entry.shortcut : undefined,
+          onSelect: () => setView(entry.id),
+        })),
         {
           label: '显示侧栏',
           checked: leftPanelOpen,
@@ -113,23 +118,14 @@ function useAppMenu(): MenuEntry[] {
   ]
 }
 
-export interface TitleBarProps {
-  /**
-   * Hovering the sidebar switch previews the panel; the header owns the trigger
-   * while the drawer lives next to the content, so the handlers are passed down.
-   */
-  sidebarHover: { onEnter: () => void; onLeave: () => void }
-  /** Width of the pinned sidebar, so the divider lines up with the panel below. */
-  sidebarWidth: number
-  /** While the divider is dragged the width transition has to stay off. */
-  sidebarResizing: boolean
-}
-
-export function TitleBar({
-  sidebarHover,
-  sidebarWidth,
-  sidebarResizing,
-}: TitleBarProps): React.JSX.Element {
+/**
+ * The window's title bar.
+ *
+ * It is pure chrome — drag region, panel switches, history and the overflow menu.
+ * The breadcrumb comes from the active view's descriptor, so the header never has
+ * to know what that view contains.
+ */
+export function TitleBar(): React.JSX.Element {
   const view = useUiStore((state) => state.view)
   const setView = useUiStore((state) => state.setView)
   const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
@@ -140,11 +136,10 @@ export function TitleBar({
   const historyIndex = useUiStore((state) => state.historyIndex)
   const stepHistory = useUiStore((state) => state.stepHistory)
 
-  const projects = useWorkspaceStore((state) => state.projects)
-  const selectedProjectId = useWorkspaceStore((state) => state.selectedProjectId)
-  const sessions = useWorkspaceStore((state) => state.sessions)
-  const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
   const selectSession = useWorkspaceStore((state) => state.selectSession)
+  const sidebarWidth = useUiStore((state) => state.sidebarWidth)
+  const sidebarResizing = useUiStore((state) => state.sidebarResizing)
+  const peekSidebar = useUiStore((state) => state.peekSidebar)
 
   const [maximized, setMaximized] = useState(false)
 
@@ -153,11 +148,7 @@ export function TitleBar({
     return window.pictor.onWindowState((state) => setMaximized(state.maximized))
   }, [])
 
-  // The breadcrumb follows the open session, never the last project that
-  // happened to be selected: a session outside a project must not inherit one.
-  const session = sessions.find((entry) => entry.id === selectedSessionId) ?? null
-  const projectId = session === null ? selectedProjectId : session.projectId
-  const project = projects.find((entry) => entry.id === projectId) ?? null
+  const active = APP_VIEWS.find((entry) => entry.id === view) ?? APP_VIEWS[0]
   const command = useWindowCommand()
   const appMenu = useAppMenu()
 
@@ -198,8 +189,8 @@ export function TitleBar({
             type="button"
             aria-label={leftPanelOpen ? '收起侧栏' : '展开侧栏'}
             onClick={toggleLeftPanel}
-            onPointerEnter={sidebarHover.onEnter}
-            onPointerLeave={sidebarHover.onLeave}
+            onPointerEnter={() => peekSidebar(true)}
+            onPointerLeave={() => peekSidebar(false)}
             className={cn(
               'grid size-7 place-items-center rounded-sm transition-colors duration-150 hover:bg-surface-hover',
               leftPanelOpen ? 'text-muted hover:text-text' : 'text-faint',
@@ -246,12 +237,7 @@ export function TitleBar({
         />
       </div>
 
-      <p className="mx-2 min-w-0 flex-1 truncate text-2xs text-faint">
-        {view === 'settings' ? '设置' : (project?.name ?? '临时任务')}
-        {view === 'home' && session !== null && (
-          <span className="text-muted"> / {session.title}</span>
-        )}
-      </p>
+      <p className="mx-2 min-w-0 flex-1 truncate text-2xs text-faint">{active.header?.()}</p>
 
       {/* The panel it controls sits on the right, so its switch lives there too. */}
       {view === 'home' && (
