@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { Button } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
+import { useSettingHighlight } from './highlight.js'
 
 /**
  * One setting: a label, an explanation, and the control that owns the value.
@@ -12,6 +13,7 @@ import { cn } from '../../lib/cn.js'
  * which keeps every page looking the same without hiding how it behaves.
  */
 export function SettingRow({
+  id,
   title,
   description,
   control,
@@ -19,6 +21,8 @@ export function SettingRow({
   disabled = false,
   disabledReason,
 }: {
+  /** Stable id, so a search result can jump to this row. */
+  id?: string
   title: string
   description?: string
   control: ReactNode
@@ -27,11 +31,15 @@ export function SettingRow({
   disabled?: boolean
   disabledReason?: string
 }): React.JSX.Element {
+  const highlighted = useSettingHighlight(id)
+
   return (
     <div
+      data-setting-row={id}
       className={cn(
-        'flex gap-4 px-4 py-3',
+        'flex gap-4 px-4 py-3 transition-colors duration-300',
         stacked ? 'flex-col' : 'flex-wrap items-start justify-between',
+        highlighted && 'bg-accent/10',
       )}
     >
       <div className="min-w-0 flex-1">

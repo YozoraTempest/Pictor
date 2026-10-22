@@ -40,6 +40,7 @@ export function GeneralSection(): React.JSX.Element {
       padded={false}
     >
       <SettingRow
+        id="sessions.grouping"
         stacked
         title="会话出现在哪些分区"
         description="点选后立即生效。"

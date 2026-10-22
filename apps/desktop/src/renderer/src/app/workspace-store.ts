@@ -1,5 +1,13 @@
 import { create } from 'zustand'
 
+import {
+  readGroupingMode,
+  readSectionOrder,
+  readSorts,
+  SETTING_KEYS,
+  sortKey,
+} from './settings-schema.js'
+
 import type { PluginRecord, Project, Section, Session } from '@pictor/shared'
 
 import type { AppInfo, PanelDescriptor, PluginReport } from '../../../shared/bridge.js'
@@ -71,36 +79,6 @@ interface WorkspaceState {
   invokePanel: (id: string, title: string) => Promise<void>
   setNotice: (notice: string | null) => void
   setError: (error: string | null) => void
-}
-
-/** Sidebar section order; any non-string entry is dropped rather than trusted. */
-function readSectionOrder(settings: Record<string, unknown>): string[] {
-  const value = settings['sessions.sectionOrder']
-  if (!Array.isArray(value)) return []
-
-  return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
-}
-
-/** Reads the grouping mode, falling back to the old pinned-only flag. */
-function readGroupingMode(settings: Record<string, unknown>): GroupingMode {
-  const value = settings['sessions.grouping']
-  if (value === 'overlap' || value === 'pinned' || value === 'basic' || value === 'exclusive') {
-    return value
-  }
-
-  return settings['sessions.groupingExclusive'] === true ? 'pinned' : 'overlap'
-}
-
-function readSorts(settings: Record<string, unknown>): Record<string, SectionSort> {
-  const sorts: Record<string, SectionSort> = {}
-  for (const [key, value] of Object.entries(settings)) {
-    if (!key.startsWith('sessions.sort.')) continue
-    // `manual` must survive a reload: dragging a session inside a section
-    // stores the new order in `position` and switches the section to manual.
-    if (value !== 'created' && value !== 'updated' && value !== 'manual') continue
-    sorts[key.slice('sessions.sort.'.length)] = value
-  }
-  return sorts
 }
 
 async function guard(
@@ -367,17 +345,17 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
   async setSectionSort(key, sort) {
     set((state) => ({ sorts: { ...state.sorts, [key]: sort } }))
-    await window.pictor.putSetting(`sessions.sort.${key}`, sort)
+    await window.pictor.putSetting(sortKey(key), sort)
   },
 
   async setSectionOrder(sectionOrder) {
     set({ sectionOrder })
-    await window.pictor.putSetting('sessions.sectionOrder', sectionOrder)
+    await window.pictor.putSetting(SETTING_KEYS.sectionOrder, sectionOrder)
   },
 
   async setGroupingMode(groupingMode) {
     set({ groupingMode })
-    await window.pictor.putSetting('sessions.grouping', groupingMode)
+    await window.pictor.putSetting(SETTING_KEYS.grouping, groupingMode)
   },
 
   async setPluginEnabled(id, enabled) {

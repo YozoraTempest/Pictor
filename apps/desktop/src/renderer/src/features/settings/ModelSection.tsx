@@ -137,6 +137,7 @@ export function ModelSection(): React.JSX.Element {
       )}
 
       <SettingRow
+        id="pi.providerName"
         title="服务名称"
         description="只用于辨认这条配置。"
         control={
@@ -151,6 +152,7 @@ export function ModelSection(): React.JSX.Element {
       />
 
       <SettingRow
+        id="pi.protocol"
         title="API 风格"
         description="取决于端点实现的是 Chat Completions 还是 Responses。"
         control={
@@ -167,6 +169,7 @@ export function ModelSection(): React.JSX.Element {
       />
 
       <SettingRow
+        id="pi.baseUrl"
         stacked
         title="Base URL"
         description="不含末尾的 /v1 也可以，保存时会去掉多余的斜杠。"
@@ -182,6 +185,7 @@ export function ModelSection(): React.JSX.Element {
       />
 
       <SettingRow
+        id="pi.models"
         title="已获取的模型"
         description="从端点拉取的列表，选择后会填入模型 ID。"
         control={
@@ -202,6 +206,7 @@ export function ModelSection(): React.JSX.Element {
       />
 
       <SettingRow
+        id="pi.modelId"
         title="模型 ID"
         description="发送给端点的 model 字段。"
         control={
@@ -216,6 +221,7 @@ export function ModelSection(): React.JSX.Element {
       />
 
       <SettingRow
+        id="pi.apiKey"
         stacked
         title="API Key"
         description={

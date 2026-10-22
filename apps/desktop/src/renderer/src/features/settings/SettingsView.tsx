@@ -1,127 +1,80 @@
-import {
-  Blocks,
-  Cpu,
-  Download,
-  FlaskConical,
-  Info,
-  Search,
-  Settings2,
-  type LucideIcon,
-} from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
 
 import { Input } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
-import { AboutSection } from './AboutSection.js'
-import { AgentTestSection } from './AgentTestSection.js'
-import { CcSwitchSection } from './CcSwitchSection.js'
-import { GeneralSection } from './GeneralSection.js'
-import { ModelSection } from './ModelSection.js'
-import { PluginsSection } from './PluginsSection.js'
+import { SettingHighlight } from './highlight.js'
+import { SETTING_ROWS, SETTINGS_PAGES, settingsGroups, type SettingsPageId } from './pages.js'
 
-interface SettingsItem {
-  id: string
-  label: string
-  icon: LucideIcon
+interface SearchHit {
+  page: SettingsPageId
+  /** Set when the hit is one row rather than a whole page. */
+  row: string | null
+  title: string
   description: string
-  keywords: string
-  /** Rendered when the item is selected; the list above is the only index. */
-  render: () => ReactNode
 }
 
-const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
-  {
-    title: '个人',
-    items: [
-      {
-        id: 'general',
-        render: () => <GeneralSection />,
-        label: '常规',
-        icon: Settings2,
-        description: '会话列表与置顶行为',
-        keywords: '常规 通用 互斥 置顶',
-      },
-      {
-        id: 'model',
-        render: () => <ModelSection />,
-        label: '模型服务',
-        icon: Cpu,
-        description: 'OpenAI 兼容端点与 API Key',
-        keywords: '模型 api key base url 端点',
-      },
-    ],
-  },
-  {
-    title: '集成',
-    items: [
-      {
-        id: 'plugins',
-        render: () => <PluginsSection />,
-        label: '拓展',
-        icon: Blocks,
-        description: '插件与面板的启用状态',
-        keywords: '插件 plugin',
-      },
-      {
-        id: 'import',
-        render: () => <CcSwitchSection />,
-        label: '导入配置',
-        icon: Download,
-        description: '从 cc-switch 只读导入 provider',
-        keywords: '导入 cc-switch 配置',
-      },
-    ],
-  },
-  {
-    title: '编码',
-    items: [
-      {
-        id: 'agent',
-        render: () => <AgentTestSection />,
-        label: 'Agent 试运行',
-        icon: FlaskConical,
-        description: '端到端验证当前模型配置',
-        keywords: 'agent 试运行 测试',
-      },
-    ],
-  },
-  {
-    title: '关于',
-    items: [
-      {
-        id: 'about',
-        render: () => <AboutSection />,
-        label: '关于 Pictor',
-        icon: Info,
-        description: '版本、运行时与数据库位置',
-        keywords: '关于 版本 version',
-      },
-    ],
-  },
-]
+function matches(haystack: string, needle: string): boolean {
+  return haystack.toLowerCase().includes(needle)
+}
 
-const ITEMS = GROUPS.flatMap((group) => group.items)
+/**
+ * Search runs over rows, not pages: "密钥" should land on the API Key field, not
+ * on the page that happens to contain it. Pages are searched too, so a query
+ * that names a page still works.
+ */
+function search(query: string): SearchHit[] {
+  const needle = query.trim().toLowerCase()
+  if (needle.length === 0) return []
+
+  const rows: SearchHit[] = SETTING_ROWS.filter(
+    (row) =>
+      matches(row.title, needle) ||
+      matches(row.description, needle) ||
+      matches(row.keywords, needle),
+  ).map((row) => ({ page: row.page, row: row.id, title: row.title, description: row.description }))
+
+  const pages: SearchHit[] = SETTINGS_PAGES.filter(
+    (page) =>
+      matches(page.label, needle) ||
+      matches(page.description, needle) ||
+      matches(page.keywords, needle),
+  ).map((page) => ({
+    page: page.id,
+    row: null,
+    title: page.label,
+    description: page.description,
+  }))
+
+  return [...rows, ...pages]
+}
 
 export function SettingsView(): React.JSX.Element {
-  const [active, setActive] = useState<string>('general')
+  const [active, setActive] = useState<SettingsPageId>('general')
   const [query, setQuery] = useState('')
+  const [highlight, setHighlight] = useState<string | null>(null)
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (needle.length === 0) return GROUPS
+  const hits = useMemo(() => search(query), [query])
+  const groups = useMemo(() => settingsGroups(), [])
+  const current = SETTINGS_PAGES.find((page) => page.id === active) ?? SETTINGS_PAGES[0]
 
-    return GROUPS.map((group) => ({
-      title: group.title,
-      items: group.items.filter(
-        (item) =>
-          item.label.toLowerCase().includes(needle) ||
-          item.description.toLowerCase().includes(needle) ||
-          item.keywords.toLowerCase().includes(needle),
-      ),
-    })).filter((group) => group.items.length > 0)
-  }, [query])
+  /** Opens the page a hit belongs to and reveals the row it names. */
+  function jumpTo(hit: SearchHit): void {
+    setActive(hit.page)
+    setQuery('')
+    if (hit.row === null) return
 
-  const current = ITEMS.find((item) => item.id === active) ?? ITEMS[0]
+    setHighlight(hit.row)
+    // The page has to be on screen before the row can be scrolled to.
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-setting-row="${hit.row ?? ''}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+    window.setTimeout(() => setHighlight(null), 2000)
+  }
+
+  const searching = query.trim().length > 0
 
   return (
     <div className="flex h-full min-h-0">
@@ -133,7 +86,7 @@ export function SettingsView(): React.JSX.Element {
             <Input
               value={query}
               aria-label="搜索设置"
-              placeholder="搜索"
+              placeholder="搜索设置项"
               className="h-8 pl-7 text-xs"
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -141,24 +94,45 @@ export function SettingsView(): React.JSX.Element {
         </div>
 
         <nav aria-label="设置分类" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {filtered.length === 0 ? (
-            <p className="px-2 py-3 text-2xs text-faint">没有匹配的设置项。</p>
+          {searching ? (
+            hits.length === 0 ? (
+              <p className="px-2 py-3 text-2xs text-faint">没有匹配的设置项。</p>
+            ) : (
+              <ul className="flex flex-col gap-px">
+                {hits.map((hit) => (
+                  <li key={`${hit.page}:${hit.row ?? ''}`}>
+                    <button
+                      type="button"
+                      onClick={() => jumpTo(hit)}
+                      className="flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+                    >
+                      <span className="truncate text-text">{hit.title}</span>
+                      <span className="truncate text-2xs text-faint">
+                        {SETTINGS_PAGES.find((page) => page.id === hit.page)?.label ?? ''}
+                        {hit.row === null ? '' : ` › ${hit.description}`}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )
           ) : (
-            filtered.map((group) => (
+            groups.map((group) => (
               <div key={group.title} className="mb-2">
                 <h2 className="px-2 pt-1 pb-1 text-2xs font-semibold tracking-wider text-faint uppercase">
                   {group.title}
                 </h2>
                 <ul className="flex flex-col gap-px">
-                  {group.items.map((item) => {
-                    const Icon = item.icon
-                    const isActive = item.id === active
+                  {group.pages.map((page) => {
+                    const Icon = page.icon
+                    const isActive = page.id === active
+
                     return (
-                      <li key={item.id}>
+                      <li key={page.id}>
                         <button
                           type="button"
                           aria-current={isActive ? 'page' : undefined}
-                          onClick={() => setActive(item.id)}
+                          onClick={() => setActive(page.id)}
                           className={cn(
                             'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors duration-150',
                             isActive
@@ -172,7 +146,7 @@ export function SettingsView(): React.JSX.Element {
                               isActive ? 'text-accent' : 'text-faint',
                             )}
                           />
-                          <span className="truncate">{item.label}</span>
+                          <span className="truncate">{page.label}</span>
                         </button>
                       </li>
                     )
@@ -191,7 +165,9 @@ export function SettingsView(): React.JSX.Element {
             <p className="mt-0.5 text-xs text-faint">{current?.description ?? ''}</p>
           </header>
 
-          {current?.render()}
+          <SettingHighlight.Provider value={highlight}>
+            {current?.render()}
+          </SettingHighlight.Provider>
         </div>
       </section>
     </div>
