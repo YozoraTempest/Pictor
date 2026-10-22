@@ -46,7 +46,7 @@ describe('ProjectPicker', () => {
   it('falls back to a label when the conversation has no project', () => {
     render(<ProjectPicker projectId={null} onChange={() => undefined} />)
 
-    expect(screen.getByRole('button', { name: '选择项目' }).textContent).toContain('不在项目中工作')
+    expect(screen.getByRole('button', { name: '选择项目' }).textContent).toContain('临时任务')
   })
 
   it('filters the list by name or path', async () => {
@@ -70,7 +70,7 @@ describe('ProjectPicker', () => {
     expect(onChange).toHaveBeenCalledWith('p2')
 
     await userEvent.click(screen.getByRole('button', { name: '选择项目' }))
-    await userEvent.click(screen.getByRole('button', { name: '不在项目中工作' }))
+    await userEvent.click(screen.getByRole('button', { name: '临时任务' }))
     expect(onChange).toHaveBeenCalledWith(null)
   })
 })

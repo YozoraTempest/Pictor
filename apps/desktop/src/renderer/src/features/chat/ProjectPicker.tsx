@@ -129,7 +129,7 @@ export function ProjectPicker({ projectId, onChange }: ProjectPickerProps): Reac
       >
         <span className="flex min-w-0 items-center gap-1.5 text-text">
           <Folder className="size-3.5 shrink-0 text-faint" />
-          <span className="truncate">{active?.name ?? '不在项目中工作'}</span>
+          <span className="truncate">{active?.name ?? '临时任务'}</span>
         </span>
 
         <span className="h-3.5 w-px shrink-0 bg-border" />
@@ -225,7 +225,7 @@ export function ProjectPicker({ projectId, onChange }: ProjectPickerProps): Reac
               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
             >
               <X className="size-3.5 shrink-0 text-faint" aria-hidden />
-              不在项目中工作
+              临时任务
             </button>
           </div>,
           document.body,

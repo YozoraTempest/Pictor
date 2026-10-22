@@ -247,7 +247,7 @@ export function TitleBar({
       </div>
 
       <p className="mx-2 min-w-0 flex-1 truncate text-2xs text-faint">
-        {view === 'settings' ? '设置' : (project?.name ?? '不在项目中工作')}
+        {view === 'settings' ? '设置' : (project?.name ?? '临时任务')}
         {view === 'home' && session !== null && (
           <span className="text-muted"> / {session.title}</span>
         )}
