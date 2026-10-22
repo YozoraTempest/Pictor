@@ -153,8 +153,11 @@ export function TitleBar({
     return window.pictor.onWindowState((state) => setMaximized(state.maximized))
   }, [])
 
-  const project = projects.find((entry) => entry.id === selectedProjectId) ?? null
+  // The breadcrumb follows the open session, never the last project that
+  // happened to be selected: a session outside a project must not inherit one.
   const session = sessions.find((entry) => entry.id === selectedSessionId) ?? null
+  const projectId = session === null ? selectedProjectId : session.projectId
+  const project = projects.find((entry) => entry.id === projectId) ?? null
   const command = useWindowCommand()
   const appMenu = useAppMenu()
 
@@ -244,7 +247,7 @@ export function TitleBar({
       </div>
 
       <p className="mx-2 min-w-0 flex-1 truncate text-2xs text-faint">
-        {view === 'settings' ? '设置' : (project?.name ?? '未选择项目')}
+        {view === 'settings' ? '设置' : (project?.name ?? '不在项目中工作')}
         {view === 'home' && session !== null && (
           <span className="text-muted"> / {session.title}</span>
         )}

@@ -191,7 +191,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   selectSession(id) {
-    set({ selectedSessionId: id, draft: null })
+    // Keep the "current project" in step with the open session: it feeds the
+    // breadcrumb and the agent test panel, and a stale value used to leak a
+    // project onto sessions that belong to none.
+    const projectId = get().sessions.find((session) => session.id === id)?.projectId ?? null
+    set({ selectedSessionId: id, selectedProjectId: projectId, draft: null })
   },
 
   /**
