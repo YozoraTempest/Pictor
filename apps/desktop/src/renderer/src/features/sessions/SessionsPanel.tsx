@@ -272,7 +272,13 @@ export function SessionsPanel(): React.JSX.Element {
     setTarget((current) => (current === null ? current : null))
   }
 
-  /** A session dropped on a section: pin it, tag it, or detach it from a project. */
+  /**
+   * A session dropped into a section: pin it, detach it, or tag it.
+   *
+   * A session that still belongs to a project follows that project, so tagging
+   * is not enough — the project wins and the row stays where it was. Detaching
+   * first is what actually lets a project session live in a section.
+   */
   async function dropSessionInSection(node: SectionNode, sessionId: string): Promise<void> {
     if (node.kind === 'pinned') {
       await setSessionPinned(sessionId, true)
@@ -283,6 +289,9 @@ export function SessionsPanel(): React.JSX.Element {
       return
     }
     if (node.kind === 'custom' && node.sectionId !== null) {
+      const session = useWorkspaceStore.getState().sessions.find((entry) => entry.id === sessionId)
+      if (session !== undefined && session.projectId !== null)
+        await setSessionProject(sessionId, null)
       await setSessionSections(sessionId, [node.sectionId])
     }
   }
@@ -397,20 +406,31 @@ export function SessionsPanel(): React.JSX.Element {
     return index
   }
 
+  /** The project a slot belongs to, or `null` when the slot is the section's own. */
+  function projectOfSlot(node: SectionNode, list: string): string | null {
+    for (const child of node.children) {
+      if (child.kind === 'project' && projectList(child.project.id) === list)
+        return child.project.id
+    }
+    return null
+  }
+
   /**
-   * Drops a session into a section at a slot.
+   * Drops a session into a container at a slot.
    *
-   * Filing comes first: dropping into a section has to actually put the session
-   * there, otherwise the row snaps back to where it came from and the drop looks
-   * like it did nothing. The order is then rebuilt so the session lands at the
-   * slot the preview promised.
+   * Membership comes first: dropping into a project has to join that project and
+   * dropping into a section has to leave it, otherwise the row follows whatever
+   * it belonged to before and snaps back. The order is then rebuilt so the
+   * session lands at the slot the preview promised.
    */
   async function dropSessionAt(node: SectionNode, draggedId: string, slot: GapRef): Promise<void> {
     // Anchor on the session the slot points at, not on an index: filing the
     // session rewrites the section, so an index taken here would be stale.
     const anchorId = orderedSessionIds(node)[flatIndexAt(node, slot.list, slot.gap)] ?? null
 
-    await dropSessionInSection(node, draggedId)
+    const projectId = projectOfSlot(node, slot.list)
+    if (projectId === null) await dropSessionInSection(node, draggedId)
+    else await setSessionProject(draggedId, projectId)
 
     // Re-read the section after filing. Building the order before the filing
     // used a list that no longer existed once the store refreshed, so the first
