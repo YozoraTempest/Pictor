@@ -73,7 +73,9 @@ interface WorkspaceState {
 /** Reads the grouping mode, falling back to the old pinned-only flag. */
 function readGroupingMode(settings: Record<string, unknown>): GroupingMode {
   const value = settings['sessions.grouping']
-  if (value === 'overlap' || value === 'pinned' || value === 'exclusive') return value
+  if (value === 'overlap' || value === 'pinned' || value === 'basic' || value === 'exclusive') {
+    return value
+  }
 
   return settings['sessions.groupingExclusive'] === true ? 'pinned' : 'overlap'
 }

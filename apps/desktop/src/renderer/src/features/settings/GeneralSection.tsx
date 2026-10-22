@@ -15,6 +15,12 @@ const MODES: Array<{ id: GroupingMode; label: string; description: string }> = [
     description: '置顶会话只出现在「置顶」，其余会话仍可能同时出现在项目与自定义分区。',
   },
   {
+    id: 'basic',
+    label: '基本互斥',
+    description:
+      '在「全部互斥」基础上，只有「最近」不被限制：它按时间列出所有会话，方便回看时间线。',
+  },
+  {
     id: 'exclusive',
     label: '全部互斥',
     description:

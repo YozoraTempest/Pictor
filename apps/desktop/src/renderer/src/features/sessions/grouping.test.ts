@@ -135,6 +135,36 @@ describe('groupSessions (section → project → session)', () => {
     expect(projectsSection?.count).toBe(0)
   })
 
+  it('keeps 最近 as a full timeline while the other sections stay unique', () => {
+    const nodes = groupSessions({
+      sessions: [
+        session({ id: 'pinned', pinned: true, projectId: 'p1' }),
+        session({ id: 'tagged', projectId: 'p1', sectionIds: ['sec1'] }),
+        session({ id: 'projectOnly', projectId: 'p2' }),
+        session({ id: 'loose' }),
+      ],
+      projects,
+      sections: [section('sec1', 'Design')],
+      mode: 'basic',
+      sorts: {},
+    })
+
+    const ids = (nodeId: string): string[] => {
+      const node = nodes.find((entry) => entry.id === nodeId)
+      if (node === undefined) return []
+      return node.children.flatMap((child) =>
+        child.kind === 'project' ? child.sessions.map((entry) => entry.id) : [child.session.id],
+      )
+    }
+
+    // The owning sections stay unique…
+    expect(ids('pinned')).toEqual(['pinned'])
+    expect(ids('section:sec1')).toEqual(['tagged'])
+    expect(ids('projects')).toEqual(['projectOnly'])
+    // …while 最近 lists every conversation, pinned included, in time order.
+    expect(new Set(ids('recent'))).toEqual(new Set(['pinned', 'tagged', 'projectOnly', 'loose']))
+  })
+
   it('shows a session in exactly one section when fully exclusive', () => {
     const nodes = groupSessions({
       sessions: [

@@ -8,9 +8,11 @@ export type SectionSort = 'created' | 'updated' | 'manual'
  *
  * - `overlap` — a session can show up in several sections at once.
  * - `pinned` — a pinned session leaves the other sections behind.
+ * - `basic` — like `exclusive`, except 最近 keeps every session so the list can
+ *   still be read as a timeline.
  * - `exclusive` — every session belongs to exactly one section.
  */
-export type GroupingMode = 'overlap' | 'pinned' | 'exclusive'
+export type GroupingMode = 'overlap' | 'pinned' | 'basic' | 'exclusive'
 
 export interface SessionLeaf {
   kind: 'session'
@@ -116,9 +118,15 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
   const pinned = active.filter((session) => session.pinned)
   const rest = mode === 'overlap' ? active : active.filter((session) => !session.pinned)
 
+  /** `exclusive` and `basic` assign every session to one owning section. */
+  const assigned = mode === 'exclusive' || mode === 'basic'
+
   /** Sessions assigned to one section, used as both children and nesting pool. */
   function candidatesFor(key: string): Session[] {
-    if (mode !== 'exclusive') return rest
+    if (!assigned) return rest
+    // 最近 is the timeline: in `basic` it keeps every conversation, so the user
+    // can still read the list in time order while the other sections stay unique.
+    if (mode === 'basic' && key === RECENT_ID) return active
     return active.filter((session) => homeOf(session) === key)
   }
 
@@ -161,8 +169,7 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
     }
   }
 
-  const exclusive = mode === 'exclusive'
-  const pinnedCandidates = exclusive ? candidatesFor(PINNED_ID) : pinned
+  const pinnedCandidates = assigned ? candidatesFor(PINNED_ID) : pinned
   const projectsCandidates = candidatesFor(PROJECTS_ID)
   const recentCandidates = candidatesFor(RECENT_ID)
 
@@ -177,7 +184,7 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
       'projects',
       null,
       projectsCandidates,
-      exclusive ? projectsCandidates : rest,
+      assigned ? projectsCandidates : rest,
     ),
     buildsSection(
       RECENT_ID,
@@ -185,18 +192,18 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
       'recent',
       null,
       recentCandidates,
-      exclusive ? recentCandidates : rest,
+      assigned ? recentCandidates : rest,
     ),
   ]
 
   for (const section of orderedSections) {
     const key = `section:${section.id}`
-    const tagged = exclusive
+    const tagged = assigned
       ? candidatesFor(key)
       : rest.filter((session) => session.sectionIds.includes(section.id))
 
     nodes.push(
-      buildsSection(key, section.name, 'custom', section.id, tagged, exclusive ? tagged : active),
+      buildsSection(key, section.name, 'custom', section.id, tagged, assigned ? tagged : active),
     )
   }
 
