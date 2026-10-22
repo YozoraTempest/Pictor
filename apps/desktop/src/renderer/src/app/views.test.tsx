@@ -58,7 +58,7 @@ describe('view registry', () => {
 
   it('does not bind the same accelerator twice', () => {
     const shortcuts = APP_VIEWS.flatMap((entry) =>
-      'shortcut' in entry && entry.shortcut !== undefined ? [entry.shortcut] : [],
+      entry.shortcut === undefined ? [] : [entry.shortcut],
     )
     expect(new Set(shortcuts).size).toBe(shortcuts.length)
   })

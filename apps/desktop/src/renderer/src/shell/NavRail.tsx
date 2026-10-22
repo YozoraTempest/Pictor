@@ -1,9 +1,15 @@
 import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
-import { sortedViews, type AppViewEntry } from '../app/views.js'
+import { sortedViews, type AppView, type AppViewDescriptor } from '../app/views.js'
 import { cn } from '../lib/cn.js'
 
-function RailButton({ view, active }: { view: AppViewEntry; active: boolean }): React.JSX.Element {
+function RailButton({
+  view,
+  active,
+}: {
+  view: AppViewDescriptor<AppView>
+  active: boolean
+}): React.JSX.Element {
   const Icon = view.icon
 
   return (

@@ -4,7 +4,7 @@ import { Banner } from '../components/ui/index.js'
 import { useChatStore } from '../features/chat/chat-store.js'
 import { AppShell } from '../shell/AppShell.js'
 import { useUiStore } from './ui-store.js'
-import { APP_VIEWS } from './views.js'
+import { findView } from './views.js'
 import { useAppShortcuts } from './use-app-shortcuts.js'
 import { useWorkspaceStore } from './workspace-store.js'
 
@@ -12,7 +12,7 @@ export function App(): React.JSX.Element {
   useAppShortcuts()
 
   const view = useUiStore((state) => state.view)
-  const active = APP_VIEWS.find((entry) => entry.id === view) ?? APP_VIEWS[0]
+  const active = findView(view)
 
   const refresh = useWorkspaceStore((state) => state.refresh)
   const error = useWorkspaceStore((state) => state.error)
