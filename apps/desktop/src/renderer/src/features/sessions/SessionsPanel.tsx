@@ -74,7 +74,7 @@ export function SessionsPanel(): React.JSX.Element {
   const sections = useWorkspaceStore((state) => state.sections)
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
   const sorts = useWorkspaceStore((state) => state.sorts)
-  const exclusive = useWorkspaceStore((state) => state.groupingExclusive)
+  const groupingMode = useWorkspaceStore((state) => state.groupingMode)
   const busy = useWorkspaceStore((state) => state.busy)
 
   const selectSession = useWorkspaceStore((state) => state.selectSession)
@@ -106,8 +106,8 @@ export function SessionsPanel(): React.JSX.Element {
   }
 
   const nodes = useMemo(
-    () => groupSessions({ sessions, projects, sections, exclusive, sorts }),
-    [sessions, projects, sections, exclusive, sorts],
+    () => groupSessions({ sessions, projects, sections, mode: groupingMode, sorts }),
+    [sessions, projects, sections, groupingMode, sorts],
   )
 
   function toggle(key: string): void {

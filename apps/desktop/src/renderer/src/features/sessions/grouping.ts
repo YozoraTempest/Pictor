@@ -3,6 +3,15 @@ import type { Project, Section, Session } from '@pictor/shared'
 /** How sessions inside a section are ordered. */
 export type SectionSort = 'created' | 'updated' | 'manual'
 
+/**
+ * How a session is presented across sections.
+ *
+ * - `overlap` — a session can show up in several sections at once.
+ * - `pinned` — a pinned session leaves the other sections behind.
+ * - `exclusive` — every session belongs to exactly one section.
+ */
+export type GroupingMode = 'overlap' | 'pinned' | 'exclusive'
+
 export interface SessionLeaf {
   kind: 'session'
   session: Session
@@ -33,8 +42,7 @@ export interface GroupingInput {
   sessions: Session[]
   projects: Project[]
   sections: Section[]
-  /** When true a pinned session only shows up in the pinned section. */
-  exclusive: boolean
+  mode: GroupingMode
   /** Sort preference per section id (built-in ids and custom section ids). */
   sorts: Record<string, SectionSort>
 }
@@ -76,12 +84,43 @@ function countChildren(children: SectionChild[]): number {
  * `project.sectionId` (`null` meaning the built-in 项目 section).
  */
 export function groupSessions(input: GroupingInput): SectionNode[] {
-  const { sessions, projects, sections, exclusive, sorts } = input
+  const { sessions, projects, sections, mode, sorts } = input
 
   const active = sessions.filter((session) => !session.archived)
   const archived = sessions.filter((session) => session.archived)
+  const orderedSections = [...sections].sort((a, b) => a.position - b.position)
+  const projectSection = new Map(projects.map((project) => [project.id, project.sectionId]))
+
+  /**
+   * The one section a session belongs to in `exclusive` mode.
+   *
+   * Pinning wins over everything (the user asked for it explicitly), then the
+   * section its project is filed under, then the first section it was tagged
+   * with, then 项目 for project sessions and 最近 for the rest.
+   */
+  function homeOf(session: Session): string {
+    if (session.pinned) return PINNED_ID
+
+    if (session.projectId !== null) {
+      const sectionId = projectSection.get(session.projectId) ?? null
+      if (sectionId !== null) return `section:${sectionId}`
+    }
+
+    for (const section of orderedSections) {
+      if (session.sectionIds.includes(section.id)) return `section:${section.id}`
+    }
+
+    return session.projectId === null ? RECENT_ID : PROJECTS_ID
+  }
+
   const pinned = active.filter((session) => session.pinned)
-  const rest = exclusive ? active.filter((session) => !session.pinned) : active
+  const rest = mode === 'overlap' ? active : active.filter((session) => !session.pinned)
+
+  /** Sessions assigned to one section, used as both children and nesting pool. */
+  function candidatesFor(key: string): Session[] {
+    if (mode !== 'exclusive') return rest
+    return active.filter((session) => homeOf(session) === key)
+  }
 
   function buildsSection(
     id: string,
@@ -122,16 +161,42 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
     }
   }
 
+  const exclusive = mode === 'exclusive'
+  const pinnedCandidates = exclusive ? candidatesFor(PINNED_ID) : pinned
+  const projectsCandidates = candidatesFor(PROJECTS_ID)
+  const recentCandidates = candidatesFor(RECENT_ID)
+
+  // A project nests only its own sessions, so its pool is the section's own
+  // candidates. Outside `exclusive` a filed project still lists all its
+  // sessions, which is why the pool there is every active conversation.
   const nodes: SectionNode[] = [
-    buildsSection(PINNED_ID, '置顶', 'pinned', PINNED_ID, pinned, active),
-    buildsSection(PROJECTS_ID, '项目', 'projects', null, rest, rest),
-    buildsSection(RECENT_ID, '最近', 'recent', null, rest, rest),
+    buildsSection(PINNED_ID, '置顶', 'pinned', PINNED_ID, pinnedCandidates, active),
+    buildsSection(
+      PROJECTS_ID,
+      '项目',
+      'projects',
+      null,
+      projectsCandidates,
+      exclusive ? projectsCandidates : rest,
+    ),
+    buildsSection(
+      RECENT_ID,
+      '最近',
+      'recent',
+      null,
+      recentCandidates,
+      exclusive ? recentCandidates : rest,
+    ),
   ]
 
-  for (const section of [...sections].sort((a, b) => a.position - b.position)) {
-    const tagged = rest.filter((session) => session.sectionIds.includes(section.id))
+  for (const section of orderedSections) {
+    const key = `section:${section.id}`
+    const tagged = exclusive
+      ? candidatesFor(key)
+      : rest.filter((session) => session.sectionIds.includes(section.id))
+
     nodes.push(
-      buildsSection(`section:${section.id}`, section.name, 'custom', section.id, tagged, active),
+      buildsSection(key, section.name, 'custom', section.id, tagged, exclusive ? tagged : active),
     )
   }
 

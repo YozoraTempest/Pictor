@@ -4,7 +4,7 @@ import type { PluginRecord, Project, Section, Session } from '@pictor/shared'
 
 import type { AppInfo, PanelDescriptor, PluginReport } from '../../../shared/bridge.js'
 import { applyToolViews } from '../features/chat/tool-views.js'
-import type { SectionSort } from '../features/sessions/grouping.js'
+import type { GroupingMode, SectionSort } from '../features/sessions/grouping.js'
 
 /** Presenter overrides applied from the last refresh, so a refresh can undo them. */
 let disposeToolViews: (() => void) | null = null
@@ -32,7 +32,8 @@ interface WorkspaceState {
    */
   draft: DraftSession | null
   sorts: Record<string, SectionSort>
-  groupingExclusive: boolean
+  /** How sections share sessions; see `GroupingMode`. */
+  groupingMode: GroupingMode
   busy: boolean
   error: string | null
   notice: string | null
@@ -62,11 +63,19 @@ interface WorkspaceState {
   renameSection: (id: string, name: string) => Promise<void>
   removeSection: (id: string) => Promise<void>
   setSectionSort: (key: string, sort: SectionSort) => Promise<void>
-  setGroupingExclusive: (exclusive: boolean) => Promise<void>
+  setGroupingMode: (mode: GroupingMode) => Promise<void>
   setPluginEnabled: (id: string, enabled: boolean) => Promise<void>
   invokePanel: (id: string, title: string) => Promise<void>
   setNotice: (notice: string | null) => void
   setError: (error: string | null) => void
+}
+
+/** Reads the grouping mode, falling back to the old pinned-only flag. */
+function readGroupingMode(settings: Record<string, unknown>): GroupingMode {
+  const value = settings['sessions.grouping']
+  if (value === 'overlap' || value === 'pinned' || value === 'exclusive') return value
+
+  return settings['sessions.groupingExclusive'] === true ? 'pinned' : 'overlap'
 }
 
 function readSorts(settings: Record<string, unknown>): Record<string, SectionSort> {
@@ -105,7 +114,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   selectedSessionId: null,
   draft: null,
   sorts: {},
-  groupingExclusive: false,
+  groupingMode: 'overlap',
   busy: false,
   error: null,
   notice: null,
@@ -148,7 +157,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       selectedProjectId: projectId,
       selectedSessionId: sessionId,
       sorts: readSorts(snapshot.settings),
-      groupingExclusive: snapshot.settings['sessions.groupingExclusive'] === true,
+      groupingMode: readGroupingMode(snapshot.settings),
     })
   },
 
@@ -340,9 +349,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     await window.pictor.putSetting(`sessions.sort.${key}`, sort)
   },
 
-  async setGroupingExclusive(groupingExclusive) {
-    set({ groupingExclusive })
-    await window.pictor.putSetting('sessions.groupingExclusive', groupingExclusive)
+  async setGroupingMode(groupingMode) {
+    set({ groupingMode })
+    await window.pictor.putSetting('sessions.grouping', groupingMode)
   },
 
   async setPluginEnabled(id, enabled) {

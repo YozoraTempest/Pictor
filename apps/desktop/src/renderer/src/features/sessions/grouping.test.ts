@@ -52,7 +52,7 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [],
       projects: [],
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -65,7 +65,7 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [session({ id: 'a', projectId: 'p1' }), session({ id: 'b', projectId: 'p2' })],
       projects,
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -85,7 +85,7 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [],
       projects,
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -98,7 +98,7 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [session({ id: 'loose', projectId: null })],
       projects,
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -113,7 +113,7 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [session({ id: 'pin', pinned: true, projectId: 'p1' })],
       projects,
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -127,12 +127,45 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [session({ id: 'pin', pinned: true, projectId: 'p1' })],
       projects,
       sections: [],
-      exclusive: true,
+      mode: 'pinned',
       sorts: {},
     })
 
     const projectsSection = nodes.find((node) => node.id === 'projects')
     expect(projectsSection?.count).toBe(0)
+  })
+
+  it('shows a session in exactly one section when fully exclusive', () => {
+    const nodes = groupSessions({
+      sessions: [
+        session({ id: 'pinned', pinned: true, projectId: 'p1', sectionIds: ['sec1'] }),
+        session({ id: 'tagged', projectId: 'p1', sectionIds: ['sec1'] }),
+        session({ id: 'projectOnly', projectId: 'p2' }),
+        session({ id: 'loose' }),
+      ],
+      projects,
+      sections: [section('sec1', 'Design')],
+      mode: 'exclusive',
+      sorts: {},
+    })
+
+    const ids = (nodeId: string): string[] => {
+      const node = nodes.find((entry) => entry.id === nodeId)
+      if (node === undefined) return []
+      return node.children.flatMap((child) =>
+        child.kind === 'project' ? child.sessions.map((entry) => entry.id) : [child.session.id],
+      )
+    }
+
+    // Pinning wins, then the session's own tag beats its project.
+    expect(ids('pinned')).toEqual(['pinned'])
+    expect(ids('section:sec1')).toEqual(['tagged'])
+    expect(ids('projects')).toEqual(['projectOnly'])
+    expect(ids('recent')).toEqual(['loose'])
+
+    const seen = ['pinned', 'projects', 'recent', 'section:sec1'].flatMap((key) => ids(key))
+    expect(seen).toHaveLength(4)
+    expect(new Set(seen).size).toBe(4)
   })
 
   it('keeps archived sessions in their own section only', () => {
@@ -143,7 +176,7 @@ describe('groupSessions (section → project → session)', () => {
       ],
       projects: [],
       sections: [section('sec1', 'Design')],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -160,7 +193,7 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [session({ id: 'tagged', projectId: 'p2', sectionIds: ['sec1'] })],
       projects,
       sections: [section('sec1', 'Design')],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -176,7 +209,7 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [session({ id: 'a', projectId: 'p1' }), session({ id: 'b', projectId: 'p2' })],
       projects: filed,
       sections: [section('sec1', 'Design')],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -198,7 +231,7 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [session({ id: 'a', projectId: 'p1' })],
       projects,
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -214,7 +247,7 @@ describe('groupSessions (section → project → session)', () => {
       ],
       projects: [],
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: { recent: 'created' },
     })
 
@@ -231,7 +264,7 @@ describe('groupSessions (section → project → session)', () => {
       ],
       projects: [],
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
@@ -249,7 +282,7 @@ describe('groupSessions (section → project → session)', () => {
       ],
       projects: [],
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: { recent: 'manual' },
     })
 
@@ -263,7 +296,7 @@ describe('groupSessions (section → project → session)', () => {
       sessions: [session({ id: 'a', projectId: 'p1' }), session({ id: 'b', projectId: null })],
       projects,
       sections: [],
-      exclusive: false,
+      mode: 'overlap',
       sorts: {},
     })
 
