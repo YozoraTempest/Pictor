@@ -52,8 +52,20 @@ type Dragged =
  */
 type GapRef = { list: string; gap: number }
 
-/** Where a drag would land: inside a container, or in one of its slots. */
-type DropTarget = { kind: 'into'; list: string } | ({ kind: 'insert' } & GapRef)
+/**
+ * What the pointer is over: the container that would receive the item and the
+ * slot the item would land in.
+ *
+ * Both are optional because a container can be a target without a position (a
+ * section head files the item in, it does not place it) and a slot can exist
+ * without a frame (sections reorder, they never nest).
+ */
+type DropTarget = {
+  /** List key of the container to outline; `null` for no frame. */
+  ring: string | null
+  /** Insertion slot to mark with a line; `null` for no line. */
+  slot: GapRef | null
+}
 
 /** The top-level list of sections; the other lists are per section or project. */
 const SECTION_LIST = 'sections'
@@ -210,28 +222,22 @@ export function SessionsPanel(): React.JSX.Element {
   }
 
   /**
-   * Marks the slot under the pointer.
+   * Marks what the pointer is over.
    *
-   * Identical targets are ignored so hovering inside one row does not re-render
+   * One target carries both halves of the preview: the container that shows the
+   * blue frame (`ring`) and the slot that shows the white line (`slot`). Keeping
+   * them in one value is what stops the frame and the line from disagreeing, and
+   * identical targets are ignored so hovering inside one row does not re-render
    * the whole tree on every mousemove.
    */
-  function markInsert(next: GapRef): void {
+  function mark(next: DropTarget): void {
     setTarget((current) =>
       current !== null &&
-      current.kind === 'insert' &&
-      current.list === next.list &&
-      current.gap === next.gap
+      current.ring === next.ring &&
+      current.slot?.list === next.slot?.list &&
+      current.slot?.gap === next.slot?.gap
         ? current
-        : { kind: 'insert', list: next.list, gap: next.gap },
-    )
-  }
-
-  /** Marks a container that would receive the dragged item. */
-  function markInto(list: string): void {
-    setTarget((current) =>
-      current !== null && current.kind === 'into' && current.list === list
-        ? current
-        : { kind: 'into', list },
+        : next,
     )
   }
 
@@ -290,10 +296,15 @@ export function SessionsPanel(): React.JSX.Element {
   }
 
   /** True when `ref` is the slot the pointer is over and the move means something. */
-  function isGap(ref: GapRef, node: SectionNode | null = null): boolean {
-    if (target === null || target.kind !== 'insert') return false
-    if (target.list !== ref.list || target.gap !== ref.gap) return false
+  function slotShown(ref: GapRef, node: SectionNode | null = null): boolean {
+    if (target === null || target.slot === null) return false
+    if (target.slot.list !== ref.list || target.slot.gap !== ref.gap) return false
     return !isDeadSlot(ref, node)
+  }
+
+  /** True when `list` is the container the pointer would file the item into. */
+  function ringShown(list: string): boolean {
+    return target !== null && target.ring === list
   }
 
   /** Session ids of a section in the order they are rendered. */
@@ -339,11 +350,17 @@ export function SessionsPanel(): React.JSX.Element {
     return index
   }
 
-  /** Re-inserts a dragged session at a slot and pins the section order. */
+  /**
+   * Drops a session into a section at a slot.
+   *
+   * Filing comes first: dropping into a section has to actually put the session
+   * there, otherwise the row snaps back to where it came from and the drop looks
+   * like it did nothing. The order is then rebuilt so the session lands at the
+   * slot the preview promised.
+   */
   async function dropSessionAt(node: SectionNode, draggedId: string, slot: GapRef): Promise<void> {
     const ids = orderedSessionIds(node)
     const targetId = ids[flatIndexAt(node, slot.list, slot.gap)] ?? null
-    if (targetId === draggedId) return
 
     const next = ids.filter((id) => id !== draggedId)
     if (targetId === null) next.push(draggedId)
@@ -352,6 +369,7 @@ export function SessionsPanel(): React.JSX.Element {
       next.splice(index === -1 ? next.length : index, 0, draggedId)
     }
 
+    await dropSessionInSection(node, draggedId)
     await reorderSessions(next)
     await setSectionSort(node.id, 'manual')
   }
@@ -455,34 +473,89 @@ export function SessionsPanel(): React.JSX.Element {
           const isEditing = editing !== null && editing.id === node.sectionId
           const list = sectionList(sectionKey(node))
           const order = node.kind === 'archived' ? -1 : movableIndex(node)
-          const into = target !== null && target.kind === 'into' && target.list === list
           // A section being dragged fades where it currently sits, so the list
           // reads as "this one is moving" instead of two identical blocks.
           const isSource = dragging?.kind === 'section' && dragging.id === sectionKey(node)
-          const gapShown = (ref: GapRef): boolean => isGap(ref, node)
+          const gapShown = (ref: GapRef): boolean => slotShown(ref, node)
+          const framed = ringShown(list)
+          /** The slot below everything in this section: its bottom edge. */
+          const tail: GapRef = { list, gap: node.children.length }
 
           return (
             <Fragment key={node.id}>
-              {order >= 0 && <InsertGap show={isGap({ list: SECTION_LIST, gap: order })} />}
+              {order >= 0 && <InsertGap show={slotShown({ list: SECTION_LIST, gap: order })} />}
+              {/*
+               * The card is the drop target, not just the head: a frame around
+               * the whole block is what makes "drop it in here" readable, and it
+               * gives the bottom of the list a place to land.
+               */}
               <div
-                className={cn('mb-0.5 transition-opacity duration-150', isSource && 'opacity-40')}
+                onDragOver={(event) => {
+                  if (node.kind === 'archived' || dragging === null) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  // A section cannot be filed into another one, so a section
+                  // drag only ever picks a slot: anywhere below the head means
+                  // "after this whole section".
+                  if (dragging.kind === 'section') {
+                    mark({ ring: null, slot: { list: SECTION_LIST, gap: order + 1 } })
+                    return
+                  }
+                  mark({
+                    ring: list,
+                    slot: dragging.kind === 'session' ? tail : null,
+                  })
+                }}
+                onDragLeave={(event) => {
+                  if (pointerLeft(event)) clearPreview()
+                }}
+                onDrop={(event) => {
+                  if (node.kind === 'archived' || dragging === null) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const dragged = readDrag(event)
+                  endDrag()
+                  if (dragged === null) return
+
+                  if (dragged.kind === 'section') {
+                    const keys = movableSections.map(sectionKey)
+                    moveSection(dragged.id, keys[order + 1] ?? null)
+                    return
+                  }
+                  if (node.kind === 'recent') return
+                  if (dragged.kind === 'project') {
+                    void setProjectSection(
+                      dragged.id,
+                      node.kind === PROJECTS_ID ? null : node.sectionId,
+                    )
+                    return
+                  }
+                  void dropSessionAt(node, dragged.id, tail)
+                }}
+                className={cn(
+                  'mb-0.5 rounded-lg bg-surface/40 p-1 transition-colors duration-150',
+                  isSource && 'opacity-40',
+                  framed && 'ring-1 ring-accent',
+                )}
               >
                 <div
                   onDragOver={(event) => {
                     if (node.kind === 'archived' || dragging === null) return
                     event.preventDefault()
                     event.stopPropagation()
-                    // A section drag reorders the sections themselves, so the
-                    // pointer half picks the slot above or below this one; any
-                    // other drag files the item inside the section.
+                    // Over the head the pointer half picks the side, so a
+                    // section can also be dropped just above another one.
                     if (dragging.kind === 'section') {
-                      markInsert({
-                        list: SECTION_LIST,
-                        gap: order + (dropEdge(event) === 'after' ? 1 : 0),
+                      mark({
+                        ring: null,
+                        slot: {
+                          list: SECTION_LIST,
+                          gap: order + (dropEdge(event) === 'after' ? 1 : 0),
+                        },
                       })
                       return
                     }
-                    markInto(list)
+                    mark({ ring: list, slot: null })
                   }}
                   onDragLeave={(event) => {
                     if (pointerLeft(event)) clearPreview()
@@ -497,12 +570,8 @@ export function SessionsPanel(): React.JSX.Element {
                     if (dragged === null) return
 
                     if (dragged.kind === 'section') {
-                      // The slot decides the side: `after` moves the section
-                      // below this one, which is how the topmost section can
-                      // finally move down.
                       const keys = movableSections.map(sectionKey)
-                      const target = keys[order + (after ? 1 : 0)] ?? null
-                      moveSection(dragged.id, target)
+                      moveSection(dragged.id, keys[order + (after ? 1 : 0)] ?? null)
                       return
                     }
                     // 最近 is the timeline: it takes no tags and no projects.
@@ -514,12 +583,9 @@ export function SessionsPanel(): React.JSX.Element {
                       )
                       return
                     }
-                    void dropSessionInSection(node, dragged.id)
+                    void dropSessionAt(node, dragged.id, tail)
                   }}
-                  className={cn(
-                    'group/head relative flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover',
-                    into && 'ring-1 ring-accent',
-                  )}
+                  className="group/head relative flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover"
                 >
                   <button
                     type="button"
@@ -600,8 +666,7 @@ export function SessionsPanel(): React.JSX.Element {
                               target={target}
                               dragging={dragging}
                               isGap={gapShown}
-                              markInto={markInto}
-                              markInsert={markInsert}
+                              mark={mark}
                               clearPreview={clearPreview}
                               beginDrag={beginDrag}
                               endDrag={endDrag}
@@ -615,9 +680,6 @@ export function SessionsPanel(): React.JSX.Element {
                               onArchive={(session) => void setSessionArchived(session.id, true)}
                               onDelete={(session) =>
                                 askDelete({ kind: 'session', id: session.id, title: session.title })
-                              }
-                              onDropSession={(sessionId) =>
-                                void setSessionProject(sessionId, child.project.id)
                               }
                               onDropProject={(projectId) =>
                                 void setProjectSection(
@@ -635,10 +697,11 @@ export function SessionsPanel(): React.JSX.Element {
                               active={child.session.id === selectedSessionId}
                               busy={busy}
                               sectionId={node.sectionId}
+                              ring={list}
                               before={before}
                               after={after}
                               dragging={dragging}
-                              markInsert={markInsert}
+                              mark={mark}
                               clearPreview={clearPreview}
                               onSelect={() => selectSession(child.session.id)}
                               onPin={() =>
@@ -677,7 +740,7 @@ export function SessionsPanel(): React.JSX.Element {
           )
         })}
 
-        <InsertGap show={isGap({ list: SECTION_LIST, gap: movableSections.length })} />
+        <InsertGap show={slotShown({ list: SECTION_LIST, gap: movableSections.length })} />
       </div>
       <Dialog
         open={confirm !== null}
@@ -723,8 +786,7 @@ function ProjectBlock({
   target,
   dragging,
   isGap,
-  markInto,
-  markInsert,
+  mark,
   clearPreview,
   beginDrag,
   endDrag,
@@ -735,7 +797,6 @@ function ProjectBlock({
   onPin,
   onArchive,
   onDelete,
-  onDropSession,
   onDropProject,
   onDropSessionAt,
 }: {
@@ -749,8 +810,7 @@ function ProjectBlock({
   target: DropTarget | null
   dragging: Dragged | null
   isGap: (ref: GapRef) => boolean
-  markInto: (list: string) => void
-  markInsert: (ref: GapRef) => void
+  mark: (next: DropTarget) => void
   clearPreview: () => void
   beginDrag: (event: React.DragEvent, payload: Dragged) => void
   endDrag: () => void
@@ -761,7 +821,6 @@ function ProjectBlock({
   onPin: (session: Session) => void
   onArchive: (session: Session) => void
   onDelete: (session: Session) => void
-  onDropSession: (sessionId: string) => void
   onDropProject: (projectId: string) => void
   onDropSessionAt: (draggedId: string, gap: GapRef) => void
 }): React.JSX.Element {
@@ -771,48 +830,54 @@ function ProjectBlock({
   const list = projectList(node.project.id)
   const isSource = dragging?.kind === 'project' && dragging.id === node.project.id
   // A session already inside this project has nowhere to go, and a project
-  // cannot be filed into itself: both would be dead drops, so no ring.
+  // cannot be filed into itself: both would be dead drops, so no frame.
   const isOwnSession =
     dragging?.kind === 'session' && node.sessions.some((session) => session.id === dragging.id)
-  // Only a session or a project can be filed here; the ring marks the project
+  // Only a session or a project can be filed here; the frame marks the project
   // itself, without also lighting up the section that contains it.
-  const isTarget =
-    target !== null && target.kind === 'into' && target.list === list && !isSource && !isOwnSession
+  const framed = target !== null && target.ring === list && !isSource && !isOwnSession
+  /** The slot below this project's last session, still inside the project. */
+  const end: GapRef = { list, gap: node.sessions.length }
 
   return (
-    <div className={cn('mb-0.5 transition-opacity duration-150', isSource && 'opacity-40')}>
-      <div
-        onDragOver={(event) => {
-          if (dragging === null) return
-          // A project cannot hold a section: drop the preview instead of
-          // leaving the last slot line stranded next to the pointer.
-          if (dragging.kind === 'section') {
-            clearPreview()
-            return
-          }
-          event.preventDefault()
-          event.stopPropagation()
-          markInto(list)
-        }}
-        onDragLeave={(event) => {
-          if (pointerLeft(event)) clearPreview()
-        }}
-        onDrop={(event) => {
-          if (dragging === null || dragging.kind === 'section') return
-          event.preventDefault()
-          event.stopPropagation()
-          const dragged = readDrag(event)
+    <div
+      onDragOver={(event) => {
+        if (dragging === null) return
+        // A project cannot hold a section: drop the preview instead of
+        // leaving the last slot line stranded next to the pointer.
+        if (dragging.kind === 'section') {
           clearPreview()
-          if (dragged === null) return
-          if (dragged.kind === 'session') onDropSession(dragged.id)
-          if (dragged.kind === 'project' && dragged.id !== node.project.id)
-            onDropProject(dragged.id)
-        }}
-        className={cn(
-          'group/head flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover',
-          isTarget && 'ring-1 ring-accent',
-        )}
-      >
+          return
+        }
+        event.preventDefault()
+        event.stopPropagation()
+        // The card is the target: the frame says "this project", the line says
+        // where inside it the session lands, including below the last row.
+        mark({
+          ring: list,
+          slot: dragging.kind === 'session' ? end : null,
+        })
+      }}
+      onDragLeave={(event) => {
+        if (pointerLeft(event)) clearPreview()
+      }}
+      onDrop={(event) => {
+        if (dragging === null || dragging.kind === 'section') return
+        event.preventDefault()
+        event.stopPropagation()
+        const dragged = readDrag(event)
+        clearPreview()
+        if (dragged === null) return
+        if (dragged.kind === 'session') onDropSessionAt(dragged.id, end)
+        if (dragged.kind === 'project' && dragged.id !== node.project.id) onDropProject(dragged.id)
+      }}
+      className={cn(
+        'mb-0.5 rounded-md bg-surface-hover/60 p-1 transition-colors duration-150',
+        isSource && 'opacity-40',
+        framed && 'ring-1 ring-accent',
+      )}
+    >
+      <div className="group/head relative flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover">
         <button
           type="button"
           aria-expanded={!isCollapsed}
@@ -870,10 +935,11 @@ function ProjectBlock({
                     active={session.id === selectedSessionId}
                     busy={busy}
                     sectionId={node.project.sectionId}
+                    ring={list}
                     before={before}
                     after={after}
                     dragging={dragging}
-                    markInsert={markInsert}
+                    mark={mark}
                     clearPreview={clearPreview}
                     onSelect={() => onSelect(session.id)}
                     onPin={() => onPin(session)}
@@ -905,10 +971,11 @@ function SessionRow({
   active,
   busy,
   sectionId,
+  ring,
   before,
   after,
   dragging,
-  markInsert,
+  mark,
   clearPreview,
   onSelect,
   onPin,
@@ -923,11 +990,13 @@ function SessionRow({
   active: boolean
   busy: boolean
   sectionId: string | null
-  /** Insertion slots on either side; the row never draws the line itself. */
+  /** Container to frame while this row is hovered; the row never draws it. */
+  ring: string
+  /** Insertion slots on either side; the row never draws the line either. */
   before: GapRef
   after: GapRef
   dragging: Dragged | null
-  markInsert: (ref: GapRef) => void
+  mark: (next: DropTarget) => void
   clearPreview: () => void
   onSelect: () => void
   onPin: () => void
@@ -961,7 +1030,7 @@ function SessionRow({
         }
         event.preventDefault()
         event.stopPropagation()
-        markInsert(slotAt(event))
+        mark({ ring, slot: slotAt(event) })
       }}
       onDragLeave={(event) => {
         if (pointerLeft(event)) clearPreview()
