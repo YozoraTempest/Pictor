@@ -2,6 +2,7 @@ import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { cn } from '../../lib/cn.js'
 import type { GroupingMode } from '../sessions/grouping.js'
 import { Section } from './Section.js'
+import { SettingRow } from './SettingRow.js'
 
 const MODES: Array<{ id: GroupingMode; label: string; description: string }> = [
   {
@@ -24,7 +25,7 @@ const MODES: Array<{ id: GroupingMode; label: string; description: string }> = [
     id: 'exclusive',
     label: '全部互斥',
     description:
-      '每个会话只属于一个分区：置顶优先，其次是项目所在的分区、会话标记的分区，最后才是项目或最近。',
+      '每个会话只属于一个分区：置顶优先，其次是会话标记的分区、项目所在的分区，最后才是项目或最近。',
   },
 ]
 
@@ -36,46 +37,52 @@ export function GeneralSection(): React.JSX.Element {
     <Section
       title="会话列表"
       description="左栏按「分区 → 项目 → 会话」三层展示，置顶会话始终排在最前面。"
+      padded={false}
     >
-      <div className="flex flex-col gap-2">
-        <p className="text-xs text-text">会话出现在哪些分区</p>
+      <SettingRow
+        stacked
+        title="会话出现在哪些分区"
+        description="点选后立即生效。"
+        control={
+          <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="会话出现在哪些分区">
+            {MODES.map((mode) => {
+              const active = mode.id === groupingMode
 
-        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="会话出现在哪些分区">
-          {MODES.map((mode) => {
-            const active = mode.id === groupingMode
-
-            return (
-              <button
-                key={mode.id}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => void setGroupingMode(mode.id)}
-                className={cn(
-                  'rounded-md border px-2.5 py-2 text-left transition-colors duration-150',
-                  active
-                    ? 'border-border-strong bg-surface-hover'
-                    : 'border-border hover:bg-surface-hover',
-                )}
-              >
-                <span className="flex items-center gap-2 text-xs text-text">
-                  <span
-                    className={cn(
-                      'grid size-3.5 shrink-0 place-items-center rounded-full border',
-                      active ? 'border-accent' : 'border-border-strong',
-                    )}
-                    aria-hidden
-                  >
-                    {active && <span className="size-1.5 rounded-full bg-accent" />}
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => void setGroupingMode(mode.id)}
+                  className={cn(
+                    'rounded-md border px-2.5 py-2 text-left transition-colors duration-150',
+                    active
+                      ? 'border-border-strong bg-surface-hover'
+                      : 'border-border hover:bg-surface-hover',
+                  )}
+                >
+                  <span className="flex items-center gap-2 text-xs text-text">
+                    <span
+                      className={cn(
+                        'grid size-3.5 shrink-0 place-items-center rounded-full border',
+                        active ? 'border-accent' : 'border-border-strong',
+                      )}
+                      aria-hidden
+                    >
+                      {active && <span className="size-1.5 rounded-full bg-accent" />}
+                    </span>
+                    {mode.label}
                   </span>
-                  {mode.label}
-                </span>
-                <span className="mt-0.5 block pl-5.5 text-2xs text-faint">{mode.description}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
+                  <span className="mt-0.5 block pl-5.5 text-2xs text-faint">
+                    {mode.description}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        }
+      />
     </Section>
   )
 }

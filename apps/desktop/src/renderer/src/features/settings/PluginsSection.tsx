@@ -1,8 +1,9 @@
-import { Blocks, ShieldAlert } from 'lucide-react'
+import { ShieldAlert } from 'lucide-react'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Spinner, Switch } from '../../components/ui/index.js'
 import { Section } from './Section.js'
+import { SettingRow } from './SettingRow.js'
 
 export function PluginsSection(): React.JSX.Element {
   const plugins = useWorkspaceStore((state) => state.plugins)
@@ -21,24 +22,22 @@ export function PluginsSection(): React.JSX.Element {
           {plugins.filter((plugin) => plugin.enabled).length} / {plugins.length} 已启用
         </Badge>
       }
+      padded={false}
     >
       {plugins.length === 0 ? (
-        <p className="text-xs text-faint">还没有安装插件。</p>
+        <SettingRow
+          title="还没有安装插件"
+          description="把插件放进插件目录后重新加载即可。"
+          control={null}
+        />
       ) : (
-        <ul className="flex flex-col gap-1">
-          {plugins.map((plugin) => (
-            <li
-              key={plugin.id}
-              className="flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-2"
-            >
-              <Blocks className="size-3.5 shrink-0 text-faint" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs text-text">{plugin.id}</p>
-                <p className="truncate text-2xs text-faint">
-                  v{plugin.version} · {plugin.source}
-                </p>
-              </div>
-              {busy ? (
+        plugins.map((plugin) => (
+          <SettingRow
+            key={plugin.id}
+            title={plugin.id}
+            description={`v${plugin.version} · ${plugin.source}`}
+            control={
+              busy ? (
                 <Spinner className="size-3.5" />
               ) : (
                 <Switch
@@ -46,14 +45,14 @@ export function PluginsSection(): React.JSX.Element {
                   checked={plugin.enabled}
                   onChange={(enabled) => void setPluginEnabled(plugin.id, enabled)}
                 />
-              )}
-            </li>
-          ))}
-        </ul>
+              )
+            }
+          />
+        ))
       )}
 
       {failures.length > 0 && (
-        <div className="flex flex-col gap-1.5 rounded-md border border-danger/30 bg-danger/5 px-3 py-2">
+        <div className="flex flex-col gap-1.5 px-4 py-3">
           <h3 className="flex items-center gap-1.5 text-2xs font-semibold tracking-wider text-danger uppercase">
             <ShieldAlert className="size-3" />
             加载失败

@@ -2,7 +2,7 @@ import { Download, Loader2, Radar } from 'lucide-react'
 import { useState } from 'react'
 
 import type { CcSwitchScanResult } from '../../../../shared/bridge.js'
-import { Badge, Banner, Button, EmptyState, Switch } from '../../components/ui/index.js'
+import { Badge, Banner, Button, Dialog, EmptyState, Switch } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { Section } from './Section.js'
 
@@ -13,6 +13,8 @@ export function CcSwitchSection(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  /** Importing overwrites the saved provider, so it asks before writing. */
+  const [confirming, setConfirming] = useState(false)
 
   async function run(action: () => Promise<void>): Promise<void> {
     setBusy(true)
@@ -102,12 +104,7 @@ export function CcSwitchSection(): React.JSX.Element {
               variant="primary"
               size="sm"
               disabled={busy || selected.length === 0}
-              onClick={() =>
-                void run(async () => {
-                  await window.pictor.importCcSwitchProvider(selected, includeKey)
-                  setNotice('已导入配置，可在上方核对并保存')
-                })
-              }
+              onClick={() => setConfirming(true)}
             >
               <Download className="size-3.5" />
               导入所选
@@ -115,6 +112,37 @@ export function CcSwitchSection(): React.JSX.Element {
           </div>
         </>
       )}
+
+      <Dialog
+        open={confirming}
+        title="覆盖当前模型配置？"
+        onClose={() => setConfirming(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirming(false)}>
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(false)
+                void run(async () => {
+                  await window.pictor.importCcSwitchProvider(selected, includeKey)
+                  setNotice('已导入配置，可在模型服务页核对并保存')
+                })
+              }}
+            >
+              导入并覆盖
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-relaxed text-muted">
+          导入会用所选 provider 的服务名称、Base URL、API 风格与模型列表覆盖当前的模型配置
+          {includeKey ? '，并用它的密钥替换本机保存的密钥' : ''}。此操作不可撤销。
+        </p>
+      </Dialog>
     </Section>
   )
 }

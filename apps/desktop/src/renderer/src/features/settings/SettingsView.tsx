@@ -3,7 +3,6 @@ import {
   Cpu,
   Download,
   FlaskConical,
-  FolderTree,
   Info,
   Search,
   Settings2,
@@ -19,7 +18,6 @@ import { CcSwitchSection } from './CcSwitchSection.js'
 import { GeneralSection } from './GeneralSection.js'
 import { ModelSection } from './ModelSection.js'
 import { PluginsSection } from './PluginsSection.js'
-import { SectionsSection } from './SectionsSection.js'
 
 interface SettingsItem {
   id: string
@@ -59,9 +57,9 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
       {
         id: 'plugins',
         render: () => <PluginsSection />,
-        label: '插件',
+        label: '拓展',
         icon: Blocks,
-        description: '已安装插件的启停与加载状态',
+        description: '插件与面板的启用状态',
         keywords: '插件 plugin',
       },
       {
@@ -77,14 +75,6 @@ const GROUPS: Array<{ title: string; items: SettingsItem[] }> = [
   {
     title: '编码',
     items: [
-      {
-        id: 'sections',
-        render: () => <SectionsSection />,
-        label: '分区',
-        icon: FolderTree,
-        description: '自定义分区的增删改',
-        keywords: '分区 section 标签',
-      },
       {
         id: 'agent',
         render: () => <AgentTestSection />,
