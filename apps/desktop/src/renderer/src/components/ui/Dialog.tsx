@@ -1,6 +1,7 @@
-import { AnimatePresence, motion } from 'motion/react'
 import { X } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 import { cn } from '../../lib/cn.js'
 import { IconButton } from './Button.js'
@@ -70,7 +71,10 @@ export function Dialog({
     }
   }, [open, onClose])
 
-  return (
+  // Portalled so a dialog opened from inside another dialog is not trapped by
+  // the parent panel: `motion` animates it with a transform, which would make
+  // the child's `fixed` overlay position against the panel and get clipped.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
@@ -117,6 +121,7 @@ export function Dialog({
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }

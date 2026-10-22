@@ -2,7 +2,7 @@ import { Blocks, Cpu, Info, Settings2, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { AboutSection } from './AboutSection.js'
-import { AgentModelActions, AgentModelPage } from './AgentModelPage.js'
+import { AgentModelPage } from './AgentModelPage.js'
 import { GeneralSection } from './GeneralSection.js'
 import { PluginsSection } from './PluginsSection.js'
 
@@ -36,12 +36,11 @@ const PAGES = [
     id: 'model',
     label: '模型',
     icon: Cpu,
-    description: 'AI 服务、模型目录与试运行',
-    keywords: '模型 api key base url 端点 导入 cc-switch 试运行 agent 服务',
+    description: 'AI 服务列表、连接配置与试运行',
+    keywords: '模型 api key base url 端点 连接 导入 cc-switch 试运行 agent 服务 provider',
     group: '智能体',
     order: 0,
     render: () => <AgentModelPage />,
-    actions: () => <AgentModelActions />,
   },
   {
     id: 'plugins',
@@ -74,7 +73,9 @@ export const SETTINGS_PAGES: ReadonlyArray<SettingsPage & { id: SettingsPageId }
  *
  * Pages own how a row looks; this list owns what it is called, so search can
  * point at one row instead of the page it happens to live on. Rows rendered from
- * data (plugins, imported providers) are not listed: they have no stable id.
+ * data (plugins, imported providers) are not listed: they have no stable id, and
+ * neither are rows that live inside a dialog — search cannot scroll to something
+ * that is not on the page. Those settings are reachable through the page keywords.
  */
 export interface SettingRowEntry {
   /** Matches the `id` the page gives its `SettingRow`, and its `data-setting-row`. */
@@ -92,55 +93,6 @@ export const SETTING_ROWS: readonly SettingRowEntry[] = [
     title: '会话出现在哪些分区',
     description: '允许重复 / 置顶互斥 / 基本互斥 / 全部互斥',
     keywords: '分组 互斥 置顶 重复 时间线 最近',
-  },
-  {
-    id: 'pi.providerName',
-    page: 'model',
-    title: '服务名称',
-    description: '只用于辨认这条配置',
-    keywords: '名称 provider 服务',
-  },
-  {
-    id: 'pi.protocol',
-    page: 'model',
-    title: 'API 风格',
-    description: 'Chat Completions 或 Responses',
-    keywords: '协议 protocol 风格 responses',
-  },
-  {
-    id: 'pi.baseUrl',
-    page: 'model',
-    title: 'Base URL',
-    description: '端点的根地址',
-    keywords: '地址 端点 url base',
-  },
-  {
-    id: 'pi.models',
-    page: 'model',
-    title: '已获取的模型',
-    description: '从端点拉取的模型列表',
-    keywords: '模型 列表 获取 models',
-  },
-  {
-    id: 'pi.modelId',
-    page: 'model',
-    title: '模型 ID',
-    description: '发送给端点的 model 字段',
-    keywords: '模型 model id',
-  },
-  {
-    id: 'pi.apiKey',
-    page: 'model',
-    title: 'API Key',
-    description: '只写入本机 auth.json',
-    keywords: '密钥 key 凭证 token',
-  },
-  {
-    id: 'agent.prompt',
-    page: 'model',
-    title: '提示词',
-    description: '试运行时发给模型的内容',
-    keywords: '提示词 prompt 试运行 测试',
   },
 ]
 

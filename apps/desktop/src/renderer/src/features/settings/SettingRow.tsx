@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 
-import { Button } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { useSettingHighlight } from './highlight.js'
 
@@ -59,38 +58,6 @@ export function SettingRow({
       >
         {control}
       </div>
-    </div>
-  )
-}
-
-/**
- * The footer of a form whose values are saved by hand.
- *
- * It only appears once there is something to save, so a page that is already in
- * sync does not advertise an action that would do nothing.
- */
-export function SettingActions({
-  dirty,
-  busy = false,
-  onSave,
-  onDiscard,
-  saveLabel = '保存',
-}: {
-  dirty: boolean
-  busy?: boolean
-  onSave: () => void
-  onDiscard: () => void
-  saveLabel?: string
-}): React.JSX.Element {
-  return (
-    <div className="flex items-center justify-end gap-2 px-4 py-2.5">
-      <span className="mr-auto text-2xs text-faint">{dirty ? '有未保存的修改' : '已保存'}</span>
-      <Button variant="ghost" size="sm" disabled={!dirty || busy} onClick={onDiscard}>
-        撤销
-      </Button>
-      <Button variant="primary" size="sm" disabled={!dirty || busy} onClick={onSave}>
-        {saveLabel}
-      </Button>
     </div>
   )
 }

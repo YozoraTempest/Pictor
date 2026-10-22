@@ -164,7 +164,7 @@ export interface PictorBridge {
   }): Promise<ModelEntry[]>
   testModelConnection(): Promise<ModelProbeResult>
   scanCcSwitch(): Promise<CcSwitchScanResult>
-  importCcSwitchProvider(id: string, includeApiKey: boolean): Promise<ModelSettings>
+  importCcSwitchProvider(id: string, includeApiKey: boolean): Promise<ProviderList>
   runAgentTest(prompt: string, workingDirectory: string): Promise<AgentTestResult>
 
   openChat(sessionId: string): Promise<OpenChatResult>

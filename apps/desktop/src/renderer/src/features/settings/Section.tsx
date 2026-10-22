@@ -28,8 +28,8 @@ export function Section({
 }): React.JSX.Element {
   return (
     <section className="flex min-h-0 flex-col gap-2.5">
-      <header className="flex items-start justify-between gap-3 px-0.5">
-        <div className="min-w-0">
+      <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-0.5">
+        <div className="min-w-0 flex-1 basis-56">
           <h2 className="text-sm font-medium text-text">{title}</h2>
           {description !== undefined && <p className="mt-0.5 text-xs text-faint">{description}</p>}
         </div>

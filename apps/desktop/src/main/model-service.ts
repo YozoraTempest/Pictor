@@ -163,7 +163,14 @@ export class ModelService {
     return { available: true, path: this.#ccSwitchPath, providers }
   }
 
-  async importCcSwitchProvider(id: string, includeApiKey: boolean): Promise<ModelSettings> {
+  /**
+   * Copies a cc-switch provider in as a new service and makes it the active one.
+   *
+   * Import used to overwrite the saved configuration, which made a single
+   * mis-click destroy a working setup. A provider list can hold both, so an
+   * import is additive: nothing already configured is touched.
+   */
+  async importCcSwitchProvider(id: string, includeApiKey: boolean): Promise<ProviderList> {
     const detail = await this.#store.readCcSwitchProvider(this.#ccSwitchPath, id)
     const protocol: ModelProtocol =
       detail.api === 'openai-responses' ? 'responses' : 'chat-completions'
@@ -173,14 +180,19 @@ export class ModelService {
       throw new Error('this cc-switch provider has no models')
     }
 
-    return this.save({
-      providerName: detail.name,
+    const list = await saveProvider(this.#store, this.#authPath, {
+      name: detail.name,
       baseUrl: detail.baseUrl,
       protocol,
       modelId,
       models: detail.models,
       ...(includeApiKey && detail.apiKey !== null ? { apiKey: detail.apiKey } : {}),
     })
+
+    const imported = list.providers[list.providers.length - 1]
+    return imported === undefined
+      ? list
+      : activateProvider(this.#store, this.#authPath, imported.id)
   }
 
   /**

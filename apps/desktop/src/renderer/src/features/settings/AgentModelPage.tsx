@@ -1,13 +1,13 @@
-import { Check, Download, Plus, Trash2 } from 'lucide-react'
+import { Check, Download, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { ProviderList, ProviderView } from '@pictor/shared'
 
 import { Badge, Button, Dialog, IconButton, Tooltip } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
-import { AgentTestSection } from './AgentTestSection.js'
-import { CcSwitchSection } from './CcSwitchSection.js'
-import { ProviderEditor } from './ProviderEditor.js'
+import { AgentTestDialog } from './AgentTestDialog.js'
+import { ImportDialog } from './ImportDialog.js'
+import { ProviderDialog } from './ProviderDialog.js'
 import { Section } from './Section.js'
 
 /** Host part of the endpoint, for the row's secondary line. */
@@ -24,58 +24,33 @@ function isUsable(provider: ProviderView): boolean {
   return provider.baseUrl.length > 0 && provider.modelId.length > 0
 }
 
-/** Page-level actions, shown beside the 模型 heading. */
-export function AgentModelActions(): React.JSX.Element {
-  const [importing, setImporting] = useState(false)
-
-  return (
-    <>
-      <Tooltip label="从 cc-switch 读取 provider 配置" side="bottom" align="end">
-        <Button variant="secondary" size="sm" onClick={() => setImporting(true)}>
-          <Download className="size-3.5" />
-          从其他工具导入
-        </Button>
-      </Tooltip>
-
-      <Dialog open={importing} title="从其他工具导入" onClose={() => setImporting(false)}>
-        <CcSwitchSection />
-      </Dialog>
-    </>
-  )
-}
-
 /**
  * Every model endpoint, and the one the runtime uses.
  *
- * The list is the page's spine: a row says what the service is and whether it is
- * the active one, and the editor below always edits the selected row. Adding is
- * the same editor with nothing selected, so there is one form to learn.
+ * The page is the list and nothing else: a service is a record, so opening one to
+ * edit it, importing one, or running a test are all dialogs. Keeping those off the
+ * page is what stops "connect", "configure" and "run" from looking like three
+ * siblings of the same list.
  */
 export function AgentModelPage(): React.JSX.Element {
   const [list, setList] = useState<ProviderList | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
-  const [removing, setRemoving] = useState<ProviderView | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** `undefined` closes the editor; `null` opens it in add mode. */
+  const [editing, setEditing] = useState<ProviderView | null | undefined>(undefined)
+  const [importing, setImporting] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [removing, setRemoving] = useState<ProviderView | null>(null)
 
   useEffect(() => {
     void window.pictor
       .listProviders()
-      .then((next) => {
-        setList(next)
-        setSelectedId(next.activeId ?? next.providers[0]?.id ?? null)
-      })
+      .then(setList)
       .catch((reason: unknown) => setError(String(reason)))
   }, [])
 
   function apply(next: ProviderList): void {
     setList(next)
-    setAdding(false)
-    setSelectedId((current) =>
-      current !== null && next.providers.some((provider) => provider.id === current)
-        ? current
-        : (next.activeId ?? next.providers[0]?.id ?? null),
-    )
+    setError(null)
   }
 
   async function activate(id: string): Promise<void> {
@@ -95,26 +70,34 @@ export function AgentModelPage(): React.JSX.Element {
   }
 
   const providers = list?.providers ?? []
-  const selected = providers.find((provider) => provider.id === selectedId) ?? null
-  const editing = adding ? null : selected
 
   return (
     <>
       <Section
         title="AI 服务"
-        description="会话使用「使用中」的那一个服务与模型对话。"
+        description="会话使用「使用中」的服务。点击一行可编辑。"
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={adding}
-            onClick={() => {
-              setAdding(true)
-            }}
-          >
-            <Plus className="size-3.5" />
-            添加服务
-          </Button>
+          <>
+            <Tooltip label="用当前服务跑一次最简调用" side="bottom" align="end">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={providers.length === 0}
+                onClick={() => setTesting(true)}
+              >
+                <FlaskConical className="size-3.5" />
+                试运行
+              </Button>
+            </Tooltip>
+            <Button variant="secondary" size="sm" onClick={() => setImporting(true)}>
+              <Download className="size-3.5" />
+              从其他工具导入
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setEditing(null)}>
+              <Plus className="size-3.5" />
+              添加服务
+            </Button>
+          </>
         }
         padded={false}
       >
@@ -127,15 +110,11 @@ export function AgentModelPage(): React.JSX.Element {
         ) : (
           providers.map((provider) => {
             const active = provider.id === list.activeId
-            const current = provider.id === selectedId && !adding
 
             return (
               <div
                 key={provider.id}
-                className={cn(
-                  'flex items-center gap-3 px-4 py-3 transition-colors duration-150',
-                  current && 'bg-surface-hover/60',
-                )}
+                className="group flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-surface-hover/40"
               >
                 <button
                   type="button"
@@ -152,10 +131,7 @@ export function AgentModelPage(): React.JSX.Element {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setAdding(false)
-                    setSelectedId(provider.id)
-                  }}
+                  onClick={() => setEditing(provider)}
                   className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
                 >
                   <span className="flex items-center gap-2">
@@ -174,17 +150,21 @@ export function AgentModelPage(): React.JSX.Element {
                   {provider.hasApiKey ? '有密钥' : '无密钥'}
                 </Badge>
 
-                {active ? (
+                {active && (
                   <Tooltip label="正在使用" side="bottom" align="end">
                     <span className="grid size-6 place-items-center text-accent">
                       <Check className="size-3.5" />
                     </span>
                   </Tooltip>
-                ) : (
-                  <Button variant="ghost" size="sm" onClick={() => void activate(provider.id)}>
-                    使用
-                  </Button>
                 )}
+
+                <IconButton
+                  label={`编辑 ${provider.name}`}
+                  className="size-6"
+                  onClick={() => setEditing(provider)}
+                >
+                  <Pencil className="size-3" />
+                </IconButton>
 
                 <IconButton
                   label={`移除 ${provider.name}`}
@@ -201,17 +181,18 @@ export function AgentModelPage(): React.JSX.Element {
         {error !== null && <p className="px-4 py-3 text-xs text-danger">{error}</p>}
       </Section>
 
-      {(selected !== null || adding) && (
-        <ProviderEditor
-          key={editing?.id ?? 'new'}
-          provider={editing}
-          active={editing !== null && editing.id === list?.activeId}
-          onSaved={apply}
-          onDismiss={() => setAdding(false)}
-        />
-      )}
+      <ProviderDialog
+        key={editing === undefined || editing === null ? 'new' : editing.id}
+        open={editing !== undefined}
+        provider={editing ?? null}
+        active={editing !== null && editing !== undefined && editing.id === list?.activeId}
+        onSaved={apply}
+        onClose={() => setEditing(undefined)}
+      />
 
-      <AgentTestSection />
+      <ImportDialog open={importing} onImported={apply} onClose={() => setImporting(false)} />
+
+      <AgentTestDialog open={testing} onClose={() => setTesting(false)} />
 
       <Dialog
         open={removing !== null}
