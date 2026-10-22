@@ -246,6 +246,36 @@ export function sectionKey(node: SectionNode): string {
   return node.kind === 'custom' ? (node.sectionId ?? '') : node.id
 }
 
+/**
+ * Rebuilds a section order after a drag.
+ *
+ * Keys drive the order, never indexes: removing the dragged section first
+ * shifts every index after it, which used to make a section dropped below its
+ * target land back where it started — the topmost section could not move down
+ * at all. `edge` says which side of the target wins.
+ *
+ * Returns `null` when the move cannot be expressed (unknown key, or a rebuild
+ * that would drop or duplicate a key) so the caller writes nothing rather than
+ * a partial order.
+ */
+export function moveSectionOrder(
+  keys: string[],
+  draggedKey: string,
+  targetKey: string | null,
+  edge: 'before' | 'after' = 'before',
+): string[] | null {
+  if (draggedKey === targetKey) return null
+  if (!keys.includes(draggedKey)) return null
+  if (targetKey !== null && !keys.includes(targetKey)) return null
+
+  const order = keys.filter((key) => key !== draggedKey)
+  if (targetKey === null) order.push(draggedKey)
+  else order.splice(order.indexOf(targetKey) + (edge === 'after' ? 1 : 0), 0, draggedKey)
+
+  const sameSet = order.length === keys.length && order.every((key) => keys.includes(key))
+  return sameSet ? order : null
+}
+
 /** Sessions reachable from a section, used by "archive this section". */
 export function collectSectionSessionIds(node: SectionNode): string[] {
   const ids = new Set<string>()

@@ -30,6 +30,7 @@ import { cn } from '../../lib/cn.js'
 import {
   collectSectionSessionIds,
   groupSessions,
+  moveSectionOrder,
   PROJECTS_ID,
   type ProjectNode,
   type SectionNode,
@@ -42,6 +43,65 @@ type Dragged =
   | { kind: 'project'; id: string; sectionId: string | null }
   | { kind: 'session'; id: string; sectionId: string | null }
 
+/**
+ * Where a drag would land: `before` / `after` insert the dragged item next to
+ * an existing row, `into` files it inside a section or a project.
+ *
+ * Keys are namespaced because section keys, project ids and session ids all
+ * live in one namespace — a bare id could match the wrong kind of row.
+ */
+type DropTarget = { key: string; edge: 'before' | 'after' | 'into' }
+
+const sectionTarget = (key: string): string => `section:${key}`
+const projectTarget = (id: string): string => `project:${id}`
+const sessionTarget = (id: string): string => `session:${id}`
+
+/** Which half of the hovered row the pointer is over. */
+function dropEdge(event: React.DragEvent<HTMLElement>): 'before' | 'after' {
+  const rect = event.currentTarget.getBoundingClientRect()
+  return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+}
+
+/**
+ * Whether the pointer actually left the element.
+ *
+ * `dragleave` also fires when the pointer moves onto a child element, which
+ * used to clear the preview and made the line flicker on every row.
+ */
+function pointerLeft(event: React.DragEvent<HTMLElement>): boolean {
+  const rect = event.currentTarget.getBoundingClientRect()
+  return (
+    event.clientX < rect.left ||
+    event.clientX > rect.right ||
+    event.clientY < rect.top ||
+    event.clientY > rect.bottom
+  )
+}
+
+/**
+ * The insertion preview shared by every row-level drop target.
+ *
+ * One pixel, absolutely positioned and pointer-transparent: showing it must
+ * never reflow the list, and it must not steal the hover from the row.
+ */
+function InsertLine({
+  edge,
+  show,
+}: {
+  edge: 'before' | 'after'
+  show: boolean
+}): React.JSX.Element {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'pointer-events-none absolute inset-x-1 h-px bg-text/70 transition-opacity duration-100',
+        edge === 'before' ? 'top-0' : 'bottom-0',
+        show ? 'opacity-100' : 'opacity-0',
+      )}
+    />
+  )
+}
 /**
  * Animated disclosure for the sidebar tree.
  *
@@ -98,8 +158,8 @@ export function SessionsPanel(): React.JSX.Element {
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null)
-  const [dragOver, setDragOver] = useState<string | null>(null)
-  const [gapIndex, setGapIndex] = useState<number | null>(null)
+  /** What the pointer is over right now; drives every drop preview. */
+  const [target, setTarget] = useState<DropTarget | null>(null)
   const [dragging, setDragging] = useState<Dragged | null>(null)
   const [confirm, setConfirm] = useState<PendingDelete | null>(null)
 
@@ -136,7 +196,7 @@ export function SessionsPanel(): React.JSX.Element {
 
   function endDrag(): void {
     setDragging(null)
-    setDragOver(null)
+    setTarget(null)
   }
 
   function readDrag(event: React.DragEvent): Dragged | null {
@@ -147,6 +207,23 @@ export function SessionsPanel(): React.JSX.Element {
     } catch {
       return dragging
     }
+  }
+
+  /**
+   * Marks `next` as the landing spot.
+   *
+   * Identical targets are ignored so hovering inside one row does not re-render
+   * the whole tree on every mousemove, which is what made the preview flicker.
+   */
+  function markTarget(next: DropTarget): void {
+    setTarget((current) =>
+      current !== null && current.key === next.key && current.edge === next.edge ? current : next,
+    )
+  }
+
+  /** Clears the preview only when `key` is still the active target. */
+  function clearTarget(key: string): void {
+    setTarget((current) => (current !== null && current.key === key ? null : current))
   }
 
   /** A session dropped on a section: pin it, tag it, or detach it from a project. */
@@ -170,22 +247,6 @@ export function SessionsPanel(): React.JSX.Element {
   const movableIndex = (node: SectionNode): number =>
     movableSections.findIndex((entry) => sectionKey(entry) === sectionKey(node))
 
-  /**
-   * Drops the dragged section at `index` among the custom sections.
-   *
-   * The gap list must round-trip exactly: if the dragged section is missing from
-   * the current snapshot, or the rebuilt order would drop or duplicate an id, the
-   * reorder is abandoned rather than written with a partial list.
-   */
-  function dropAtGap(index: number): void {
-    const dragged = dragging
-    setGapIndex(null)
-    endDrag()
-    if (dragged === null || dragged.kind !== 'section') return
-
-    moveSection(dragged.id, index)
-  }
-
   /** Session ids of a section in the order they are rendered. */
   function orderedSessionIds(node: SectionNode): string[] {
     const ids: string[] = []
@@ -199,62 +260,89 @@ export function SessionsPanel(): React.JSX.Element {
     return ids
   }
 
-  /** Re-inserts a dragged session right above `targetId` and pins the order. */
+  /**
+   * Re-inserts a dragged session next to `targetId` and pins the order.
+   *
+   * `edge` is why the preview line matters: dropping on the lower half of a row
+   * lands after it, so a session can also be dragged downwards.
+   */
   async function dropSessionOn(
     node: SectionNode,
     draggedId: string,
     targetId: string,
+    edge: 'before' | 'after',
   ): Promise<void> {
     if (draggedId === targetId) return
 
     const ids = orderedSessionIds(node).filter((id) => id !== draggedId)
     const index = ids.indexOf(targetId)
-    ids.splice(index === -1 ? ids.length : index, 0, draggedId)
+    if (index === -1) ids.push(draggedId)
+    else ids.splice(edge === 'after' ? index + 1 : index, 0, draggedId)
 
     await reorderSessions(ids)
     await setSectionSort(node.id, 'manual')
   }
-
   /**
    * Reorders every section — built-ins included — through one rule.
    *
-   * The dragged section is removed from the current key list and inserted at the
-   * target index. The rebuilt list must round-trip the same keys: a partial list
-   * used to leave a section without a position, which made it disappear from the
-   * sidebar while staying in the database.
+   * The rebuild lives in `moveSectionOrder` so it is testable; `null` means the
+   * move cannot be expressed and nothing is written. `edge` says which side of
+   * the target wins, so 置顶 moves down like any other section.
    */
-  function moveSection(draggedKey: string, targetIndex: number): void {
-    const keys = nodes.filter((node) => node.kind !== 'archived').map(sectionKey)
-    if (!keys.includes(draggedKey)) return
-
-    const order = keys.filter((key) => key !== draggedKey)
-    order.splice(Math.max(0, Math.min(targetIndex, order.length)), 0, draggedKey)
-
-    const sameSet = order.length === keys.length && order.every((key) => keys.includes(key))
-    if (!sameSet) return
-
-    void setSectionOrder(order)
+  function moveSection(
+    draggedKey: string,
+    targetKey: string | null,
+    edge: 'before' | 'after' = 'before',
+  ): void {
+    const order = moveSectionOrder(movableSections.map(sectionKey), draggedKey, targetKey, edge)
+    if (order !== null) void setSectionOrder(order)
   }
 
-  /** Sliver rendered between two sections; only while dragging a section. */
-  function gapElement(index: number): React.JSX.Element {
-    const active = gapIndex === index
+  /**
+   * Hit area between two sections: `beforeKey` is the section it sits above,
+   * and `null` is the trailing gap after the last movable section.
+   *
+   * The gaps between sections are absolutely positioned, so opening them during
+   * a drag moves nothing: the old preview added blocks to the flow and the whole
+   * list shifted the moment a section drag started.
+   */
+  function gapElement(beforeKey: string | null): React.JSX.Element {
+    const key = sectionTarget(beforeKey ?? '')
+    const active = target !== null && target.key === key && target.edge === 'before'
     return (
       <div
         role="separator"
         aria-label="插入到此位置"
         onDragOver={(event) => {
-          event.preventDefault()
-          setGapIndex(index)
-        }}
-        onDragLeave={() => setGapIndex((current) => (current === index ? null : current))}
-        onDrop={(event) => {
+          if (dragging?.kind !== 'section') return
           event.preventDefault()
           event.stopPropagation()
-          dropAtGap(index)
+          markTarget({ key, edge: 'before' })
         }}
-        className={cn('relative -my-0.5 h-2', active ? 'bg-accent/60' : 'bg-transparent')}
-      />
+        onDragLeave={(event) => {
+          if (pointerLeft(event)) clearTarget(key)
+        }}
+        onDrop={(event) => {
+          if (dragging?.kind !== 'section') return
+          event.preventDefault()
+          event.stopPropagation()
+          const dragged = readDrag(event)
+          endDrag()
+          if (dragged === null || dragged.kind !== 'section') return
+          moveSection(dragged.id, beforeKey)
+        }}
+        className={cn(
+          beforeKey === null ? 'relative h-1.5' : 'absolute inset-x-0 -top-1.5 z-10 h-3',
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute inset-x-1 top-1/2 h-px -translate-y-1/2 bg-text/70 transition-opacity duration-100',
+            active ? 'opacity-100' : 'opacity-0',
+          )}
+        />
+      </div>
     )
   }
 
@@ -343,32 +431,42 @@ export function SessionsPanel(): React.JSX.Element {
           const isCollapsed = collapsed[node.id] === true
           const Chevron = isCollapsed ? ChevronRight : ChevronDown
           const isEditing = editing !== null && editing.id === node.sectionId
-          const isTarget = dragOver === node.id
+          const key = sectionTarget(sectionKey(node))
+          const mine = target !== null && target.key === key ? target.edge : null
           const gapBefore = node.kind === 'archived' ? -1 : movableIndex(node)
+          const gapAbove = gapBefore >= 0 ? movableSections[gapBefore] : undefined
 
           return (
-            <div key={node.id} className="mb-0.5">
-              {draggingSection && gapBefore >= 0 && gapElement(gapBefore)}
+            <div key={node.id} className="relative mb-0.5">
+              {draggingSection && gapAbove !== undefined && gapElement(sectionKey(gapAbove))}
               <div
                 onDragOver={(event) => {
-                  if (node.kind === 'archived') return
+                  if (node.kind === 'archived' || dragging === null) return
                   event.preventDefault()
-                  setDragOver(node.id)
+                  event.stopPropagation()
+                  markTarget({ key, edge: dragging.kind === 'section' ? dropEdge(event) : 'into' })
                 }}
-                onDragLeave={() => setDragOver((current) => (current === node.id ? null : current))}
+                onDragLeave={(event) => {
+                  if (pointerLeft(event)) clearTarget(key)
+                }}
                 onDrop={(event) => {
-                  if (node.kind === 'archived' || node.kind === 'recent') return
+                  if (node.kind === 'archived' || dragging === null) return
                   event.preventDefault()
+                  event.stopPropagation()
+                  const edge = dragging.kind === 'section' ? dropEdge(event) : 'into'
                   const dragged = readDrag(event)
                   endDrag()
                   if (dragged === null) return
 
                   if (dragged.kind === 'section') {
-                    // Dropping a section on another one reorders them: the dragged
-                    // section takes the target's slot. Built-ins move the same way.
-                    moveSection(dragged.id, movableIndex(node))
+                    // Dropping a section on another one reorders them: the
+                    // pointer half decides whether it lands before or after the
+                    // target, so the topmost section can also move down.
+                    moveSection(dragged.id, sectionKey(node), edge === 'after' ? 'after' : 'before')
                     return
                   }
+                  // 最近 is the timeline: it takes no tags and no projects.
+                  if (node.kind === 'recent') return
                   if (dragged.kind === 'project') {
                     void setProjectSection(
                       dragged.id,
@@ -379,8 +477,8 @@ export function SessionsPanel(): React.JSX.Element {
                   void dropSessionInSection(node, dragged.id)
                 }}
                 className={cn(
-                  'group/head flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover',
-                  isTarget && 'ring-1 ring-accent/50',
+                  'group/head relative flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover',
+                  mine === 'into' && 'ring-1 ring-accent',
                 )}
               >
                 <button
@@ -436,6 +534,7 @@ export function SessionsPanel(): React.JSX.Element {
                     </IconButton>
                   </div>
                 )}
+                <InsertLine edge="after" show={mine === 'after'} />
               </div>
 
               <Collapse open={!isCollapsed}>
@@ -449,8 +548,10 @@ export function SessionsPanel(): React.JSX.Element {
                         onToggle={toggle}
                         selectedSessionId={selectedSessionId}
                         busy={busy}
-                        dragOver={dragOver}
-                        setDragOver={setDragOver}
+                        target={target}
+                        dragging={dragging}
+                        markTarget={markTarget}
+                        clearTarget={clearTarget}
                         beginDrag={beginDrag}
                         endDrag={endDrag}
                         readDrag={readDrag}
@@ -471,8 +572,8 @@ export function SessionsPanel(): React.JSX.Element {
                             node.kind === PROJECTS_ID ? null : node.sectionId,
                           )
                         }
-                        onReorderSession={(draggedId, targetId) =>
-                          void dropSessionOn(node, draggedId, targetId)
+                        onReorderSession={(draggedId, targetId, edge) =>
+                          void dropSessionOn(node, draggedId, targetId, edge)
                         }
                       />
                     ) : (
@@ -482,6 +583,10 @@ export function SessionsPanel(): React.JSX.Element {
                         active={child.session.id === selectedSessionId}
                         busy={busy}
                         sectionId={node.sectionId}
+                        target={target}
+                        dragging={dragging}
+                        markTarget={markTarget}
+                        clearTarget={clearTarget}
                         onSelect={() => selectSession(child.session.id)}
                         onPin={() => void setSessionPinned(child.session.id, !child.session.pinned)}
                         onArchive={() => void setSessionArchived(child.session.id, true)}
@@ -501,8 +606,8 @@ export function SessionsPanel(): React.JSX.Element {
                         }
                         onDragEnd={endDrag}
                         readDrag={readDrag}
-                        onDropSession={(draggedId) =>
-                          void dropSessionOn(node, draggedId, child.session.id)
+                        onDropSession={(draggedId, edge) =>
+                          void dropSessionOn(node, draggedId, child.session.id, edge)
                         }
                       />
                     ),
@@ -513,7 +618,7 @@ export function SessionsPanel(): React.JSX.Element {
           )
         })}
 
-        {draggingSection && <div className="px-1">{gapElement(movableSections.length)}</div>}
+        {draggingSection && gapElement(null)}
       </div>
       <Dialog
         open={confirm !== null}
@@ -555,8 +660,10 @@ function ProjectBlock({
   onToggle,
   selectedSessionId,
   busy,
-  dragOver,
-  setDragOver,
+  target,
+  dragging,
+  markTarget,
+  clearTarget,
   beginDrag,
   endDrag,
   readDrag,
@@ -575,8 +682,10 @@ function ProjectBlock({
   onToggle: (key: string) => void
   selectedSessionId: string | null
   busy: boolean
-  dragOver: string | null
-  setDragOver: (value: string | null) => void
+  target: DropTarget | null
+  dragging: Dragged | null
+  markTarget: (next: DropTarget) => void
+  clearTarget: (key: string) => void
   beginDrag: (event: React.DragEvent, payload: Dragged) => void
   endDrag: () => void
   readDrag: (event: React.DragEvent) => Dragged | null
@@ -588,26 +697,34 @@ function ProjectBlock({
   onDelete: (session: Session) => void
   onDropSession: (sessionId: string) => void
   onDropProject: (projectId: string) => void
-  onReorderSession: (draggedId: string, targetId: string) => void
+  onReorderSession: (draggedId: string, targetId: string, edge: 'before' | 'after') => void
 }): React.JSX.Element {
   const key = `project-${node.project.id}`
   const isCollapsed = collapsed[key] === true
   const Chevron = isCollapsed ? ChevronRight : ChevronDown
-  const isTarget = dragOver === key
+  const dropKey = projectTarget(node.project.id)
+  // Only a session or a project can be filed here; the ring marks the project
+  // itself, without also lighting up the section that contains it.
+  const isTarget = target !== null && target.key === dropKey
 
   return (
     <div className="mb-0.5">
       <div
         onDragOver={(event) => {
-          if (readDrag(event)?.kind === 'section') return
+          if (dragging === null || dragging.kind === 'section') return
           event.preventDefault()
-          setDragOver(key)
+          event.stopPropagation()
+          markTarget({ key: dropKey, edge: 'into' })
         }}
-        onDragLeave={() => setDragOver(null)}
+        onDragLeave={(event) => {
+          if (pointerLeft(event)) clearTarget(dropKey)
+        }}
         onDrop={(event) => {
+          if (dragging === null || dragging.kind === 'section') return
           event.preventDefault()
+          event.stopPropagation()
           const dragged = readDrag(event)
-          endDrag()
+          clearTarget(dropKey)
           if (dragged === null) return
           if (dragged.kind === 'session') onDropSession(dragged.id)
           if (dragged.kind === 'project' && dragged.id !== node.project.id)
@@ -615,7 +732,7 @@ function ProjectBlock({
         }}
         className={cn(
           'group/head flex items-center gap-0.5 rounded-md pr-0.5 transition-colors duration-150 hover:bg-surface-hover',
-          isTarget && 'ring-1 ring-accent/50',
+          isTarget && 'ring-1 ring-accent',
         )}
       >
         <button
@@ -668,6 +785,10 @@ function ProjectBlock({
                 active={session.id === selectedSessionId}
                 busy={busy}
                 sectionId={node.project.sectionId}
+                target={target}
+                dragging={dragging}
+                markTarget={markTarget}
+                clearTarget={clearTarget}
                 onSelect={() => onSelect(session.id)}
                 onPin={() => onPin(session)}
                 onArchive={() => onArchive(session)}
@@ -681,7 +802,7 @@ function ProjectBlock({
                 }
                 onDragEnd={endDrag}
                 readDrag={readDrag}
-                onDropSession={(draggedId) => onReorderSession(draggedId, session.id)}
+                onDropSession={(draggedId, edge) => onReorderSession(draggedId, session.id, edge)}
               />
             ))
           )}
@@ -696,6 +817,10 @@ function SessionRow({
   active,
   busy,
   sectionId,
+  target,
+  dragging,
+  markTarget,
+  clearTarget,
   onSelect,
   onPin,
   onArchive,
@@ -709,6 +834,10 @@ function SessionRow({
   active: boolean
   busy: boolean
   sectionId: string | null
+  target: DropTarget | null
+  dragging: Dragged | null
+  markTarget: (next: DropTarget) => void
+  clearTarget: (key: string) => void
   onSelect: () => void
   onPin: () => void
   onArchive: () => void
@@ -716,28 +845,39 @@ function SessionRow({
   onDragStart: (event: React.DragEvent) => void
   onDragEnd: () => void
   readDrag: (event: React.DragEvent) => Dragged | null
-  onDropSession: (draggedId: string) => void
+  onDropSession: (draggedId: string, edge: 'before' | 'after') => void
 }): React.JSX.Element {
-  const [over, setOver] = useState(false)
   const running = useChatStore((state) => state.chats[session.id]?.running === true)
+  const key = sessionTarget(session.id)
+  const line = target !== null && target.key === key && target.edge !== 'into' ? target.edge : null
 
   return (
     <div
-      className={cn('group/row relative rounded-md', over && 'ring-1 ring-accent/50')}
+      className="group/row relative rounded-md"
       onDragOver={(event) => {
-        if (readDrag(event)?.kind === 'section') return
-        event.preventDefault()
-        setOver(true)
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
+        if (dragging === null || dragging.kind !== 'session') return
+        if (dragging.id === session.id) {
+          clearTarget(key)
+          return
+        }
         event.preventDefault()
         event.stopPropagation()
+        markTarget({ key, edge: dropEdge(event) })
+      }}
+      onDragLeave={(event) => {
+        if (pointerLeft(event)) clearTarget(key)
+      }}
+      onDrop={(event) => {
+        if (dragging === null || dragging.kind !== 'session') return
+        event.preventDefault()
+        event.stopPropagation()
+        const edge = dropEdge(event)
         const dragged = readDrag(event)
-        setOver(false)
-        if (dragged !== null && dragged.kind === 'session') onDropSession(dragged.id)
+        clearTarget(key)
+        if (dragged !== null && dragged.kind === 'session') onDropSession(dragged.id, edge)
       }}
     >
+      {line !== null && <InsertLine edge={line} show />}
       <button
         type="button"
         onClick={onSelect}

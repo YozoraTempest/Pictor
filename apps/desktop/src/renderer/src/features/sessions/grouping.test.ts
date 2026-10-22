@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Project, Section, Session } from '@pictor/shared'
 
-import { collectSectionSessionIds, groupSessions } from './grouping.js'
+import { collectSectionSessionIds, groupSessions, moveSectionOrder } from './grouping.js'
 
 const NOW = 1_700_000_000_000
 const HOUR = 3_600_000
@@ -72,6 +72,40 @@ describe('section order', () => {
 
     // Unlisted built-ins keep their default order ahead of custom sections.
     expect(nodes.map((node) => node.title)).toEqual(['最近', '置顶', '项目', 'Design'])
+  })
+})
+
+describe('moveSectionOrder', () => {
+  const keys = ['pinned', 'projects', 'recent', 'sec1']
+
+  it('moves the first section down when dropped on the lower half', () => {
+    // The regression: dropping 置顶 on 项目 used to insert it before 项目, i.e.
+    // back at index 0, so the topmost section looked undraggable.
+    expect(moveSectionOrder(keys, 'pinned', 'projects', 'after')).toEqual([
+      'projects',
+      'pinned',
+      'recent',
+      'sec1',
+    ])
+  })
+
+  it('moves the last section up when dropped on the upper half', () => {
+    expect(moveSectionOrder(keys, 'sec1', 'pinned', 'before')).toEqual([
+      'sec1',
+      'pinned',
+      'projects',
+      'recent',
+    ])
+  })
+
+  it('appends when the target is null', () => {
+    expect(moveSectionOrder(keys, 'pinned', null)).toEqual(['projects', 'recent', 'sec1', 'pinned'])
+  })
+
+  it('refuses moves it cannot express', () => {
+    expect(moveSectionOrder(keys, 'pinned', 'pinned')).toBeNull()
+    expect(moveSectionOrder(keys, 'missing', 'projects')).toBeNull()
+    expect(moveSectionOrder(keys, 'pinned', 'missing')).toBeNull()
   })
 })
 

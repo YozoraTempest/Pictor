@@ -95,7 +95,9 @@ function readSorts(settings: Record<string, unknown>): Record<string, SectionSor
   const sorts: Record<string, SectionSort> = {}
   for (const [key, value] of Object.entries(settings)) {
     if (!key.startsWith('sessions.sort.')) continue
-    if (value !== 'created' && value !== 'updated') continue
+    // `manual` must survive a reload: dragging a session inside a section
+    // stores the new order in `position` and switches the section to manual.
+    if (value !== 'created' && value !== 'updated' && value !== 'manual') continue
     sorts[key.slice('sessions.sort.'.length)] = value
   }
   return sorts
