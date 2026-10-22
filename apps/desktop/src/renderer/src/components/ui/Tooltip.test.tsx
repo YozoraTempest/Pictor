@@ -32,15 +32,39 @@ describe('Tooltip', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'toggle' }))
   })
 
-  it('aligns the bubble to the end edge instead of the centre', () => {
+  it('renders the bubble outside the anchor, so a clipping container cannot cut it', () => {
     render(
-      <Tooltip label="右侧控件" align="end">
-        <button type="button">x</button>
+      <div style={{ overflow: 'hidden' }}>
+        <Tooltip label="右侧控件" align="end">
+          <button type="button">x</button>
+        </Tooltip>
+      </div>,
+    )
+
+    const bubble = screen.getByRole('tooltip')
+
+    // The bubble used to be an absolutely positioned child, which is what made it
+    // disappear behind cards and dialogs.
+    expect(bubble.parentElement).toBe(document.body)
+    expect(bubble.closest('div')).toBeNull()
+  })
+
+  it('shows the bubble while the trigger is hovered', async () => {
+    render(
+      <Tooltip label="提示">
+        <button type="button">toggle</button>
       </Tooltip>,
     )
 
     const bubble = screen.getByRole('tooltip')
-    expect(bubble.className).toContain('right-0')
-    expect(bubble.className).not.toContain('left-1/2')
+    const trigger = screen.getByRole('button', { name: 'toggle' })
+
+    expect(bubble.className).toContain('opacity-0')
+
+    await userEvent.hover(trigger)
+    expect(bubble.className).toContain('opacity-100')
+
+    await userEvent.unhover(trigger)
+    expect(bubble.className).toContain('opacity-0')
   })
 })

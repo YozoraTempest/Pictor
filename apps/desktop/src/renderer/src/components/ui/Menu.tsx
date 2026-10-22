@@ -37,6 +37,10 @@ const ITEM_CLASS =
   'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors duration-150'
 
 const MENU_WIDTH = 192
+/** `w-60`; the submenu is wider than the panel, so it needs its own estimate. */
+const SUBMENU_WIDTH = 240
+/** Gap between a row and the submenu beside it. */
+const SUBMENU_GAP = 2
 /** Gap between the trigger and the menu, and the least distance to the viewport. */
 const OFFSET = 4
 const VIEWPORT_MARGIN = 8
@@ -62,6 +66,8 @@ export function Menu({
   const [open, setOpen] = useState(false)
   /** Key of the row whose submenu is showing. */
   const [submenu, setSubmenu] = useState<string | null>(null)
+  /** Viewport coordinates of the open submenu, clamped to the window. */
+  const [submenuPosition, setSubmenuPosition] = useState<{ top: number; left: number } | null>(null)
   /** Viewport coordinates once the popover has been measured. */
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -72,6 +78,27 @@ export function Menu({
     setSubmenu(null)
     setPosition(null)
   }, [])
+
+  /**
+   * Opens a row's submenu beside it, clamped to the window.
+   *
+   * The submenu is wider than the panel and sits next to it, so a panel anchored
+   * near an edge — the `···` menu in the title bar is exactly that — used to push
+   * the second level off screen. Measuring the row and clamping the result keeps
+   * it visible whatever the window is doing: on a wide window it opens to the
+   * right, and near the edge it slides back inside.
+   */
+  function openSubmenu(key: string, row: HTMLElement): void {
+    const rect = row.getBoundingClientRect()
+    const width = Math.min(SUBMENU_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2)
+    const left = Math.min(
+      Math.max(VIEWPORT_MARGIN, rect.right + SUBMENU_GAP),
+      Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
+    )
+
+    setSubmenuPosition({ top: rect.top, left })
+    setSubmenu(key)
+  }
 
   const place = useCallback((): void => {
     const trigger = triggerRef.current
@@ -171,8 +198,8 @@ export function Menu({
       <div
         key={key}
         className="relative"
-        onPointerEnter={() => {
-          setSubmenu(key)
+        onPointerEnter={(event) => {
+          openSubmenu(key, event.currentTarget)
         }}
       >
         <button
@@ -180,10 +207,10 @@ export function Menu({
           role="menuitem"
           aria-haspopup="menu"
           aria-expanded={expanded}
-          onClick={() => {
+          onClick={(event) => {
             // Hover already opened it on pointer devices, so a click must not
             // toggle it shut again.
-            setSubmenu(key)
+            openSubmenu(key, event.currentTarget)
           }}
           className={cn(
             ITEM_CLASS,
@@ -200,7 +227,12 @@ export function Menu({
           <div
             role="menu"
             aria-label={entry.label}
-            className="absolute top-0 left-full z-50 ml-0.5 flex w-60 flex-col gap-0.5 rounded-lg border border-border bg-surface-raised p-1 shadow-popover"
+            style={
+              submenuPosition === null
+                ? undefined
+                : { top: submenuPosition.top, left: submenuPosition.left }
+            }
+            className="fixed z-50 flex max-h-[70vh] w-60 max-w-[calc(100vw-1rem)] flex-col gap-0.5 overflow-y-auto rounded-lg border border-border bg-surface-raised p-1 shadow-popover"
           >
             {entry.children.map((child, index) =>
               child === 'separator' ? (
