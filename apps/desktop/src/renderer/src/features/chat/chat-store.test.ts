@@ -2,9 +2,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { useChatStore } from './chat-store.js'
-
 function reset(): void {
-  useChatStore.setState({
+  const slice = {
     sessionId: 's1',
     path: '/tmp/session.jsonl',
     messages: [],
@@ -12,9 +11,14 @@ function reset(): void {
     hasMore: false,
     loading: false,
     running: false,
+    runStartedAt: null,
+    runFinishedAt: null,
+    phase: 'idle' as const,
+    currentTool: null,
     error: null,
-    requestId: 0,
-  })
+  }
+
+  useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })
 }
 
 describe('chat-store handleEvent', () => {
@@ -27,7 +31,7 @@ describe('chat-store handleEvent', () => {
     handleEvent({ type: 'message.delta', sessionId: 's1', runId: 'run-1', text: '你' })
     handleEvent({ type: 'message.delta', sessionId: 's1', runId: 'run-1', text: '好' })
 
-    const messages = useChatStore.getState().messages
+    const messages = useChatStore.getState().current.messages
     expect(messages).toHaveLength(1)
     expect(messages[0]).toMatchObject({ role: 'assistant', text: '你好' })
   })
@@ -49,7 +53,7 @@ describe('chat-store handleEvent', () => {
     handleEvent({ type: 'message.delta', sessionId: 's1', runId: 'run-1', text: '目录里' })
     handleEvent({ type: 'message.delta', sessionId: 's1', runId: 'run-1', text: '有 a' })
 
-    const messages = useChatStore.getState().messages
+    const messages = useChatStore.getState().current.messages
     const ids = messages.map((message) => message.id)
 
     // Duplicate keys made React stop updating the transcript until it remounted.
@@ -66,10 +70,10 @@ describe('chat-store handleEvent', () => {
     handleEvent({ type: 'tool.started', sessionId: 's1', runId: 'run-1', tool: 'bash', input: {} })
     handleEvent({ type: 'run.finished', sessionId: 's1', runId: 'run-1', reason: 'stop' })
 
-    const [row] = useChatStore.getState().messages
+    const [row] = useChatStore.getState().current.messages
     expect(row).toMatchObject({ role: 'tool', toolName: 'bash', isError: true })
     expect(row?.text).toBe('运行结束时没有拿到结果')
-    expect(useChatStore.getState().running).toBe(false)
+    expect(useChatStore.getState().current.running).toBe(false)
   })
 
   it('ignores events that belong to another session', () => {
@@ -77,6 +81,6 @@ describe('chat-store handleEvent', () => {
 
     handleEvent({ type: 'message.delta', sessionId: 'other', runId: 'run-1', text: '不该出现' })
 
-    expect(useChatStore.getState().messages).toEqual([])
+    expect(useChatStore.getState().current.messages).toEqual([])
   })
 })

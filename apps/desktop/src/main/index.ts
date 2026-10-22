@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@pictor/application'
-import { ChatService } from '@pictor/chat'
+import { ChatService, loadHistoryPage } from '@pictor/chat'
 import { resolveHostCoreBinary, startHostCore } from '@pictor/host-client'
 import {
   PluginHost,
@@ -77,7 +77,9 @@ interface Workspace {
   appHost: ApplicationHost
   pluginHost: PluginHost
   model: ModelService
-  chat: ChatService
+  /** One runtime per open conversation, so several can run at the same time. */
+  chatFor: (sessionId: string) => ChatService
+  closeChat: (sessionId: string) => Promise<void>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
   panels: PanelContribution[]
   /** Presentation for agent tools; the renderer applies them to its presenters. */
@@ -228,31 +230,58 @@ async function startWorkspace(): Promise<Workspace | null> {
 
   let disposed = false
   const model = new ModelService({ store: running.client, userData })
-  const chat = new ChatService({
-    onEvent: (event) => {
-      mainWindow?.webContents.send('pictor:chat.event', event)
-    },
-  })
 
-  if (toolGuards.length > 0) {
-    chat.setToolInterceptor(async ({ tool, args }) => {
-      const verdict = await evaluateToolGuards(toolGuards, { tool, args })
-      if (!verdict.blocked) return undefined
-      console.warn(`[tool-guard] blocked ${tool}: ${verdict.reason ?? 'no reason given'}`)
-      // The marker travels into Pi's JSONL, which is the only way a reloaded
-      // session can still tell "a guard refused this" from "the command failed".
-      return {
-        block: true,
-        reason: `${BLOCKED_REASON_PREFIX}${verdict.reason ?? 'blocked by a tool guard'}`,
-      }
+  /** Shared by every runtime: the policy is the same whoever is running. */
+  const guardInterceptor = async ({
+    tool,
+    args,
+  }: {
+    tool: string
+    args: unknown
+  }): Promise<{ block: true; reason: string } | undefined> => {
+    const verdict = await evaluateToolGuards(toolGuards, { tool, args })
+    if (!verdict.blocked) return undefined
+    console.warn(`[tool-guard] blocked ${tool}: ${verdict.reason ?? 'no reason given'}`)
+    // The marker travels into Pi's JSONL, which is the only way a reloaded
+    // session can still tell "a guard refused this" from "the command failed".
+    return {
+      block: true,
+      reason: `${BLOCKED_REASON_PREFIX}${verdict.reason ?? 'blocked by a tool guard'}`,
+    }
+  }
+
+  /** Open conversations, keyed by Pictor session id. */
+  const chats = new Map<string, ChatService>()
+  const createChat = (): ChatService =>
+    new ChatService({
+      onEvent: (event) => {
+        mainWindow?.webContents.send('pictor:chat.event', event)
+      },
     })
+
+  const chatFor = (sessionId: string): ChatService => {
+    const existing = chats.get(sessionId)
+    if (existing !== undefined) return existing
+
+    const chat = createChat()
+    if (toolGuards.length > 0) chat.setToolInterceptor(guardInterceptor)
+    chats.set(sessionId, chat)
+    return chat
+  }
+
+  const closeChat = async (sessionId: string): Promise<void> => {
+    const chat = chats.get(sessionId)
+    if (chat === undefined) return
+    chats.delete(sessionId)
+    await chat.close()
   }
 
   return {
     appHost,
     pluginHost,
     model,
-    chat,
+    chatFor,
+    closeChat,
     isDisposed: () => disposed,
     client: running.client,
     hostCore,
@@ -262,7 +291,8 @@ async function startWorkspace(): Promise<Workspace | null> {
     dispose: async () => {
       if (disposed) return
       disposed = true
-      await chat.close()
+      await Promise.all([...chats.values()].map((chat) => chat.close()))
+      chats.clear()
       await pluginHost.stop()
       running.dispose()
       lock.release()
@@ -648,7 +678,7 @@ function registerIpc(workspace: Workspace): void {
     writeModelsJson(workspace.model.modelsPath, settings)
 
     const sessionDir = join(app.getPath('userData'), 'pi', 'sessions', project?.id ?? 'unfiled')
-    const opened = await workspace.chat.open({
+    const opened = await workspace.chatFor(sessionId).open({
       sessionId,
       cwd: project?.path ?? app.getPath('home'),
       sessionDir,
@@ -663,31 +693,36 @@ function registerIpc(workspace: Workspace): void {
       await workspace.client.bindPiSession(sessionId, opened.path)
     }
 
-    return { path: opened.path, history: await workspace.chat.history(opened.path, 50, 0) }
+    return {
+      path: opened.path,
+      history: await workspace.chatFor(sessionId).history(opened.path, 50, 0),
+    }
   })
 
-  ipcMain.handle('pictor:chat.send', async (_event, prompt: unknown) => {
+  ipcMain.handle('pictor:chat.send', async (_event, sessionId: unknown, prompt: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       throw new Error('prompt must be a non-empty string')
     }
-    await workspace.chat.send(prompt)
+    await workspace.chatFor(sessionId).send(prompt)
   })
 
-  ipcMain.handle('pictor:chat.stop', async () => {
-    await workspace.chat.stop()
+  ipcMain.handle('pictor:chat.stop', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    await workspace.chatFor(sessionId).stop()
   })
 
-  ipcMain.handle('pictor:chat.close', async () => {
-    await workspace.chat.close()
+  ipcMain.handle('pictor:chat.close', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    await workspace.closeChat(sessionId)
   })
-
   ipcMain.handle(
     'pictor:chat.history',
     async (_event, path: unknown, limit: unknown, offset: unknown) => {
       if (typeof path !== 'string') throw new Error('path must be a string')
       const size = typeof limit === 'number' && limit > 0 ? Math.min(limit, 200) : 50
       const from = typeof offset === 'number' && offset >= 0 ? offset : 0
-      return workspace.chat.history(path, size, from)
+      return loadHistoryPage(path, size, from)
     },
   )
 

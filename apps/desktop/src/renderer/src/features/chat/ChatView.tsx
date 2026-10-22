@@ -28,16 +28,16 @@ export function ChatView(): React.JSX.Element {
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const clearDraft = useWorkspaceStore((state) => state.clearDraft)
   const setDraftProject = useWorkspaceStore((state) => state.setDraftProject)
-  const messages = useChatStore((state) => state.messages)
-  const running = useChatStore((state) => state.running)
-  const phase = useChatStore((state) => state.phase)
-  const currentTool = useChatStore((state) => state.currentTool)
-  const runStartedAt = useChatStore((state) => state.runStartedAt)
-  const runFinishedAt = useChatStore((state) => state.runFinishedAt)
-  const loading = useChatStore((state) => state.loading)
-  const hasMore = useChatStore((state) => state.hasMore)
+  const messages = useChatStore((state) => state.current.messages)
+  const running = useChatStore((state) => state.current.running)
+  const phase = useChatStore((state) => state.current.phase)
+  const currentTool = useChatStore((state) => state.current.currentTool)
+  const runStartedAt = useChatStore((state) => state.current.runStartedAt)
+  const runFinishedAt = useChatStore((state) => state.current.runFinishedAt)
+  const loading = useChatStore((state) => state.current.loading)
+  const hasMore = useChatStore((state) => state.current.hasMore)
 
-  const error = useChatStore((state) => state.error)
+  const error = useChatStore((state) => state.current.error)
   const send = useChatStore((state) => state.send)
   const stop = useChatStore((state) => state.stop)
   const loadOlder = useChatStore((state) => state.loadOlder)
@@ -193,7 +193,7 @@ export function ChatView(): React.JSX.Element {
     const sessionId = useWorkspaceStore.getState().selectedSessionId
     if (sessionId === null) return
 
-    await window.pictor.closeChat()
+    await useChatStore.getState().close(sessionId)
     await useChatStore.getState().open(sessionId)
   }
 

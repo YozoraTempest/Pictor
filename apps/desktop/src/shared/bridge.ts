@@ -161,9 +161,9 @@ export interface PictorBridge {
   runAgentTest(prompt: string, workingDirectory: string): Promise<AgentTestResult>
 
   openChat(sessionId: string): Promise<OpenChatResult>
-  sendChat(prompt: string): Promise<void>
-  stopChat(): Promise<void>
-  closeChat(): Promise<void>
+  sendChat(sessionId: string, prompt: string): Promise<void>
+  stopChat(sessionId: string): Promise<void>
+  closeChat(sessionId: string): Promise<void>
   chatHistory(path: string, limit: number, offset: number): Promise<ChatHistoryPage>
   onChatEvent(listener: (event: ChatEvent) => void): () => void
 }

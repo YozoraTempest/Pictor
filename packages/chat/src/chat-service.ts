@@ -12,10 +12,11 @@ export interface ChatServiceOptions {
 }
 
 /**
- * Owns the single active Pi session for the application.
+ * Owns one Pi session per instance.
  *
- * Pi keeps exactly one session per runtime process, so switching Pictor sessions
- * disposes the previous agent before opening the next one.
+ * Several conversations can therefore run at the same time: the main process
+ * keeps a registry of these, one per Pictor session, instead of swapping a single
+ * agent in and out.
  */
 export class ChatService {
   readonly #onEvent: ChatServiceOptions['onEvent']
@@ -68,6 +69,11 @@ export class ChatService {
   }
 
   async open(input: OpenChatInput): Promise<OpenedChat> {
+    // Re-opening the same session replaces its agent; a different one is another
+    // instance's business, so nothing is torn down here.
+    if (this.#active !== null && this.#active.sessionId !== input.sessionId) {
+      throw new Error('this service already owns another session')
+    }
     await this.close()
 
     const agent = await this.#openAgent(input, (event) => this.#forward(input.sessionId, event))

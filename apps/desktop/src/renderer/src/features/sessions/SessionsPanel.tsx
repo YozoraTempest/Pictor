@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderGit2,
+  Loader2,
   MessageSquare,
   MoreHorizontal,
   Pencil,
@@ -16,6 +17,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import type { Project, Session } from '@pictor/shared'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
+import { useChatStore } from '../chat/chat-store.js'
 import {
   Button,
   Dialog,
@@ -702,6 +704,7 @@ function SessionRow({
   onDropSession: (draggedId: string) => void
 }): React.JSX.Element {
   const [over, setOver] = useState(false)
+  const running = useChatStore((state) => state.chats[session.id]?.running === true)
 
   return (
     <div
@@ -735,7 +738,13 @@ function SessionRow({
             : 'text-muted hover:bg-surface-hover hover:text-text',
         )}
       >
-        <MessageSquare className={cn('size-3.5 shrink-0', active ? 'text-accent' : 'text-faint')} />
+        {running ? (
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-accent" aria-label="正在运行" />
+        ) : (
+          <MessageSquare
+            className={cn('size-3.5 shrink-0', active ? 'text-accent' : 'text-faint')}
+          />
+        )}
         <span className="truncate">{session.title}</span>
       </button>
 

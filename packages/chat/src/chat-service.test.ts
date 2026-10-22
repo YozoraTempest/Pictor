@@ -184,7 +184,7 @@ describe('ChatService', () => {
     await expect(service.send('hello')).rejects.toThrow(/no chat session/)
   })
 
-  it('disposes the previous agent when switching sessions', async () => {
+  it('refuses to take over a session another instance owns', async () => {
     const first = fakeAgent('/tmp/a.jsonl', () => undefined)
     const second = fakeAgent('/tmp/b.jsonl', () => undefined)
     const agents = [first, second]
@@ -206,8 +206,11 @@ describe('ChatService', () => {
     }
 
     await service.open(input)
-    await service.open({ ...input, sessionId: 's2' })
 
-    expect(first.dispose).toHaveBeenCalled()
+    // One runtime owns one conversation: a second session must go to its own
+    // service, otherwise the two runs would fight over the same agent.
+    await expect(service.open({ ...input, sessionId: 's2' })).rejects.toThrow(/already owns/)
+    expect(first.dispose).not.toHaveBeenCalled()
+    expect(service.activeSessionId).toBe('s1')
   })
 })
