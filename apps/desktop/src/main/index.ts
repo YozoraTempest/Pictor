@@ -28,6 +28,7 @@ import {
 } from '@pictor/shared'
 
 import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
+import { HarnessService, type HarnessStatus } from './harness-service.js'
 import { ModelService } from './model-service.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -77,6 +78,8 @@ interface Workspace {
   appHost: ApplicationHost
   pluginHost: PluginHost
   model: ModelService
+  /** The agent runtime process, owned by the main process and shared by sessions. */
+  harness: HarnessService
   /** One runtime per open conversation, so several can run at the same time. */
   chatFor: (sessionId: string) => ChatService
   closeChat: (sessionId: string) => Promise<void>
@@ -230,6 +233,7 @@ async function startWorkspace(): Promise<Workspace | null> {
 
   let disposed = false
   const model = new ModelService({ store: running.client, userData })
+  const harness = new HarnessService({ model, userData })
 
   /** Shared by every runtime: the policy is the same whoever is running. */
   const guardInterceptor = async ({
@@ -280,6 +284,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     appHost,
     pluginHost,
     model,
+    harness,
     chatFor,
     closeChat,
     isDisposed: () => disposed,
@@ -744,6 +749,19 @@ function registerIpc(workspace: Workspace): void {
       return loadHistoryPage(path, size, from)
     },
   )
+
+  ipcMain.handle('pictor:harness.status', async (): Promise<HarnessStatus> => {
+    return workspace.harness.status()
+  })
+
+  ipcMain.handle('pictor:harness.start', async (_event, cwd: unknown): Promise<HarnessStatus> => {
+    const directory = typeof cwd === 'string' && cwd.trim().length > 0 ? cwd : app.getPath('home')
+    return workspace.harness.start(directory)
+  })
+
+  ipcMain.handle('pictor:harness.stop', async (): Promise<HarnessStatus> => {
+    return workspace.harness.stop()
+  })
 
   ipcMain.handle('pictor:appInfo', async (): Promise<AppInfo> => {
     const info = await workspace.client.info()

@@ -80,6 +80,9 @@ importers:
       '@pictor/chat':
         specifier: workspace:*
         version: link:../../packages/chat
+      '@pictor/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
       '@pictor/host-client':
         specifier: workspace:*
         version: link:../../packages/host-client
