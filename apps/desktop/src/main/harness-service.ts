@@ -66,6 +66,26 @@ const PROFILE_NAME = 'pictor'
 /** Bundle layers the profile composes. */
 const PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
 
+/**
+ * Retry policy Pictor boots with.
+ *
+ * The model route is a network hop that occasionally drops an SSE stream mid
+ * answer (`MALFORMED_RESPONSE`). The runtime retries a failed step inside the
+ * same turn, so the user's message is not duplicated, and it reports every
+ * attempt as a `llm/retry` event the transcript can show.
+ */
+const RETRY_PATCH = `# Pictor 的运行时覆盖：模型请求在同一个轮次内自动重试。
+- id: llm-deepseek
+  config:
+    retryPolicy:
+      mode: normal
+      maxRetries: 3
+      retryableCodes: [MALFORMED_RESPONSE, OVERLOADED, RATE_LIMITED, SERVER_ERROR, TIMEOUT]
+      initialDelayMs: 600
+      maxDelayMs: 8000
+      jitterRatio: 0.2
+`
+
 /** How long a cold runtime may take to print its origin. */
 const BOOT_TIMEOUT = 120_000
 
@@ -614,7 +634,10 @@ export class HarnessService {
       )
     }
     const patch = join(directory, 'cordis.patch.yml')
-    if (!existsSync(patch)) writeFileSync(patch, '[]\n', 'utf8')
+    // An untouched patch is where Pictor keeps its own runtime defaults; a patch
+    // the user edited is left exactly as it is.
+    const untouched = !existsSync(patch) || readFileSync(patch, 'utf8').trim() === '[]'
+    if (untouched) writeFileSync(patch, RETRY_PATCH, 'utf8')
   }
 
   #sessionsFile(): string {

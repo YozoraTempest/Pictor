@@ -212,6 +212,22 @@ export class HarnessChatBridge {
         ]
       }
 
+      case 'llm/retry': {
+        // The runtime re-runs a failed model step inside this turn; saying so is
+        // better than leaving the turn looking stalled until it recovers or gives up.
+        const failure = data['failure'] as { message?: unknown } | null | undefined
+        return [
+          {
+            type: 'run.retrying',
+            sessionId,
+            runId: this.#runId(sessionId),
+            attempt: Number(data['retry'] ?? 1),
+            maxAttempts: Number(data['maxRetries'] ?? 1),
+            message: typeof failure?.message === 'string' ? failure.message : '',
+          },
+        ]
+      }
+
       case 'turn/end': {
         const runId = this.#runId(sessionId)
         this.#runs.delete(sessionId)

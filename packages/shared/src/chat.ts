@@ -60,6 +60,15 @@ export type ChatEvent =
       reason: 'stop' | 'cancelled' | 'error'
       message?: string
     }
+  | {
+      /** The runtime is re-running a failed model step inside the same turn. */
+      type: 'run.retrying'
+      sessionId: string
+      runId: string
+      attempt: number
+      maxAttempts: number
+      message: string
+    }
 
 /**
  * Marker prepended to a guard's reason before it is handed to the agent.

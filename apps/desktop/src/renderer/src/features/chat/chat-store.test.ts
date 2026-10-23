@@ -16,6 +16,7 @@ function reset(): void {
     phase: 'idle' as const,
     currentTool: null,
     error: null,
+    retry: null,
   }
 
   useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })

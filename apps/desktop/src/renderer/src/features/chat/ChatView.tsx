@@ -38,6 +38,7 @@ export function ChatView(): React.JSX.Element {
   const hasMore = useChatStore((state) => state.current.hasMore)
 
   const error = useChatStore((state) => state.current.error)
+  const retry = useChatStore((state) => state.current.retry)
   const send = useChatStore((state) => state.send)
   const stop = useChatStore((state) => state.stop)
   const loadOlder = useChatStore((state) => state.loadOlder)
@@ -152,9 +153,18 @@ export function ChatView(): React.JSX.Element {
 
   /** Live run state; it belongs beside the composer, not over the transcript. */
   const status = running ? (
-    <Badge tone="accent" className="self-start">
-      {phaseLabel(phase, currentTool === null ? null : toolLabel(currentTool))}
-    </Badge>
+    retry !== null ? (
+      <details className="self-start text-2xs text-faint">
+        <summary className="cursor-pointer select-none">
+          正在重新连接 {retry.attempt}/{retry.maxAttempts}
+        </summary>
+        {retry.message.length > 0 && <p className="mt-1 max-w-160">{retry.message}</p>}
+      </details>
+    ) : (
+      <Badge tone="accent" className="self-start">
+        {phaseLabel(phase, currentTool === null ? null : toolLabel(currentTool))}
+      </Badge>
+    )
   ) : runStartedAt !== null && runFinishedAt !== null ? (
     <span className="self-start text-2xs text-faint">
       用时 {formatDuration(runFinishedAt - runStartedAt)}

@@ -20,6 +20,8 @@ export interface ChatSlice {
   phase: ChatPhase
   currentTool: string | null
   error: string | null
+  /** Set while the runtime re-runs a failed model step inside this turn. */
+  retry: { attempt: number; maxAttempts: number; message: string } | null
 }
 
 interface ChatState {
@@ -51,6 +53,7 @@ const EMPTY: ChatSlice = {
   phase: 'idle',
   currentTool: null,
   error: null,
+  retry: null,
 }
 
 function emptySlice(sessionId: string): ChatSlice {
@@ -241,6 +244,18 @@ export const useChatStore = create<ChatState>()((set, get) => {
           runStartedAt: Date.now(),
           runFinishedAt: null,
           currentTool: null,
+          retry: null,
+        }))
+        return
+      }
+
+      if (event.type === 'run.retrying') {
+        patch(sessionId, () => ({
+          retry: {
+            attempt: event.attempt,
+            maxAttempts: event.maxAttempts,
+            message: event.message,
+          },
         }))
         return
       }
