@@ -16,7 +16,17 @@ export interface HarnessStatus {
   provider: string | null
   model: string | null
   serverInfo: { name: string; version: string } | null
+  /** Sandbox permission mode the runtime is (or will be) booted with. */
+  permissionMode: PermissionMode
   error: string | null
+}
+
+export type PermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+
+export const DEFAULT_PERMISSION_MODE: PermissionMode = 'workspace-write'
+
+export function isPermissionMode(value: unknown): value is PermissionMode {
+  return value === 'read-only' || value === 'workspace-write' || value === 'danger-full-access'
 }
 
 export interface HarnessServiceOptions {
@@ -25,6 +35,8 @@ export interface HarnessServiceOptions {
   userData: string
   /** Overrides discovery, for a bundled runtime or a development checkout. */
   binary?: string
+  /** Sandbox mode read from settings; the runtime takes it as an env var. */
+  readPermissionMode?: () => Promise<PermissionMode>
 }
 
 /** Route the DeepSeek adapter registers; models pass through unchanged. */
@@ -54,12 +66,19 @@ export class HarnessService {
       provider: null,
       model: null,
       serverInfo: null,
+      permissionMode: DEFAULT_PERMISSION_MODE,
       error: binary === null ? '未安装 agent 运行时；设置里指定 dsh 启动器路径' : null,
     }
   }
 
   status(): HarnessStatus {
     return { ...this.#status }
+  }
+
+  /** Record the configured mode before a read, so status reflects the setting. */
+  setPermissionMode(mode: PermissionMode): void {
+    if (this.#status.permissionMode === mode) return
+    this.#status = { ...this.#status, permissionMode: mode }
   }
 
   /** Subscribe to runtime notifications; the caller forwards them to windows. */
@@ -94,9 +113,13 @@ export class HarnessService {
       throw new Error('当前服务没有保存密钥')
     }
 
+    const stored = await this.#options.readPermissionMode?.()
+    const permissionMode = isPermissionMode(stored) ? stored : DEFAULT_PERMISSION_MODE
+
     this.#status = {
       ...this.#status,
       state: 'starting',
+      permissionMode,
       provider: PROVIDER_ROUTE,
       model: settings.modelId,
       error: null,
@@ -114,7 +137,13 @@ export class HarnessService {
       provider: PROVIDER_ROUTE,
       model: settings.modelId,
       // The runtime reads these two names; anything else is Pictor's own.
-      env: { DEEPSEEK_BASE_URL: settings.baseUrl, DEEPSEEK_API_KEY: apiKey },
+      env: {
+        DEEPSEEK_BASE_URL: settings.baseUrl,
+        DEEPSEEK_API_KEY: apiKey,
+        // The stock profile reads exactly this variable for its sandbox and
+        // approval defaults, so the choice survives a runtime swap.
+        DSH_PERMISSION_MODE: permissionMode,
+      },
     })
     const diagnostics: string[] = []
     client.onNotification((notification) => {

@@ -1,9 +1,10 @@
 import { Play, Square } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { HarnessStatus } from '../../../../shared/bridge.js'
+import type { HarnessStatus, PermissionMode } from '../../../../shared/bridge.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, Spinner } from '../../components/ui/index.js'
+import { cn } from '../../lib/cn.js'
 import { Section } from './Section.js'
 import { SettingRow } from './SettingRow.js'
 
@@ -13,6 +14,24 @@ const STATE_LABEL: Record<HarnessStatus['state'], string> = {
   ready: '运行中',
   error: '异常',
 }
+
+const MODES: Array<{ id: PermissionMode; label: string; description: string }> = [
+  {
+    id: 'read-only',
+    label: '只读',
+    description: '可以读文件与检索，不能写文件、不能起进程。适合先看清再动手。',
+  },
+  {
+    id: 'workspace-write',
+    label: '工作区可写',
+    description: '写入限制在当前项目目录内，越界操作需要审批。日常默认。',
+  },
+  {
+    id: 'danger-full-access',
+    label: '完全访问',
+    description: '不限制写入范围，同时关闭逐次审批。只在确认任务可信时使用。',
+  },
+]
 
 const STATE_TONE: Record<HarnessStatus['state'], 'success' | 'neutral' | 'danger'> = {
   stopped: 'neutral',
@@ -115,6 +134,56 @@ export function RuntimePage(): React.JSX.Element {
       />
 
       <SettingRow
+        stacked
+        title="权限模式"
+        description={
+          ready
+            ? '已保存；重启内核后生效。'
+            : '决定内核能以多大范围改动文件系统，以及是否需要逐次审批。'
+        }
+        control={
+          <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="权限模式">
+            {MODES.map((mode) => {
+              const active = (status?.permissionMode ?? 'workspace-write') === mode.id
+
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={busy}
+                  onClick={() => void run(() => window.pictor.setHarnessPermissionMode(mode.id))}
+                  className={cn(
+                    'rounded-md border px-2.5 py-2 text-left transition-colors duration-150',
+                    active
+                      ? 'border-border-strong bg-surface-hover'
+                      : 'border-border hover:bg-surface-hover',
+                  )}
+                >
+                  <span className="flex items-center gap-2 text-xs text-text">
+                    <span
+                      className={cn(
+                        'grid size-3.5 shrink-0 place-items-center rounded-full border',
+                        active ? 'border-accent' : 'border-border-strong',
+                      )}
+                    >
+                      {active && <span className="size-1.5 rounded-full bg-accent" />}
+                    </span>
+                    {mode.label}
+                  </span>
+                  <span className="mt-1 block text-2xs leading-relaxed text-faint">
+                    {mode.description}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        }
+      />
+
+      <SettingRow
+        stacked
         title="启动器"
         description="内核可替换：换一个启动器就是换一个 agent 运行时。"
         control={
@@ -125,6 +194,7 @@ export function RuntimePage(): React.JSX.Element {
       />
 
       <SettingRow
+        stacked
         title="运行目录"
         description="会话日志、存储与 profile 都在这个目录下。"
         control={
@@ -146,6 +216,7 @@ export function RuntimePage(): React.JSX.Element {
       />
 
       <SettingRow
+        stacked
         title="工作目录"
         description="取自当前选中的项目；没有项目时用主目录。"
         control={

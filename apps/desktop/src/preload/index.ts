@@ -59,6 +59,7 @@ const bridge: PictorBridge = {
   harnessStatus: () => ipcRenderer.invoke('pictor:harness.status'),
   harnessStart: (cwd) => ipcRenderer.invoke('pictor:harness.start', cwd),
   harnessStop: () => ipcRenderer.invoke('pictor:harness.stop'),
+  setHarnessPermissionMode: (mode) => ipcRenderer.invoke('pictor:harness.setPermissionMode', mode),
 
   getAppInfo: () => ipcRenderer.invoke('pictor:appInfo'),
 

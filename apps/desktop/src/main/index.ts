@@ -30,7 +30,13 @@ import {
 import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
 import { findSessionFile, loadHarnessHistory } from './harness-history.js'
-import { HarnessService, type HarnessStatus } from './harness-service.js'
+import {
+  DEFAULT_PERMISSION_MODE,
+  HarnessService,
+  isPermissionMode,
+  type HarnessStatus,
+  type PermissionMode,
+} from './harness-service.js'
 import { ModelService } from './model-service.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -82,6 +88,8 @@ interface Workspace {
   model: ModelService
   /** The agent runtime process, owned by the main process and shared by sessions. */
   harness: HarnessService
+  /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
+  readPermissionMode: () => Promise<PermissionMode>
   /** One runtime per open conversation, so several can run at the same time. */
   chatFor: (sessionId: string) => ChatService
   closeChat: (sessionId: string) => Promise<void>
@@ -235,7 +243,12 @@ async function startWorkspace(): Promise<Workspace | null> {
 
   let disposed = false
   const model = new ModelService({ store: running.client, userData })
-  const harness = new HarnessService({ model, userData })
+  const readPermissionMode = async (): Promise<PermissionMode> => {
+    const settings = await running.client.listSettings()
+    const value = settings['harness.permissionMode']
+    return isPermissionMode(value) ? value : DEFAULT_PERMISSION_MODE
+  }
+  const harness = new HarnessService({ model, userData, readPermissionMode })
   // The runtime reports durable session events; the renderer renders runs and
   // deltas. One translation keeps the transcript unchanged by the swap.
   const chatBridge = new HarnessChatBridge()
@@ -295,6 +308,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     pluginHost,
     model,
     harness,
+    readPermissionMode,
     chatFor,
     closeChat,
     isDisposed: () => disposed,
@@ -779,8 +793,19 @@ function registerIpc(workspace: Workspace): void {
   )
 
   ipcMain.handle('pictor:harness.status', async (): Promise<HarnessStatus> => {
+    workspace.harness.setPermissionMode(await workspace.readPermissionMode())
     return workspace.harness.status()
   })
+
+  ipcMain.handle(
+    'pictor:harness.setPermissionMode',
+    async (_event, mode: unknown): Promise<HarnessStatus> => {
+      if (!isPermissionMode(mode)) throw new Error('unknown permission mode')
+      await workspace.client.putSetting('harness.permissionMode', mode)
+      workspace.harness.setPermissionMode(mode)
+      return workspace.harness.status()
+    },
+  )
 
   ipcMain.handle('pictor:harness.start', async (_event, cwd: unknown): Promise<HarnessStatus> => {
     const directory = typeof cwd === 'string' && cwd.trim().length > 0 ? cwd : app.getPath('home')

@@ -75,6 +75,8 @@ export interface ToolViewDescriptor {
   label?: string
   icon?: string
 }
+export type PermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+
 /** Status of the agent runtime process the main process owns. */
 export interface HarnessStatus {
   state: 'stopped' | 'starting' | 'ready' | 'error'
@@ -85,6 +87,8 @@ export interface HarnessStatus {
   provider: string | null
   model: string | null
   serverInfo: { name: string; version: string } | null
+  /** Sandbox mode the runtime is (or will be) booted with. */
+  permissionMode: PermissionMode
   error: string | null
 }
 
@@ -162,6 +166,8 @@ export interface PictorBridge {
   harnessStatus(): Promise<HarnessStatus>
   harnessStart(cwd: string): Promise<HarnessStatus>
   harnessStop(): Promise<HarnessStatus>
+  /** Persisted sandbox mode; the runtime picks it up on its next start. */
+  setHarnessPermissionMode(mode: PermissionMode): Promise<HarnessStatus>
 
   getAppInfo(): Promise<AppInfo>
 
