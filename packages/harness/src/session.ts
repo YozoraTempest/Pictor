@@ -159,3 +159,18 @@ export type SessionFollowFrame =
     }
   | { type: 'event'; event: SessionWireEvent }
   | { type: 'assistant-stream'; frame: SessionAssistantStreamFrame }
+
+/** Rare operations the runtime exposes for one session. */
+export interface SessionForkRequest {
+  sessionId: string
+  /**
+   * Inclusive event boundary to copy. Omitted, the runtime picks the latest
+   * completed turn, which is what a user means by "branch from here".
+   */
+  atSeq?: number
+}
+
+export interface SessionForkValue {
+  /** Identity of the new session that inherited the prefix. */
+  sessionId: string
+}

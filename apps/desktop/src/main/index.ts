@@ -843,6 +843,26 @@ function registerIpc(workspace: Workspace): void {
     }
   })
 
+  /**
+   * Branch a conversation into a new Pictor session.
+   *
+   * The runtime owns the copy, so the new conversation is created here and then
+   * pointed at the runtime's child id; opening it reads the inherited history.
+   */
+  ipcMain.handle('pictor:session.fork', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    if (workspace.harness.status().state !== 'ready') throw new Error('先启动 agent 运行时')
+
+    const sessions = await workspace.client.listSessions()
+    const source = sessions.find((entry) => entry.id === sessionId)
+    if (source === undefined) throw new Error('session not found')
+
+    const child = await workspace.harness.fork(sessionId)
+    const created = await workspace.client.createSession(source.projectId, `${source.title} · 分支`)
+    workspace.harness.adopt(created.id, child)
+    return created.id
+  })
+
   ipcMain.handle(
     'pictor:chat.send',
     async (_event, sessionId: unknown, prompt: unknown, images: unknown) => {

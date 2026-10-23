@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderGit2,
+  GitBranch,
   Loader2,
   MessageSquare,
   MoreHorizontal,
@@ -1183,6 +1184,7 @@ function SessionRow({
   onDropSession: (draggedId: string, gap: GapRef) => void
 }): React.JSX.Element {
   const running = useChatStore((state) => state.chats[session.id]?.running === true)
+  const forkSession = useWorkspaceStore((state) => state.forkSession)
 
   /** Half of the row the pointer is over picks the slot above or below. */
   function slotAt(event: React.DragEvent<HTMLElement>): GapRef {
@@ -1259,6 +1261,11 @@ function SessionRow({
           label={`${session.title} 更多操作`}
           trigger={<MoreHorizontal className="size-3.5" />}
           items={[
+            {
+              label: '分叉会话',
+              icon: <GitBranch className="size-3" />,
+              onSelect: () => void forkSession(session.id),
+            },
             { label: '归档聊天', icon: <Archive className="size-3" />, onSelect: onArchive },
             {
               label: '删除会话',

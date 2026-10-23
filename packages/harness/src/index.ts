@@ -40,6 +40,8 @@ export type {
   SessionCreateValue,
   SessionFollowFrame,
   SessionFollowRequest,
+  SessionForkRequest,
+  SessionForkValue,
   SessionPage,
   SessionPageRequest,
   SessionPromptRequest,

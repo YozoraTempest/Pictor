@@ -12,6 +12,7 @@ import {
   type PromptContentPart,
   type HarnessNotification,
   type SessionCreateValue,
+  type SessionForkValue,
   type SessionFollowFrame,
   type SessionPromptValue,
   type SessionWireEvent,
@@ -693,6 +694,32 @@ export class HarnessService {
     })
     this.#events = stream
     await stream.open()
+  }
+
+  /**
+   * Branch one conversation at its latest completed turn.
+   *
+   * The runtime copies the event prefix into a brand-new session, so the branch
+   * starts with the same history and diverges from there. The caller gets the new
+   * runtime id; mapping it to a Pictor conversation is the caller's job because
+   * only this process knows which ids belong together.
+   */
+  async fork(pictorSessionId: string): Promise<string> {
+    const remote = this.#remote
+    if (remote === null) throw new Error('agent 运行时尚未启动')
+    const harnessId = this.#sessions.get(pictorSessionId)
+    if (harnessId === undefined) throw new Error('这个会话在运行时里还没有记录，无法分叉')
+
+    const created = await remote.call<SessionForkValue>('session/fork', {
+      request: { sessionId: harnessId },
+    })
+    return created.sessionId
+  }
+
+  /** Record that an existing runtime session belongs to a new conversation. */
+  adopt(pictorSessionId: string, harnessId: string): void {
+    this.#sessions.set(pictorSessionId, harnessId)
+    this.#persistSessions()
   }
 
   /** Answer one pending approval; the runtime resumes the tool call on allow. */

@@ -103,6 +103,9 @@ does not care which runtime produced it:
 - The app keeps `pictorId -> runtimeId` in `<DSH_HOME>/pictor-sessions.json`. A
   miss means the runtime never created that conversation, so there is no history
   to subscribe to.
+- Branching is `session/fork`: the runtime copies the event prefix into a new
+  session and returns its id. The app creates the Pictor conversation and adopts
+  that id, so the branch opens with the inherited history and then diverges.
 - Events are normalised in `main` and forwarded to the renderer over one IPC
   channel (`pictor:chat.event`). Runtime status travels on its own channel
   (`pictor:harness.status`) so a window can re-read a transcript that was opened

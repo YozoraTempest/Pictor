@@ -124,6 +124,8 @@ Selecting a session opens its transcript and a composer:
   stream.
 - The sidebar search (Ctrl/Cmd+K) filters conversations by title or project name;
   empty sections disappear while it is active.
+- A session's menu can **branch** it: the runtime copies the history up to its
+  latest completed turn into a new session, which then diverges on its own.
 - Tool calls run under the runtime's sandbox policy, and a plugin can tighten it
   with a `toolGuards` guard: the runtime asks the app before every call, guards run
   in order, the first deny wins, and a denied call is shown with its reason.
@@ -158,7 +160,8 @@ and connection test, the dsh runtime with in-app installation, three wire
 protocols, streaming chat with runtime-owned transcripts and paginated recovery,
 reasoning display, three-column shell UI.
 
-Not yet implemented: a session tree, remote hosts, packaging/auto-update,
+Not yet implemented: a session tree (browsing branches of one conversation, or
+branching at an arbitrary message), remote hosts, packaging/auto-update,
 end-to-end UI tests. Plugin modules run in-process; there
 is no per-plugin process sandbox yet.
 

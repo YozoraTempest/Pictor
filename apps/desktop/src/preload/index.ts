@@ -84,6 +84,7 @@ const bridge: PictorBridge = {
     ipcRenderer.invoke('pictor:chat.send', sessionId, prompt, images),
   stopChat: (sessionId) => ipcRenderer.invoke('pictor:chat.stop', sessionId),
   closeChat: (sessionId) => ipcRenderer.invoke('pictor:chat.close', sessionId),
+  forkSession: (sessionId) => ipcRenderer.invoke('pictor:session.fork', sessionId),
   chatHistory: (path, limit, offset) =>
     ipcRenderer.invoke('pictor:chat.history', path, limit, offset),
   onChatEvent: (listener) => {
