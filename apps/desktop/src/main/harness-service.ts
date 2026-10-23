@@ -505,7 +505,13 @@ export class HarnessService {
 
   /** Subscribe to one runtime session once; frames become ordinary notifications. */
   async #ensureFollow(harnessId: string, options: { silent?: boolean } = {}): Promise<void> {
-    if (this.#follows.has(harnessId)) return
+    const held = this.#follows.get(harnessId)
+    if (held !== undefined) {
+      // A stream that already closed still occupies the slot, and the next
+      // prompt would then stream into nothing.
+      if (held.active) return
+      this.#follows.delete(harnessId)
+    }
     const remote = this.#remote
     const socket = this.#socket
     const cookie = remote?.cookie
@@ -584,7 +590,12 @@ export class HarnessService {
     limit: number,
     offset: number,
   ): Promise<ChatHistoryPage> {
-    const harnessId = this.#sessions.get(pictorSessionId) ?? pictorSessionId
+    const known = this.#sessions.get(pictorSessionId)
+    // A session the runtime has never created has no history — and subscribing
+    // for it would leave a live-but-empty stream in the slot the first prompt
+    // needs, so the prompt would be queued for nobody.
+    if (known === undefined) return loadHarnessHistory([], limit, offset)
+    const harnessId = known
     const events = this.#snapshots.get(harnessId) ?? (await this.#loadSnapshot(harnessId))
     return loadHarnessHistory(events ?? [], limit, offset)
   }
