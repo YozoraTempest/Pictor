@@ -495,6 +495,14 @@ export class HarnessService {
     return created.sessionId
   }
 
+  /** The Pictor id a runtime session belongs to, so events reach the right window. */
+  #pictorIdOf(harnessId: string): string {
+    for (const [pictor, harness] of this.#sessions) {
+      if (harness === harnessId) return pictor
+    }
+    return harnessId
+  }
+
   /** Subscribe to one runtime session once; frames become ordinary notifications. */
   async #ensureFollow(harnessId: string, options: { silent?: boolean } = {}): Promise<void> {
     if (this.#follows.has(harnessId)) return
@@ -531,7 +539,10 @@ export class HarnessService {
               : ''
           console.info(`[harness] follow ${frame.type}${detail}`)
         }
-        this.#emit({ method: 'session.follow', params: { sessionId: harnessId, frame } })
+        this.#emit({
+          method: 'session.follow',
+          params: { sessionId: this.#pictorIdOf(harnessId), frame },
+        })
       },
       onError: (error) => {
         // Opening history for a session the runtime does not know is expected;
@@ -539,7 +550,7 @@ export class HarnessService {
         if (options.silent === true) return
         this.#emit({
           method: 'agent.error',
-          params: { sessionId: harnessId, message: error.message },
+          params: { sessionId: this.#pictorIdOf(harnessId), message: error.message },
         })
       },
       onClose: () => {
