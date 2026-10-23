@@ -11,11 +11,10 @@ import {
   Pin,
   PinOff,
   Plus,
-  Search,
   SquarePen,
   Trash2,
 } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import type { Project, Session } from '@pictor/shared'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
@@ -32,7 +31,6 @@ import {
 import { cn } from '../../lib/cn.js'
 import {
   collectSectionSessionIds,
-  filterSessionsByQuery,
   groupSessions,
   moveSectionOrder,
   PROJECTS_ID,
@@ -182,9 +180,6 @@ export function SessionsPanel(): React.JSX.Element {
   const [target, setTarget] = useState<DropTarget | null>(null)
   const [dragging, setDragging] = useState<Dragged | null>(null)
   const [confirm, setConfirm] = useState<PendingDelete | null>(null)
-  const [query, setQuery] = useState('')
-  const searchRef = useRef<HTMLInputElement | null>(null)
-  const searching = query.trim().length > 0
 
   function askDelete(target: PendingDelete): void {
     setConfirm(target)
@@ -193,30 +188,15 @@ export function SessionsPanel(): React.JSX.Element {
   const nodes = useMemo(
     () =>
       groupSessions({
-        sessions: filterSessionsByQuery(sessions, projects, query),
+        sessions,
         projects,
         sections,
         mode: groupingMode,
         order: sectionOrder,
         sorts,
-        // While searching, a section or project nobody matched is noise.
-        hideEmpty: query.trim().length > 0,
       }),
-    [sessions, projects, sections, groupingMode, sectionOrder, sorts, query],
+    [sessions, projects, sections, groupingMode, sectionOrder, sorts],
   )
-  const matches = useMemo(() => nodes.reduce((total, node) => total + node.count, 0), [nodes])
-
-  // Ctrl/Cmd+K focuses the search box from anywhere; Escape inside it clears.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent): void {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return
-      event.preventDefault()
-      searchRef.current?.focus()
-      searchRef.current?.select()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
 
   function toggle(key: string): void {
     setCollapsed((current) => ({ ...current, [key]: current[key] !== true }))
@@ -561,35 +541,9 @@ export function SessionsPanel(): React.JSX.Element {
           <SquarePen className="size-3.5 shrink-0 text-faint" />
           新聊天
         </button>
-
-        <div className="relative mt-1">
-          <Search
-            className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-faint"
-            aria-hidden
-          />
-          <Input
-            ref={searchRef}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') setQuery('')
-            }}
-            placeholder="搜索会话"
-            aria-label="搜索会话"
-            className="h-7 pr-12 pl-7 text-xs"
-          />
-          {searching && (
-            <span className="absolute top-1/2 right-2 -translate-y-1/2 text-2xs text-faint">
-              {matches}
-            </span>
-          )}
-        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-        {searching && nodes.length === 0 && (
-          <p className="px-2 py-3 text-2xs text-faint">没有匹配「{query.trim()}」的会话</p>
-        )}
         {nodes.map((node) => {
           const isCollapsed = collapsed[node.id] === true
           const Chevron = isCollapsed ? ChevronRight : ChevronDown

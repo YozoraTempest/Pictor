@@ -52,13 +52,6 @@ export interface GroupingInput {
   order?: string[]
   /** Sort preference per section id (built-in ids and custom section ids). */
   sorts: Record<string, SectionSort>
-  /**
-   * Drop sections and projects that hold nothing.
-   *
-   * Off while browsing: an empty section is still a drop target. On while
-   * searching: a section nobody matched is noise.
-   */
-  hideEmpty?: boolean
 }
 
 export const PINNED_ID = 'pinned'
@@ -158,12 +151,7 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
     const sort = pickSort(sorts, id)
     const projectsInSection = FLAT_SECTIONS.has(kind)
       ? []
-      : projects.filter(
-          (project) =>
-            (project.sectionId ?? null) === sectionId &&
-            (input.hideEmpty !== true ||
-              projectPool.some((session) => session.projectId === project.id)),
-        )
+      : projects.filter((project) => (project.sectionId ?? null) === sectionId)
     const nested = projectsInSection.length > 0
     const knownProjects = new Set(projectsInSection.map((project) => project.id))
 
@@ -252,11 +240,10 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
   }
 
   if (archived.length > 0) {
-    const archivedNode = buildsSection(ARCHIVED_ID, '已归档', 'archived', null, archived, [])
-    if (input.hideEmpty !== true || archivedNode.count > 0) nodes.push(archivedNode)
+    nodes.push(buildsSection(ARCHIVED_ID, '已归档', 'archived', null, archived, []))
   }
 
-  return input.hideEmpty === true ? nodes.filter((node) => node.count > 0) : nodes
+  return nodes
 }
 
 /**

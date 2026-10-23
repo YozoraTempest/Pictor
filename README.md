@@ -122,8 +122,10 @@ Selecting a session opens its transcript and a composer:
   messages** prepends earlier pages. The opening stream window holds 200 messages.
 - Several conversations can run at once; each keeps its own transcript and event
   stream.
-- The sidebar search (Ctrl/Cmd+K) filters conversations by title or project name;
-  empty sections disappear while it is active.
+- **Search** (the magnifier in the title bar, or Ctrl/Cmd+K) opens a palette over
+  the home view: it matches conversation titles and project names, lists results
+  newest first, and opens the pick on Enter. Archived conversations are included
+  and labelled as such, since the sidebar keeps them reachable.
 - A session's menu can **branch** it: the runtime copies the history up to its
   latest completed turn into a new session, which then diverges on its own.
 - Tool calls run under the runtime's sandbox policy, and a plugin can tighten it

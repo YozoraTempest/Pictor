@@ -459,33 +459,3 @@ describe('filterSessionsByQuery', () => {
     expect(filterSessionsByQuery(all, projects, 'zzz')).toEqual([])
   })
 })
-
-describe('groupSessions with hideEmpty', () => {
-  const projects = [project('p1', 'Alpha'), project('p2', 'Beta')]
-  const sessions = [
-    session({ id: 'a', title: 'alpha one', projectId: 'p1', updatedAt: NOW }),
-    session({ id: 'b', title: 'beta one', projectId: 'p2', updatedAt: NOW - HOUR }),
-  ]
-  const base = {
-    projects,
-    sections: [],
-    mode: 'overlap' as const,
-    sorts: {},
-  }
-
-  it('keeps empty sections while browsing', () => {
-    const nodes = groupSessions({ ...base, sessions })
-    expect(nodes.some((node) => node.count === 0)).toBe(true)
-  })
-
-  it('drops empty sections and projects while searching', () => {
-    const matched = filterSessionsByQuery(sessions, projects, 'alpha')
-    const nodes = groupSessions({ ...base, sessions: matched, hideEmpty: true })
-
-    expect(nodes.every((node) => node.count > 0)).toBe(true)
-    const projectTitles = nodes.flatMap((node) =>
-      node.children.flatMap((child) => (child.kind === 'project' ? [child.project.name] : [])),
-    )
-    expect(projectTitles).toEqual(['Alpha'])
-  })
-})
