@@ -47,14 +47,30 @@ describe('HarnessChatBridge', () => {
     bridge.map(sessionEvent('turn/start', { turn: 2 }))
 
     expect(
-      bridge.map(sessionEvent('tool/call', { name: 'read', arguments: { path: 'a.ts' } })),
+      bridge.map(
+        sessionEvent('tool/call', {
+          turn: 2,
+          step: 1,
+          callId: 'call-1',
+          name: 'read',
+          arguments: JSON.stringify({ path: 'a.ts' }),
+        }),
+      ),
     ).toEqual([
       { type: 'tool.started', sessionId: 's1', runId: 't2', tool: 'read', input: { path: 'a.ts' } },
     ])
 
     expect(
       bridge.map(
-        sessionEvent('tool/result', { name: 'read', output: 'file body', isError: false }),
+        sessionEvent('tool/result', {
+          turn: 2,
+          step: 1,
+          message: {
+            role: 'tool',
+            toolCallId: 'call-1',
+            content: [{ type: 'text', text: 'file body' }],
+          },
+        }),
       ),
     ).toMatchObject([{ type: 'tool.finished', tool: 'read', isError: false, output: 'file body' }])
   })
@@ -205,5 +221,97 @@ describe('follow stream', () => {
         }),
       ),
     ).toEqual([{ type: 'run.started', sessionId: 's1', runId: 't4' }])
+  })
+  describe('tools', () => {
+    const call = (name: string, callId: string, args: unknown) =>
+      sessionEvent('tool/call', { turn: 1, step: 1, callId, name, arguments: JSON.stringify(args) })
+    const result = (callId: string, content: unknown[], extra: Record<string, unknown> = {}) =>
+      sessionEvent('tool/result', {
+        turn: 1,
+        step: 1,
+        message: { role: 'tool', toolCallId: callId, content },
+        ...extra,
+      })
+
+    it('reports a call with its arguments parsed', () => {
+      const bridge = new HarnessChatBridge()
+      bridge.map(sessionEvent('turn/start', { turn: 1 }))
+
+      expect(bridge.map(call('read', 'c1', { file_path: 'a.md' }))).toEqual([
+        {
+          type: 'tool.started',
+          sessionId: 's1',
+          runId: 't1',
+          tool: 'read',
+          input: { file_path: 'a.md' },
+        },
+      ])
+    })
+
+    it('names a result after the call it belongs to', () => {
+      const bridge = new HarnessChatBridge()
+      bridge.map(sessionEvent('turn/start', { turn: 1 }))
+      bridge.map(call('read', 'c1', { file_path: 'a.md' }))
+
+      expect(bridge.map(result('c1', [{ type: 'text', text: 'file body' }]))).toEqual([
+        {
+          type: 'tool.finished',
+          sessionId: 's1',
+          runId: 't1',
+          tool: 'read',
+          output: 'file body',
+          isError: false,
+        },
+      ])
+    })
+
+    it('marks a result as failed when the call reported an error', () => {
+      const bridge = new HarnessChatBridge()
+      bridge.map(sessionEvent('turn/start', { turn: 1 }))
+      bridge.map(call('bash', 'c2', { command: 'ls' }))
+
+      const [event] = bridge.map(
+        result('c2', [{ type: 'text', text: 'denied' }], { error: { name: 'E', code: 'denied' } }),
+      )
+
+      expect(event).toMatchObject({ tool: 'bash', output: 'denied', isError: true })
+    })
+  })
+
+  it('treats an interrupted turn as cancelled', () => {
+    const bridge = new HarnessChatBridge()
+    bridge.map(sessionEvent('turn/start', { turn: 1 }))
+
+    expect(
+      bridge.map(sessionEvent('turn/end', { turn: 1, reason: { kind: 'interrupted' } })),
+    ).toEqual([{ type: 'run.finished', sessionId: 's1', runId: 't1', reason: 'cancelled' }])
+  })
+
+  it('carries the failure message a failed turn reports', () => {
+    const bridge = new HarnessChatBridge()
+    bridge.map(sessionEvent('turn/start', { turn: 1 }))
+
+    expect(
+      bridge.map(
+        sessionEvent('turn/end', {
+          turn: 1,
+          reason: {
+            kind: 'error',
+            error: {
+              message: 'DeepSeek Messages SSE event type mismatch',
+              code: 'MALFORMED_RESPONSE',
+            },
+          },
+        }),
+      ),
+    ).toEqual([
+      {
+        type: 'run.finished',
+        sessionId: 's1',
+        runId: 't1',
+        reason: 'error',
+        message: 'DeepSeek Messages SSE event type mismatch',
+      },
+    ])
   })
 })

@@ -29,9 +29,21 @@ function roleOf(message: unknown): ChatRole {
 /** Turn-end reasons the runtime reports, mapped onto the renderer's vocabulary. */
 function finishReason(reason: unknown): 'stop' | 'cancelled' | 'error' {
   const kind = (reason as { kind?: unknown } | null)?.kind
-  if (kind === 'completed') return 'stop'
-  if (kind === 'cancelled' || kind === 'aborted') return 'cancelled'
+  // `completed` and `forked` both leave the turn usable; `aborted` and
+  // `interrupted` are the two ways a turn stops early under the user's control.
+  if (kind === 'completed' || kind === 'forked') return 'stop'
+  if (kind === 'aborted' || kind === 'interrupted') return 'cancelled'
   return 'error'
+}
+
+/** Tool argument payloads arrive as JSON text; keep them readable either way. */
+function parseArguments(value: unknown): unknown {
+  if (typeof value !== 'string') return value ?? null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
 }
 
 /**
@@ -52,6 +64,8 @@ export class HarnessChatBridge {
   readonly #runs = new Map<string, string>()
   /** Runs whose answer already arrived as live deltas. */
   readonly #streamed = new Set<string>()
+  /** Tool name per `<session>:<callId>`; a result carries only the call id. */
+  readonly #calls = new Map<string, string>()
 
   /** Map one notification to renderer events; unknown notifications map to none. */
   map(notification: HarnessNotification): ChatEvent[] {
@@ -160,32 +174,40 @@ export class HarnessChatBridge {
       }
 
       case 'tool/call': {
-        const tool = String(data['name'] ?? data['tool'] ?? 'tool')
+        const tool = String(data['name'] ?? 'tool')
+        const callId = typeof data['callId'] === 'string' ? data['callId'] : ''
+        if (callId.length > 0) this.#calls.set(`${sessionId}:${callId}`, tool)
         return [
           {
             type: 'tool.started',
             sessionId,
             runId: this.#runId(sessionId),
             tool,
-            input: data['arguments'] ?? data['input'] ?? null,
+            input: parseArguments(data['arguments']),
           },
         ]
       }
 
       case 'tool/result': {
-        const tool = String(data['name'] ?? data['tool'] ?? 'tool')
-        const isError = data['isError'] === true
+        // The result names the call, not the tool: the name comes from the call
+        // that opened it, which also keeps parallel calls apart.
+        const message = (data['message'] ?? {}) as {
+          toolCallId?: unknown
+          isError?: unknown
+          content?: unknown
+        }
+        const callId = typeof message.toolCallId === 'string' ? message.toolCallId : ''
+        const key = `${sessionId}:${callId}`
+        const tool = this.#calls.get(key) ?? 'tool'
+        this.#calls.delete(key)
         return [
           {
             type: 'tool.finished',
             sessionId,
             runId: this.#runId(sessionId),
             tool,
-            output:
-              typeof data['output'] === 'string'
-                ? data['output']
-                : JSON.stringify(data['result'] ?? ''),
-            isError,
+            output: textOf({ content: message.content }),
+            isError: message.isError === true || data['error'] !== undefined,
           },
         ]
       }
@@ -194,15 +216,23 @@ export class HarnessChatBridge {
         const runId = this.#runId(sessionId)
         this.#runs.delete(sessionId)
         this.#streamed.delete(runId)
+        const reason = data['reason'] as
+          { message?: unknown; error?: { message?: unknown } } | null | undefined
+        // A failed turn explains itself under `reason.error`; a cancelled one may
+        // carry a plain `reason.message`.
+        const detail =
+          typeof reason?.message === 'string'
+            ? reason.message
+            : typeof reason?.error?.message === 'string'
+              ? reason.error.message
+              : undefined
         return [
           {
             type: 'run.finished',
             sessionId,
             runId,
             reason: finishReason(data['reason']),
-            ...(typeof (data['reason'] as { message?: unknown } | null)?.message === 'string'
-              ? { message: (data['reason'] as { message: string }).message }
-              : {}),
+            ...(detail === undefined ? {} : { message: detail }),
           },
         ]
       }
