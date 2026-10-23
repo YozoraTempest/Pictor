@@ -253,6 +253,14 @@ async function startWorkspace(): Promise<Workspace | null> {
   // deltas. One translation keeps the transcript unchanged by the swap.
   const chatBridge = new HarnessChatBridge()
   harness.onNotification((notification) => {
+    // The runtime explains its own failures on stderr; without this the status is
+    // the only place a user could read them.
+    if (notification.method === 'runtime.stderr') {
+      const text = (notification.params as { text?: unknown } | null)?.text
+      if (typeof text === 'string' && text.trim().length > 0) {
+        console.warn('[harness]', text.trim().slice(0, 400))
+      }
+    }
     for (const event of chatBridge.map(notification)) {
       mainWindow?.webContents.send('pictor:chat.event', event)
     }
@@ -770,6 +778,12 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:chat.stop', async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    // Stopping is the runtime's own cancel when it owns the conversation; the Pi
+    // path only knows how to stop a turn it started.
+    if (workspace.harness.status().state === 'ready') {
+      await workspace.harness.cancel(sessionId)
+      return
+    }
     await workspace.chatFor(sessionId).stop()
   })
 

@@ -1,5 +1,10 @@
 import type { ChatEvent, ChatRole } from '@pictor/shared'
-import type { HarnessNotification } from '@pictor/harness'
+import type {
+  HarnessNotification,
+  SessionAssistantStreamFrame,
+  SessionFollowFrame,
+  SessionWireEvent,
+} from '@pictor/harness'
 
 /** The text of one message, from its content blocks. */
 function textOf(message: unknown): string {
@@ -29,73 +34,129 @@ function finishReason(reason: unknown): 'stop' | 'cancelled' | 'error' {
   return 'error'
 }
 
-interface SessionEvent {
-  type?: string
-  seq?: number
-  data?: Record<string, unknown>
-}
-
 /**
- * Translates runtime notifications into the events the transcript already renders.
+ * Translates runtime traffic into the events the transcript already renders.
  *
  * The runtime speaks in durable session events (`turn/start`, `assistant/message`,
- * `turn/end`); the renderer speaks in runs and deltas. Keeping the translation
- * here means the UI did not have to learn a second vocabulary, and swapping the
- * runtime again would only change this file.
+ * `turn/end`) plus a live model stream; the renderer speaks in runs and deltas.
+ * Keeping the translation here means the UI did not have to learn a second
+ * vocabulary, and swapping the runtime again would only change this file.
  *
- * One asymmetry is deliberate: the SDK pushes whole assistant messages, not token
- * deltas, so `message.delta` carries the complete text once instead of streaming.
+ * Streaming produces one subtlety: the live deltas and the committed
+ * `assistant/message` describe the same text. Whichever arrives first wins — a
+ * streamed attempt is remembered per run, so the committed copy is dropped
+ * instead of being appended a second time.
  */
 export class HarnessChatBridge {
   /** Last turn seen per session, so each run has a stable id. */
   readonly #runs = new Map<string, string>()
+  /** Runs whose answer already arrived as live deltas. */
+  readonly #streamed = new Set<string>()
 
   /** Map one notification to renderer events; unknown notifications map to none. */
   map(notification: HarnessNotification): ChatEvent[] {
+    if (notification.method === 'session.follow') {
+      return this.#mapFollow(notification.params)
+    }
+
     const params = (notification.params ?? {}) as {
       sessionId?: unknown
-      event?: SessionEvent
-      status?: unknown
+      event?: SessionWireEvent
+      message?: unknown
     }
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : null
     if (sessionId === null) return []
 
     if (notification.method === 'agent.error') {
+      const runId = this.#runId(sessionId)
+      this.#runs.delete(sessionId)
+      this.#streamed.delete(runId)
       return [
         {
           type: 'run.finished',
           sessionId,
-          runId: this.#runId(sessionId),
+          runId,
           reason: 'error',
-          message: String((notification.params as { message?: unknown } | null)?.message ?? ''),
+          message: String(params.message ?? ''),
         },
       ]
     }
 
     if (notification.method !== 'session.event') return []
+    if (params.event === undefined) return []
+    return this.#mapEvent(sessionId, params.event)
+  }
 
-    const event = params.event
-    if (event?.type === undefined) return []
-    const data = event.data ?? {}
+  /** One frame of the live follow stream. */
+  #mapFollow(params: unknown): ChatEvent[] {
+    if (typeof params !== 'object' || params === null) return []
+    const { sessionId, frame } = params as { sessionId?: unknown; frame?: unknown }
+    if (typeof sessionId !== 'string' || typeof frame !== 'object' || frame === null) return []
+
+    const typed = frame as SessionFollowFrame
+    switch (typed.type) {
+      case 'snapshot': {
+        // The opening window is history and is not replayed into the transcript,
+        // but it can contain the turn that is already running: remembering that
+        // turn keeps the run id of the deltas that follow stable.
+        for (const record of typed.records) {
+          if (record.type !== 'event') continue
+          const event = record.event
+          if (event.type === 'turn/start') {
+            const turn = (event.data as { turn?: unknown } | null)?.turn
+            if (typeof turn === 'number') this.#runs.set(sessionId, `t${String(turn)}`)
+            else this.#runs.delete(sessionId)
+          } else if (event.type === 'turn/end') {
+            this.#runs.delete(sessionId)
+          }
+        }
+        return []
+      }
+      case 'assistant-stream':
+        return this.#mapStream(sessionId, typed.frame)
+      case 'event':
+        return this.#mapEvent(sessionId, typed.event)
+      default:
+        return []
+    }
+  }
+
+  /** One live model frame: only text deltas reach the transcript. */
+  #mapStream(sessionId: string, frame: SessionAssistantStreamFrame): ChatEvent[] {
+    if (frame.type !== 'chunk') {
+      // `start` announces an attempt the durable `turn/start` already opened, and
+      // `end` only marks that the committed event below is authoritative.
+      return []
+    }
+    const chunk = frame.chunk
+    if (chunk?.type !== 'text-delta' || typeof chunk.text !== 'string') return []
+    if (chunk.text.length === 0) return []
+
+    const runId = this.#runId(sessionId)
+    this.#streamed.add(runId)
+    return [{ type: 'message.delta', sessionId, runId, text: chunk.text }]
+  }
+
+  /** One durable session event. */
+  #mapEvent(sessionId: string, event: SessionWireEvent): ChatEvent[] {
+    if (typeof event.type !== 'string') return []
+    const data = (event.data ?? {}) as Record<string, unknown>
 
     switch (event.type) {
       case 'turn/start': {
         const runId = `t${String(data['turn'] ?? 0)}`
         this.#runs.set(sessionId, runId)
+        this.#streamed.delete(runId)
         return [{ type: 'run.started', sessionId, runId }]
       }
 
       case 'assistant/message': {
         const text = textOf(data['message'])
         if (text.length === 0) return []
-        return [
-          {
-            type: 'message.delta',
-            sessionId,
-            runId: this.#runId(sessionId),
-            text,
-          },
-        ]
+        const runId = this.#runId(sessionId)
+        // A streamed attempt already showed this text token by token.
+        if (this.#streamed.delete(runId)) return []
+        return [{ type: 'message.delta', sessionId, runId, text }]
       }
 
       case 'tool/call': {
@@ -132,6 +193,7 @@ export class HarnessChatBridge {
       case 'turn/end': {
         const runId = this.#runId(sessionId)
         this.#runs.delete(sessionId)
+        this.#streamed.delete(runId)
         return [
           {
             type: 'run.finished',

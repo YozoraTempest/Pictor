@@ -97,3 +97,113 @@ describe('HarnessChatBridge', () => {
     expect(bridge.map({ method: 'runtime.malformed', params: { line: 'x' } })).toEqual([])
   })
 })
+
+describe('follow stream', () => {
+  const follow = (frame: unknown, sessionId = 's1') => ({
+    method: 'session.follow',
+    params: { sessionId, frame },
+  })
+  const delta = (text: string) => ({
+    type: 'assistant-stream',
+    frame: {
+      type: 'chunk',
+      attemptId: 'a',
+      revision: 1,
+      index: 0,
+      time: 0,
+      chunk: { type: 'text-delta', index: 0, text },
+    },
+  })
+
+  it('streams text deltas as they arrive', () => {
+    const bridge = new HarnessChatBridge()
+    bridge.map(sessionEvent('turn/start', { turn: 2 }))
+
+    expect(bridge.map(follow(delta('你')))).toEqual([
+      { type: 'message.delta', sessionId: 's1', runId: 't2', text: '你' },
+    ])
+  })
+
+  it('drops the committed message once the answer already streamed', () => {
+    const bridge = new HarnessChatBridge()
+    bridge.map(sessionEvent('turn/start', { turn: 2 }))
+    bridge.map(follow(delta('你好')))
+
+    const committed = bridge.map(
+      sessionEvent('assistant/message', {
+        turn: 2,
+        step: 1,
+        message: { role: 'assistant', content: [{ type: 'text', text: '你好' }] },
+      }),
+    )
+
+    expect(committed).toEqual([])
+  })
+
+  it('still emits the committed message when nothing streamed', () => {
+    const bridge = new HarnessChatBridge()
+    bridge.map(sessionEvent('turn/start', { turn: 2 }))
+
+    expect(
+      bridge.map(
+        sessionEvent('assistant/message', {
+          turn: 2,
+          step: 1,
+          message: { role: 'assistant', content: [{ type: 'text', text: '完整' }] },
+        }),
+      ),
+    ).toEqual([{ type: 'message.delta', sessionId: 's1', runId: 't2', text: '完整' }])
+  })
+
+  it('ignores the opening snapshot and attempt markers', () => {
+    const bridge = new HarnessChatBridge()
+
+    expect(
+      bridge.map(follow({ type: 'snapshot', header: {}, cursor: 2, records: [], hasMore: false })),
+    ).toEqual([])
+    expect(
+      bridge.map(follow({ type: 'assistant-stream', frame: { type: 'start', turn: 1 } })),
+    ).toEqual([])
+    expect(
+      bridge.map(
+        follow({
+          type: 'assistant-stream',
+          frame: { type: 'end', outcome: { kind: 'committed', seq: 9 } },
+        }),
+      ),
+    ).toEqual([])
+  })
+
+  it('adopts the running turn the opening snapshot already contains', () => {
+    const bridge = new HarnessChatBridge()
+
+    bridge.map(
+      follow({
+        type: 'snapshot',
+        header: {},
+        cursor: 8,
+        hasMore: false,
+        records: [
+          { type: 'event', event: { type: 'turn/start', seq: 4, time: 0, data: { turn: 2 } } },
+        ],
+      }),
+    )
+
+    expect(bridge.map(follow(delta('你')))).toEqual([
+      { type: 'message.delta', sessionId: 's1', runId: 't2', text: '你' },
+    ])
+  })
+
+  it('routes durable events from the follow stream through the same mapping', () => {
+    const bridge = new HarnessChatBridge()
+
+    expect(
+      bridge.map(
+        follow({
+          type: 'event',
+          event: { type: 'turn/start', seq: 1, time: 0, data: { turn: 4 } },
+        }),
+      ),
+    ).toEqual([{ type: 'run.started', sessionId: 's1', runId: 't4' }])
+  })
+})

@@ -23,3 +23,28 @@ export {
   type PromptParams,
   type SessionParams,
 } from './protocol.js'
+
+export {
+  FollowStream,
+  type FollowStreamOptions,
+  type WebSocketConstructor,
+  type WebSocketLike,
+} from './follow.js'
+export { HarnessRemote, type HarnessRemoteOptions } from './remote.js'
+export type {
+  PromptContentPart,
+  SessionAddress,
+  SessionAssistantStreamFrame,
+  SessionCancelRequest,
+  SessionCreateRequest,
+  SessionCreateValue,
+  SessionFollowFrame,
+  SessionFollowRequest,
+  SessionPage,
+  SessionPageRequest,
+  SessionPromptRequest,
+  SessionPromptValue,
+  SessionWireEvent,
+  SessionWireHeader,
+  StreamChunk,
+} from './session.js'
