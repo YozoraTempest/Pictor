@@ -130,6 +130,44 @@ describe('follow stream', () => {
       chunk: { type: 'text-delta', index: 0, text },
     },
   })
+  const reasoning = (text: string) => ({
+    type: 'assistant-stream',
+    frame: {
+      type: 'chunk',
+      attemptId: 'a',
+      revision: 1,
+      index: 1,
+      time: 0,
+      chunk: { type: 'reasoning-delta', index: 1, text },
+    },
+  })
+
+  it('streams reasoning as its own row', () => {
+    const bridge = new HarnessChatBridge()
+    bridge.map(sessionEvent('turn/start', { turn: 2 }))
+
+    expect(bridge.map(follow(reasoning('先想一下')))).toEqual([
+      { type: 'thinking.delta', sessionId: 's1', runId: 't2', text: '先想一下' },
+    ])
+  })
+
+  it('keeps the committed answer after reasoning-only streaming', () => {
+    const bridge = new HarnessChatBridge()
+    bridge.map(sessionEvent('turn/start', { turn: 2 }))
+    bridge.map(follow(reasoning('先想一下')))
+
+    const committed = bridge.map(
+      sessionEvent('assistant/message', {
+        turn: 2,
+        step: 1,
+        message: { role: 'assistant', content: [{ type: 'text', text: '答案' }] },
+      }),
+    )
+
+    expect(committed).toEqual([
+      { type: 'message.delta', sessionId: 's1', runId: 't2', text: '答案' },
+    ])
+  })
 
   it('streams text deltas as they arrive', () => {
     const bridge = new HarnessChatBridge()

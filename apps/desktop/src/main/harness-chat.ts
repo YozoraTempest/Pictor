@@ -135,7 +135,7 @@ export class HarnessChatBridge {
     }
   }
 
-  /** One live model frame: only text deltas reach the transcript. */
+  /** One live model frame: text becomes the answer, reasoning its own row. */
   #mapStream(sessionId: string, frame: SessionAssistantStreamFrame): ChatEvent[] {
     if (frame.type !== 'chunk') {
       // `start` announces an attempt the durable `turn/start` already opened, and
@@ -143,10 +143,20 @@ export class HarnessChatBridge {
       return []
     }
     const chunk = frame.chunk
-    if (chunk?.type !== 'text-delta' || typeof chunk.text !== 'string') return []
-    if (chunk.text.length === 0) return []
+    if (chunk === undefined) return []
 
     const runId = this.#runId(sessionId)
+    // Reasoning arrives over the same channel. Mapping it keeps a long think from
+    // looking like a stall: the transcript shows it as its own collapsible row.
+    if (chunk.type === 'reasoning-delta') {
+      if (typeof chunk.text !== 'string' || chunk.text.length === 0) return []
+      return [{ type: 'thinking.delta', sessionId, runId, text: chunk.text }]
+    }
+    if (chunk.type !== 'text-delta') return []
+    if (typeof chunk.text !== 'string' || chunk.text.length === 0) return []
+
+    // Only an answer marks the run as streamed; reasoning must not swallow the
+    // committed message below.
     this.#streamed.add(runId)
     return [{ type: 'message.delta', sessionId, runId, text: chunk.text }]
   }

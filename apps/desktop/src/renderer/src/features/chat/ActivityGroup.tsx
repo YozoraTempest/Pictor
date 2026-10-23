@@ -1,6 +1,6 @@
 import { Brain, Check, ChevronDown, ShieldX, Terminal, TriangleAlert } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { ChatMessage } from '@pictor/shared'
 
@@ -29,6 +29,8 @@ export function ActivityGroup({
   running: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  /** Set once the reader works the disclosure, so the auto rules stop applying. */
+  const [touched, setTouched] = useState(false)
   const reduced = useReducedMotion()
   const items = groupActivityItems(messages)
   const last = items.at(-1)
@@ -44,6 +46,13 @@ export function ActivityGroup({
   // so instead of repeating the previous tool's name.
   const thinking = running && last?.kind === 'thinking'
   const single = tools.length === 1
+
+  // While the model only reasons, that reasoning *is* the run. Leaving the trail
+  // folded would answer a half-minute wait with a spinner the text could explain.
+  useEffect(() => {
+    if (touched) return
+    setOpen(thinking)
+  }, [thinking, touched])
 
   const rows = (
     <ActivityRows
@@ -120,7 +129,10 @@ export function ActivityGroup({
     >
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          setTouched(true)
+          setOpen((value) => !value)
+        }}
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-surface-hover"
       >
