@@ -34,6 +34,7 @@ an npm package unpacked into the profile, so no global install is involved.
 
 ```bash
 pnpm verify           # format + typecheck + lint + JS tests + Rust tests
+pnpm test:e2e         # end-to-end specs against a built app (needs a display)
 pnpm test:js
 pnpm test:rust
 pnpm build
@@ -171,9 +172,10 @@ protocols, streaming chat with runtime-owned transcripts and paginated recovery,
 reasoning display, three-column shell UI.
 
 Not yet implemented: a session tree (browsing every branch of one conversation in
-one view, or branching at an arbitrary message), remote hosts,
-packaging/auto-update, end-to-end UI tests. Plugin modules run in-process; there
-is no per-plugin process sandbox yet.
+one view, or branching at an arbitrary message), remote hosts, and
+packaging/auto-update. Plugin modules run in-process; there is no per-plugin
+process sandbox yet. `pnpm test:e2e` covers the flows a unit test cannot see, and
+sits outside `pnpm verify` because it needs a display and a built app.
 
 ## License
 

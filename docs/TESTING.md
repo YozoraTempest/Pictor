@@ -41,6 +41,25 @@ a network endpoint. The harness transport is exercised through an injected fake
 socket, and the Pi adapter through pure mapping functions (`toPiModel`,
 `mapPiEvent`), so no API key or live model is required.
 
+## End-to-end specs
+
+```bash
+pnpm build          # the specs drive the built app, not the sources
+pnpm test:e2e       # every spec
+pnpm test:e2e search  # one spec, matched by file name
+```
+
+Each spec runs against a real window: the harness launches Electron with a
+throwaway `PICTOR_USER_DATA` and a scratch project directory, connects over CDP
+with `playwright-core` (no browser download — it uses Electron's own Chromium),
+and hands the spec a `page`. A failing spec writes a screenshot to
+`$PI_SCRATCH_DIR`.
+
+Specs need a display. On a headless machine run them under `xvfb-run`, and note
+that they are not part of `pnpm verify` — they are slower and they exercise the
+real runtime, so they belong in a job of their own rather than in the gate every
+commit waits on.
+
 ## Desktop smoke test
 
 `pnpm build` then run the packaged main process without showing a window:

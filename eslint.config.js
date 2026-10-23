@@ -29,6 +29,12 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Specs hand functions to `page.evaluate`, which run inside the window: they
+    // legitimately touch browser globals in a file that is otherwise Node.
+    files: ['e2e/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+  {
     files: ['**/*.config.{ts,mts}', 'scripts/**/*.mjs', 'apps/**/scripts/**/*.mjs'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
