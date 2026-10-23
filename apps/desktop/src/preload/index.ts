@@ -94,6 +94,17 @@ const bridge: PictorBridge = {
       ipcRenderer.removeListener('pictor:chat.event', handler)
     }
   },
+  onApprovalRequest: (listener) => {
+    const handler = (_event: unknown, payload: unknown): void => {
+      listener(payload as Parameters<typeof listener>[0])
+    }
+    ipcRenderer.on('pictor:harness.approval', handler)
+    return () => {
+      ipcRenderer.removeListener('pictor:harness.approval', handler)
+    }
+  },
+  answerApproval: (eventId, allow) =>
+    ipcRenderer.invoke('pictor:harness.approvalAnswer', eventId, allow),
   onHarnessStatus: (listener) => {
     const handler = (_event: unknown, payload: unknown): void => {
       listener(payload as Parameters<typeof listener>[0])

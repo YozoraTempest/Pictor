@@ -89,3 +89,19 @@ export function isBlockedReason(text: string): boolean {
 export function stripBlockedPrefix(text: string): string {
   return text.startsWith(BLOCKED_REASON_PREFIX) ? text.slice(BLOCKED_REASON_PREFIX.length) : text
 }
+
+/**
+ * One decision the runtime is waiting for.
+ *
+ * The runtime asks before an operation its policy does not cover, and holds the
+ * tool call until an owner client answers. `eventId` is the handle the answer
+ * quotes; there is no session binding on the wire, so the request is shown to
+ * whichever conversation is open.
+ */
+export interface ApprovalRequest {
+  eventId: string
+  /** Tool that triggered it, when the runtime names one. */
+  tool: string | null
+  /** Why approval is needed, in the runtime's words. */
+  reason: string | null
+}

@@ -48,3 +48,4 @@ export type {
   SessionWireHeader,
   StreamChunk,
 } from './session.js'
+export { EventStream, type EventStreamOptions, type RemoteWaterfallFrame } from './events.js'

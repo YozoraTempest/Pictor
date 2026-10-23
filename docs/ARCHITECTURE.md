@@ -83,6 +83,9 @@ isolated per plugin and surfaced in the plugin report.
 - **State.** `HarnessChatBridge` translates runtime traffic into the events the
   renderer already understands. Session ids are normalised back to Pictor's ids at
   this boundary so a notification reaches the right conversation.
+- **Events.** `$events` is a second stream on the same mux, and the only channel
+  that carries questions the runtime needs a client to answer. The gateway greets
+  it with a `clientId`; every answer quotes that id plus the request's `eventId`.
 - **Process failures.** A runtime that exits marks the status `error` with the
   tail of its stderr; the settings page is the only place that starts and stops
   it.
@@ -105,9 +108,10 @@ does not care which runtime produced it:
   (`pictor:harness.status`) so a window can re-read a transcript that was opened
   before the runtime was up.
 - Tool approval is a seam, not a policy. On the Pi path
-  `setToolInterceptor` installs a `beforeToolCall` hook; on the runtime path the
-  approval request is answered by the runtime's own client seam, which this app
-  does not implement yet.
+  `setToolInterceptor` installs a `beforeToolCall` hook. On the runtime path the
+  request arrives as an `approval/request` waterfall on the application event
+  stream, and the app answers it over `$events/result`; a request nobody answers
+  settles as `unavailable`.
 
 ### Model configuration
 

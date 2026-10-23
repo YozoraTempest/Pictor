@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
 
 import {
+  EventStream,
   FollowStream,
   HarnessRemote,
   type HarnessNotification,
@@ -46,6 +47,8 @@ export function isPermissionMode(value: unknown): value is PermissionMode {
 }
 
 export interface HarnessServiceOptions {
+  /** Verbose transport logging; set by PICTOR_DEBUG_HARNESS. */
+  debug?: boolean
   model: ModelService
   /** `app.getPath('userData')`; the runtime gets its own directory inside it. */
   userData: string
@@ -121,6 +124,9 @@ export class HarnessService {
   readonly #options: HarnessServiceOptions
   readonly #listeners = new Set<(notification: HarnessNotification) => void>()
   readonly #follows = new Map<string, FollowStream>()
+  /** The application-wide event stream; without it, approvals go unanswered. */
+  #events: EventStream | null = null
+  #eventClientId: string | null = null
   /** Pictor session id → runtime session id; persisted so restarts reattach. */
   readonly #sessions = new Map<string, string>()
   /** Live mirror of each session log: the opening window plus every later event. */
@@ -133,7 +139,10 @@ export class HarnessService {
   #sessionsLoaded = false
 
   constructor(options: HarnessServiceOptions) {
-    this.#options = options
+    this.#options = {
+      ...options,
+      debug: options.debug ?? process.env['PICTOR_DEBUG_HARNESS'] === '1',
+    }
     const binary = this.#resolveBinary()
     this.#status = {
       state: 'stopped',
@@ -243,6 +252,8 @@ export class HarnessService {
 
       this.#remote = remote
       this.#socket = socket
+      // The client id arrives with the greeting; answers cannot be sent before it.
+      await this.#openEvents(remote, socket)
       this.#status = {
         ...this.#status,
         state: 'ready',
@@ -264,6 +275,9 @@ export class HarnessService {
   }
 
   async stop(): Promise<HarnessStatus> {
+    this.#events?.close()
+    this.#events = null
+    this.#eventClientId = null
     for (const stream of this.#follows.values()) stream.close()
     this.#follows.clear()
     this.#remote = null
@@ -445,6 +459,8 @@ export class HarnessService {
 
   #handleExit(): void {
     const wasReady = this.#status.state === 'ready'
+    this.#events = null
+    this.#eventClientId = null
     for (const stream of this.#follows.values()) stream.close()
     this.#follows.clear()
     this.#remote = null
@@ -607,6 +623,67 @@ export class HarnessService {
     const harnessId = known
     const events = this.#snapshots.get(harnessId) ?? (await this.#loadSnapshot(harnessId))
     return loadHarnessHistory(events ?? [], limit, offset)
+  }
+
+  /**
+   * Subscribe to the runtime's forwarded events.
+   *
+   * This is the channel the runtime uses to ask a client a question and wait for
+   * the answer. A stream that never opens is not fatal: the runtime keeps working
+   * and simply settles those questions with "unavailable", which is what happened
+   * before this existed.
+   */
+  async #openEvents(remote: HarnessRemote, socket: WebSocketConstructor): Promise<void> {
+    const cookie = remote.cookie
+    if (cookie === null) return
+
+    const stream = new EventStream({
+      url: `${remote.baseUrl.replace(/^http/, 'ws')}/api/remote.mux`,
+      cookie,
+      WebSocket: socket,
+      onReady: (clientId) => {
+        this.#eventClientId = clientId
+      },
+      onWaterfall: (frame) => {
+        // One request shape today; anything else is answered by nobody, as before.
+        if (frame.event !== 'approval/request') return
+        const request = (frame.request ?? {}) as Record<string, unknown>
+        this.#emit({
+          method: 'approval.request',
+          params: {
+            eventId: frame.eventId,
+            agentId: frame.agentId ?? null,
+            tool: typeof request['toolName'] === 'string' ? request['toolName'] : null,
+            reason: typeof request['reason'] === 'string' ? request['reason'] : null,
+          },
+        })
+      },
+      onError: (error) => {
+        if (this.#options.debug === true) console.warn('[harness] events', error.message)
+      },
+      onClose: () => {
+        if (this.#events === stream) {
+          this.#events = null
+          this.#eventClientId = null
+        }
+      },
+    })
+    this.#events = stream
+    await stream.open()
+  }
+
+  /** Answer one pending approval; the runtime resumes the tool call on allow. */
+  async answerApproval(eventId: string, allow: boolean): Promise<void> {
+    const remote = this.#remote
+    const clientId = this.#eventClientId
+    if (remote === null || clientId === null) throw new Error('agent 运行时尚未就绪')
+
+    await remote.call('$events/result', {
+      clientId,
+      eventId,
+      // The runtime's own vocabulary: an allow covers this call only.
+      outcome: { kind: 'result', value: allow ? 'allowed-once' : 'rejected' },
+    })
   }
 
   /** Take the opening window for a session, or null when the runtime has none. */

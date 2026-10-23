@@ -5,6 +5,8 @@ import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { formatDuration, newSessionTitle, phaseLabel } from '../../lib/format-time.js'
+import { useApprovalStore } from '../../app/approval-store.js'
+import { ApprovalCard } from './ApprovalCard.js'
 import { useChatStore } from './chat-store.js'
 import { Composer } from './Composer.js'
 import { ProjectPicker } from './ProjectPicker.js'
@@ -25,6 +27,7 @@ export function ChatView(): React.JSX.Element {
   const createSession = useWorkspaceStore((state) => state.createSession)
   const setSessionSections = useWorkspaceStore((state) => state.setSessionSections)
   const draft = useWorkspaceStore((state) => state.draft)
+  const approval = useApprovalStore((state) => state.pending)
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const clearDraft = useWorkspaceStore((state) => state.clearDraft)
   const setDraftProject = useWorkspaceStore((state) => state.setDraftProject)
@@ -256,6 +259,7 @@ export function ChatView(): React.JSX.Element {
               jumpTo={jumpTo}
               footer={
                 <div className="flex flex-col gap-2">
+                  {approval !== null && <ApprovalCard request={approval} />}
                   {status}
                   {draft !== null && (
                     <ProjectPicker projectId={draft.projectId} onChange={setDraftProject} />

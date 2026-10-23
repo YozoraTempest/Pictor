@@ -22,6 +22,7 @@ import {
 import { readModelSettings, writeModelsJson } from '@pictor/model-config'
 import {
   BLOCKED_REASON_PREFIX,
+  type ApprovalRequest,
   type JsonValue,
   type ModelProtocol,
   type PluginRecord,
@@ -255,6 +256,23 @@ async function startWorkspace(): Promise<Workspace | null> {
   harness.onNotification((notification) => {
     // The runtime explains its own failures on stderr; without this the status is
     // the only place a user could read them.
+    if (notification.method === 'approval.request') {
+      const params = (notification.params ?? {}) as {
+        eventId?: unknown
+        tool?: unknown
+        reason?: unknown
+      }
+      if (typeof params.eventId === 'string') {
+        const request: ApprovalRequest = {
+          eventId: params.eventId,
+          tool: typeof params.tool === 'string' ? params.tool : null,
+          reason: typeof params.reason === 'string' ? params.reason : null,
+        }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('pictor:harness.approval', request)
+        }
+      }
+    }
     if (notification.method === 'runtime.stderr') {
       const text = (notification.params as { text?: unknown } | null)?.text
       if (typeof text === 'string' && text.trim().length > 0) {
@@ -855,6 +873,16 @@ function registerIpc(workspace: Workspace): void {
     broadcastHarnessStatus(status)
     return status
   })
+
+  ipcMain.handle(
+    'pictor:harness.approvalAnswer',
+    async (_event, eventId: unknown, allow: unknown) => {
+      if (typeof eventId !== 'string' || eventId.length === 0)
+        throw new Error('eventId is required')
+      if (typeof allow !== 'boolean') throw new Error('allow must be a boolean')
+      await workspace.harness.answerApproval(eventId, allow)
+    },
+  )
 
   ipcMain.handle('pictor:harness.install', async (): Promise<HarnessStatus> => {
     return workspace.harness.install()

@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Banner } from '../components/ui/index.js'
 import { useChatStore } from '../features/chat/chat-store.js'
 import { AppShell } from '../shell/AppShell.js'
+import { useApprovalStore } from './approval-store.js'
 import { useUiStore } from './ui-store.js'
 import { findView } from './views.js'
 import { useAppShortcuts } from './use-app-shortcuts.js'
@@ -28,6 +29,16 @@ export function App(): React.JSX.Element {
   }, [refresh, setError])
 
   useEffect(() => window.pictor.onChatEvent(useChatStore.getState().handleEvent), [])
+
+  // The runtime blocks a tool call until a decision arrives; keep the request
+  // where every window can render it, not inside a transcript.
+  useEffect(
+    () =>
+      window.pictor.onApprovalRequest((request) => {
+        useApprovalStore.getState().show(request)
+      }),
+    [],
+  )
 
   // A conversation opened before the runtime was up holds an empty transcript;
   // when the runtime arrives, the same conversation has to be read again.

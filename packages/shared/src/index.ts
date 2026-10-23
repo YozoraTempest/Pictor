@@ -82,3 +82,5 @@ export type HostErrorCode = (typeof HOST_ERROR_CODES)[keyof typeof HOST_ERROR_CO
 export * from './model.js'
 
 export * from './chat.js'
+
+export type { ApprovalRequest } from './chat.js'

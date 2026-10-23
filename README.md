@@ -8,7 +8,7 @@ the app installs and boots as its runtime.
 
 > Status: runnable app. Projects, sessions, plugins, model services, cc-switch
 > import, endpoint probes and a streaming agent chat backed by the dsh runtime
-> are implemented. Packaging, tool approval answers and image input are not.
+> are implemented. Packaging and image input are not.
 
 ## Requirements
 
@@ -103,6 +103,10 @@ the runtime's own HTTP and WebSocket API.
 - **Permissions.** **Settings › Runtime** selects `read-only`,
   `workspace-write` or `danger-full-access`, which reaches the runtime as
   `DSH_PERMISSION_MODE`.
+- **Approvals.** The runtime asks before an operation its policy does not cover.
+  The app holds that request open in a card beside the composer and answers it
+  over the runtime's own event stream, so a tool call can proceed or be refused
+  instead of failing closed.
 
 ## Chat
 
@@ -150,10 +154,10 @@ and connection test, the dsh runtime with in-app installation, three wire
 protocols, streaming chat with runtime-owned transcripts and paginated recovery,
 reasoning display, three-column shell UI.
 
-Not yet implemented: answering the runtime's approval requests, tool guards on the
-runtime path (they only cover the legacy Pi path), image input, session
-search/tree, remote hosts, packaging/auto-update, end-to-end UI tests. Plugin
-modules run in-process; there is no per-plugin process sandbox yet.
+Not yet implemented: tool guards on the runtime path (they only cover the legacy
+Pi path), image input, session search/tree, remote hosts, packaging/auto-update,
+end-to-end UI tests. Plugin modules run in-process; there is no per-plugin process
+sandbox yet.
 
 ## License
 
