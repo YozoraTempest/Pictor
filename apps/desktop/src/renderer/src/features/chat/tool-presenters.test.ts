@@ -23,6 +23,29 @@ describe('presentTool', () => {
     expect(view.sections).toEqual([{ title: '文件内容', body: '# Architecture' }])
   })
 
+  it('unwraps the read payload and captions the window it returned', () => {
+    const view = presentTool(
+      call({
+        toolName: 'read',
+        input: { path: '/repo/src/app.ts' },
+        text: '<path>/repo/src/app.ts</path>\n<type>file</type>\n<content>\n1: const a = 1\n2: const b = 2\n\n(Showing lines 1-2 of 40. Use offset=3 to continue.)\n</content>',
+      }),
+    )
+
+    expect(view.sections).toEqual([
+      {
+        title: '文件内容 · 第 1-2 行 / 共 40 行',
+        body: '1: const a = 1\n2: const b = 2',
+      },
+    ])
+  })
+
+  it('leaves a payload without the wrapper alone', () => {
+    const view = presentTool(call({ toolName: 'read', text: 'plain body' }))
+
+    expect(view.sections).toEqual([{ title: '文件内容', body: 'plain body' }])
+  })
+
   it('presents bash with the command it ran and its output', () => {
     const view = presentTool(
       call({ toolName: 'bash', input: { command: 'ls -la' }, text: 'total 0' }),

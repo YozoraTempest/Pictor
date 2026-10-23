@@ -149,13 +149,42 @@ function pathArg(args: Record<string, unknown>): string {
   return path.length > 0 ? path : field(args, 'file_path')
 }
 
+/**
+ * The `read` payload arrives wrapped for the model, not for a reader.
+ *
+ * dsh answers with `<path>…</path><type>file</type><content>…</content>` and a
+ * trailer naming the window it returned. The card shows the file; the window is
+ * a caption, so it moves to the section title instead of sitting in the text.
+ */
+function readPayload(text: string): { body: string; range: string | null } {
+  const open = text.indexOf('<content>')
+  const close = text.lastIndexOf('</content>')
+  const inner = open >= 0 && close > open ? text.slice(open + '<content>'.length, close) : text
+  const note = /\(Showing lines (\d+)-(\d+) of (\d+)[^)]*\)/.exec(text)
+  return {
+    // The trailer is the last thing inside the content block, so it is removed
+    // with the wrapper rather than by position.
+    body: inner
+      .replace(/\(Showing lines \d+-\d+ of \d+[^)]*\)/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+|\n+$/g, ''),
+    range: note === null ? null : `第 ${note[1]}-${note[2]} 行 / 共 ${note[3]} 行`,
+  }
+}
+
 registerToolPresenter('read', (message) => {
   const args = asRecord(message.input)
+  const payload = readPayload(message.text)
   return {
     label: '阅读',
     icon: FileText,
     target: baseName(pathArg(args)),
-    sections: [{ title: '文件内容', body: message.text }],
+    sections: [
+      {
+        title: payload.range === null ? '文件内容' : `文件内容 · ${payload.range}`,
+        body: payload.body,
+      },
+    ],
   }
 })
 
