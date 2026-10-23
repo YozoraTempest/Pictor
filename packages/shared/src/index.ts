@@ -83,4 +83,4 @@ export * from './model.js'
 
 export * from './chat.js'
 
-export type { ApprovalRequest } from './chat.js'
+export type { ApprovalRequest, ChatImage } from './chat.js'

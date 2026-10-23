@@ -148,8 +148,11 @@ written twice.
   capability surface; an agent tool may open a panel, but a panel is not a tool.
 - Tool guard: `contributes('toolGuards', { id, tools?, decide })` polices agent
   tool calls before they run. Guards run in contribution order, the first deny
-  wins, and a guard that throws fails closed. They currently cover the legacy Pi
-  path only; the runtime path is policed by the runtime's sandbox policy.
+  wins, and a guard that throws fails closed. They cover the legacy Pi path only:
+  the runtime keeps its own guard seam (`tools/pre-execute`) but mounting a
+  Pictor plugin into its profile is not possible yet — the runtime applies the
+  entry list without loading modules the bundle stack does not declare. On that
+  path the runtime's sandbox policy is the only gate.
 - A new wire protocol: add it to `ModelProtocol`, teach the connection probe its
   endpoint and headers, and let the patch generator pass it through. Nothing else
   in the app needs to know.

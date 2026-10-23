@@ -9,6 +9,7 @@ import {
   EventStream,
   FollowStream,
   HarnessRemote,
+  type PromptContentPart,
   type HarnessNotification,
   type SessionCreateValue,
   type SessionFollowFrame,
@@ -18,7 +19,7 @@ import {
   type WebSocketLike,
 } from '@pictor/harness'
 
-import type { ChatHistoryPage, ModelSettings } from '@pictor/shared'
+import type { ChatHistoryPage, ChatImage, ModelSettings } from '@pictor/shared'
 
 import { loadHarnessHistory } from './harness-history.js'
 import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
@@ -294,18 +295,29 @@ export class HarnessService {
    * there under the same id, and the follow stream is opened before the prompt so
    * the very first token is not missed.
    */
-  async prompt(sessionId: string, text: string): Promise<void> {
+  async prompt(sessionId: string, text: string, images: readonly ChatImage[] = []): Promise<void> {
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
 
     const harnessId = await this.#sessionFor(sessionId)
     await this.#ensureFollow(harnessId)
+    // Images ride beside the text; the runtime feeds them to a model that declared
+    // image input, and rejects them for one that did not.
+    const content: PromptContentPart[] = [
+      ...(text.trim().length === 0 ? [] : [{ type: 'text' as const, text }]),
+      ...images.map((image) => ({
+        type: 'image' as const,
+        mediaType: image.mediaType,
+        data: image.data,
+        ...(image.name === undefined ? {} : { name: image.name }),
+      })),
+    ]
     await remote.call<SessionPromptValue>('session/prompt', {
       request: {
         requestId: randomUUID(),
         sessionId: harnessId,
         mode: 'queue',
-        content: [{ type: 'text', text }],
+        content,
       },
     })
   }

@@ -21,6 +21,18 @@ export interface ChatMessage {
    * diffing the call arguments, and it survives a reload via the JSONL entry.
    */
   diff?: string
+  /** Images the user attached to this message; base64, no data URL prefix. */
+  images?: ChatImage[]
+}
+
+/** One image the user pasted or dropped into the composer. */
+export interface ChatImage {
+  /** MIME type, e.g. `image/png`. */
+  mediaType: string
+  /** Base64 payload without the `data:` prefix. */
+  data: string
+  /** Original file name when the image came from disk. */
+  name?: string
 }
 
 export interface ChatHistoryPage {

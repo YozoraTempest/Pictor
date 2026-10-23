@@ -80,7 +80,8 @@ const bridge: PictorBridge = {
     ipcRenderer.invoke('pictor:model.agentTest', prompt, workingDirectory),
 
   openChat: (sessionId) => ipcRenderer.invoke('pictor:chat.open', sessionId),
-  sendChat: (sessionId, prompt) => ipcRenderer.invoke('pictor:chat.send', sessionId, prompt),
+  sendChat: (sessionId, prompt, images) =>
+    ipcRenderer.invoke('pictor:chat.send', sessionId, prompt, images),
   stopChat: (sessionId) => ipcRenderer.invoke('pictor:chat.stop', sessionId),
   closeChat: (sessionId) => ipcRenderer.invoke('pictor:chat.close', sessionId),
   chatHistory: (path, limit, offset) =>

@@ -8,7 +8,7 @@ the app installs and boots as its runtime.
 
 > Status: runnable app. Projects, sessions, plugins, model services, cc-switch
 > import, endpoint probes and a streaming agent chat backed by the dsh runtime
-> are implemented. Packaging and image input are not.
+> are implemented. Packaging is not.
 
 ## Requirements
 
@@ -114,6 +114,8 @@ Selecting a session opens its transcript and a composer:
 
 - Text streams token by token; the model's reasoning streams into its own
   collapsible row above the answer.
+- Images can be pasted or dropped into the composer; they are sent beside the
+  text as content blocks and shown in the user's bubble.
 - Tool executions appear as rows with a presenter per tool (command and output
   for `bash`, file content for `read`, a diff for `edit`).
 - The transcript is paginated: the newest 50 messages load first and **Load older
@@ -154,10 +156,12 @@ and connection test, the dsh runtime with in-app installation, three wire
 protocols, streaming chat with runtime-owned transcripts and paginated recovery,
 reasoning display, three-column shell UI.
 
-Not yet implemented: tool guards on the runtime path (they only cover the legacy
-Pi path), image input, session search/tree, remote hosts, packaging/auto-update,
-end-to-end UI tests. Plugin modules run in-process; there is no per-plugin process
-sandbox yet.
+Not yet implemented: tool guards on the runtime path. The app cannot mount a
+plugin into the runtime's profile (`cordis.patch.yml` lists it, but the kernel
+never applies entries the bundle stack did not declare), so guards still only
+cover the legacy Pi path. Also missing: session search/tree, remote hosts,
+packaging/auto-update, end-to-end UI tests. Plugin modules run in-process; there
+is no per-plugin process sandbox yet.
 
 ## License
 

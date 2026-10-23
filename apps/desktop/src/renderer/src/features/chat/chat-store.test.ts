@@ -114,3 +114,66 @@ describe('chat-store open', () => {
     expect(calls).toBe(2)
   })
 })
+
+describe('chat-store send', () => {
+  it('carries images beside the text and keeps them on the optimistic row', async () => {
+    const calls: unknown[][] = []
+    ;(window as unknown as { pictor: unknown }).pictor = {
+      sendChat: async (...args: unknown[]) => {
+        calls.push(args)
+      },
+    }
+
+    const slice = {
+      sessionId: 's1',
+      path: 'harness:s1',
+      messages: [],
+      offset: 0,
+      hasMore: false,
+      loading: false,
+      running: false,
+      runStartedAt: null,
+      runFinishedAt: null,
+      phase: 'idle' as const,
+      currentTool: null,
+      error: null,
+      retry: null,
+    }
+    useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })
+
+    const image = { mediaType: 'image/png', data: 'AAAA', name: 'shot.png' }
+    await useChatStore.getState().send('看看这张图', [image])
+
+    expect(calls[0]).toEqual(['s1', '看看这张图', [image]])
+    expect(useChatStore.getState().current.messages[0]?.images).toEqual([image])
+  })
+
+  it('sends an image-only message', async () => {
+    const calls: unknown[][] = []
+    ;(window as unknown as { pictor: unknown }).pictor = {
+      sendChat: async (...args: unknown[]) => {
+        calls.push(args)
+      },
+    }
+
+    const slice = {
+      sessionId: 's1',
+      path: 'harness:s1',
+      messages: [],
+      offset: 0,
+      hasMore: false,
+      loading: false,
+      running: false,
+      runStartedAt: null,
+      runFinishedAt: null,
+      phase: 'idle' as const,
+      currentTool: null,
+      error: null,
+      retry: null,
+    }
+    useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })
+
+    await useChatStore.getState().send('  ', [{ mediaType: 'image/jpeg', data: 'BBBB' }])
+    expect(calls).toHaveLength(1)
+  })
+})

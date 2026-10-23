@@ -1,5 +1,6 @@
 import type {
   ApprovalRequest,
+  ChatImage,
   CcSwitchProviderSummary,
   ProviderInput,
   ProviderList,
@@ -194,7 +195,7 @@ export interface PictorBridge {
   runAgentTest(prompt: string, workingDirectory: string): Promise<AgentTestResult>
 
   openChat(sessionId: string): Promise<OpenChatResult>
-  sendChat(sessionId: string, prompt: string): Promise<void>
+  sendChat(sessionId: string, prompt: string, images?: ChatImage[]): Promise<void>
   stopChat(sessionId: string): Promise<void>
   closeChat(sessionId: string): Promise<void>
   chatHistory(path: string, limit: number, offset: number): Promise<ChatHistoryPage>

@@ -1,6 +1,8 @@
 import { AlertTriangle, MessageSquarePlus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import type { ChatImage } from '@pictor/shared'
+
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
@@ -178,9 +180,9 @@ export function ChatView(): React.JSX.Element {
    * Sends a prompt. A draft has no session yet, so the first prompt creates one —
    * with the project the draft carries — and files it into its section.
    */
-  async function submit(prompt: string): Promise<void> {
+  async function submit(prompt: string, images: ChatImage[] = []): Promise<void> {
     if (draft === null) {
-      await send(prompt)
+      await send(prompt, images)
       return
     }
 
@@ -193,7 +195,7 @@ export function ChatView(): React.JSX.Element {
     // Open explicitly: the store's own effect may not have run yet, and `send`
     // needs the session's transcript path.
     await useChatStore.getState().open(created.id)
-    await useChatStore.getState().send(prompt)
+    await useChatStore.getState().send(prompt, images)
   }
 
   /**
@@ -268,7 +270,7 @@ export function ChatView(): React.JSX.Element {
                     disabled={false}
                     onModelChanged={() => void handleModelChanged()}
                     running={running}
-                    onSend={(prompt) => void submit(prompt)}
+                    onSend={(prompt, images) => void submit(prompt, images)}
                     onStop={() => void stop()}
                   />
                 </div>

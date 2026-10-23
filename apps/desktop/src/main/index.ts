@@ -23,6 +23,7 @@ import { readModelSettings, writeModelsJson } from '@pictor/model-config'
 import {
   BLOCKED_REASON_PREFIX,
   type ApprovalRequest,
+  type ChatImage,
   type JsonValue,
   type ModelProtocol,
   type PluginRecord,
@@ -447,6 +448,32 @@ function broadcastHarnessStatus(status: HarnessStatus): void {
   }
 }
 
+/** Upper bounds so one paste cannot exhaust memory or the runtime's request. */
+const MAX_IMAGES = 5
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+/** Validates the renderer's attachments before they reach the runtime. */
+function parseImages(value: unknown): ChatImage[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new Error('images must be an array')
+  if (value.length > MAX_IMAGES) throw new Error(`最多附加 ${String(MAX_IMAGES)} 张图片`)
+
+  return value.map((entry): ChatImage => {
+    if (typeof entry !== 'object' || entry === null) throw new Error('invalid image')
+    const record = entry as Record<string, unknown>
+    const mediaType = record['mediaType']
+    const data = record['data']
+    if (typeof mediaType !== 'string' || !mediaType.startsWith('image/')) {
+      throw new Error('image mediaType must be an image type')
+    }
+    if (typeof data !== 'string' || data.length === 0) throw new Error('image data is required')
+    // Base64 grows by 4/3; this keeps the decoded payload under the cap.
+    if (data.length > (MAX_IMAGE_BYTES * 4) / 3) throw new Error('图片过大')
+    const name = typeof record['name'] === 'string' ? record['name'] : undefined
+    return { mediaType, data, ...(name === undefined ? {} : { name }) }
+  })
+}
+
 function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:window.command', (event, command: unknown) => {
     if (!isWindowCommand(command)) throw new Error('unknown window command')
@@ -803,19 +830,24 @@ function registerIpc(workspace: Workspace): void {
     }
   })
 
-  ipcMain.handle('pictor:chat.send', async (_event, sessionId: unknown, prompt: unknown) => {
-    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
-    if (typeof prompt !== 'string' || prompt.trim().length === 0) {
-      throw new Error('prompt must be a non-empty string')
-    }
-    // Conversations run on the kernel once it is up; the Pi path stays as the
-    // fallback so a profile without a runtime still works.
-    if (workspace.harness.status().state === 'ready') {
-      await workspace.harness.prompt(sessionId, prompt)
-      return
-    }
-    await workspace.chatFor(sessionId).send(prompt)
-  })
+  ipcMain.handle(
+    'pictor:chat.send',
+    async (_event, sessionId: unknown, prompt: unknown, images: unknown) => {
+      if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+      if (typeof prompt !== 'string') throw new Error('prompt must be a string')
+      const attachments = parseImages(images)
+      if (prompt.trim().length === 0 && attachments.length === 0) {
+        throw new Error('a message needs text or an image')
+      }
+      // Conversations run on the kernel once it is up; the Pi path stays as the
+      // fallback so a profile without a runtime still works, but it takes text.
+      if (workspace.harness.status().state === 'ready') {
+        await workspace.harness.prompt(sessionId, prompt, attachments)
+        return
+      }
+      await workspace.chatFor(sessionId).send(prompt)
+    },
+  )
 
   ipcMain.handle('pictor:chat.stop', async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')

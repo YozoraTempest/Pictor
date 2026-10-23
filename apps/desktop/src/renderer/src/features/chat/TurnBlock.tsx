@@ -30,8 +30,20 @@ export function TurnBlock({ turn, live, phase, currentTool }: TurnBlockProps): R
       {turn.user !== null && (
         <div className="group flex justify-end">
           <div className="flex max-w-2xl flex-col items-end gap-1">
-            <div className="selectable rounded-lg rounded-br-sm border border-border bg-surface-raised px-3.5 py-2 text-sm whitespace-pre-wrap">
-              {turn.user.text}
+            <div className="selectable flex flex-col gap-2 rounded-lg rounded-br-sm border border-border bg-surface-raised px-3.5 py-2 text-sm whitespace-pre-wrap">
+              {turn.user.images !== undefined && turn.user.images.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {turn.user.images.map((image, index) => (
+                    <img
+                      key={`${image.name ?? 'image'}-${String(index)}`}
+                      src={`data:${image.mediaType};base64,${image.data}`}
+                      alt={image.name ?? '附图'}
+                      className="max-h-40 rounded-md border border-border object-contain"
+                    />
+                  ))}
+                </div>
+              )}
+              {turn.user.text.length > 0 && turn.user.text}
             </div>
             <Timestamp timestamp={turn.user.timestamp} align="end" />
           </div>

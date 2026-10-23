@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-import type { ChatEvent, ChatMessage } from '@pictor/shared'
+import type { ChatEvent, ChatImage, ChatMessage } from '@pictor/shared'
 
 /** Phase of a running agent, shown next to its name. */
 export type ChatPhase = 'idle' | 'connecting' | 'thinking' | 'tool' | 'writing'
@@ -34,7 +34,7 @@ interface ChatState {
 
   open: (sessionId: string | null, options?: { reload?: boolean }) => Promise<void>
   close: (sessionId: string) => Promise<void>
-  send: (prompt: string) => Promise<void>
+  send: (prompt: string, images?: ChatImage[]) => Promise<void>
   stop: () => Promise<void>
   loadOlder: () => Promise<void>
   handleEvent: (event: ChatEvent) => void
@@ -171,7 +171,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       await window.pictor.closeChat(sessionId)
     },
 
-    async send(prompt) {
+    async send(prompt, images = []) {
       const sessionId = get().viewing
       if (sessionId === null) return
 
@@ -179,13 +179,14 @@ export const useChatStore = create<ChatState>()((set, get) => {
       if (slice === undefined || slice.path === null || slice.running) return
 
       const trimmed = prompt.trim()
-      if (trimmed.length === 0) return
+      if (trimmed.length === 0 && images.length === 0) return
 
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
         text: trimmed,
         timestamp: Date.now(),
+        ...(images.length === 0 ? {} : { images }),
       }
 
       patch(sessionId, (current) => ({
@@ -195,7 +196,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       }))
 
       try {
-        await window.pictor.sendChat(sessionId, trimmed)
+        await window.pictor.sendChat(sessionId, trimmed, images.length === 0 ? undefined : images)
       } catch (reason) {
         patch(sessionId, () => ({
           running: false,
