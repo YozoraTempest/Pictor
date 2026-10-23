@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import type { Project, Section, Session } from '@pictor/shared'
 
-import { collectSectionSessionIds, groupSessions, moveSectionOrder } from './grouping.js'
+import {
+  collectSectionSessionIds,
+  filterSessionsByQuery,
+  groupSessions,
+  moveSectionOrder,
+} from './grouping.js'
 
 const NOW = 1_700_000_000_000
 const HOUR = 3_600_000
@@ -427,5 +432,60 @@ describe('groupSessions (section → project → session)', () => {
     const projectsSection = nodes.find((node) => node.id === 'projects')
     expect(projectsSection).toBeDefined()
     expect(collectSectionSessionIds(projectsSection!).sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe('filterSessionsByQuery', () => {
+  const alpha = session({ id: 'a', title: '排查构建失败' })
+  const beta = session({ id: 'b', title: '整理发布文档' })
+  const inProject = session({ id: 'c', title: '新会话 10:27', projectId: 'p1' })
+  const projects = [project('p1', 'Astra-Opensource')]
+  const all = [alpha, beta, inProject]
+
+  it('returns everything for an empty query', () => {
+    expect(filterSessionsByQuery(all, projects, '   ')).toEqual(all)
+  })
+
+  it('matches the title without regard to case', () => {
+    expect(filterSessionsByQuery(all, projects, '构建')).toEqual([alpha])
+    expect(filterSessionsByQuery(all, projects, 'ASTRA')).toEqual([inProject])
+  })
+
+  it('matches the project name of a session', () => {
+    expect(filterSessionsByQuery(all, projects, 'astra-opensource')).toEqual([inProject])
+  })
+
+  it('returns nothing when no session matches', () => {
+    expect(filterSessionsByQuery(all, projects, 'zzz')).toEqual([])
+  })
+})
+
+describe('groupSessions with hideEmpty', () => {
+  const projects = [project('p1', 'Alpha'), project('p2', 'Beta')]
+  const sessions = [
+    session({ id: 'a', title: 'alpha one', projectId: 'p1', updatedAt: NOW }),
+    session({ id: 'b', title: 'beta one', projectId: 'p2', updatedAt: NOW - HOUR }),
+  ]
+  const base = {
+    projects,
+    sections: [],
+    mode: 'overlap' as const,
+    sorts: {},
+  }
+
+  it('keeps empty sections while browsing', () => {
+    const nodes = groupSessions({ ...base, sessions })
+    expect(nodes.some((node) => node.count === 0)).toBe(true)
+  })
+
+  it('drops empty sections and projects while searching', () => {
+    const matched = filterSessionsByQuery(sessions, projects, 'alpha')
+    const nodes = groupSessions({ ...base, sessions: matched, hideEmpty: true })
+
+    expect(nodes.every((node) => node.count > 0)).toBe(true)
+    const projectTitles = nodes.flatMap((node) =>
+      node.children.flatMap((child) => (child.kind === 'project' ? [child.project.name] : [])),
+    )
+    expect(projectTitles).toEqual(['Alpha'])
   })
 })

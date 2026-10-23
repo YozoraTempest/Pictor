@@ -52,6 +52,13 @@ export interface GroupingInput {
   order?: string[]
   /** Sort preference per section id (built-in ids and custom section ids). */
   sorts: Record<string, SectionSort>
+  /**
+   * Drop sections and projects that hold nothing.
+   *
+   * Off while browsing: an empty section is still a drop target. On while
+   * searching: a section nobody matched is noise.
+   */
+  hideEmpty?: boolean
 }
 
 export const PINNED_ID = 'pinned'
@@ -151,7 +158,12 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
     const sort = pickSort(sorts, id)
     const projectsInSection = FLAT_SECTIONS.has(kind)
       ? []
-      : projects.filter((project) => (project.sectionId ?? null) === sectionId)
+      : projects.filter(
+          (project) =>
+            (project.sectionId ?? null) === sectionId &&
+            (input.hideEmpty !== true ||
+              projectPool.some((session) => session.projectId === project.id)),
+        )
     const nested = projectsInSection.length > 0
     const knownProjects = new Set(projectsInSection.map((project) => project.id))
 
@@ -240,10 +252,34 @@ export function groupSessions(input: GroupingInput): SectionNode[] {
   }
 
   if (archived.length > 0) {
-    nodes.push(buildsSection(ARCHIVED_ID, '已归档', 'archived', null, archived, []))
+    const archivedNode = buildsSection(ARCHIVED_ID, '已归档', 'archived', null, archived, [])
+    if (input.hideEmpty !== true || archivedNode.count > 0) nodes.push(archivedNode)
   }
 
-  return nodes
+  return input.hideEmpty === true ? nodes.filter((node) => node.count > 0) : nodes
+}
+
+/**
+ * Sessions whose title or project name matches `query`.
+ *
+ * Case-insensitive substring on purpose: the sidebar is a short list of
+ * human-named rows, and fuzzy ranking would order them in ways nobody can predict.
+ * An empty query matches everything, so callers need no special case.
+ */
+export function filterSessionsByQuery(
+  sessions: readonly Session[],
+  projects: readonly Project[],
+  query: string,
+): Session[] {
+  const needle = query.trim().toLowerCase()
+  if (needle.length === 0) return [...sessions]
+
+  const projectName = new Map(projects.map((project) => [project.id, project.name.toLowerCase()]))
+  return sessions.filter((session) => {
+    if (session.title.toLowerCase().includes(needle)) return true
+    const name = session.projectId === null ? undefined : projectName.get(session.projectId)
+    return name !== undefined && name.includes(needle)
+  })
 }
 
 /** Key a section is stored under when the user reorders the sidebar. */

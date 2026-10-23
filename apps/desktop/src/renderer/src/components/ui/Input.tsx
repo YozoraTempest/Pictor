@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, TextareaHTMLAttributes } from 'react'
+import type { InputHTMLAttributes, Ref, TextareaHTMLAttributes } from 'react'
 
 import { cn } from '../../lib/cn.js'
 
@@ -8,7 +8,7 @@ const fieldBase =
 export function Input({
   className,
   ...props
-}: InputHTMLAttributes<HTMLInputElement>): React.JSX.Element {
+}: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> }): React.JSX.Element {
   return <input className={cn(fieldBase, 'h-9', className)} {...props} />
 }
 
