@@ -85,3 +85,32 @@ describe('chat-store handleEvent', () => {
     expect(useChatStore.getState().current.messages).toEqual([])
   })
 })
+
+describe('chat-store open', () => {
+  beforeEach(() => {
+    useChatStore.setState({
+      viewing: null,
+      chats: {},
+      current: { ...useChatStore.getState().current, sessionId: '' },
+    })
+  })
+
+  it('skips the call when the transcript is already loaded, and reloads on request', async () => {
+    let calls = 0
+    ;(window as unknown as { pictor: unknown }).pictor = {
+      openChat: async () => {
+        calls += 1
+        return { path: 'harness:s1', history: { messages: [], nextOffset: 0, hasMore: false } }
+      },
+      closeChat: async () => undefined,
+    }
+
+    await useChatStore.getState().open('s1')
+    await useChatStore.getState().open('s1')
+    // Cached: the second open must not reset a transcript the user is reading.
+    expect(calls).toBe(1)
+
+    await useChatStore.getState().open('s1', { reload: true })
+    expect(calls).toBe(2)
+  })
+})

@@ -198,4 +198,6 @@ export interface PictorBridge {
   closeChat(sessionId: string): Promise<void>
   chatHistory(path: string, limit: number, offset: number): Promise<ChatHistoryPage>
   onChatEvent(listener: (event: ChatEvent) => void): () => void
+  /** Fires whenever the runtime starts, stops or fails; a transcript may be stale. */
+  onHarnessStatus(listener: (status: HarnessStatus) => void): () => void
 }

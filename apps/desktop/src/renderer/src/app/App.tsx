@@ -29,6 +29,20 @@ export function App(): React.JSX.Element {
 
   useEffect(() => window.pictor.onChatEvent(useChatStore.getState().handleEvent), [])
 
+  // A conversation opened before the runtime was up holds an empty transcript;
+  // when the runtime arrives, the same conversation has to be read again.
+  useEffect(
+    () =>
+      window.pictor.onHarnessStatus((status) => {
+        if (status.state !== 'ready') return
+        const { viewing, chats } = useChatStore.getState()
+        if (viewing === null) return
+        if ((chats[viewing]?.messages.length ?? 0) !== 0) return
+        void useChatStore.getState().open(viewing, { reload: true })
+      }),
+    [],
+  )
+
   useEffect(() => {
     void useChatStore.getState().open(selectedSessionId)
   }, [selectedSessionId])

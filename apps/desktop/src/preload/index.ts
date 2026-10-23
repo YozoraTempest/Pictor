@@ -94,6 +94,15 @@ const bridge: PictorBridge = {
       ipcRenderer.removeListener('pictor:chat.event', handler)
     }
   },
+  onHarnessStatus: (listener) => {
+    const handler = (_event: unknown, payload: unknown): void => {
+      listener(payload as Parameters<typeof listener>[0])
+    }
+    ipcRenderer.on('pictor:harness.status', handler)
+    return () => {
+      ipcRenderer.removeListener('pictor:harness.status', handler)
+    }
+  },
 }
 
 contextBridge.exposeInMainWorld('pictor', bridge)

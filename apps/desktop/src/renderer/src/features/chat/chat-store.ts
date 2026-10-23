@@ -32,7 +32,7 @@ interface ChatState {
   /** Slice of `viewing`, so components read one stable object. */
   current: ChatSlice
 
-  open: (sessionId: string | null) => Promise<void>
+  open: (sessionId: string | null, options?: { reload?: boolean }) => Promise<void>
   close: (sessionId: string) => Promise<void>
   send: (prompt: string) => Promise<void>
   stop: () => Promise<void>
@@ -112,7 +112,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     chats: {},
     current: EMPTY,
 
-    async open(sessionId) {
+    async open(sessionId, options = {}) {
       if (sessionId === null) {
         set({ viewing: null, current: EMPTY })
         return
@@ -128,8 +128,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
       })
 
       // Already loaded: reopening would reset the transcript and drop the message
-      // that was just appended optimistically.
-      if (existing?.path != null) return
+      // that was just appended optimistically. `reload` is the exception — it is
+      // how a transcript read before the runtime was up gets a second chance.
+      if (existing?.path != null && options.reload !== true) return
 
       const token = (loadTokens.get(sessionId) ?? 0) + 1
       loadTokens.set(sessionId, token)

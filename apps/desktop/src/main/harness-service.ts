@@ -572,6 +572,16 @@ export class HarnessService {
     })
   }
 
+  /**
+   * Whether the runtime holds a record for this conversation.
+   *
+   * The mapping is written when the runtime creates the session, so a hit means
+   * the runtime owns the transcript even if the row also names a Pi file.
+   */
+  owns(sessionId: string): boolean {
+    return this.#sessions.has(sessionId)
+  }
+
   /** Opening history for one Pictor session, read from the runtime itself. */
   async openHistory(pictorSessionId: string): Promise<ChatHistoryPage> {
     return this.historyPage(pictorSessionId, 50, 0)

@@ -417,6 +417,18 @@ function isWindowCommand(value: unknown): value is WindowCommand {
   return typeof value === 'string' && (WINDOW_COMMANDS as readonly string[]).includes(value)
 }
 
+/**
+ * Tells every window that the runtime changed state.
+ *
+ * A conversation opened before the runtime was up holds an empty transcript, so
+ * the window that shows one has to know when re-reading it would finally work.
+ */
+function broadcastHarnessStatus(status: HarnessStatus): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('pictor:harness.status', status)
+  }
+}
+
 function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:window.command', (event, command: unknown) => {
     if (!isWindowCommand(command)) throw new Error('unknown window command')
@@ -730,18 +742,17 @@ function registerIpc(workspace: Workspace): void {
     const projects = await workspace.client.listProjects()
     const project = projects.find((entry) => entry.id === session.projectId) ?? null
 
-    // With the kernel running, the transcript is rebuilt from its own durable
-    // log; the Pi session file only exists for conversations that ran on Pi.
-    if (workspace.harness.status().state === 'ready') {
-      // Only a Pi-era session needs its own log: it was never created in the
-      // kernel. A new session has no Pi record either, and falling through for it
-      // would leave it without a path, which blocks sending entirely.
-      const piPath = (session as { piSessionPath?: string | null }).piSessionPath
-      if (piPath === null || piPath === undefined) {
-        return {
-          path: `harness:${sessionId}`,
-          history: await workspace.harness.openHistory(sessionId),
-        }
+    // The runtime's own log wins whenever it has one: a conversation that ran on
+    // both sides keeps its kernel transcript. Without a kernel record the Pi file
+    // is the only copy, and without either the runtime is the owner — falling
+    // through in that window would create a Pi session that never fills.
+    if (session.piSessionId === null || workspace.harness.owns(sessionId)) {
+      return {
+        path: `harness:${sessionId}`,
+        history:
+          workspace.harness.status().state === 'ready'
+            ? await workspace.harness.openHistory(sessionId)
+            : { messages: [], nextOffset: 0, hasMore: false },
       }
     }
 
@@ -834,11 +845,15 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:harness.start', async (_event, cwd: unknown): Promise<HarnessStatus> => {
     const directory = typeof cwd === 'string' && cwd.trim().length > 0 ? cwd : app.getPath('home')
-    return workspace.harness.start(directory)
+    const status = await workspace.harness.start(directory)
+    broadcastHarnessStatus(status)
+    return status
   })
 
   ipcMain.handle('pictor:harness.stop', async (): Promise<HarnessStatus> => {
-    return workspace.harness.stop()
+    const status = await workspace.harness.stop()
+    broadcastHarnessStatus(status)
+    return status
   })
 
   ipcMain.handle('pictor:harness.install', async (): Promise<HarnessStatus> => {
