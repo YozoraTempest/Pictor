@@ -17,13 +17,16 @@ knowledge base.
   the preload exposes no `ipcRenderer`, Node or filesystem object. Sandbox,
   context isolation and `nodeIntegration: false` are mandatory; the preload is
   emitted as CommonJS because sandboxed renderers do not load ESM preloads.
+- The agent runtime is a separate process the app owns. `main` configures and
+  monitors it; nothing above `main` knows how it speaks.
 
 ## Dependency direction
 
 ```text
 Renderer -> bridge types -> preload -> IPC -> main -> application -> host-client -> racp -> stdio
 main -> plugin-host -> plugin-sdk
-main -> agent-runtime -> AgentRuntime
+main -> harness -> dsh (child process: HTTP + WebSocket)
+main -> agent-runtime -> AgentRuntime (legacy Pi path)
 host-core (Rust) -> SQLite
 ```
 
@@ -31,6 +34,9 @@ Forbidden:
 
 - `packages/shared` importing Node, Electron, React or any concrete package.
 - `packages/plugin-sdk` importing `src/`, Electron, React or the Pi SDK.
+- `packages/harness` importing Electron, the renderer or `@pictor/shared` beyond
+  type-only imports; it is a transport library and must stay testable with a fake
+  socket.
 - Renderer importing Electron, Node built-ins or main-process code.
 - Any package opening the SQLite file directly.
 
@@ -52,39 +58,80 @@ Plugin lifecycle: discovery -> manifest validation -> engine check -> dependency
 resolution -> topological order -> activation -> reverse disposal. Failures are
 isolated per plugin and surfaced in the plugin report.
 
+### Runtime (dsh)
+
+`apps/desktop/src/main/harness-service.ts` owns the runtime lifecycle, and
+`@pictor/harness` owns the wire protocol.
+
+- **Boot.** The runtime is spawned from `<userData>/harness-runtime` with
+  `DSH_HOME` pointing at a profile this app owns. It prints an origin with an
+  access token on stdout; the service waits for it, exchanges the token for a
+  cookie, and only then reports `ready`.
+- **Profile.** `harness-profile.ts` builds the patch text; the service writes it
+  on every boot. The patch is a projection of the settings page, never edited by
+  hand, and it is written as JSON because YAML is a superset of it — provider
+  names and URLs then need no quoting rules of their own.
+- **Routes.** One route named `pictor` carries the active service: its `api`
+  (wire protocol), `baseURL`, `apiKeyEnv` and `models`. The route's protocol is
+  the settings value; the runtime decides how to shape the request, so nothing
+  here rewrites a URL.
+- **Transport.** Unary calls are `POST /api/<endpoint>` with a
+  `{type: 'client-request', rpcId, method, payload: {args}}` envelope. The live
+  transcript is a WebSocket subscription on `/api/remote.mux`; the first item is a
+  complete snapshot and later items are durable events in order, so reconnecting
+  is "open a new stream", not "resume a cursor".
+- **State.** `HarnessChatBridge` translates runtime traffic into the events the
+  renderer already understands. Session ids are normalised back to Pictor's ids at
+  this boundary so a notification reaches the right conversation.
+- **Process failures.** A runtime that exits marks the status `error` with the
+  tail of its stderr; the settings page is the only place that starts and stops
+  it.
+
 ### Chat
 
-`@pictor/chat` owns the active agent session:
+`@pictor/chat` still owns the legacy Pi session, and the renderer's transcript
+does not care which runtime produced it:
 
-- One Pi session per process. `open()` disposes the previous agent, so switching
-  Pictor sessions is explicit.
-- The JSONL transcript is the only history source. `history.ts` projects it for
-  display and paginates from the newest message backwards.
-- `session.piSessionId` stores the transcript path; `session.bindPiSession`
-  persists it through the Rust store.
-- Events are normalised in the chat package and forwarded to the renderer over
-  one IPC channel (`pictor:chat.event`).
-- Tool approval is a seam, not a policy: `setToolInterceptor` installs a
-  `beforeToolCall` hook that can block a call. The default is allow-all so an
-  approval Plugin can own the decision.
+- `apps/desktop/src/main/harness-history.ts` projects runtime events into
+  transcript rows; `chat.ts` does the same for Pi JSONL. Both paginate from the
+  newest message backwards.
+- A conversation with no Pi record belongs to the runtime. Only a session that
+  actually ran on Pi keeps `session.piSessionId` and reads its own log.
+- The app keeps `pictorId -> runtimeId` in `<DSH_HOME>/pictor-sessions.json`. A
+  miss means the runtime never created that conversation, so there is no history
+  to subscribe to.
+- Events are normalised in `main` and forwarded to the renderer over one IPC
+  channel (`pictor:chat.event`). Runtime status travels on its own channel
+  (`pictor:harness.status`) so a window can re-read a transcript that was opened
+  before the runtime was up.
+- Tool approval is a seam, not a policy. On the Pi path
+  `setToolInterceptor` installs a `beforeToolCall` hook; on the runtime path the
+  approval request is answered by the runtime's own client seam, which this app
+  does not implement yet.
 
 ### Model configuration
 
 `@pictor/model-config` owns the settings contract:
 
+- `ModelProtocol` uses the runtime's own vocabulary (`openai-completions`,
+  `openai-responses`, `anthropic-messages`), so a saved service reaches the kernel
+  without a translation table.
 - Non-secret values (`pi.*`) go through `MetadataStore` into SQLite.
-- `auth.json` holds the key with `0600` permissions; only the main process reads
-  it, and the bridge exposes `hasApiKey` instead of the value.
-- `models.json` is generated for Pi with `apiKey: "$PICTOR_PROVIDER_API_KEY"`;
-  `PiAgentRuntime` injects the variable only for the run and deletes it after.
+- `auth.json` holds keys per service with `0600` permissions; only the main
+  process reads it, and the bridge exposes `hasApiKey` instead of the value.
+- The runtime receives its key in `PICTOR_LLM_API_KEY` at boot and resolves it per
+  request, so the secret never lands in the profile patch.
+- `models.json` is still generated for the legacy Pi path with
+  `apiKey: "$PICTOR_PROVIDER_API_KEY"`.
 - cc-switch access is read-only and implemented in Rust (`ccswitch.scan` /
   `ccswitch.read`); the scan response never contains a key.
 
 ### Storage
 
-SQLite holds projects, sessions, plugin records and settings. Pi JSONL remains the
-future source of truth for agent transcripts; `agent-runtime/projection.ts` only
-projects it and never writes a second history.
+SQLite holds projects, sessions, plugin records and settings. Conversation
+transcripts do not live there: the runtime owns its own session log, and Pi JSONL
+remains the source for sessions that predate the runtime. Both are read, never
+written twice.
 
 ## Adding code
 
@@ -96,9 +143,11 @@ projects it and never writes a second history.
   plugins never ship renderer code. `tools` is reserved for the agent-facing
   capability surface; an agent tool may open a panel, but a panel is not a tool.
 - Tool guard: `contributes('toolGuards', { id, tools?, decide })` polices agent
-  tool calls before they run. Guards are the only place that can deny a call;
-  they run in contribution order, the first deny wins, and a guard that throws
-  fails closed. Denials surface as a blocked row in the transcript instead of a
-  silent abort.
+  tool calls before they run. Guards run in contribution order, the first deny
+  wins, and a guard that throws fails closed. They currently cover the legacy Pi
+  path only; the runtime path is policed by the runtime's sandbox policy.
+- A new wire protocol: add it to `ModelProtocol`, teach the connection probe its
+  endpoint and headers, and let the patch generator pass it through. Nothing else
+  in the app needs to know.
 - Tests sit next to the implementation as `*.test.ts`; cross-module behaviour is
-  tested through the public seam (client, engine, plugin host).
+  tested through the public seam (client, engine, plugin host, patch builder).

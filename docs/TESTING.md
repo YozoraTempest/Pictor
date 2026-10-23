@@ -26,15 +26,20 @@ is only needed for `pnpm dev` and packaging; install it with `pnpm deps:prepare`
 ## Test domains
 
 - **Core**: `packages/*/src/**/*.test.ts` covering RACP framing, the host client,
-  the command engine, profile locking, plugin resolution/lifecycle and the agent
-  runtime projection.
+  the command engine, profile locking, plugin resolution/lifecycle, the wire
+  protocol of `@pictor/harness` (fake socket) and the agent runtime projection.
+- **Main process**: `apps/desktop/src/main/*.test.ts` covering the runtime event
+  bridge, the history projection and the profile patch generator.
 - **Rust**: `cargo test -p pictor-host-core` covering migrations, store operations
   and JSON-RPC dispatch.
-- **Renderer**: no test runner yet; the UI is verified through `pnpm build`.
+- **Renderer**: `apps/desktop/src/renderer/src/**/*.test.tsx` under jsdom (stores,
+  presenters, registries, settings schema); interactive behaviour is still
+  verified by hand.
 
 Tests must use temporary directories and must never touch the real user profile or
-a network endpoint. The Pi adapter is tested through pure mapping functions
-(`toPiModel`, `mapPiEvent`) so no API key or live model is required.
+a network endpoint. The harness transport is exercised through an injected fake
+socket, and the Pi adapter through pure mapping functions (`toPiModel`,
+`mapPiEvent`), so no API key or live model is required.
 
 ## Desktop smoke test
 

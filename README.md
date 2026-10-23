@@ -2,11 +2,13 @@
 
 Pictor is an agent-native local development environment. This repository is the
 new implementation: an Electron shell, a Rust host core that owns SQLite, and a
-TypeScript application core shared by every frontend.
+TypeScript application core shared by every frontend. Agent work runs on
+[DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) (dsh), which
+the app installs and boots as its runtime.
 
-> Status: runnable scaffold with a working chat loop. Projects, sessions,
-> plugins, model settings, cc-switch import, endpoint probes and a streaming
-> agent chat backed by Pi JSONL are implemented.
+> Status: runnable app. Projects, sessions, plugins, model services, cc-switch
+> import, endpoint probes and a streaming agent chat backed by the dsh runtime
+> are implemented. Packaging, tool approval answers and image input are not.
 
 ## Requirements
 
@@ -24,6 +26,9 @@ pnpm dev              # builds host-core (debug), then starts Electron
 
 `pnpm dev` uses the normal per-user profile. `pnpm build` produces the JS bundles
 and the release host-core binary.
+
+The agent runtime is installed from inside the app (**Settings › Runtime**); it is
+an npm package unpacked into the profile, so no global install is involved.
 
 ## Verification
 
@@ -51,6 +56,7 @@ packages/host-client/  Typed client for the host core
 packages/application/  ApplicationHost, Command Engine, Profile lock, events
 packages/plugin-sdk/   Manifest, Module and Contribution contract
 packages/plugin-host/  Discovery, SemVer resolution, lifecycle, installer
+packages/harness/      dsh transport: unary calls, session stream, follow frames
 packages/agent-runtime/AgentRuntime contract, Pi adapter, JSONL projection
 ```
 
@@ -65,38 +71,65 @@ packages/agent-runtime/AgentRuntime contract, Pi adapter, JSONL projection
   resolved with SemVer, activated in dependency order and disposed in reverse.
   A plugin that fails to activate is reported and does not block the others.
 - The renderer only sees the narrow `window.pictor` bridge; no Node or Electron
-  object crosses the context bridge, and the window runs with sandbox, context isolation, no Node
-  integration and a restrictive CSP.
+  object crosses the context bridge, and the window runs with sandbox, context
+  isolation, no Node integration and a restrictive CSP.
+
+## Runtime
+
+The app does not speak to a model directly. It boots dsh from
+`<userData>/harness-runtime`, points it at a profile it owns, and talks to it over
+the runtime's own HTTP and WebSocket API.
+
+- **Profile.** `<DSH_HOME>/profiles/pictor` holds a `package.json` (written once;
+  the bundle list lives there) and a `cordis.patch.yml`.
+- **Patch.** The patch is regenerated on every boot from the settings page: one
+  model route named `pictor` carrying the selected wire protocol, its endpoint and
+  its models, plus the default model pointing at that route. The DeepSeek-specific
+  route is switched off because its protocol cannot be configured.
+- **Protocols.** A route declares one of `openai-completions`,
+  `openai-responses` or `anthropic-messages`. The protocol decides the request
+  shape and the endpoint inside the runtime, so no URL rewriting happens here.
+- **Credentials.** The route resolves its key from `PICTOR_LLM_API_KEY` per
+  request; the value is injected into the runtime process and never written to the
+  patch. `DEEPSEEK_API_KEY` is passed as well because the `web_search` tool reads
+  it through its own client.
+- **Transport.** Unary calls are `POST /api/<endpoint>`; the live transcript is a
+  WebSocket subscription on `/api/remote.mux` (`session/follow`), which replays an
+  opening window and then streams.
+- **Sessions.** The runtime owns conversation transcripts. The app keeps the
+  mapping from its own session ids to runtime ids in
+  `<DSH_HOME>/pictor-sessions.json`; a session that ran on Pi (before the runtime
+  existed) keeps using its own log.
+- **Permissions.** **Settings › Runtime** selects `read-only`,
+  `workspace-write` or `danger-full-access`, which reaches the runtime as
+  `DSH_PERMISSION_MODE`.
 
 ## Chat
 
-Selecting a session opens its Pi JSONL transcript and a composer:
+Selecting a session opens its transcript and a composer:
 
-- Messages stream token by token; tool executions appear as separate rows.
+- Text streams token by token; the model's reasoning streams into its own
+  collapsible row above the answer.
+- Tool executions appear as rows with a presenter per tool (command and output
+  for `bash`, file content for `read`, a diff for `edit`).
 - The transcript is paginated: the newest 50 messages load first and **Load older
-  messages** prepends earlier pages.
-- One Pi session is active at a time; switching Pictor sessions disposes the
-  previous agent and opens the bound JSONL.
-- The first open creates `<userData>/pi/sessions/<projectId>/<sessionId>.jsonl`
-  and stores its path in the session's `piSessionId` column.
-- Tool calls execute with the current user's permissions and the built-in policy
-  is allow-all. A plugin can tighten that by contributing a `toolGuards` guard;
-  guards run in order, the first deny wins, and a denied call is shown in the
-  transcript with its reason. With no guard installed the interceptor is null,
-  so the default path costs nothing. Install only trusted projects and extensions.
+  messages** prepends earlier pages. The opening stream window holds 200 messages.
+- Several conversations can run at once; each keeps its own transcript and event
+  stream.
+- Tool calls run under the runtime's sandbox policy. A plugin can contribute a
+  `toolGuards` guard; guards run in order, the first deny wins, and a denied call
+  is shown in the transcript with its reason.
 
 ## Model settings
 
-Open **Model settings** in the top bar:
+Open **Settings › Agent › Model**:
 
-- Service name, Base URL, API style (`Chat Completions` or `Responses`), model id
-  and API key.
+- A list of services; each has a name, Base URL, wire protocol, model id and key.
+  One is active at a time and is what the runtime boots with.
 - **Fetch models** queries `GET <baseUrl>/models`.
-- **Test connection** sends one minimal completion.
+- **Test connection** sends one minimal completion in the service's protocol.
 - **Import from cc-switch** scans `~/.cc-switch/cc-switch.db` for `app_type = 'pi'`
-  providers and can copy the stored key.
-- **Run agent** executes one Pi SDK turn with tools disabled and shows the
-  streamed text.
+  providers and adds the picked one as a new service.
 
 Storage rules:
 
@@ -111,15 +144,16 @@ Override discovery for tests with `PICTOR_CCSWITCH_DB` (database path) and
 
 ## Current scope
 
-Implemented: profile locking, project/session metadata, plugin lifecycle,
-command dispatch, model settings with cc-switch import, endpoint discovery and
-connection test, streaming chat with Pi JSONL persistence and paginated recovery,
-three-column shell UI.
+Implemented: profile locking, project/session metadata, plugin lifecycle, command
+dispatch, multi-service model settings with cc-switch import, endpoint discovery
+and connection test, the dsh runtime with in-app installation, three wire
+protocols, streaming chat with runtime-owned transcripts and paginated recovery,
+reasoning display, three-column shell UI.
 
-Not yet implemented: session tree/navigation, built-in tool approval (the seam is
-ready; approval belongs to a plugin), remote hosts, packaging/auto-update,
-end-to-end UI tests. Plugin modules run in-process; there is no per-plugin
-process sandbox yet.
+Not yet implemented: answering the runtime's approval requests, tool guards on the
+runtime path (they only cover the legacy Pi path), image input, session
+search/tree, remote hosts, packaging/auto-update, end-to-end UI tests. Plugin
+modules run in-process; there is no per-plugin process sandbox yet.
 
 ## License
 
