@@ -19,7 +19,7 @@ describe.skipIf(!enabled)('live endpoint', () => {
   it('lists models and completes one request', async () => {
     const endpoint = {
       baseUrl: process.env.PICTOR_LIVE_BASE_URL ?? '',
-      protocol: 'chat-completions' as const,
+      protocol: 'openai-completions' as const,
       apiKey: process.env.PICTOR_LIVE_API_KEY ?? null,
     }
 

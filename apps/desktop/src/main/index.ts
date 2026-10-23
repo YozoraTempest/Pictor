@@ -23,6 +23,7 @@ import { readModelSettings, writeModelsJson } from '@pictor/model-config'
 import {
   BLOCKED_REASON_PREFIX,
   type JsonValue,
+  type ModelProtocol,
   type PluginRecord,
   type Section,
 } from '@pictor/shared'
@@ -660,7 +661,7 @@ function registerIpc(workspace: Workspace): void {
       typeof input === 'object' && input !== null
         ? (input as {
             baseUrl?: string
-            protocol?: 'chat-completions' | 'responses'
+            protocol?: ModelProtocol
             apiKey?: string
           })
         : undefined

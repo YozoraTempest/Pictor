@@ -19,7 +19,7 @@ function toForm(provider: ProviderView | null): FormState {
   return {
     name: provider?.name ?? '',
     baseUrl: provider?.baseUrl ?? '',
-    protocol: provider?.protocol ?? 'chat-completions',
+    protocol: provider?.protocol ?? 'openai-completions',
     modelId: provider?.modelId ?? '',
     models: provider?.models ?? [],
     apiKey: '',
@@ -158,17 +158,18 @@ export function ProviderDialog({
 
         <SettingRow
           id="pi.protocol"
-          title="API 风格"
-          description="取决于端点实现的是 Chat Completions 还是 Responses。"
+          title="API 协议"
+          description="运行时的传输协议；决定请求发到哪个端点、用哪套格式。"
           control={
             <Select
               className="w-56"
               value={form.protocol}
-              aria-label="API 风格"
+              aria-label="API 协议"
               onChange={(next) => patch({ protocol: next as ModelProtocol })}
               options={[
-                { value: 'chat-completions', label: 'Chat Completions' },
-                { value: 'responses', label: 'Responses' },
+                { value: 'openai-completions', label: 'Chat Completions' },
+                { value: 'openai-responses', label: 'Responses' },
+                { value: 'anthropic-messages', label: 'Messages' },
               ]}
             />
           }

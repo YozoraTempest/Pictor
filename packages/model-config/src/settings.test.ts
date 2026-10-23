@@ -31,7 +31,7 @@ const settings: ModelSettings = {
   providerId: 'pictor',
   providerName: 'Neko',
   baseUrl: 'https://api.example.com',
-  protocol: 'chat-completions',
+  protocol: 'openai-completions',
   modelId: 'demo',
   models: [
     {
@@ -104,14 +104,14 @@ describe('settings', () => {
     const saved = await saveModelSettings(store, path, {
       providerName: 'Neko',
       baseUrl: 'https://api.example.com/',
-      protocol: 'responses',
+      protocol: 'openai-responses',
       modelId: 'demo',
       models: settings.models,
       apiKey: 'secret-key',
     })
 
     expect(saved.baseUrl).toBe('https://api.example.com')
-    expect(saved.protocol).toBe('responses')
+    expect(saved.protocol).toBe('openai-responses')
     expect(saved.hasApiKey).toBe(true)
     expect(JSON.stringify(saved)).not.toContain('secret-key')
 
@@ -127,7 +127,7 @@ describe('settings', () => {
     const saved = await saveModelSettings(store, path, {
       providerName: 'Neko',
       baseUrl: 'https://api.example.com',
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       modelId: 'demo',
       models: [],
       apiKey: '',
@@ -144,7 +144,7 @@ describe('settings', () => {
     const saved = await saveModelSettings(store, path, {
       providerName: 'Neko',
       baseUrl: 'https://api.example.com',
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       modelId: 'demo',
       models: [],
     })
@@ -161,7 +161,7 @@ describe('settings', () => {
       saveModelSettings(store, path, {
         providerName: '',
         baseUrl: 'ftp://example.com',
-        protocol: 'chat-completions',
+        protocol: 'openai-completions',
         modelId: 'demo',
         models: [],
       }),
@@ -172,7 +172,7 @@ describe('settings', () => {
     const saved = await saveModelSettings(store, path, {
       providerName: '',
       baseUrl: 'https://example.com',
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       modelId: ' ',
       models: [],
     })
@@ -199,7 +199,7 @@ describe('buildModelsJson', () => {
   })
 
   it('maps the responses protocol', () => {
-    const json = buildModelsJson({ ...settings, protocol: 'responses' })
+    const json = buildModelsJson({ ...settings, protocol: 'openai-responses' })
     expect(json).toMatchObject({ providers: { pictor: { api: 'openai-responses' } } })
   })
 })

@@ -45,8 +45,17 @@ export function normalizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, '')
 }
 
+/**
+ * Reads a stored protocol.
+ *
+ * The two short names are what earlier versions wrote, so they stay readable
+ * forever: a profile saved before the runtime vocabulary arrived keeps working
+ * instead of silently falling back to the default.
+ */
 function parseProtocol(value: unknown): ModelProtocol {
-  return value === 'responses' ? 'responses' : 'chat-completions'
+  if (value === 'openai-responses' || value === 'responses') return 'openai-responses'
+  if (value === 'anthropic-messages') return 'anthropic-messages'
+  return 'openai-completions'
 }
 
 /** Drops anything that is not a usable model entry rather than trusting the store. */

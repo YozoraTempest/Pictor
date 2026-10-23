@@ -17,7 +17,7 @@ describe('fetchModels', () => {
     )
 
     const models = await fetchModels(
-      { baseUrl: 'https://api.example.com/', protocol: 'chat-completions', apiKey: 'k' },
+      { baseUrl: 'https://api.example.com/', protocol: 'openai-completions', apiKey: 'k' },
       fetchImpl,
     )
 
@@ -33,7 +33,7 @@ describe('fetchModels', () => {
 
     await expect(
       fetchModels(
-        { baseUrl: 'https://api.example.com', protocol: 'chat-completions', apiKey: null },
+        { baseUrl: 'https://api.example.com', protocol: 'openai-completions', apiKey: null },
         fetchImpl,
       ),
     ).rejects.toThrow(/HTTP 401: bad key/)
@@ -49,7 +49,7 @@ describe('testConnection', () => {
     const result = await testConnection(
       {
         baseUrl: 'https://api.example.com',
-        protocol: 'chat-completions',
+        protocol: 'openai-completions',
         apiKey: 'secret',
         modelId: 'demo',
       },
@@ -70,7 +70,12 @@ describe('testConnection', () => {
     )
 
     const result = await testConnection(
-      { baseUrl: 'https://api.example.com', protocol: 'responses', apiKey: null, modelId: 'demo' },
+      {
+        baseUrl: 'https://api.example.com',
+        protocol: 'openai-responses',
+        apiKey: null,
+        modelId: 'demo',
+      },
       fetchImpl,
     )
 
@@ -84,7 +89,7 @@ describe('testConnection', () => {
     const result = await testConnection(
       {
         baseUrl: 'https://api.example.com',
-        protocol: 'chat-completions',
+        protocol: 'openai-completions',
         apiKey: 'k',
         modelId: 'demo',
       },
@@ -103,7 +108,7 @@ describe('testConnection', () => {
     const result = await testConnection(
       {
         baseUrl: 'https://api.example.com',
-        protocol: 'chat-completions',
+        protocol: 'openai-completions',
         apiKey: 'k',
         modelId: 'demo',
       },
@@ -117,7 +122,7 @@ describe('testConnection', () => {
   it('requires a model id', async () => {
     const result = await testConnection({
       baseUrl: 'https://api.example.com',
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       apiKey: null,
       modelId: '',
     })

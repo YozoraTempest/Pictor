@@ -1,5 +1,17 @@
-/** Wire protocol spoken by an OpenAI-compatible endpoint. */
-export type ModelProtocol = 'chat-completions' | 'responses'
+/**
+ * Wire protocol an endpoint speaks.
+ *
+ * The values are the runtime's own vocabulary (`llm-pi-ai`'s `api` field), so a
+ * configured provider reaches the kernel without a translation table in between.
+ */
+export type ModelProtocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages'
+
+/** Every protocol the runtime can speak, in the order settings offer them. */
+export const MODEL_PROTOCOLS: readonly ModelProtocol[] = [
+  'openai-completions',
+  'openai-responses',
+  'anthropic-messages',
+]
 
 export interface ModelEntry {
   id: string

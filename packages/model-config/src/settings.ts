@@ -18,7 +18,7 @@ export const EMPTY_MODEL_SETTINGS: ModelSettings = {
   providerId: null,
   providerName: '',
   baseUrl: '',
-  protocol: 'chat-completions',
+  protocol: 'openai-completions',
   modelId: '',
   models: [],
   hasApiKey: false,

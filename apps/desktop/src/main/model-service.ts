@@ -172,8 +172,12 @@ export class ModelService {
    */
   async importCcSwitchProvider(id: string, includeApiKey: boolean): Promise<ProviderList> {
     const detail = await this.#store.readCcSwitchProvider(this.#ccSwitchPath, id)
+    // cc-switch stores the runtime's own protocol name, so an import needs no
+    // translation; an unknown string falls back to the most common wire format.
     const protocol: ModelProtocol =
-      detail.api === 'openai-responses' ? 'responses' : 'chat-completions'
+      detail.api === 'openai-responses' || detail.api === 'anthropic-messages'
+        ? detail.api
+        : 'openai-completions'
     const modelId = detail.models[0]?.id ?? ''
 
     if (modelId.length === 0) {

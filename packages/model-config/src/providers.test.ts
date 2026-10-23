@@ -41,7 +41,7 @@ function input(
   return {
     name: 'Neko',
     baseUrl: 'https://api.example.com',
-    protocol: 'chat-completions',
+    protocol: 'openai-completions',
     modelId: 'demo',
     models: [],
     ...overrides,
@@ -209,5 +209,21 @@ describe('provider list', () => {
     expect(updated.providers[0]?.name).toBe('Renamed')
     expect(updated.providers[0]?.hasApiKey).toBe(true)
     expect(readApiKey(path, id)).toBe('secret')
+  })
+  it('reads the short protocol names earlier versions wrote', async () => {
+    const store = new MemorySettings()
+    store.values[PROVIDERS_KEY] = [
+      { id: 'a', name: 'A', baseUrl: 'https://a.example.com', protocol: 'chat-completions' },
+      { id: 'b', name: 'B', baseUrl: 'https://b.example.com', protocol: 'responses' },
+      { id: 'c', name: 'C', baseUrl: 'https://c.example.com', protocol: 'anthropic-messages' },
+    ]
+
+    const list = await readProviders(store, authPath())
+
+    expect(list.providers.map((provider) => provider.protocol)).toEqual([
+      'openai-completions',
+      'openai-responses',
+      'anthropic-messages',
+    ])
   })
 })

@@ -6,8 +6,15 @@ import type { JsonValue, ModelEntry, ModelSettings } from '@pictor/shared'
 /** Environment variable that carries the key into Pi at request time. */
 export const API_KEY_ENV = 'PICTOR_PROVIDER_API_KEY'
 
+/**
+ * The `api` name Pi writes for a protocol.
+ *
+ * Pictor stores the runtime's own vocabulary, so this is the identity: keeping
+ * the seam named means the file format and the settings cannot drift apart
+ * without a compiler error.
+ */
 export function piApiName(protocol: ModelSettings['protocol']): string {
-  return protocol === 'responses' ? 'openai-responses' : 'openai-completions'
+  return protocol
 }
 
 /**

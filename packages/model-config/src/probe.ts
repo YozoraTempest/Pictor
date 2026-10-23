@@ -18,15 +18,31 @@ export interface ConnectionTestResult {
 
 const TIMEOUT_MS = 20_000
 
+/** One prompt every protocol can answer, so a probe never depends on wording. */
+const PROBE_PROMPT = 'Reply with the single word: ok'
+
 function headers(endpoint: ProbeEndpoint): Record<string, string> {
   const result: Record<string, string> = { 'content-type': 'application/json' }
-  if (endpoint.apiKey !== null && endpoint.apiKey.trim().length > 0) {
-    result.authorization = `Bearer ${endpoint.apiKey.trim()}`
+  const key = endpoint.apiKey?.trim() ?? ''
+  if (key.length === 0) return result
+  // The Messages API names the key header itself and requires a version pin;
+  // an Authorization header there authenticates nothing.
+  if (endpoint.protocol === 'anthropic-messages') {
+    result['x-api-key'] = key
+    result['anthropic-version'] = '2023-06-01'
+    return result
   }
+  result.authorization = `Bearer ${key}`
   return result
 }
 
 function endpointUrl(endpoint: ProbeEndpoint, path: string): string {
+  // Messages endpoints publish the version segment as part of the root, and the
+  // SDK appends `/messages` to whatever it is given.
+  if (endpoint.protocol === 'anthropic-messages') {
+    const base = normalizeBaseUrl(endpoint.baseUrl)
+    return `${base.endsWith('/v1') ? base : `${base}/v1`}${path}`
+  }
   return `${normalizeBaseUrl(endpoint.baseUrl)}${path}`
 }
 
@@ -87,20 +103,29 @@ export async function testConnection(
     return { ok: false, message: 'No model selected', sample: '' }
   }
 
-  const isResponses = endpoint.protocol === 'responses'
-  const url = endpointUrl(endpoint, isResponses ? '/responses' : '/chat/completions')
-  const body = isResponses
-    ? {
-        model: endpoint.modelId,
-        input: 'Reply with the single word: ok',
-        max_output_tokens: 32,
-      }
-    : {
-        model: endpoint.modelId,
-        messages: [{ role: 'user', content: 'Reply with the single word: ok' }],
-        max_tokens: 32,
-        temperature: 0,
-      }
+  const url = endpointUrl(
+    endpoint,
+    endpoint.protocol === 'openai-responses'
+      ? '/responses'
+      : endpoint.protocol === 'anthropic-messages'
+        ? '/messages'
+        : '/chat/completions',
+  )
+  // One prompt, three envelopes: each protocol names the ceiling and the reply
+  // differently, so the body is built per protocol rather than patched.
+  const body =
+    endpoint.protocol === 'openai-responses'
+      ? {
+          model: endpoint.modelId,
+          input: PROBE_PROMPT,
+          max_output_tokens: 32,
+        }
+      : {
+          model: endpoint.modelId,
+          messages: [{ role: 'user', content: PROBE_PROMPT }],
+          max_tokens: 32,
+          temperature: 0,
+        }
 
   let response: Response
   try {
@@ -127,7 +152,12 @@ export async function testConnection(
     return { ok: false, message: 'Response was not JSON', sample: truncate(raw) }
   }
 
-  const sample = isResponses ? extractResponsesText(payload) : extractChatText(payload)
+  const sample =
+    endpoint.protocol === 'openai-responses'
+      ? extractResponsesText(payload)
+      : endpoint.protocol === 'anthropic-messages'
+        ? extractMessagesText(payload)
+        : extractChatText(payload)
   return {
     ok: true,
     message: 'Connection succeeded',
@@ -181,4 +211,19 @@ function extractResponsesText(payload: unknown): string {
   }
 
   return parts.join('')
+}
+
+/** Messages replies carry typed blocks; only the text ones are the answer. */
+function extractMessagesText(payload: unknown): string {
+  if (typeof payload !== 'object' || payload === null) return ''
+  const content = (payload as Record<string, unknown>).content
+  if (!Array.isArray(content)) return ''
+
+  return content
+    .flatMap((block): string[] => {
+      if (typeof block !== 'object' || block === null) return []
+      const entry = block as Record<string, unknown>
+      return entry.type === 'text' && typeof entry.text === 'string' ? [entry.text] : []
+    })
+    .join('')
 }
