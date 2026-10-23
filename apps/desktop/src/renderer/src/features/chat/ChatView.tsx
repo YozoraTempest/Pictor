@@ -8,6 +8,7 @@ import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { formatDuration, newSessionTitle, phaseLabel } from '../../lib/format-time.js'
 import { useApprovalStore } from '../../app/approval-store.js'
+import { useRuntimeStore } from '../../app/runtime-store.js'
 import { ApprovalCard } from './ApprovalCard.js'
 import { useChatStore } from './chat-store.js'
 import { Composer } from './Composer.js'
@@ -41,6 +42,9 @@ export function ChatView(): React.JSX.Element {
   const runFinishedAt = useChatStore((state) => state.current.runFinishedAt)
   const loading = useChatStore((state) => state.current.loading)
   const hasMore = useChatStore((state) => state.current.hasMore)
+  const chatPath = useChatStore((state) => state.current.path)
+  const runtimeStatus = useRuntimeStore((state) => state.status)
+  const projects = useWorkspaceStore((state) => state.projects)
 
   const error = useChatStore((state) => state.current.error)
   const retry = useChatStore((state) => state.current.retry)
@@ -156,6 +160,43 @@ export function ChatView(): React.JSX.Element {
     window.addEventListener('pointercancel', finish)
   }
 
+  /**
+   * Transcripts live in the runtime's own log, so an empty conversation and an
+   * unreachable runtime look identical from here. Saying "还没有对话" in the second
+   * case reads as data loss, which is the one thing it must never look like.
+   */
+  const sessionProject = projects.find(
+    (project) =>
+      project.id === (sessions.find((entry) => entry.id === selectedSessionId)?.projectId ?? ''),
+  )
+
+  async function startRuntime(): Promise<void> {
+    await window.pictor.harnessStart(sessionProject?.path ?? '')
+  }
+
+  const runtimeEmptyState =
+    chatPath !== null && chatPath.startsWith('harness:') && runtimeStatus?.state !== 'ready'
+      ? runtimeStatus?.state === 'error'
+        ? {
+            title: '历史暂时无法读取',
+            description: `agent 运行时启动失败：${runtimeStatus.error ?? '未知原因'}`,
+            action: (
+              <Button variant="secondary" size="sm" onClick={() => void startRuntime()}>
+                重试启动
+              </Button>
+            ),
+          }
+        : {
+            title: '历史暂时无法读取',
+            description: '这个会话的历史保存在 agent 运行时里，它当前没有运行。',
+            action: (
+              <Button variant="primary" size="sm" onClick={() => void startRuntime()}>
+                启动运行时
+              </Button>
+            ),
+          }
+      : undefined
+
   /** Live run state; it belongs beside the composer, not over the transcript. */
   const status = running ? (
     retry !== null ? (
@@ -253,6 +294,7 @@ export function ChatView(): React.JSX.Element {
               phase={phase}
               currentTool={currentTool}
               hasMore={hasMore}
+              {...(runtimeEmptyState === undefined ? {} : { emptyState: runtimeEmptyState })}
               loading={loading}
               onLoadOlder={() => void loadOlder()}
               panelWidth={panelWidth}

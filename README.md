@@ -118,6 +118,9 @@ Selecting a session opens its transcript and a composer:
   text as content blocks and shown in the user's bubble.
 - Tool executions appear as rows with a presenter per tool (command and output
   for `bash`, file content for `read`, a diff for `edit`).
+- Conversations live in the runtime's log, so an empty panel means one of two
+  things: a fresh conversation, or a runtime that is not running. The panel says
+  which, and offers to start the runtime instead of claiming the history is gone.
 - The transcript is paginated: the newest 50 messages load first and **Load older
   messages** prepends earlier pages. The opening stream window holds 200 messages.
 - Several conversations can run at once; each keeps its own transcript and event

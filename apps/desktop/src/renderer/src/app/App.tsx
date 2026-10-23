@@ -4,6 +4,7 @@ import { Banner } from '../components/ui/index.js'
 import { useChatStore } from '../features/chat/chat-store.js'
 import { AppShell } from '../shell/AppShell.js'
 import { useApprovalStore } from './approval-store.js'
+import { useRuntimeStore } from './runtime-store.js'
 import { useUiStore } from './ui-store.js'
 import { findView } from './views.js'
 import { useAppShortcuts } from './use-app-shortcuts.js'
@@ -42,17 +43,18 @@ export function App(): React.JSX.Element {
 
   // A conversation opened before the runtime was up holds an empty transcript;
   // when the runtime arrives, the same conversation has to be read again.
-  useEffect(
-    () =>
-      window.pictor.onHarnessStatus((status) => {
-        if (status.state !== 'ready') return
-        const { viewing, chats } = useChatStore.getState()
-        if (viewing === null) return
-        if ((chats[viewing]?.messages.length ?? 0) !== 0) return
-        void useChatStore.getState().open(viewing, { reload: true })
-      }),
-    [],
-  )
+  useEffect(() => {
+    void window.pictor.harnessStatus().then((status) => useRuntimeStore.getState().set(status))
+
+    return window.pictor.onHarnessStatus((status) => {
+      useRuntimeStore.getState().set(status)
+      if (status.state !== 'ready') return
+      const { viewing, chats } = useChatStore.getState()
+      if (viewing === null) return
+      if ((chats[viewing]?.messages.length ?? 0) !== 0) return
+      void useChatStore.getState().open(viewing, { reload: true })
+    })
+  }, [])
 
   useEffect(() => {
     void useChatStore.getState().open(selectedSessionId)

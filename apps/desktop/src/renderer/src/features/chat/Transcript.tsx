@@ -28,6 +28,11 @@ export interface TranscriptProps {
    * twice still scrolls.
    */
   jumpTo?: { id: string; nonce: number } | null
+  /**
+   * What to show instead of "还没有对话" when the empty transcript is not simply
+   * an empty conversation — an unreachable runtime, for instance.
+   */
+  emptyState?: { title: string; description?: string; action?: React.ReactNode }
 }
 
 /** Distance from the bottom that still counts as "following the stream". */
@@ -52,6 +57,7 @@ export function Transcript({
   animateWidth = false,
   footer,
   jumpTo = null,
+  emptyState,
 }: TranscriptProps): React.JSX.Element {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [pinned, setPinned] = useState(true)
@@ -225,8 +231,11 @@ export function Transcript({
                   </div>
                 ) : (
                   <EmptyState
-                    title="还没有对话"
-                    description="在下方描述任务，Agent 会读取项目文件并执行。"
+                    title={emptyState?.title ?? '还没有对话'}
+                    description={
+                      emptyState?.description ?? '在下方描述任务，Agent 会读取项目文件并执行。'
+                    }
+                    {...(emptyState?.action === undefined ? {} : { action: emptyState.action })}
                   />
                 )
               ) : (
