@@ -728,10 +728,10 @@ function registerIpc(workspace: Workspace): void {
     // With the kernel running, the transcript is rebuilt from its own durable
     // log; the Pi session file only exists for conversations that ran on Pi.
     if (workspace.harness.status().state === 'ready') {
-      return {
-        path: `harness:${sessionId}`,
-        history: await workspace.harness.openHistory(sessionId),
-      }
+      const history = await workspace.harness.openHistory(sessionId)
+      // A session that ran on Pi has no kernel record, so the kernel is not
+      // authoritative for it: fall through to the log it actually wrote.
+      if (history.messages.length > 0) return { path: `harness:${sessionId}`, history }
     }
 
     const settings = await readModelSettings(workspace.client, workspace.model.authPath)
