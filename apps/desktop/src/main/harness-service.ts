@@ -12,10 +12,14 @@ import {
   type SessionCreateValue,
   type SessionFollowFrame,
   type SessionPromptValue,
+  type SessionWireEvent,
   type WebSocketConstructor,
   type WebSocketLike,
 } from '@pictor/harness'
 
+import type { ChatHistoryPage } from '@pictor/shared'
+
+import { loadHarnessHistory } from './harness-history.js'
 import type { ModelService } from './model-service.js'
 
 export interface HarnessStatus {
@@ -64,6 +68,9 @@ const PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
 
 /** How long a cold runtime may take to print its origin. */
 const BOOT_TIMEOUT = 120_000
+
+/** Messages the opening snapshot carries; the transcript pages back through it. */
+const SNAPSHOT_MESSAGES = 200
 
 /** `ws` is the only client that can send a cookie header on the upgrade. */
 type WebSocketModule = WebSocketConstructor | { default: WebSocketConstructor }
@@ -121,6 +128,8 @@ export class HarnessService {
   readonly #follows = new Map<string, FollowStream>()
   /** Pictor session id → runtime session id; persisted so restarts reattach. */
   readonly #sessions = new Map<string, string>()
+  /** Live mirror of each session log: the opening window plus every later event. */
+  readonly #snapshots = new Map<string, SessionWireEvent[]>()
   #status: HarnessStatus
   #remote: HarnessRemote | null = null
   #socket: WebSocketConstructor | null = null
@@ -487,7 +496,7 @@ export class HarnessService {
   }
 
   /** Subscribe to one runtime session once; frames become ordinary notifications. */
-  async #ensureFollow(harnessId: string): Promise<void> {
+  async #ensureFollow(harnessId: string, options: { silent?: boolean } = {}): Promise<void> {
     if (this.#follows.has(harnessId)) return
     const remote = this.#remote
     const socket = this.#socket
@@ -501,6 +510,16 @@ export class HarnessService {
       cookie,
       WebSocket: socket,
       onFrame: (frame: SessionFollowFrame) => {
+        if (frame.type === 'snapshot') {
+          this.#snapshots.set(
+            harnessId,
+            frame.records.map((record) => record.event),
+          )
+        } else if (frame.type === 'event') {
+          // The opening window is a cut, not the whole session: later events keep
+          // the mirror current, so history reflects what the user just watched.
+          this.#snapshots.get(harnessId)?.push(frame.event)
+        }
         if (process.env['PICTOR_DEBUG_HARNESS'] === '1') {
           const detail =
             frame.type === 'assistant-stream'
@@ -515,6 +534,9 @@ export class HarnessService {
         this.#emit({ method: 'session.follow', params: { sessionId: harnessId, frame } })
       },
       onError: (error) => {
+        // Opening history for a session the runtime does not know is expected;
+        // only a live subscription reports its own failure.
+        if (options.silent === true) return
         this.#emit({
           method: 'agent.error',
           params: { sessionId: harnessId, message: error.message },
@@ -527,8 +549,43 @@ export class HarnessService {
     this.#follows.set(harnessId, stream)
     await stream.open({
       address: { kind: 'session', sessionId: harnessId },
+      // The opening window doubles as the first history page, so it has to hold
+      // enough that the transcript can page back through it.
+      maxMessages: SNAPSHOT_MESSAGES,
       assistantStream: true,
     })
+  }
+
+  /** Opening history for one Pictor session, read from the runtime itself. */
+  async openHistory(pictorSessionId: string): Promise<ChatHistoryPage> {
+    return this.historyPage(pictorSessionId, 50, 0)
+  }
+
+  /**
+   * One page of stored history.
+   *
+   * The source is the subscription's opening window: it is the same data the
+   * live stream starts from, so a transcript cannot disagree with itself, and it
+   * needs no knowledge of how the runtime lays its log out on disk.
+   */
+  async historyPage(
+    pictorSessionId: string,
+    limit: number,
+    offset: number,
+  ): Promise<ChatHistoryPage> {
+    const harnessId = this.#sessions.get(pictorSessionId) ?? pictorSessionId
+    const events = this.#snapshots.get(harnessId) ?? (await this.#loadSnapshot(harnessId))
+    return loadHarnessHistory(events ?? [], limit, offset)
+  }
+
+  /** Take the opening window for a session, or null when the runtime has none. */
+  async #loadSnapshot(harnessId: string): Promise<readonly SessionWireEvent[] | null> {
+    try {
+      await this.#ensureFollow(harnessId, { silent: true })
+    } catch {
+      return null
+    }
+    return this.#snapshots.get(harnessId) ?? null
   }
 
   #profileDirectory(): string {

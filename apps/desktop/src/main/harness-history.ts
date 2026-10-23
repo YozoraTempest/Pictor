@@ -1,66 +1,10 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
-import { zstdDecompressSync } from 'node:zlib'
-
 import type { ChatHistoryPage, ChatMessage } from '@pictor/shared'
-
-/** `session.v4.jsonl` or `session.v4.jsonl.zstd`, as the runtime writes them. */
-const SESSION_FILE = /^session\.v(\d+)\.jsonl(\.zstd)?$/
 
 interface SessionEvent {
   type?: string
   seq?: number
   time?: number
   data?: Record<string, unknown>
-}
-
-/**
- * Find the newest canonical generation of one session log.
- *
- * The runtime groups logs by project directory and versions each generation, so
- * the session id is matched inside whatever directory it was filed under. Newer
- * versions win; the older files are history, not alternatives.
- */
-export function findSessionFile(root: string, sessionId: string): string | null {
-  const sessions = join(root, 'sessions')
-  if (!existsSync(sessions)) return null
-
-  let best: { version: number; path: string } | null = null
-  for (const project of readdirSync(sessions, { withFileTypes: true })) {
-    if (!project.isDirectory()) continue
-    const directory = join(sessions, project.name, sessionId)
-    if (!existsSync(directory)) continue
-
-    for (const entry of readdirSync(directory)) {
-      const match = SESSION_FILE.exec(entry)
-      if (match === null) continue
-      const version = Number(match[1] ?? 0)
-      if (best === null || version > best.version) {
-        best = { version, path: join(directory, entry) }
-      }
-    }
-  }
-
-  return best?.path ?? null
-}
-
-/** Decode a log (plain JSONL or zstd-framed) into its events. */
-export function readSessionEvents(file: string): unknown[] {
-  const raw = readFileSync(file)
-  const text = file.endsWith('.zstd')
-    ? zstdDecompressSync(raw).toString('utf8')
-    : raw.toString('utf8')
-
-  const events: unknown[] = []
-  for (const line of text.split('\n')) {
-    if (line.trim().length === 0) continue
-    try {
-      events.push(JSON.parse(line) as unknown)
-    } catch {
-      // A torn tail is normal after a crash; keep everything before it.
-    }
-  }
-  return events
 }
 
 function textOf(content: unknown): string {
@@ -170,12 +114,11 @@ export function projectHarnessEvents(events: readonly unknown[]): ChatMessage[] 
  * behaves the same whichever runtime produced the log.
  */
 export function loadHarnessHistory(
-  file: string | null,
+  events: readonly unknown[],
   limit: number,
   offset: number,
 ): ChatHistoryPage {
-  const all =
-    file === null || !existsSync(file) ? [] : projectHarnessEvents(readSessionEvents(file))
+  const all = projectHarnessEvents(events)
   const end = Math.max(0, all.length - offset)
   const start = Math.max(0, end - limit)
   const messages = all.slice(start, end)

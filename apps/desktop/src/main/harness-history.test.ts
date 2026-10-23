@@ -1,16 +1,6 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { zstdCompressSync } from 'node:zlib'
-
 import { describe, expect, it } from 'vitest'
 
-import {
-  findSessionFile,
-  loadHarnessHistory,
-  projectHarnessEvents,
-  readSessionEvents,
-} from './harness-history.js'
+import { loadHarnessHistory, projectHarnessEvents } from './harness-history.js'
 
 const userMessage = (id: string, text: string, kind = 'user') => ({
   type: 'user/message',
@@ -78,44 +68,23 @@ describe('projectHarnessEvents', () => {
 
 describe('loadHarnessHistory', () => {
   it('pages from the newest message backwards, like the Pi reader', () => {
-    const root = mkdtempSync(join(tmpdir(), 'pictor-history-'))
-    const directory = join(root, 'sessions', '--project--', 's1')
-    mkdirSync(directory, { recursive: true })
-
-    const file = join(directory, 'session.v4.jsonl.zstd')
-    const lines = [
+    const events = [
       userMessage('m1', 'one'),
       assistantMessage('first'),
       userMessage('m2', 'two'),
       assistantMessage('second'),
     ]
-      .map((event) => JSON.stringify(event))
-      .join('\n')
-    writeFileSync(file, zstdCompressSync(Buffer.from(lines, 'utf8')))
 
-    expect(findSessionFile(root, 's1')).toBe(file)
-    expect(readSessionEvents(file)).toHaveLength(4)
-
-    const page = loadHarnessHistory(file, 2, 0)
+    const page = loadHarnessHistory(events, 2, 0)
     expect(page.messages.map((message) => message.text)).toEqual(['two', 'second'])
     expect(page.hasMore).toBe(true)
 
-    const older = loadHarnessHistory(file, 2, page.nextOffset)
+    const older = loadHarnessHistory(events, 2, page.nextOffset)
     expect(older.messages.map((message) => message.text)).toEqual(['one', 'first'])
     expect(older.hasMore).toBe(false)
   })
 
-  it('prefers the newest generation when several exist', () => {
-    const root = mkdtempSync(join(tmpdir(), 'pictor-history-'))
-    const directory = join(root, 'sessions', '--project--', 's1')
-    mkdirSync(directory, { recursive: true })
-    writeFileSync(join(directory, 'session.v3.jsonl.zstd'), zstdCompressSync(Buffer.from('')))
-    writeFileSync(join(directory, 'session.v4.jsonl.zstd'), zstdCompressSync(Buffer.from('')))
-
-    expect(findSessionFile(root, 's1')).toBe(join(directory, 'session.v4.jsonl.zstd'))
-  })
-
-  it('returns an empty page when the session has no log yet', () => {
-    expect(loadHarnessHistory(null, 50, 0)).toEqual({ messages: [], nextOffset: 0, hasMore: false })
+  it('returns an empty page when there is no history', () => {
+    expect(loadHarnessHistory([], 50, 0)).toEqual({ messages: [], nextOffset: 0, hasMore: false })
   })
 })

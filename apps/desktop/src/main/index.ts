@@ -29,7 +29,6 @@ import {
 
 import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
-import { findSessionFile, loadHarnessHistory } from './harness-history.js'
 import {
   DEFAULT_PERMISSION_MODE,
   HarnessService,
@@ -729,8 +728,10 @@ function registerIpc(workspace: Workspace): void {
     // With the kernel running, the transcript is rebuilt from its own durable
     // log; the Pi session file only exists for conversations that ran on Pi.
     if (workspace.harness.status().state === 'ready') {
-      const file = findSessionFile(workspace.harness.status().home, sessionId)
-      return { path: `harness:${sessionId}`, history: loadHarnessHistory(file, 50, 0) }
+      return {
+        path: `harness:${sessionId}`,
+        history: await workspace.harness.openHistory(sessionId),
+      }
     }
 
     const settings = await readModelSettings(workspace.client, workspace.model.authPath)
@@ -799,8 +800,7 @@ function registerIpc(workspace: Workspace): void {
       const from = typeof offset === 'number' && offset >= 0 ? offset : 0
       if (path.startsWith('harness:')) {
         const sessionId = path.slice('harness:'.length)
-        const file = findSessionFile(workspace.harness.status().home, sessionId)
-        return loadHarnessHistory(file, size, from)
+        return workspace.harness.historyPage(sessionId, size, from)
       }
       return loadHistoryPage(path, size, from)
     },
