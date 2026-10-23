@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -39,6 +40,7 @@ import {
   type HarnessStatus,
   type PermissionMode,
 } from './harness-service.js'
+import { ToolGuardServer } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -250,7 +252,18 @@ async function startWorkspace(): Promise<Workspace | null> {
     const value = settings['harness.permissionMode']
     return isPermissionMode(value) ? value : DEFAULT_PERMISSION_MODE
   }
-  const harness = new HarnessService({ model, userData, readPermissionMode })
+  // Guards are closures in this process, so the runtime asks them over a loopback
+  // socket instead of receiving them as configuration.
+  const guardBridge = toolGuards.length === 0 ? null : new ToolGuardServer(toolGuards, randomUUID())
+  void guardBridge?.start().catch((error: unknown) => {
+    console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
+  })
+  const harness = new HarnessService({
+    model,
+    userData,
+    readPermissionMode,
+    guardEndpoint: () => guardBridge?.endpoint ?? null,
+  })
   // The runtime reports durable session events; the renderer renders runs and
   // deltas. One translation keeps the transcript unchanged by the swap.
   const chatBridge = new HarnessChatBridge()

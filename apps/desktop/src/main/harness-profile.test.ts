@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import { buildProfilePatch, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
 
-type Entry = { id: string; disabled?: boolean; config?: Record<string, unknown> }
+type Entry = {
+  id: string
+  disabled?: boolean
+  config?: Record<string, unknown>
+  insert?: unknown
+}
 
 function entries(patch: string): Entry[] {
   return JSON.parse(patch) as Entry[]
@@ -85,5 +90,32 @@ describe('buildProfilePatch', () => {
     const url = 'https://gateway.example.com/v1?x=a:b#c'
     expect(routeOf(buildProfilePatch({ ...base, baseUrl: url }))['baseURL']).toBe(url)
     expect(() => entries(buildProfilePatch({ ...base, baseUrl: url }))).not.toThrow()
+  })
+})
+
+describe('buildProfilePatch guard mount', () => {
+  const base = {
+    protocol: 'openai-completions' as const,
+    baseUrl: 'https://api.example.com/v1',
+    modelId: 'demo',
+    models: [],
+  }
+
+  it('mounts the guard plugin with insert, not as a plain patch', () => {
+    const patch = entries(buildProfilePatch({ ...base, guard: { port: 1234, token: 't' } }))
+    const guard = patch.find((item) => item.insert !== undefined)
+
+    // A user-layer entry without `insert` is read as a patch to an existing id,
+    // which the runtime answers with `patch: entry "pictor-guard" not found`.
+    expect(guard?.insert).toEqual([
+      { id: 'pictor-guard', name: 'pictor-guard', config: { port: 1234, token: 't' } },
+    ])
+    expect(patch.some((item) => item.id === 'pictor-guard' && item.insert === undefined)).toBe(
+      false,
+    )
+  })
+
+  it('leaves the plugin out when no guard is installed', () => {
+    expect(entries(buildProfilePatch(base)).some((item) => item.insert !== undefined)).toBe(false)
   })
 })

@@ -1,0 +1,113 @@
+import { createServer, type Server, type Socket } from 'node:net'
+
+import { evaluateToolGuards, type ToolGuardContribution } from '@pictor/plugin-sdk'
+
+/**
+ * Where the runtime's guard plugin reaches the app.
+ *
+ * Handed to the kernel through its profile patch, so the plugin it mounts knows
+ * which socket to dial and which token to quote.
+ */
+export interface GuardEndpoint {
+  port: number
+  token: string
+}
+
+/**
+ * Answers the runtime's guard plugin over a loopback socket.
+ *
+ * Plugin guards are ordinary JavaScript that runs in this process, so they cannot
+ * be serialised into the kernel's configuration. The kernel-side plugin therefore
+ * asks this server one question per tool call and applies the answer.
+ */
+export class ToolGuardServer {
+  readonly #guards: readonly ToolGuardContribution[]
+  readonly #token: string
+  #server: Server | null = null
+  #endpoint: GuardEndpoint | null = null
+
+  constructor(guards: readonly ToolGuardContribution[], token: string) {
+    this.#guards = guards
+    this.#token = token
+  }
+
+  get endpoint(): GuardEndpoint | null {
+    return this.#endpoint
+  }
+
+  async start(): Promise<GuardEndpoint> {
+    if (this.#endpoint !== null) return this.#endpoint
+
+    const server = createServer((socket) => this.#accept(socket))
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      // Loopback only: the runtime is a local child process, and the token keeps
+      // another local process from speaking for it.
+      server.listen(0, '127.0.0.1', () => {
+        server.off('error', reject)
+        resolve()
+      })
+    })
+    this.#server = server
+
+    const address = server.address()
+    if (address === null || typeof address === 'string') {
+      throw new Error('guard bridge has no port')
+    }
+    this.#endpoint = { port: address.port, token: this.#token }
+    return this.#endpoint
+  }
+
+  async stop(): Promise<void> {
+    const server = this.#server
+    this.#server = null
+    this.#endpoint = null
+    if (server === null) return
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+
+  #accept(socket: Socket): void {
+    let buffer = ''
+    let answered = false
+
+    const reply = (payload: unknown): void => {
+      if (answered) return
+      answered = true
+      socket.end(`${JSON.stringify(payload)}\n`)
+    }
+
+    socket.setEncoding('utf8')
+    socket.setTimeout(5_000, () => reply({ block: true, reason: '工具守卫桥接超时' }))
+    socket.on('error', () => socket.destroy())
+    socket.on('data', (chunk: string) => {
+      buffer += chunk
+      const end = buffer.indexOf('\n')
+      if (end === -1) return
+      void this.#answer(buffer.slice(0, end), reply)
+    })
+  }
+
+  async #answer(raw: string, reply: (payload: unknown) => void): Promise<void> {
+    let request: unknown
+    try {
+      request = JSON.parse(raw)
+    } catch {
+      reply({ block: true, reason: '工具守卫桥接收到无法解析的请求' })
+      return
+    }
+
+    const record = (request ?? {}) as Record<string, unknown>
+    if (record['token'] !== this.#token) {
+      reply({ block: true, reason: '工具守卫桥接拒绝了未认证的请求' })
+      return
+    }
+
+    const tool = typeof record['tool'] === 'string' ? record['tool'] : ''
+    const verdict = await evaluateToolGuards(this.#guards, { tool, args: record['args'] ?? null })
+    if (!verdict.blocked) {
+      reply({ block: false })
+      return
+    }
+    reply({ block: true, reason: verdict.reason ?? 'blocked by a tool guard' })
+  }
+}

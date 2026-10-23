@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
@@ -22,6 +22,11 @@ import {
 import type { ChatHistoryPage, ChatImage, ModelSettings } from '@pictor/shared'
 
 import { loadHarnessHistory } from './harness-history.js'
+import {
+  GUARD_PLUGIN_NAME,
+  GUARD_PLUGIN_PACKAGE,
+  GUARD_PLUGIN_SOURCE,
+} from './harness-guard-plugin.js'
 import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
 import type { ModelService } from './model-service.js'
 
@@ -57,6 +62,8 @@ export interface HarnessServiceOptions {
   binary?: string
   /** Sandbox mode read from settings; the runtime takes it as an env var. */
   readPermissionMode?: () => Promise<PermissionMode>
+  /** Loopback bridge answering tool guards, when any guard is installed. */
+  guardEndpoint?: () => { port: number; token: string } | null
 }
 
 /** Pinned runtime, installed into the profile on request. */
@@ -138,6 +145,10 @@ export class HarnessService {
   #child: ChildProcess | null = null
   #cwd: string | null = null
   #sessionsLoaded = false
+
+  #guardEndpoint(): { port: number; token: string } | null {
+    return this.#options.guardEndpoint?.() ?? null
+  }
 
   constructor(options: HarnessServiceOptions) {
     this.#options = {
@@ -740,6 +751,20 @@ export class HarnessService {
         'utf8',
       )
     }
+    // The guard plugin is a real package inside the profile so the runtime can
+    // resolve it by name; both files are rewritten on every boot.
+    const guard = this.#guardEndpoint()
+    const pluginDirectory = join(directory, 'node_modules', GUARD_PLUGIN_NAME)
+    if (guard === null) {
+      // No guard installed: the package from an earlier boot must not linger,
+      // because the runtime would still resolve it by name.
+      rmSync(pluginDirectory, { recursive: true, force: true })
+    } else {
+      mkdirSync(pluginDirectory, { recursive: true })
+      writeFileSync(join(pluginDirectory, 'package.json'), GUARD_PLUGIN_PACKAGE, 'utf8')
+      writeFileSync(join(pluginDirectory, 'index.js'), GUARD_PLUGIN_SOURCE, 'utf8')
+    }
+
     writeFileSync(
       join(directory, 'cordis.patch.yml'),
       buildProfilePatch({
@@ -747,6 +772,7 @@ export class HarnessService {
         baseUrl: settings.baseUrl,
         modelId: settings.modelId,
         models: settings.models,
+        ...(guard === null ? {} : { guard }),
       }),
       'utf8',
     )

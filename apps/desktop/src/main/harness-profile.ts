@@ -1,5 +1,7 @@
 import type { ModelEntry, ModelProtocol } from '@pictor/shared'
 
+import { GUARD_PLUGIN_NAME } from './harness-guard-plugin.js'
+
 /**
  * Route name the kernel sees for the provider Pictor configured.
  *
@@ -28,6 +30,8 @@ export interface ProfileSettingsInput {
   baseUrl: string
   modelId: string
   models: readonly ModelEntry[]
+  /** Loopback bridge the guard plugin dials; absent when no guard is installed. */
+  guard?: { port: number; token: string }
 }
 
 /** The model list the route declares, with a single-entry fallback. */
@@ -71,11 +75,20 @@ export function buildProfilePatch(input: ProfileSettingsInput): string {
     })),
   }
 
-  const patch = [
+  const patch: unknown[] = [
     ...DISABLED_ENTRIES.map((id) => ({ id, disabled: true })),
     { id: 'llm-pi-ai', config: { providers: { [ROUTE]: route } } },
     { id: 'agent-default-model', config: { provider: ROUTE, model: input.modelId } },
   ]
+
+  if (input.guard !== undefined) {
+    // A user-layer patch can only amend entries the bundle stack already declared,
+    // so a new plugin has to arrive through `insert`. Without it the runtime warns
+    // `patch: entry "pictor-guard" not found` and the guard silently never runs.
+    patch.push({
+      insert: [{ id: GUARD_PLUGIN_NAME, name: GUARD_PLUGIN_NAME, config: input.guard }],
+    })
+  }
 
   return `${JSON.stringify(patch, null, 2)}\n`
 }

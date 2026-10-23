@@ -148,11 +148,14 @@ written twice.
   capability surface; an agent tool may open a panel, but a panel is not a tool.
 - Tool guard: `contributes('toolGuards', { id, tools?, decide })` polices agent
   tool calls before they run. Guards run in contribution order, the first deny
-  wins, and a guard that throws fails closed. They cover the legacy Pi path only:
-  the runtime keeps its own guard seam (`tools/pre-execute`) but mounting a
-  Pictor plugin into its profile is not possible yet — the runtime applies the
-  entry list without loading modules the bundle stack does not declare. On that
-  path the runtime's sandbox policy is the only gate.
+  wins, and a guard that throws fails closed.
+  On the Pi path they ride `setToolInterceptor`. On the runtime path the app
+  writes a small package into the profile (`node_modules/pictor-guard`) and mounts
+  it with `{ insert: [...] }` — a user-layer entry without `insert` is read as a
+  patch to an existing id and the plugin silently never loads. The plugin asks
+  `ToolGuardServer` over loopback for every `tools/pre-execute` call and turns the
+  answer into a `deny` gate; an unreachable bridge denies, because a guard that
+  cannot be consulted fails closed.
 - A new wire protocol: add it to `ModelProtocol`, teach the connection probe its
   endpoint and headers, and let the patch generator pass it through. Nothing else
   in the app needs to know.

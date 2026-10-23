@@ -124,9 +124,9 @@ Selecting a session opens its transcript and a composer:
   stream.
 - The sidebar search (Ctrl/Cmd+K) filters conversations by title or project name;
   empty sections disappear while it is active.
-- Tool calls run under the runtime's sandbox policy. A plugin can contribute a
-  `toolGuards` guard; guards run in order, the first deny wins, and a denied call
-  is shown in the transcript with its reason.
+- Tool calls run under the runtime's sandbox policy, and a plugin can tighten it
+  with a `toolGuards` guard: the runtime asks the app before every call, guards run
+  in order, the first deny wins, and a denied call is shown with its reason.
 
 ## Model settings
 
@@ -158,11 +158,8 @@ and connection test, the dsh runtime with in-app installation, three wire
 protocols, streaming chat with runtime-owned transcripts and paginated recovery,
 reasoning display, three-column shell UI.
 
-Not yet implemented: tool guards on the runtime path. The app cannot mount a
-plugin into the runtime's profile (`cordis.patch.yml` lists it, but the kernel
-never applies entries the bundle stack did not declare), so guards still only
-cover the legacy Pi path. Also missing: a session tree, remote hosts,
-packaging/auto-update, end-to-end UI tests. Plugin modules run in-process; there
+Not yet implemented: a session tree, remote hosts, packaging/auto-update,
+end-to-end UI tests. Plugin modules run in-process; there
 is no per-plugin process sandbox yet.
 
 ## License
