@@ -130,7 +130,9 @@ Selecting a session opens its transcript and a composer:
   newest first, and opens the pick on Enter. Archived conversations are included
   and labelled as such, since the sidebar keeps them reachable.
 - A session's menu can **branch** it: the runtime copies the history up to its
-  latest completed turn into a new session, which then diverges on its own.
+  latest completed turn into a new session, which then diverges on its own. The
+  branch records where it came from — the row carries a branch mark, the title
+  says `分支自 …`, and the menu reopens the source.
 - **Archiving is reversible**: an archived conversation keeps its menu and offers
   取消归档. Batched archiving (a whole section or project) asks first and names how
   many conversations it will move.
@@ -168,9 +170,9 @@ and connection test, the dsh runtime with in-app installation, three wire
 protocols, streaming chat with runtime-owned transcripts and paginated recovery,
 reasoning display, three-column shell UI.
 
-Not yet implemented: a session tree (browsing branches of one conversation, or
-branching at an arbitrary message), remote hosts, packaging/auto-update,
-end-to-end UI tests. Plugin modules run in-process; there
+Not yet implemented: a session tree (browsing every branch of one conversation in
+one view, or branching at an arbitrary message), remote hosts,
+packaging/auto-update, end-to-end UI tests. Plugin modules run in-process; there
 is no per-plugin process sandbox yet.
 
 ## License

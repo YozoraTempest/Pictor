@@ -100,11 +100,20 @@ export function WorkspaceTitle(): React.JSX.Element {
 
   const session = sessions.find((entry) => entry.id === selectedSessionId) ?? null
   const project = projects.find((entry) => entry.id === session?.projectId) ?? null
+  // A branch is still the same project, but the title should say where it came
+  // from — otherwise two conversations with almost the same name look identical.
+  const parent = sessions.find((entry) => entry.id === session?.parentId) ?? null
 
   return (
     <>
       {project?.name ?? '临时任务'}
-      {session !== null && <span className="text-muted"> / {session.title}</span>}
+      {session !== null && (
+        <span className="text-muted">
+          {' / '}
+          {session.title}
+          {parent !== null && <span className="text-faint"> · 分支自 {parent.title}</span>}
+        </span>
+      )}
     </>
   )
 }

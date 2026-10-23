@@ -172,10 +172,13 @@ fn dispatch(
         "session.create" => {
             let project_id = optional_str(&params, "projectId");
             let title = required_str(&params, "title")?;
+            // Only branches name a parent; a plain conversation starts at the root.
+            let parent_id = optional_str(&params, "parentId");
             Ok(serde_json::to_value(store::create_session(
                 connection,
                 project_id.as_deref(),
                 &title,
+                parent_id.as_deref(),
             )?)
             .map_err(to_internal)?)
         }

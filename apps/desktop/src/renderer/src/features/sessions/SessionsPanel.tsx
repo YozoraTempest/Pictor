@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   ArchiveRestore,
+  CornerUpLeft,
   FolderGit2,
   GitBranch,
   Loader2,
@@ -1161,6 +1162,10 @@ function SessionRow({
   const running = useChatStore((state) => state.chats[session.id]?.running === true)
   const forkSession = useWorkspaceStore((state) => state.forkSession)
   const setSessionArchived = useWorkspaceStore((state) => state.setSessionArchived)
+  const selectSession = useWorkspaceStore((state) => state.selectSession)
+  const onSelectSessionById = (id: string): void => {
+    selectSession(id)
+  }
 
   /** Half of the row the pointer is over picks the slot above or below. */
   function slotAt(event: React.DragEvent<HTMLElement>): GapRef {
@@ -1215,6 +1220,13 @@ function SessionRow({
         >
           {running ? (
             <Loader2 className="size-3.5 shrink-0 animate-spin text-accent" aria-label="正在运行" />
+          ) : session.parentId !== null ? (
+            // A branch reads differently from a root conversation: it continues
+            // someone else's history rather than starting its own.
+            <GitBranch
+              className={cn('size-3.5 shrink-0', active ? 'text-accent' : 'text-faint')}
+              aria-label="分支会话"
+            />
           ) : (
             <MessageSquare
               className={cn('size-3.5 shrink-0', active ? 'text-accent' : 'text-faint')}
@@ -1237,6 +1249,15 @@ function SessionRow({
           label={`${session.title} 更多操作`}
           trigger={<MoreHorizontal className="size-3.5" />}
           items={[
+            ...(session.parentId === null
+              ? []
+              : [
+                  {
+                    label: '打开来源会话',
+                    icon: <CornerUpLeft className="size-3" />,
+                    onSelect: () => onSelectSessionById(session.parentId as string),
+                  },
+                ]),
             {
               label: '分叉会话',
               icon: <GitBranch className="size-3" />,

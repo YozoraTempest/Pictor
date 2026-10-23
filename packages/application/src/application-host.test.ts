@@ -28,6 +28,7 @@ function session(overrides: Partial<Session> = {}): Session {
     pinned: false,
     archived: false,
     position: 0,
+    parentId: null,
     sectionIds: [],
     createdAt: 1,
     updatedAt: 1,

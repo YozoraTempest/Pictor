@@ -858,7 +858,13 @@ function registerIpc(workspace: Workspace): void {
     if (source === undefined) throw new Error('session not found')
 
     const child = await workspace.harness.fork(sessionId)
-    const created = await workspace.client.createSession(source.projectId, `${source.title} · 分支`)
+    // The parent is recorded here, not in the runtime: only Pictor knows which
+    // conversations belong to the same family.
+    const created = await workspace.client.createSession(
+      source.projectId,
+      `${source.title} · 分支`,
+      source.id,
+    )
     workspace.harness.adopt(created.id, child)
     return created.id
   })

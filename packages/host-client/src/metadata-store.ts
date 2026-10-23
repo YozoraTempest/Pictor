@@ -116,8 +116,12 @@ export class HostCoreClient implements MetadataStore {
     )
   }
 
-  createSession(projectId: string | null, title: string): Promise<Session> {
-    return this.#rpc.request<Session>('session.create', { projectId, title })
+  createSession(
+    projectId: string | null,
+    title: string,
+    parentId: string | null = null,
+  ): Promise<Session> {
+    return this.#rpc.request<Session>('session.create', { projectId, title, parentId })
   }
 
   renameSession(id: string, title: string): Promise<Session> {

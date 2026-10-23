@@ -34,6 +34,8 @@ export interface Session {
   archived: boolean
   /** Manual sort key, used when a section is ordered by hand. */
   position: number
+  /** Conversation this one was branched from; `null` for a root conversation. */
+  parentId: string | null
   /** Sections (user-defined tags) the session is filed under. */
   sectionIds: string[]
   createdAt: number

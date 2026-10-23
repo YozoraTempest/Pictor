@@ -106,6 +106,10 @@ does not care which runtime produced it:
 - Branching is `session/fork`: the runtime copies the event prefix into a new
   session and returns its id. The app creates the Pictor conversation and adopts
   that id, so the branch opens with the inherited history and then diverges.
+- `sessions.parent_id` records what a branch was copied from. It lives in Pictor,
+  not the runtime: the runtime hands back a new session id with no lineage, and
+  only the app knows which conversations are related. The column is
+  `ON DELETE SET NULL`, because deleting a parent must not remove its branches.
 - Events are normalised in `main` and forwarded to the renderer over one IPC
   channel (`pictor:chat.event`). Runtime status travels on its own channel
   (`pictor:harness.status`) so a window can re-read a transcript that was opened

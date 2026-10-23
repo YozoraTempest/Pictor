@@ -35,6 +35,8 @@ pub struct Session {
     pub archived: bool,
     /// Manual sort key, used when a section is ordered by hand.
     pub position: i64,
+    /// Conversation this one was branched from, when it is a branch.
+    pub parent_id: Option<String>,
     /// Sections (user-defined tags) this session is filed under.
     pub section_ids: Vec<String>,
     pub created_at: i64,
@@ -418,7 +420,7 @@ pub fn list_sessions(connection: &Connection, project_id: Option<&str>) -> Resul
     match project_id {
         Some(project_id) => {
             let mut statement = connection.prepare(
-                "SELECT id, project_id, title, pi_session_id, pinned, archived, position, created_at, updated_at
+                "SELECT id, project_id, title, pi_session_id, pinned, archived, position, parent_id, created_at, updated_at
                  FROM sessions WHERE project_id = ?1 ORDER BY updated_at DESC",
             )?;
             let rows = statement.query_map(params![project_id], map_session)?;
@@ -430,7 +432,7 @@ pub fn list_sessions(connection: &Connection, project_id: Option<&str>) -> Resul
         }
         None => {
             let mut statement = connection.prepare(
-                "SELECT id, project_id, title, pi_session_id, pinned, archived, position, created_at, updated_at
+                "SELECT id, project_id, title, pi_session_id, pinned, archived, position, parent_id, created_at, updated_at
                  FROM sessions ORDER BY updated_at DESC",
             )?;
             let rows = statement.query_map([], map_session)?;
@@ -454,9 +456,10 @@ fn map_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
         pinned: row.get::<_, i64>(4)? != 0,
         archived: row.get::<_, i64>(5)? != 0,
         position: row.get(6)?,
+        parent_id: row.get(7)?,
         section_ids: Vec::new(),
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
     })
 }
 
@@ -464,6 +467,7 @@ pub fn create_session(
     connection: &Connection,
     project_id: Option<&str>,
     title: &str,
+    parent_id: Option<&str>,
 ) -> Result<Session, HostError> {
     if let Some(project_id) = project_id {
         require_project(connection, project_id)?;
@@ -483,15 +487,30 @@ pub fn create_session(
         pinned: false,
         archived: false,
         position: 0,
+        parent_id: parent_id.map(str::to_string),
         section_ids: Vec::new(),
         created_at: now,
         updated_at: now,
     };
 
+    // A branch may only hang off a conversation that exists.
+    if let Some(parent) = parent_id {
+        if get_session(connection, parent)?.is_none() {
+            return Err(HostError::NotFound(format!("session {parent}")));
+        }
+    }
+
     connection.execute(
-        "INSERT INTO sessions (id, project_id, title, pi_session_id, pinned, created_at, updated_at)
-         VALUES (?1, ?2, ?3, NULL, 0, ?4, ?5)",
-        params![session.id, session.project_id, session.title, session.created_at, session.updated_at],
+        "INSERT INTO sessions (id, project_id, title, pi_session_id, pinned, parent_id, created_at, updated_at)
+         VALUES (?1, ?2, ?3, NULL, 0, ?4, ?5, ?6)",
+        params![
+            session.id,
+            session.project_id,
+            session.title,
+            session.parent_id,
+            session.created_at,
+            session.updated_at
+        ],
     )?;
 
     Ok(session)
@@ -518,7 +537,7 @@ pub fn get_session(connection: &Connection, id: &str) -> Result<Option<Session>,
     let mut sections = load_session_sections(connection)?;
     let mut session = connection
         .query_row(
-            "SELECT id, project_id, title, pi_session_id, pinned, archived, position, created_at, updated_at
+            "SELECT id, project_id, title, pi_session_id, pinned, archived, position, parent_id, created_at, updated_at
              FROM sessions WHERE id = ?1",
             params![id],
             map_session,
@@ -849,7 +868,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let connection = connection();
         let project = add_project(&connection, directory.path().to_str().unwrap(), None).unwrap();
-        create_session(&connection, Some(&project.id), "First").unwrap();
+        create_session(&connection, Some(&project.id), "First", None).unwrap();
 
         remove_project(&connection, &project.id).unwrap();
 
@@ -861,7 +880,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let connection = connection();
         let project = add_project(&connection, directory.path().to_str().unwrap(), None).unwrap();
-        let session = create_session(&connection, Some(&project.id), "  Draft  ").unwrap();
+        let session = create_session(&connection, Some(&project.id), "  Draft  ", None).unwrap();
 
         assert_eq!(session.title, "Draft");
 
@@ -873,7 +892,7 @@ mod tests {
     #[test]
     fn sessions_can_live_outside_a_project() {
         let connection = connection();
-        let session = create_session(&connection, None, "Loose").unwrap();
+        let session = create_session(&connection, None, "Loose", None).unwrap();
 
         assert_eq!(session.project_id, None);
 
@@ -883,13 +902,36 @@ mod tests {
     }
 
     #[test]
+    fn records_a_branch_parent_and_survives_the_parent_going_away() {
+        let connection = connection();
+        let root = create_session(&connection, None, "Root", None).unwrap();
+        let branch = create_session(&connection, None, "Branch", Some(&root.id)).unwrap();
+
+        assert_eq!(branch.parent_id.as_deref(), Some(root.id.as_str()));
+
+        delete_session(&connection, &root.id).unwrap();
+        // The branch is a conversation in its own right: deleting what it was
+        // copied from must not remove it.
+        let survivor = get_session(&connection, &branch.id).unwrap();
+        assert!(survivor.is_some());
+        assert_eq!(survivor.unwrap().parent_id, None);
+    }
+
+    #[test]
+    fn refuses_a_branch_of_an_unknown_session() {
+        let connection = connection();
+        let error = create_session(&connection, None, "Orphan", Some("missing")).unwrap_err();
+        assert!(matches!(error, HostError::NotFound(_)));
+    }
+
+    #[test]
     fn moves_a_session_between_projects() {
         let first = tempfile::tempdir().unwrap();
         let second = tempfile::tempdir().unwrap();
         let connection = connection();
         let project_a = add_project(&connection, first.path().to_str().unwrap(), Some("A")).unwrap();
         let project_b = add_project(&connection, second.path().to_str().unwrap(), Some("B")).unwrap();
-        let session = create_session(&connection, Some(&project_a.id), "Draft").unwrap();
+        let session = create_session(&connection, Some(&project_a.id), "Draft", None).unwrap();
 
         let moved = set_session_project(&connection, &session.id, Some(&project_b.id)).unwrap();
         assert_eq!(moved.project_id.as_deref(), Some(project_b.id.as_str()));
@@ -901,7 +943,7 @@ mod tests {
     #[test]
     fn pins_and_unpins_a_session() {
         let connection = connection();
-        let session = create_session(&connection, None, "Loose").unwrap();
+        let session = create_session(&connection, None, "Loose", None).unwrap();
         assert!(!session.pinned);
 
         let pinned = set_session_pinned(&connection, &session.id, true).unwrap();
@@ -914,7 +956,7 @@ mod tests {
     #[test]
     fn files_a_session_under_multiple_sections() {
         let connection = connection();
-        let session = create_session(&connection, None, "Loose").unwrap();
+        let session = create_session(&connection, None, "Loose", None).unwrap();
         let design = create_section(&connection, "Design").unwrap();
         let research = create_section(&connection, "Research").unwrap();
 
@@ -936,7 +978,7 @@ mod tests {
     #[test]
     fn removes_sections_and_their_links() {
         let connection = connection();
-        let session = create_session(&connection, None, "Loose").unwrap();
+        let session = create_session(&connection, None, "Loose", None).unwrap();
         let section = create_section(&connection, "Design").unwrap();
         set_session_sections(&connection, &session.id, &[section.id.clone()]).unwrap();
 
@@ -957,7 +999,7 @@ mod tests {
     #[test]
     fn rejects_unknown_section_when_filing_a_session() {
         let connection = connection();
-        let session = create_session(&connection, None, "Loose").unwrap();
+        let session = create_session(&connection, None, "Loose", None).unwrap();
         let error = set_session_sections(&connection, &session.id, &["missing".to_string()]).unwrap_err();
         assert!(matches!(error, HostError::NotFound(_)));
     }
@@ -965,7 +1007,7 @@ mod tests {
     #[test]
     fn archives_and_restores_sessions() {
         let connection = connection();
-        let session = create_session(&connection, None, "Loose").unwrap();
+        let session = create_session(&connection, None, "Loose", None).unwrap();
         assert!(!session.archived);
 
         let archived = set_session_archived(&connection, &session.id, true).unwrap();
@@ -978,8 +1020,8 @@ mod tests {
     #[test]
     fn archives_many_sessions_at_once() {
         let connection = connection();
-        let first = create_session(&connection, None, "One").unwrap();
-        let second = create_session(&connection, None, "Two").unwrap();
+        let first = create_session(&connection, None, "One", None).unwrap();
+        let second = create_session(&connection, None, "Two", None).unwrap();
 
         let count = archive_sessions(&connection, &[first.id.clone(), second.id.clone()]).unwrap();
         assert_eq!(count, 2);
@@ -993,7 +1035,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let connection = connection();
         let project = add_project(&connection, directory.path().to_str().unwrap(), None).unwrap();
-        let session = create_session(&connection, Some(&project.id), "Draft").unwrap();
+        let session = create_session(&connection, Some(&project.id), "Draft", None).unwrap();
 
         let bound = bind_pi_session(&connection, &session.id, Some("/tmp/pi/session.jsonl")).unwrap();
         assert_eq!(bound.pi_session_id.as_deref(), Some("/tmp/pi/session.jsonl"));
@@ -1005,7 +1047,7 @@ mod tests {
     #[test]
     fn rejects_session_for_unknown_project() {
         let connection = connection();
-        let error = create_session(&connection, Some("missing"), "Draft").unwrap_err();
+        let error = create_session(&connection, Some("missing"), "Draft", None).unwrap_err();
         assert!(matches!(error, HostError::NotFound(_)));
     }
 

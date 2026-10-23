@@ -6,7 +6,7 @@ use crate::error::HostError;
 
 /// Current on-disk schema version. Bump when `SCHEMA_V1` changes shape and add a
 /// forward migration step in `migrate`.
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS projects (
@@ -107,6 +107,14 @@ const SCHEMA_V5: &str = r#"
 ALTER TABLE sessions ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
 "#;
 
+/// v6 remembers which conversation a branch was copied from.
+///
+/// `SET NULL` on delete: removing the parent must not take the branches with it,
+/// they are conversations in their own right.
+const SCHEMA_V6: &str = r#"
+ALTER TABLE sessions ADD COLUMN parent_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;
+"#;
+
 pub fn open(path: &Path) -> Result<Connection, HostError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -159,6 +167,10 @@ fn migrate(connection: &Connection) -> Result<(), HostError> {
 
     if version < 5 {
         connection.execute_batch(SCHEMA_V5)?;
+    }
+
+    if version < 6 {
+        connection.execute_batch(SCHEMA_V6)?;
     }
 
     connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
