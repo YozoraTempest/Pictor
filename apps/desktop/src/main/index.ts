@@ -28,6 +28,7 @@ import {
 } from '@pictor/shared'
 
 import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
+import { HarnessChatBridge } from './harness-chat.js'
 import { HarnessService, type HarnessStatus } from './harness-service.js'
 import { ModelService } from './model-service.js'
 
@@ -234,6 +235,14 @@ async function startWorkspace(): Promise<Workspace | null> {
   let disposed = false
   const model = new ModelService({ store: running.client, userData })
   const harness = new HarnessService({ model, userData })
+  // The runtime reports durable session events; the renderer renders runs and
+  // deltas. One translation keeps the transcript unchanged by the swap.
+  const chatBridge = new HarnessChatBridge()
+  harness.onNotification((notification) => {
+    for (const event of chatBridge.map(notification)) {
+      mainWindow?.webContents.send('pictor:chat.event', event)
+    }
+  })
 
   /** Shared by every runtime: the policy is the same whoever is running. */
   const guardInterceptor = async ({
@@ -727,6 +736,12 @@ function registerIpc(workspace: Workspace): void {
     if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       throw new Error('prompt must be a non-empty string')
+    }
+    // Conversations run on the kernel once it is up; the Pi path stays as the
+    // fallback so a profile without a runtime still works.
+    if (workspace.harness.status().state === 'ready') {
+      await workspace.harness.prompt(sessionId, prompt)
+      return
     }
     await workspace.chatFor(sessionId).send(prompt)
   })
