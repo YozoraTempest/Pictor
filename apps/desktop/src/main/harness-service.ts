@@ -17,9 +17,10 @@ import {
   type WebSocketLike,
 } from '@pictor/harness'
 
-import type { ChatHistoryPage } from '@pictor/shared'
+import type { ChatHistoryPage, ModelSettings } from '@pictor/shared'
 
 import { loadHarnessHistory } from './harness-history.js'
+import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
 import type { ModelService } from './model-service.js'
 
 export interface HarnessStatus {
@@ -57,14 +58,8 @@ export interface HarnessServiceOptions {
 /** Pinned runtime, installed into the profile on request. */
 const RUNTIME_PACKAGE = '@deepseek-ai/dsh@0.2.1-rc.2'
 
-/** Route the DeepSeek adapter registers; models pass through unchanged. */
-const PROVIDER_ROUTE = 'deepseek-official'
-
 /** Pictor's own profile: the stock base plus the HTTP/WebSocket host. */
 const PROFILE_NAME = 'pictor'
-
-/** Bundle layers the profile composes. */
-const PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
 
 /** How long a cold runtime may take to print its origin. */
 const BOOT_TIMEOUT = 120_000
@@ -201,7 +196,7 @@ export class HarnessService {
       ...this.#status,
       state: 'starting',
       permissionMode,
-      provider: PROVIDER_ROUTE,
+      provider: ROUTE,
       model: settings.modelId,
       error: null,
     }
@@ -219,11 +214,15 @@ export class HarnessService {
     this.#cwd = cwd
     this.#loadSessions()
     const home = this.#status.home
-    this.#ensureProfile()
+    this.#ensureProfile(settings)
 
     const diagnostics: string[] = []
     const env = {
-      DEEPSEEK_BASE_URL: settings.baseUrl,
+      // The route resolves this per request, so the key never reaches the patch
+      // file or the session log.
+      [ROUTE_API_KEY_ENV]: apiKey,
+      // `web_search` reaches DeepSeek through its own client and reads this name
+      // regardless of which route the conversation uses.
       DEEPSEEK_API_KEY: apiKey,
       // The stock profile reads exactly this variable for its sandbox and
       // approval defaults, so the choice survives a runtime swap.
@@ -614,8 +613,15 @@ export class HarnessService {
     return join(this.#status.home, 'profiles', PROFILE_NAME)
   }
 
-  /** Write the profile the runtime boots, once; later edits are the user's. */
-  #ensureProfile(): void {
+  /**
+   * Write the profile the runtime boots.
+   *
+   * The manifest is written once, because a user may install plugins into it
+   * later. The patch is rewritten on every boot: it is a projection of the
+   * settings page, so a stale copy would describe a provider that no longer
+   * exists.
+   */
+  #ensureProfile(settings: ModelSettings): void {
     const directory = this.#profileDirectory()
     mkdirSync(directory, { recursive: true })
     const manifest = join(directory, 'package.json')
@@ -635,8 +641,16 @@ export class HarnessService {
         'utf8',
       )
     }
-    const patch = join(directory, 'cordis.patch.yml')
-    if (!existsSync(patch)) writeFileSync(patch, '[]\n', 'utf8')
+    writeFileSync(
+      join(directory, 'cordis.patch.yml'),
+      buildProfilePatch({
+        protocol: settings.protocol,
+        baseUrl: settings.baseUrl,
+        modelId: settings.modelId,
+        models: settings.models,
+      }),
+      'utf8',
+    )
   }
 
   #sessionsFile(): string {
