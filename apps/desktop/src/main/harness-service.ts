@@ -1,5 +1,6 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { HarnessClient, type HarnessNotification } from '@pictor/harness'
@@ -101,16 +102,41 @@ export class HarnessService {
       error: null,
     }
 
+    const nodePath = this.#resolveNode()
+    if (nodePath === null) {
+      throw new Error('没有找到可用的 Node 运行时；安装 Node 22+ 或设置 PICTOR_NODE_BIN')
+    }
+
     const client = new HarnessClient({
       binary,
       home: this.#status.home,
+      nodePath,
       provider: PROVIDER_ROUTE,
       model: settings.modelId,
       // The runtime reads these two names; anything else is Pictor's own.
       env: { DEEPSEEK_BASE_URL: settings.baseUrl, DEEPSEEK_API_KEY: apiKey },
     })
+    const diagnostics: string[] = []
     client.onNotification((notification) => {
+      // Keep the runtime's own diagnostics: a launcher that exits during boot
+      // usually explains itself on stderr, and the status is the only place the
+      // user can read it.
+      if (notification.method === 'runtime.stderr') {
+        const text = (notification.params as { text?: string } | null)?.text ?? ''
+        if (text.length > 0) diagnostics.push(text)
+      }
       for (const listener of this.#listeners) listener(notification)
+    })
+
+    console.info('[harness] spawn', {
+      binary,
+      node: process.env['PATH']
+        ?.split(':')
+        .filter((entry) => entry.includes('node'))
+        .slice(0, 3),
+      nodeOptions: process.env['NODE_OPTIONS'] ?? null,
+      electronRunAsNode: process.env['ELECTRON_RUN_AS_NODE'] ?? null,
+      baseUrl: settings.baseUrl,
     })
 
     try {
@@ -124,10 +150,13 @@ export class HarnessService {
       return this.status()
     } catch (error) {
       await client.stop().catch(() => undefined)
+      const detail = diagnostics.join('').trim().split('\n').slice(-4).join(' ')
       this.#status = {
         ...this.#status,
         state: 'error',
-        error: error instanceof Error ? error.message : String(error),
+        error: [error instanceof Error ? error.message : String(error), detail]
+          .filter((part) => part.length > 0)
+          .join(' · '),
       }
       return this.status()
     }
@@ -152,6 +181,40 @@ export class HarnessService {
    * Find the launcher: an explicit path, the environment override, then the
    * `@deepseek-ai/dsh` install that may live in the workspace.
    */
+  /**
+   * Find a plain Node binary for the runtime.
+   *
+   * The launcher refuses to run under Electron's embedded node (it fingerprints
+   * the runtime and only accepts specific Electron builds), so the app must hand
+   * it a real Node 22+. The app's own PATH is not a reliable source: a packaged
+   * Electron started from a desktop entry does not inherit a shell's fnm shims.
+   */
+  #resolveNode(): string | null {
+    const explicit = process.env['PICTOR_NODE_BIN']
+    if (explicit !== undefined && existsSync(explicit)) return explicit
+
+    const roots = [
+      join(homedir(), '.local/share/fnm/node-versions'),
+      join(homedir(), '.fnm/node-versions'),
+    ]
+    for (const root of roots) {
+      if (!existsSync(root)) continue
+      const versions = readdirSync(root)
+        .filter((entry) => entry.startsWith('v22.'))
+        .sort()
+        .reverse()
+      for (const version of versions) {
+        const candidate = join(root, version, 'installation/bin/node')
+        if (existsSync(candidate)) return candidate
+      }
+    }
+
+    for (const candidate of ['/usr/local/bin/node', '/usr/bin/node']) {
+      if (existsSync(candidate)) return candidate
+    }
+    return null
+  }
+
   #resolveBinary(): string | null {
     const explicit = this.#options.binary ?? process.env['PICTOR_DSH_BIN']
     if (explicit !== undefined && explicit.length > 0) {
@@ -160,9 +223,15 @@ export class HarnessService {
 
     try {
       const require = createRequire(import.meta.url)
-      const manifest = require.resolve('@deepseek-ai/dsh/package.json')
-      const candidate = join(dirname(manifest), 'lib/cli.js')
-      if (existsSync(candidate)) return candidate
+      const manifestPath = require.resolve('@deepseek-ai/dsh/package.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        bin?: string | Record<string, string>
+      }
+      const relative = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.['dsh']
+      if (relative !== undefined) {
+        const entry = join(dirname(manifestPath), relative)
+        if (existsSync(entry)) return entry
+      }
     } catch {
       // Not installed next to the app; the settings page explains what to do.
     }

@@ -56,6 +56,10 @@ const bridge: PictorBridge = {
   setPluginEnabled: (id, enabled) => ipcRenderer.invoke('pictor:plugins.setEnabled', id, enabled),
   pluginReport: () => ipcRenderer.invoke('pictor:plugins.report'),
 
+  harnessStatus: () => ipcRenderer.invoke('pictor:harness.status'),
+  harnessStart: (cwd) => ipcRenderer.invoke('pictor:harness.start', cwd),
+  harnessStop: () => ipcRenderer.invoke('pictor:harness.stop'),
+
   getAppInfo: () => ipcRenderer.invoke('pictor:appInfo'),
 
   getModelSettings: () => ipcRenderer.invoke('pictor:model.get'),

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 
 import {
   NOTIFICATION,
@@ -29,6 +30,17 @@ export interface HarnessClientOptions {
   env?: Record<string, string>
   reasoningEffort?: string
   maxTokens?: number
+  /**
+   * Node binary used when `binary` is a JavaScript entry rather than a shim.
+   * Electron passes its own `process.execPath` so the runtime does not depend on
+   * the PATH the app happens to inherit.
+   */
+  nodePath?: string
+  /**
+   * Directory the launcher runs in. It resolves its own profile dependencies
+   * relative to here, so this must not be the session's working directory.
+   */
+  processCwd?: string
   /** A prompt can legitimately take minutes; the handshake must not. */
   requestTimeoutMs?: number
   startTimeoutMs?: number
@@ -94,10 +106,18 @@ export class HarnessClient {
     // `spawn`'s overloads widen to `ChildProcess`; the stdio tuple below makes
     // the streams non-null, so the narrower type is the accurate one.
     const spawnProcess: HarnessSpawn = this.#options.spawn ?? (spawn as unknown as HarnessSpawn)
-    const child = spawnProcess(this.#options.binary, ['--profile', 'sdk'], {
-      cwd,
+    // A published CLI is often a shell shim that re-executes `node`; running the
+    // JavaScript entry directly keeps the runtime on the node we chose.
+    const isScript = /\.(c|m)?js$/.test(this.#options.binary)
+    const command = isScript ? (this.#options.nodePath ?? process.execPath) : this.#options.binary
+    const args = isScript ? [this.#options.binary, '--profile', 'sdk'] : ['--profile', 'sdk']
+    const child = spawnProcess(command, args, {
+      // The session's directory travels in the handshake; the process itself runs
+      // beside its own launcher, which is where its profile dependencies resolve.
+      cwd: this.#options.processCwd ?? dirname(this.#options.binary),
       env: {
         ...process.env,
+        ...(isScript ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
         DSH_HOME: this.#options.home,
         ...this.#options.env,
       },

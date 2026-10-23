@@ -1,10 +1,11 @@
-import { Blocks, Cpu, Info, Settings2, type LucideIcon } from 'lucide-react'
+import { Blocks, Cpu, Info, Settings2, Terminal, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { AboutSection } from './AboutSection.js'
 import { AgentModelPage } from './AgentModelPage.js'
 import { GeneralSection } from './GeneralSection.js'
 import { PluginsSection } from './PluginsSection.js'
+import { RuntimePage } from './RuntimePage.js'
 
 /** One page in the settings sidebar. */
 export interface SettingsPage {
@@ -41,6 +42,16 @@ const PAGES = [
     group: '智能体',
     order: 0,
     render: () => <AgentModelPage />,
+  },
+  {
+    id: 'runtime',
+    label: '运行时',
+    icon: Terminal,
+    description: 'agent 运行时进程与它使用的服务',
+    keywords: '运行时 runtime dsh harness 内核 进程 启动 停止',
+    group: '智能体',
+    order: 1,
+    render: () => <RuntimePage />,
   },
   {
     id: 'plugins',

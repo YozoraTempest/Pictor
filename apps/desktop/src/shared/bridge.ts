@@ -75,6 +75,19 @@ export interface ToolViewDescriptor {
   label?: string
   icon?: string
 }
+/** Status of the agent runtime process the main process owns. */
+export interface HarnessStatus {
+  state: 'stopped' | 'starting' | 'ready' | 'error'
+  /** Launcher path, or null when no runtime is installed. */
+  binary: string | null
+  /** Runtime home: profiles, session logs and storages live here. */
+  home: string
+  provider: string | null
+  model: string | null
+  serverInfo: { name: string; version: string } | null
+  error: string | null
+}
+
 export interface CcSwitchScanResult {
   available: boolean
   path: string
@@ -145,6 +158,10 @@ export interface PictorBridge {
   listPlugins(): Promise<PluginRecord[]>
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginRecord>
   pluginReport(): Promise<PluginReport>
+
+  harnessStatus(): Promise<HarnessStatus>
+  harnessStart(cwd: string): Promise<HarnessStatus>
+  harnessStop(): Promise<HarnessStatus>
 
   getAppInfo(): Promise<AppInfo>
 
