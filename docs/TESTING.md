@@ -60,6 +60,18 @@ that they are not part of `pnpm verify` — they are slower and they exercise th
 real runtime, so they belong in a job of their own rather than in the gate every
 commit waits on.
 
+## Packaging
+
+```bash
+pnpm pack:dir    # unpacked app under dist/<platform>-unpacked
+pnpm pack:dist   # installer under dist/
+```
+
+Both run `pnpm build` first, so the sidecar and the bundles are current. The
+packager needs two things it cannot infer: the Rust binary is not an npm package
+(it ships as `resources/host-core/pictor-host-core`), and `electronVersion` is
+pinned in the config because `electron` is declared as a range.
+
 ## Desktop smoke test
 
 `pnpm build` then run the packaged main process without showing a window:

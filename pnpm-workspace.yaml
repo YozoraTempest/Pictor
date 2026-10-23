@@ -8,6 +8,7 @@ allowBuilds:
   esbuild: true
   '@google/genai': false
   protobufjs: false
+  electron-winstaller: true
 
 minimumReleaseAgeExclude:
   - '@typescript-eslint/eslint-plugin@8.72.0'

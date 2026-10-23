@@ -33,5 +33,10 @@
     "zustand": "^5.0.15",
     "@pictor/harness": "workspace:*",
     "ws": "^8.18.0"
-  }
+  },
+  "homepage": "https://github.com/astra-opensource/pictor",
+  "author": {
+    "name": "Astra Opensource"
+  },
+  "description": "Agent-native local development environment"
 }

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "dev.pictor.app",
+  "productName": "Pictor",
+  "directories": {
+    "output": "../../dist",
+    "buildResources": "build"
+  },
+  "files": ["out/**/*", "package.json", "!**/*.map"],
+  "extraMetadata": {
+    "main": "./out/main/index.js"
+  },
+  "asar": true,
+  "asarUnpack": ["node_modules/ws/**", "node_modules/@earendil-works/**"],
+  "npmRebuild": false,
+  "linux": {
+    "target": ["AppImage"],
+    "category": "Development",
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
+  },
+  "win": {
+    "target": ["nsis"],
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "category": "public.app-category.developer-tools",
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
+  },
+  "publish": null,
+  "electronVersion": "44.9.0",
+  "executableName": "pictor",
+  "extraResources": [
+    {
+      "from": "../../target/release/pictor-host-core",
+      "to": "host-core/pictor-host-core"
+    }
+  ]
+}
