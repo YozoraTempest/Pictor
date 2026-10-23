@@ -168,6 +168,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
+  packages/harness: {}
+
   packages/host-client:
     dependencies:
       '@pictor/racp':

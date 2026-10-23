@@ -1,0 +1,25 @@
+export {
+  HarnessClient,
+  NOTIFICATION,
+  type HarnessClientOptions,
+  type HarnessNotification,
+  type HarnessNotificationListener,
+  type HarnessSpawn,
+  type SessionEventNotification,
+} from './client.js'
+export {
+  PROTOCOL_VERSION,
+  isJsonRpcNotification,
+  isJsonRpcResponse,
+  normalizeMethod,
+  type InitializeParams,
+  type InitializeResult,
+  type JsonRpcError,
+  type JsonRpcNotification,
+  type JsonRpcRequest,
+  type JsonRpcResponse,
+  type NotificationName,
+  type PromptContentBlock,
+  type PromptParams,
+  type SessionParams,
+} from './protocol.js'
