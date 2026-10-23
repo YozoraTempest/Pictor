@@ -56,10 +56,12 @@ export function Composer({
         className="max-h-48 w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-faint disabled:cursor-not-allowed"
       />
 
-      <div className="flex items-center gap-2 px-1 pt-1">
+      {/* The hint block is the first thing to go when the composer is narrow: it
+          is a reminder, while the model name is information. */}
+      <div className="@container flex items-center gap-2 px-1 pt-1">
         <ModelPicker onChanged={onModelChanged} />
 
-        <span className="ml-auto hidden min-w-0 items-center gap-1 truncate text-2xs text-faint sm:flex">
+        <span className="ml-auto hidden shrink-0 items-center gap-1 text-2xs text-faint @xl:flex">
           <Kbd>Enter</Kbd> 发送
           <span className="px-1">·</span>
           <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> 换行
