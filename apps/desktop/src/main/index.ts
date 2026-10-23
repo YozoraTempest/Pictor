@@ -29,6 +29,7 @@ import {
 
 import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
+import { findSessionFile, loadHarnessHistory } from './harness-history.js'
 import { HarnessService, type HarnessStatus } from './harness-service.js'
 import { ModelService } from './model-service.js'
 
@@ -703,6 +704,13 @@ function registerIpc(workspace: Workspace): void {
     const projects = await workspace.client.listProjects()
     const project = projects.find((entry) => entry.id === session.projectId) ?? null
 
+    // With the kernel running, the transcript is rebuilt from its own durable
+    // log; the Pi session file only exists for conversations that ran on Pi.
+    if (workspace.harness.status().state === 'ready') {
+      const file = findSessionFile(workspace.harness.status().home, sessionId)
+      return { path: `harness:${sessionId}`, history: loadHarnessHistory(file, 50, 0) }
+    }
+
     const settings = await readModelSettings(workspace.client, workspace.model.authPath)
     if (settings.baseUrl.length === 0 || settings.modelId.length === 0) {
       throw new Error('model settings are incomplete; open Model settings first')
@@ -761,6 +769,11 @@ function registerIpc(workspace: Workspace): void {
       if (typeof path !== 'string') throw new Error('path must be a string')
       const size = typeof limit === 'number' && limit > 0 ? Math.min(limit, 200) : 50
       const from = typeof offset === 'number' && offset >= 0 ? offset : 0
+      if (path.startsWith('harness:')) {
+        const sessionId = path.slice('harness:'.length)
+        const file = findSessionFile(workspace.harness.status().home, sessionId)
+        return loadHarnessHistory(file, size, from)
+      }
       return loadHistoryPage(path, size, from)
     },
   )
