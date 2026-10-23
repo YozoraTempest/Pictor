@@ -1,4 +1,4 @@
-import { Play, Square } from 'lucide-react'
+import { Download, Play, Square } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { HarnessStatus, PermissionMode } from '../../../../shared/bridge.js'
@@ -83,6 +83,17 @@ export function RuntimePage(): React.JSX.Element {
       description="会话由独立的 agent 运行时进程执行；这里启动、停止并核对它用的服务。"
       actions={
         <>
+          {status !== null && status.binary === null && (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy}
+              onClick={() => void run(() => window.pictor.installHarness())}
+            >
+              {busy ? <Spinner className="size-3.5" /> : <Download className="size-3.5" />}
+              安装运行时
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
@@ -113,7 +124,8 @@ export function RuntimePage(): React.JSX.Element {
       {status !== null && status.binary === null && (
         <div className="px-5 py-3">
           <Banner tone="notice">
-            没有找到运行时。安装 `@deepseek-ai/dsh`，或用环境变量 PICTOR_DSH_BIN 指向它的启动器。
+            还没有运行时。安装到本机配置目录后即可使用；安装需要联网，几百兆。也可以 设置
+            PICTOR_DSH_BIN 指向已有的 dsh 启动器。
           </Banner>
         </div>
       )}

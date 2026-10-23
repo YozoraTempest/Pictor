@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -38,6 +39,9 @@ export interface HarnessServiceOptions {
   /** Sandbox mode read from settings; the runtime takes it as an env var. */
   readPermissionMode?: () => Promise<PermissionMode>
 }
+
+/** Pinned runtime, installed into the profile on request. */
+const RUNTIME_PACKAGE = '@deepseek-ai/dsh@0.2.1-rc.2'
 
 /** Route the DeepSeek adapter registers; models pass through unchanged. */
 const PROVIDER_ROUTE = 'deepseek-official'
@@ -211,6 +215,84 @@ export class HarnessService {
    * `@deepseek-ai/dsh` install that may live in the workspace.
    */
   /**
+   * Install the pinned runtime into the profile.
+   *
+   * The app ships no package manager and no bundler for the runtime, so the
+   * install runs npm through the same Node the runtime will use, into a
+   * directory this profile owns. Nothing global is touched, and uninstalling is
+   * deleting the directory.
+   */
+  async install(): Promise<HarnessStatus> {
+    const nodePath = this.#resolveNode()
+    if (nodePath === null) {
+      throw new Error('没有找到可用的 Node 运行时；安装 Node 22+ 或设置 PICTOR_NODE_BIN')
+    }
+    const npmCli = this.#resolveNpmCli(nodePath)
+    if (npmCli === null) throw new Error('没有找到 npm，无法安装运行时')
+
+    // Surface progress: the install takes minutes and the page should say so.
+    this.#status = { ...this.#status, state: 'starting', error: null }
+
+    const directory = join(this.#options.userData, 'harness-runtime')
+    mkdirSync(directory, { recursive: true })
+    const manifest = join(directory, 'package.json')
+    if (!existsSync(manifest)) {
+      writeFileSync(
+        manifest,
+        `${JSON.stringify({ name: 'pictor-runtime', private: true }, null, 2)}\n`,
+        'utf8',
+      )
+    }
+
+    const output: string[] = []
+    const code = await new Promise<number>((resolve) => {
+      const child = spawn(
+        nodePath,
+        [npmCli, 'install', RUNTIME_PACKAGE, '--no-audit', '--no-fund', '--loglevel=error'],
+        { cwd: directory, env: { ...process.env } },
+      )
+      const collect = (chunk: Buffer | string): void => {
+        for (const line of String(chunk).split('\n')) {
+          if (line.trim().length > 0) output.push(line.trim())
+        }
+      }
+      child.stdout.on('data', collect)
+      child.stderr.on('data', collect)
+      child.on('error', (error) => {
+        output.push(String(error))
+        resolve(1)
+      })
+      child.on('exit', (exitCode) => resolve(exitCode ?? 1))
+    })
+
+    const tail = output.slice(-4).join(' · ')
+    const binary = this.#resolveBinary()
+    this.#status = {
+      ...this.#status,
+      state: 'stopped',
+      binary,
+      error: code === 0 && binary !== null ? null : tail.length > 0 ? tail : '安装失败',
+    }
+    return this.status()
+  }
+
+  /** npm ships inside a Node installation; find its JS entry for this Node. */
+  #resolveNpmCli(nodePath: string): string | null {
+    const explicit = process.env['PICTOR_NPM_CLI']
+    if (explicit !== undefined && existsSync(explicit)) return explicit
+
+    const candidates = [
+      join(dirname(nodePath), '../lib/node_modules/npm/bin/npm-cli.js'),
+      '/usr/lib/node_modules/npm/bin/npm-cli.js',
+      '/usr/local/lib/node_modules/npm/bin/npm-cli.js',
+    ]
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate
+    }
+    return null
+  }
+
+  /**
    * Find a plain Node binary for the runtime.
    *
    * The launcher refuses to run under Electron's embedded node (it fingerprints
@@ -249,6 +331,14 @@ export class HarnessService {
     if (explicit !== undefined && explicit.length > 0) {
       return existsSync(explicit) ? explicit : null
     }
+
+    // An install the user triggered from the settings page wins: it is the one
+    // this profile owns, and it needs no PATH or global npm.
+    const local = join(
+      this.#options.userData,
+      'harness-runtime/node_modules/@deepseek-ai/dsh/lib/bin.js',
+    )
+    if (existsSync(local)) return local
 
     try {
       const require = createRequire(import.meta.url)

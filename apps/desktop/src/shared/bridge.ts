@@ -166,6 +166,8 @@ export interface PictorBridge {
   harnessStatus(): Promise<HarnessStatus>
   harnessStart(cwd: string): Promise<HarnessStatus>
   harnessStop(): Promise<HarnessStatus>
+  /** Install the pinned runtime into the profile; resolves when npm exits. */
+  installHarness(): Promise<HarnessStatus>
   /** Persisted sandbox mode; the runtime picks it up on its next start. */
   setHarnessPermissionMode(mode: PermissionMode): Promise<HarnessStatus>
 

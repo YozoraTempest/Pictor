@@ -816,6 +816,10 @@ function registerIpc(workspace: Workspace): void {
     return workspace.harness.stop()
   })
 
+  ipcMain.handle('pictor:harness.install', async (): Promise<HarnessStatus> => {
+    return workspace.harness.install()
+  })
+
   ipcMain.handle('pictor:appInfo', async (): Promise<AppInfo> => {
     const info = await workspace.client.info()
     return {
