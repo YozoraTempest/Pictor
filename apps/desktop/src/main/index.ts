@@ -261,7 +261,11 @@ async function startWorkspace(): Promise<Workspace | null> {
       }
     }
     for (const event of chatBridge.map(notification)) {
-      mainWindow?.webContents.send('pictor:chat.event', event)
+      // Broadcast: the window that opened the conversation is not necessarily the
+      // one a single `mainWindow` handle points at, and several may be listening.
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('pictor:chat.event', event)
+      }
     }
   })
 
@@ -728,10 +732,16 @@ function registerIpc(workspace: Workspace): void {
     // With the kernel running, the transcript is rebuilt from its own durable
     // log; the Pi session file only exists for conversations that ran on Pi.
     if (workspace.harness.status().state === 'ready') {
-      const history = await workspace.harness.openHistory(sessionId)
-      // A session that ran on Pi has no kernel record, so the kernel is not
-      // authoritative for it: fall through to the log it actually wrote.
-      if (history.messages.length > 0) return { path: `harness:${sessionId}`, history }
+      // Only a Pi-era session needs its own log: it was never created in the
+      // kernel. A new session has no Pi record either, and falling through for it
+      // would leave it without a path, which blocks sending entirely.
+      const piPath = (session as { piSessionPath?: string | null }).piSessionPath
+      if (piPath === null || piPath === undefined) {
+        return {
+          path: `harness:${sessionId}`,
+          history: await workspace.harness.openHistory(sessionId),
+        }
+      }
     }
 
     const settings = await readModelSettings(workspace.client, workspace.model.authPath)
