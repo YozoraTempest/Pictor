@@ -131,6 +131,9 @@ Selecting a session opens its transcript and a composer:
   and labelled as such, since the sidebar keeps them reachable.
 - A session's menu can **branch** it: the runtime copies the history up to its
   latest completed turn into a new session, which then diverges on its own.
+- **Archiving is reversible**: an archived conversation keeps its menu and offers
+  取消归档. Batched archiving (a whole section or project) asks first and names how
+  many conversations it will move.
 - Tool calls run under the runtime's sandbox policy, and a plugin can tighten it
   with a `toolGuards` guard: the runtime asks the app before every call, guards run
   in order, the first deny wins, and a denied call is shown with its reason.

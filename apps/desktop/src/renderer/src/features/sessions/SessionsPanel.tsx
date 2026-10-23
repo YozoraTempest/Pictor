@@ -2,6 +2,7 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
+  ArchiveRestore,
   FolderGit2,
   GitBranch,
   Loader2,
@@ -141,9 +142,12 @@ function Collapse({ open, children }: { open: boolean; children: ReactNode }): R
 }
 const DRAG_TYPE = 'application/x-pictor-item'
 
-/** A destructive action waiting for confirmation. */
-type PendingDelete =
-  { kind: 'project'; id: string; title: string } | { kind: 'session'; id: string; title: string }
+/** A destructive or sweeping action waiting for confirmation. */
+type PendingAction =
+  | { kind: 'project'; id: string; title: string }
+  | { kind: 'session'; id: string; title: string }
+  /** `ids` is what the batch would touch, so the dialog can name the size. */
+  | { kind: 'archive'; ids: string[]; title: string }
 
 export function SessionsPanel(): React.JSX.Element {
   const sessions = useWorkspaceStore((state) => state.sessions)
@@ -160,7 +164,6 @@ export function SessionsPanel(): React.JSX.Element {
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const deleteSession = useWorkspaceStore((state) => state.deleteSession)
   const setSessionPinned = useWorkspaceStore((state) => state.setSessionPinned)
-  const setSessionArchived = useWorkspaceStore((state) => state.setSessionArchived)
   const setSessionSections = useWorkspaceStore((state) => state.setSessionSections)
   const setSessionProject = useWorkspaceStore((state) => state.setSessionProject)
   const setProjectSection = useWorkspaceStore((state) => state.setProjectSection)
@@ -179,9 +182,9 @@ export function SessionsPanel(): React.JSX.Element {
   /** What the pointer is over right now; drives every drop preview. */
   const [target, setTarget] = useState<DropTarget | null>(null)
   const [dragging, setDragging] = useState<Dragged | null>(null)
-  const [confirm, setConfirm] = useState<PendingDelete | null>(null)
+  const [confirm, setConfirm] = useState<PendingAction | null>(null)
 
-  function askDelete(target: PendingDelete): void {
+  function askDelete(target: PendingAction): void {
     setConfirm(target)
   }
 
@@ -502,7 +505,12 @@ export function SessionsPanel(): React.JSX.Element {
       {
         label: '归档聊天',
         icon: <Archive className="size-3" />,
-        onSelect: () => void archiveSessions(collectSectionSessionIds(node)),
+        onSelect: () =>
+          askDelete({
+            kind: 'archive',
+            ids: collectSectionSessionIds(node),
+            title: node.title,
+          }),
       },
       {
         label: '移除分区',
@@ -518,7 +526,12 @@ export function SessionsPanel(): React.JSX.Element {
       {
         label: '归档聊天',
         icon: <Archive className="size-3" />,
-        onSelect: () => void archiveSessions(projectNode.sessions.map((session) => session.id)),
+        onSelect: () =>
+          askDelete({
+            kind: 'archive',
+            ids: projectNode.sessions.map((session) => session.id),
+            title: project.name,
+          }),
       },
       {
         label: '移除项目',
@@ -754,7 +767,6 @@ export function SessionsPanel(): React.JSX.Element {
                               onPin={(session) =>
                                 void setSessionPinned(session.id, !session.pinned)
                               }
-                              onArchive={(session) => void setSessionArchived(session.id, true)}
                               onDelete={(session) =>
                                 askDelete({ kind: 'session', id: session.id, title: session.title })
                               }
@@ -784,7 +796,6 @@ export function SessionsPanel(): React.JSX.Element {
                               onPin={() =>
                                 void setSessionPinned(child.session.id, !child.session.pinned)
                               }
-                              onArchive={() => void setSessionArchived(child.session.id, true)}
                               onDelete={() =>
                                 askDelete({
                                   kind: 'session',
@@ -825,7 +836,13 @@ export function SessionsPanel(): React.JSX.Element {
       </div>
       <Dialog
         open={confirm !== null}
-        title={confirm?.kind === 'project' ? '移除项目' : '删除会话'}
+        title={
+          confirm?.kind === 'project'
+            ? '移除项目'
+            : confirm?.kind === 'archive'
+              ? '归档聊天'
+              : '删除会话'
+        }
         onClose={() => setConfirm(null)}
         footer={
           <>
@@ -833,16 +850,21 @@ export function SessionsPanel(): React.JSX.Element {
               取消
             </Button>
             <Button
-              variant="danger"
+              variant={confirm?.kind === 'archive' ? 'primary' : 'danger'}
               onClick={() => {
                 if (confirm === null) return
                 const target = confirm
                 setConfirm(null)
                 if (target.kind === 'project') void removeProject(target.id)
+                else if (target.kind === 'archive') void archiveSessions(target.ids)
                 else void deleteSession(target.id)
               }}
             >
-              {confirm?.kind === 'project' ? '移除项目' : '删除会话'}
+              {confirm?.kind === 'project'
+                ? '移除项目'
+                : confirm?.kind === 'archive'
+                  ? '归档'
+                  : '删除会话'}
             </Button>
           </>
         }
@@ -850,7 +872,11 @@ export function SessionsPanel(): React.JSX.Element {
         <p className="text-sm leading-relaxed text-muted">
           {confirm?.kind === 'project'
             ? `「${confirm.title}」及其下的会话都会被移除，此操作不可撤销。`
-            : `「${confirm?.title ?? ''}」的对话记录会被删除，此操作不可撤销。`}
+            : confirm?.kind === 'archive'
+              ? confirm.ids.length === 0
+                ? `「${confirm.title}」下没有会话，无需归档。`
+                : `「${confirm.title}」下的 ${String(confirm.ids.length)} 个会话会移入「已归档」，之后可以在会话菜单里取消归档。`
+              : `「${confirm?.title ?? ''}」的对话记录会被删除，此操作不可撤销。`}
         </p>
       </Dialog>
 
@@ -916,7 +942,6 @@ function ProjectBlock({
   onCreate,
   onSelect,
   onPin,
-  onArchive,
   onDelete,
   onDropProject,
   onDropSessionAt,
@@ -940,7 +965,6 @@ function ProjectBlock({
   onCreate: () => void
   onSelect: (id: string) => void
   onPin: (session: Session) => void
-  onArchive: (session: Session) => void
   onDelete: (session: Session) => void
   onDropProject: (projectId: string) => void
   onDropSessionAt: (draggedId: string, gap: GapRef) => void
@@ -1069,7 +1093,6 @@ function ProjectBlock({
                     clearPreview={clearPreview}
                     onSelect={() => onSelect(session.id)}
                     onPin={() => onPin(session)}
-                    onArchive={() => onArchive(session)}
                     onDelete={() => onDelete(session)}
                     onDragStart={(event) =>
                       beginDrag(
@@ -1109,7 +1132,6 @@ function SessionRow({
   clearPreview,
   onSelect,
   onPin,
-  onArchive,
   onDelete,
   onDragStart,
   onDragEnd,
@@ -1130,7 +1152,6 @@ function SessionRow({
   clearPreview: () => void
   onSelect: () => void
   onPin: () => void
-  onArchive: () => void
   onDelete: () => void
   onDragStart: (event: React.DragEvent) => void
   onDragEnd: () => void
@@ -1139,6 +1160,7 @@ function SessionRow({
 }): React.JSX.Element {
   const running = useChatStore((state) => state.chats[session.id]?.running === true)
   const forkSession = useWorkspaceStore((state) => state.forkSession)
+  const setSessionArchived = useWorkspaceStore((state) => state.setSessionArchived)
 
   /** Half of the row the pointer is over picks the slot above or below. */
   function slotAt(event: React.DragEvent<HTMLElement>): GapRef {
@@ -1220,7 +1242,18 @@ function SessionRow({
               icon: <GitBranch className="size-3" />,
               onSelect: () => void forkSession(session.id),
             },
-            { label: '归档聊天', icon: <Archive className="size-3" />, onSelect: onArchive },
+            // Archiving is reversible, so the same row offers the way back.
+            session.archived
+              ? {
+                  label: '取消归档',
+                  icon: <ArchiveRestore className="size-3" />,
+                  onSelect: () => void setSessionArchived(session.id, false),
+                }
+              : {
+                  label: '归档聊天',
+                  icon: <Archive className="size-3" />,
+                  onSelect: () => void setSessionArchived(session.id, true),
+                },
             {
               label: '删除会话',
               icon: <Trash2 className="size-3" />,
