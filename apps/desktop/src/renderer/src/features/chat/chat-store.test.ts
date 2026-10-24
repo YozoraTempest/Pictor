@@ -17,6 +17,7 @@ function reset(): void {
     currentTool: null,
     error: null,
     retry: null,
+    usage: null,
   }
 
   useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })
@@ -137,6 +138,7 @@ describe('chat-store send', () => {
       currentTool: null,
       error: null,
       retry: null,
+      usage: null,
     }
     useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })
 
@@ -169,6 +171,7 @@ describe('chat-store send', () => {
       currentTool: null,
       error: null,
       retry: null,
+      usage: null,
     }
     useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })
 

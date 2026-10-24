@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { ChatImage } from '@pictor/shared'
 
-import { Button, Kbd } from '../../components/ui/index.js'
+import { Button } from '../../components/ui/index.js'
+import { ContextMeter } from './ContextMeter.js'
 import { ModelPicker } from './ModelPicker.js'
 
 /** Refuses anything the runtime could not accept, before the user commits it. */
@@ -71,7 +72,7 @@ export function Composer({
 
   return (
     <div
-      className="rounded-xl border border-border bg-surface p-2 transition-colors duration-150 focus-within:border-border-strong"
+      className="rounded-xl border border-border bg-surface p-2 focus-within:border-border-strong focus-within:ring-1 focus-within:ring-accent/20"
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
@@ -127,27 +128,23 @@ export function Composer({
         className="max-h-48 w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-faint disabled:cursor-not-allowed"
       />
 
-      {/* The hint block is the first thing to go when the composer is narrow: it
-          is a reminder, while the model name is information. */}
-      <div className="@container flex items-center gap-2 px-1 pt-1">
-        <ModelPicker onChanged={onModelChanged} />
-
-        <span className="ml-auto hidden shrink-0 items-center gap-1 text-2xs text-faint @xl:flex">
-          <Kbd>Enter</Kbd> 发送
-          <span className="px-1">·</span>
-          <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> 换行
-        </span>
-
-        <div className="ml-2 shrink-0">
+      {/* One row, right-aligned: what this conversation has used, which model
+          answers it, then the action. The key hints lived here before; they are a
+          reminder, and the rest of the row is information. */}
+      <div className="flex items-center px-1 pt-1">
+        <div className="ml-auto flex min-w-0 items-center gap-1">
+          <ContextMeter />
+          <ModelPicker onChanged={onModelChanged} />
           {running ? (
-            <Button variant="secondary" size="sm" onClick={onStop}>
+            <Button variant="secondary" size="sm" className="ml-1" onClick={onStop}>
               <Square className="size-3 fill-current" />
               停止
             </Button>
           ) : (
             <Button
               variant="primary"
-              size="sm"
+              size="icon"
+              className="ml-1 rounded-full"
               disabled={disabled || (value.trim().length === 0 && images.length === 0)}
               onClick={submit}
               aria-label="发送"

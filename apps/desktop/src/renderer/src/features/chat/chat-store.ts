@@ -22,6 +22,8 @@ export interface ChatSlice {
   error: string | null
   /** Set while the runtime re-runs a failed model step inside this turn. */
   retry: { attempt: number; maxAttempts: number; message: string } | null
+  /** Tokens the last turn used, as the provider reported them. */
+  usage: { input: number | null; output: number | null; total: number | null } | null
 }
 
 interface ChatState {
@@ -54,6 +56,7 @@ const EMPTY: ChatSlice = {
   currentTool: null,
   error: null,
   retry: null,
+  usage: null,
 }
 
 function emptySlice(sessionId: string): ChatSlice {
@@ -294,6 +297,13 @@ export const useChatStore = create<ChatState>()((set, get) => {
             maxAttempts: event.maxAttempts,
             message: event.message,
           },
+        }))
+        return
+      }
+
+      if (event.type === 'run.usage') {
+        patch(sessionId, () => ({
+          usage: { input: event.input, output: event.output, total: event.total },
         }))
         return
       }

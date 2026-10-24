@@ -44,3 +44,18 @@ export function newSessionTitle(): string {
   const now = new Date()
   return `新会话 ${now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
 }
+
+/**
+ * A token count the way a meter shows it: 812, 12.4k, 1.0M.
+ *
+ * One decimal below 100k, none above: the last digits of a context window are
+ * noise, and a meter that jitters because it added 3 tokens is worse than one
+ * that reads the same for a while.
+ */
+export function formatTokens(tokens: number): string {
+  if (!Number.isFinite(tokens) || tokens < 0) return '0'
+  if (tokens < 1000) return String(Math.round(tokens))
+  if (tokens < 100_000) return `${(tokens / 1000).toFixed(1)}k`
+  if (tokens < 1_000_000) return `${String(Math.round(tokens / 1000))}k`
+  return `${(tokens / 1_000_000).toFixed(1)}M`
+}

@@ -152,6 +152,18 @@ export class HarnessChatBridge {
       if (typeof chunk.text !== 'string' || chunk.text.length === 0) return []
       return [{ type: 'thinking.delta', sessionId, runId, text: chunk.text }]
     }
+    if (chunk.type === 'usage') {
+      const usage = chunk.usage as
+        { inputTokens?: unknown; outputTokens?: unknown; totalTokens?: unknown } | undefined
+      const count = (value: unknown): number | null =>
+        typeof value === 'number' && Number.isFinite(value) ? value : null
+      const input = count(usage?.inputTokens)
+      const output = count(usage?.outputTokens)
+      const total =
+        count(usage?.totalTokens) ?? (input !== null && output !== null ? input + output : null)
+      if (input === null && output === null && total === null) return []
+      return [{ type: 'run.usage', sessionId, runId, input, output, total }]
+    }
     if (chunk.type !== 'text-delta') return []
     if (typeof chunk.text !== 'string' || chunk.text.length === 0) return []
 

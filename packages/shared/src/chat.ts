@@ -55,6 +55,15 @@ export type ChatEvent =
   | { type: 'run.started'; sessionId: string; runId: string; seq?: number }
   | { type: 'message.delta'; sessionId: string; runId: string; text: string }
   | { type: 'thinking.delta'; sessionId: string; runId: string; text: string }
+  /** Token accounting for the turn, as the provider reported it. */
+  | {
+      type: 'run.usage'
+      sessionId: string
+      runId: string
+      input: number | null
+      output: number | null
+      total: number | null
+    }
   | { type: 'tool.started'; sessionId: string; runId: string; tool: string; input: unknown }
   | {
       type: 'tool.finished'
