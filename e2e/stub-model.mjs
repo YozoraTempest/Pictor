@@ -23,11 +23,13 @@ const isRecord = (value) => typeof value === 'object' && value !== null
  * @param {object} [options]
  * @param {string} [options.reply] what the assistant says, streamed in pieces
  * @param {string} [options.title] what the titling request returns
+ * @param {number} [options.delayMs] hold the stream open, so a turn can be caught mid-flight
  * @returns {Promise<StubModel>}
  */
 export async function startStubModel(options = {}) {
   const reply = options.reply ?? '这是 e2e 模型的回答。'
   const title = options.title ?? 'e2e 自动标题'
+  const delayMs = options.delayMs ?? 0
   /** @type {string[]} */
   const requests = []
 
@@ -99,20 +101,26 @@ export async function startStubModel(options = {}) {
       response.write(chunk({ role: 'assistant', content: '' }))
       // Two pieces, so a spec can see the transcript grow rather than appear.
       const head = content.length > 4 ? content.slice(0, Math.ceil(content.length / 2)) : ''
-      if (head.length > 0) response.write(chunk({ content: head }))
-      response.write(chunk({ content: content.slice(head.length) }))
-      response.write(chunk({}, 'stop'))
-      response.write(
-        `data: ${JSON.stringify({
-          id: 'stub-1',
-          object: 'chat.completion.chunk',
-          created: 1,
-          model,
-          choices: [],
-          usage: { prompt_tokens: 8, completion_tokens: 8, total_tokens: 16 },
-        })}\n\n`,
-      )
-      response.end('data: [DONE]\n\n')
+      const rest = content.slice(head.length)
+      const finishStream = () => {
+        if (head.length > 0) response.write(chunk({ content: head }))
+        response.write(chunk({ content: rest }))
+        response.write(chunk({}, 'stop'))
+        response.write(
+          `data: ${JSON.stringify({
+            id: 'stub-1',
+            object: 'chat.completion.chunk',
+            created: 1,
+            model,
+            choices: [],
+            usage: { prompt_tokens: 8, completion_tokens: 8, total_tokens: 16 },
+          })}\n\n`,
+        )
+        response.end('data: [DONE]\n\n')
+      }
+      // A delayed answer is what lets a spec act while the turn is still running.
+      if (delayMs > 0) setTimeout(finishStream, delayMs)
+      else finishStream()
     })
   })
 
