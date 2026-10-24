@@ -31,8 +31,10 @@ export default {
 
     try {
       // Setup goes through the same bridge the settings page uses; the subject of
-      // the spec starts at the composer.
-      await page.evaluate(
+      // the spec starts at the composer. The service has to become the active one
+      // *and* the runtime has to boot on it: a spec that ran before this one may
+      // have left a runtime pointed at its own, now closed, endpoint.
+      const listed = await page.evaluate(
         (baseUrl) =>
           window.pictor.saveProvider({
             name: 'e2e 模型',
@@ -44,11 +46,15 @@ export default {
           }),
         model.baseUrl,
       )
+      const provider = listed.providers.find((entry) => entry.baseUrl === model.baseUrl)
+      assert.ok(provider !== undefined, 'the provider was saved')
+      await page.evaluate((id) => window.pictor.activateProvider(id), provider.id)
 
       // A conversation runs against the directory the runtime was started in, and
       // the archive spec already registered the workdir itself.
       const directory = join(app.workdir, 'chat')
       mkdirSync(directory, { recursive: true })
+      await page.evaluate(() => window.pictor.harnessStop())
       const status = await page.evaluate((cwd) => window.pictor.harnessStart(cwd), directory)
       assert.equal(status.state, 'ready', `the runtime booted: ${status.error ?? ''}`)
 

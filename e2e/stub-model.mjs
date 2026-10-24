@@ -22,12 +22,15 @@ const isRecord = (value) => typeof value === 'object' && value !== null
 /**
  * @param {object} [options]
  * @param {string} [options.reply] what the assistant says, streamed in pieces
+ * @param {string[]} [options.replies] one answer per turn, when a spec needs them to differ
  * @param {string} [options.title] what the titling request returns
  * @param {number} [options.delayMs] hold the stream open, so a turn can be caught mid-flight
  * @returns {Promise<StubModel>}
  */
 export async function startStubModel(options = {}) {
   const reply = options.reply ?? '这是 e2e 模型的回答。'
+  const replies = options.replies ?? []
+  let answered = 0
   const title = options.title ?? 'e2e 自动标题'
   const delayMs = options.delayMs ?? 0
   /** @type {string[]} */
@@ -67,7 +70,13 @@ export async function startStubModel(options = {}) {
 
       // The runtime asks for a conversation title with its own prompt; giving it
       // a fixed answer is what lets the spec check that Pictor adopts it.
-      const content = system.includes(TITLE_HINT) ? title : reply
+      // A titling request is not a turn, so only a conversation walks the list.
+      let content = reply
+      if (system.includes(TITLE_HINT)) content = title
+      else if (replies.length > 0) {
+        content = replies[Math.min(answered, replies.length - 1)] ?? reply
+        answered += 1
+      }
 
       if (!wantsStream) {
         response.writeHead(200, { 'content-type': 'application/json' })
