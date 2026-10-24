@@ -1,4 +1,4 @@
-import { Check, Download, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Download, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { ProviderList, ProviderView } from '@pictor/shared'
@@ -167,14 +167,6 @@ export function AgentModelPage(): React.JSX.Element {
                 <Badge tone={provider.hasApiKey ? 'success' : 'neutral'}>
                   {provider.hasApiKey ? '有密钥' : '无密钥'}
                 </Badge>
-
-                {active && (
-                  <Tooltip label="正在使用" side="bottom" align="end">
-                    <span className="grid size-6 place-items-center text-accent">
-                      <Check className="size-3.5" />
-                    </span>
-                  </Tooltip>
-                )}
 
                 <IconButton
                   label={`编辑 ${provider.name}`}
