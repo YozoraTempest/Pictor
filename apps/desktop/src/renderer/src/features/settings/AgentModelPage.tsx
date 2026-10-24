@@ -21,6 +21,12 @@ function hostOf(baseUrl: string): string {
   }
 }
 
+/** A context window the way people say it: 128k, 1M. */
+function contextLabel(tokens: number): string {
+  if (tokens >= 1_000_000) return `${String(Math.round(tokens / 100_000) / 10)}M`
+  return `${String(Math.round(tokens / 1000))}k`
+}
+
 /** What the active model declared, in the row's own shorthand. */
 function capabilityHints(provider: ProviderView): string {
   const capabilities = capabilitiesOf(
@@ -31,7 +37,7 @@ function capabilityHints(provider: ProviderView): string {
     capabilities.reasoning ? '思考' : null,
     capabilities.contextWindow === null
       ? null
-      : `${String(Math.round(capabilities.contextWindow / 1000))}k 上下文`,
+      : `${contextLabel(capabilities.contextWindow)} 上下文`,
   ]
     .filter((hint): hint is string => hint !== null)
     .join(' · ')
@@ -127,6 +133,8 @@ export function AgentModelPage(): React.JSX.Element {
         ) : (
           providers.map((provider) => {
             const active = provider.id === list.activeId
+            // Computed once per row; the row shows it in one place.
+            const hints = capabilityHints(provider)
 
             return (
               <div
@@ -160,7 +168,7 @@ export function AgentModelPage(): React.JSX.Element {
                   <span className="truncate text-2xs text-faint">
                     {hostOf(provider.baseUrl)} · {String(provider.models.length)} 个模型
                     {provider.modelId.length > 0 ? ` · ${provider.modelId}` : ''}
-                    {capabilityHints(provider).length > 0 ? ` · ${capabilityHints(provider)}` : ''}
+                    {hints.length > 0 ? ` · ${hints}` : ''}
                   </span>
                 </button>
 

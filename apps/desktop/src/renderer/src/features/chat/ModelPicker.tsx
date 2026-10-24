@@ -97,6 +97,22 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
     }
   }, [])
 
+  // The settings page can add or drop a service while this popover is closed, so
+  // opening it re-reads the list instead of trusting the copy from mount.
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    void window.pictor
+      .listProviders()
+      .then((next) => {
+        if (alive) setList(next)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [open])
+
   const close = useCallback((): void => {
     setOpen(false)
     setPosition(null)
@@ -153,6 +169,10 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   const activeId = list?.activeId ?? null
   const activeProvider = list?.providers.find((provider) => provider.id === activeId) ?? null
   const active = activeProvider?.modelId ?? ''
+  const activeName =
+    activeProvider === null
+      ? ''
+      : modelLabel(activeProvider.models.find((model) => model.id === active) ?? emptyModel(active))
 
   const matching = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -256,7 +276,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
       >
         <Cpu className="size-3 shrink-0 text-faint" aria-hidden />
         <span className="truncate">
-          {activeProvider === null ? '未选择模型' : activeProvider.modelId || '未选择模型'}
+          {activeProvider === null || active.length === 0 ? '未选择模型' : activeName}
         </span>
         {activeProvider !== null && activeProvider.name.length > 0 && (
           <span className="shrink-0 text-faint">· {activeProvider.name}</span>
