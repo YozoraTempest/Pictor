@@ -77,6 +77,10 @@ export default {
         'the runtime reached the model endpoint',
       )
 
+      // The composer reports what the turn used, from the provider's own usage
+      // report rather than from counting characters.
+      await page.getByLabel('上下文用量').waitFor({ timeout: 15_000 })
+
       // The runtime names the conversation after its first turn, and Pictor adopts
       // that name over the placeholder it wrote at creation.
       await page.getByRole('button', { name: title }).first().waitFor({ timeout: 30_000 })
