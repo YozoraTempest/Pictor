@@ -75,6 +75,7 @@ Each spec says what it is about:
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `chat`    | A message typed into the composer reaches the runtime, streams back, the runtime's title is adopted, and the conversation survives a restart |
 | `probe`   | 试运行 returns the runtime's answer and events, and with the runtime down a message is refused instead of being answered elsewhere           |
+| `branch`  | Branching from an answer and before a question copies exactly the expected prefix, and the tree shows both conversations under their source  |
 | `archive` | Archiving is undoable from the row that did it, and a sweeping archive asks first                                                            |
 | `search`  | The palette narrows as you type, land on a conversation, open and close on the advertised keys                                               |
 

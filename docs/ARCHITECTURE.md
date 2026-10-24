@@ -107,6 +107,13 @@ speaks:
 - Branching is `session/fork`: the runtime copies the event prefix into a new
   session and returns its id. The app creates the Pictor conversation and adopts
   that id, so the branch opens with the inherited history and then diverges.
+- The cut is an inclusive event `seq`, and the runtime copies whole turns. A
+  message therefore carries the boundary it forks at: an answer keeps its own
+  event, a question keeps where the _previous_ turn ended (that is what re-asking
+  means). History rows carry their seq from the log; a row the window streamed
+  learns it from `turn/start` and `turn/end` on the event bridge.
+- The tree is Pictor's own: `sessions.parent_id` plus a pure `familyTree`, drawn
+  in a dialog. The runtime knows the prefix, not the family.
 - `sessions.parent_id` records what a branch was copied from. It lives in Pictor,
   not the runtime: the runtime hands back a new session id with no lineage, and
   only the app knows which conversations are related. The column is

@@ -135,10 +135,14 @@ Selecting a session opens its transcript and a composer:
   the home view: it matches conversation titles and project names, lists results
   newest first, and opens the pick on Enter. Archived conversations are included
   and labelled as such, since the sidebar keeps them reachable.
-- A session's menu can **branch** it: the runtime copies the history up to its
-  latest completed turn into a new session, which then diverges on its own. The
-  branch records where it came from — the row carries a branch mark, the title
-  says `分支自 …`, and the menu reopens the source.
+- **Branching** works from the menu (latest completed turn) and from any message:
+  hovering an answer offers 从这条回答分叉, and hovering a question offers
+  在这一问之前分叉, so a prompt can be re-asked without losing what came before. The
+  branch records where it came from — the row carries a branch mark and the title
+  says `分支自 …`.
+- The **branch tree** (title bar, once a conversation has branches) draws every
+  conversation that shares a lineage, indented under the one it came from; a click
+  switches to it.
 - **Archiving is reversible**: an archived conversation keeps its menu and offers
   取消归档. Batched archiving (a whole section or project) asks first and names how
   many conversations it will move.
@@ -176,9 +180,8 @@ and connection test, the dsh runtime with in-app installation, three wire
 protocols, streaming chat with runtime-owned transcripts and paginated recovery,
 reasoning display, three-column shell UI.
 
-Not yet implemented: a session tree (browsing every branch of one conversation in
-one view, or branching at an arbitrary message), remote hosts, and
-auto-update — installers are produced but nothing checks for a newer release.
+Not yet implemented: remote hosts, and auto-update — installers are produced but
+nothing checks for a newer release.
 Plugin modules run in-process; there is no per-plugin process sandbox yet. `pnpm test:e2e` covers the flows a unit test cannot see, and
 sits outside `pnpm verify` because it needs a display and a built app.
 
