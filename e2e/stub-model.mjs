@@ -11,6 +11,7 @@ import { createServer } from 'node:http'
  * @typedef {object} StubModel
  * @property {string} baseUrl what a provider's `baseUrl` should be
  * @property {string[]} requests one line per call, for assertions
+ * @property {{ hasImage: boolean, roles: string[] }[]} calls what each request carried
  * @property {() => Promise<void>} close
  */
 
@@ -25,6 +26,8 @@ const isRecord = (value) => typeof value === 'object' && value !== null
  * @param {string[]} [options.replies] one answer per turn, when a spec needs them to differ
  * @param {string} [options.title] what the titling request returns
  * @param {number} [options.delayMs] hold the stream open, so a turn can be caught mid-flight
+ * @param {Array<{ name: string, arguments: unknown }>} [options.toolCalls] one call per
+ *   request, in order, before the reply; this is how a spec drives a real tool
  * @returns {Promise<StubModel>}
  */
 export async function startStubModel(options = {}) {
@@ -33,8 +36,11 @@ export async function startStubModel(options = {}) {
   let answered = 0
   const title = options.title ?? 'e2e 自动标题'
   const delayMs = options.delayMs ?? 0
+  const toolCalls = options.toolCalls ?? []
   /** @type {string[]} */
   const requests = []
+  /** @type {{ hasImage: boolean, roles: string[] }[]} */
+  const calls = []
 
   const server = createServer((request, response) => {
     let body = ''
@@ -61,12 +67,64 @@ export async function startStubModel(options = {}) {
         isRecord(parsed) && typeof parsed['model'] === 'string' ? parsed['model'] : 'stub-model'
       const messages =
         isRecord(parsed) && Array.isArray(parsed['messages']) ? parsed['messages'] : []
+
+      // A spec asks whether the runtime sent an image; the bytes stay out of here.
+      calls.push({
+        hasImage: messages.some(
+          (message) =>
+            isRecord(message) &&
+            Array.isArray(message['content']) &&
+            message['content'].some(
+              (part) =>
+                isRecord(part) && (part['type'] === 'image_url' || part['type'] === 'image'),
+            ),
+        ),
+        roles: messages.map((message) => (isRecord(message) ? String(message['role']) : '?')),
+      })
       const system = messages
         .map((message) =>
           isRecord(message) && typeof message['content'] === 'string' ? message['content'] : '',
         )
         .join('\n')
       const wantsStream = isRecord(parsed) && parsed['stream'] === true
+
+      // A tool result in the conversation means an earlier call has finished, so
+      // the next entry in the plan is due.
+      const toolResults = messages.filter(
+        (message) => isRecord(message) && message['role'] === 'tool',
+      ).length
+      if (toolCalls.length > toolResults && !system.includes(TITLE_HINT)) {
+        const call = toolCalls[toolResults]
+        response.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+          connection: 'keep-alive',
+        })
+        const chunk = (/** @type {object} */ delta, /** @type {string | null} */ finish = null) =>
+          `data: ${JSON.stringify({
+            id: 'stub-1',
+            object: 'chat.completion.chunk',
+            created: 1,
+            model,
+            choices: [{ index: 0, delta, finish_reason: finish }],
+          })}\n\n`
+        response.write(chunk({ role: 'assistant', content: '' }))
+        response.write(
+          chunk({
+            tool_calls: [
+              {
+                index: 0,
+                id: `call_${String(toolResults)}`,
+                type: 'function',
+                function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+              },
+            ],
+          }),
+        )
+        response.write(chunk({}, 'tool_calls'))
+        response.end('data: [DONE]\n\n')
+        return
+      }
 
       // The runtime asks for a conversation title with its own prompt; giving it
       // a fixed answer is what lets the spec check that Pictor adopts it.
@@ -142,6 +200,7 @@ export async function startStubModel(options = {}) {
   return {
     baseUrl: `http://127.0.0.1:${String(port)}/v1`,
     requests,
+    calls,
     close: async () => {
       await new Promise((resolve) => {
         server.close(() => resolve(undefined))
