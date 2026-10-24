@@ -208,6 +208,8 @@ export interface PictorBridge {
   forkSession(sessionId: string, atSeq?: number): Promise<string>
   chatHistory(path: string, limit: number, offset: number): Promise<ChatHistoryPage>
   onChatEvent(listener: (event: ChatEvent) => void): () => void
+  /** One line of the runtime install command, for the page that started it. */
+  onHarnessInstall(listener: (line: string) => void): () => void
   /** Fires whenever the runtime starts, stops or fails; a transcript may be stale. */
   onHarnessStatus(listener: (status: HarnessStatus) => void): () => void
   /** Fires when the main process changed workspace metadata (a session title). */

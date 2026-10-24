@@ -122,6 +122,13 @@ const bridge: PictorBridge = {
     }
   },
   answerApproval: (eventId, allow) => invoke('pictor:harness.approvalAnswer', eventId, allow),
+  onHarnessInstall: (listener) => {
+    const handler = (_event: unknown, line: unknown): void => {
+      if (typeof line === 'string') listener(line)
+    }
+    ipcRenderer.on('pictor:harness.install', handler)
+    return () => ipcRenderer.removeListener('pictor:harness.install', handler)
+  },
   onHarnessStatus: (listener) => {
     const handler = (_event: unknown, payload: unknown): void => {
       listener(payload as Parameters<typeof listener>[0])

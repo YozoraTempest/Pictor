@@ -66,14 +66,22 @@ export function RuntimePage(): React.JSX.Element {
   async function run(action: () => Promise<HarnessStatus>): Promise<void> {
     setBusy(true)
     setError(null)
+    setInstallLine(null)
     try {
       setStatus(await action())
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setBusy(false)
+      setInstallLine(null)
     }
   }
+
+  // The install runs npm for minutes; its own last line is the only honest sign
+  // of life the page can show while the button spins.
+  const [installLine, setInstallLine] = useState<string | null>(null)
+
+  useEffect(() => window.pictor.onHarnessInstall(setInstallLine), [])
 
   const ready = status?.state === 'ready'
 
@@ -119,6 +127,13 @@ export function RuntimePage(): React.JSX.Element {
       {error !== null && (
         <div className="px-5 py-3">
           <Banner tone="error">{error}</Banner>
+        </div>
+      )}
+      {busy && installLine !== null && (
+        <div className="px-5 py-3">
+          <Banner tone="notice">
+            <span className="font-mono text-2xs">{installLine}</span>
+          </Banner>
         </div>
       )}
       {status !== null && status.binary === null && (

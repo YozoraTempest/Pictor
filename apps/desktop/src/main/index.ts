@@ -287,6 +287,14 @@ async function startWorkspace(): Promise<Workspace | null> {
         }
       }
     }
+    if (notification.method === 'runtime.install') {
+      const line = (notification.params as { line?: unknown } | null)?.line
+      if (typeof line === 'string') {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('pictor:harness.install', line)
+        }
+      }
+    }
     if (notification.method === 'runtime.stderr') {
       const text = (notification.params as { text?: unknown } | null)?.text
       if (typeof text === 'string' && text.trim().length > 0) {

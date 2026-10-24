@@ -177,6 +177,8 @@ export class HarnessService {
   readonly #turns = new Set<string>()
   /** A settings change that arrived mid-turn, applied when the last turn ends. */
   #pendingApply = false
+  /** The install in flight, so a second click joins it instead of racing it. */
+  #installing: Promise<HarnessStatus> | null = null
   /** What the running kernel booted with; a difference is what a restart is for. */
   #bootedWith: string | null = null
 
@@ -530,6 +532,21 @@ export class HarnessService {
    * deleting the directory.
    */
   async install(): Promise<HarnessStatus> {
+    // Two npm runs into the same directory would corrupt it, and the button is
+    // one click away from being pressed twice.
+    const running = this.#installing
+    if (running !== null) return running
+
+    const attempt = this.#install()
+    this.#installing = attempt
+    try {
+      return await attempt
+    } finally {
+      this.#installing = null
+    }
+  }
+
+  async #install(): Promise<HarnessStatus> {
     const nodePath = this.#resolveNode()
     if (nodePath === null) {
       throw new Error('没有找到可用的 Node 运行时；安装 Node 22+ 或设置 PICTOR_NODE_BIN')
@@ -560,7 +577,12 @@ export class HarnessService {
       )
       const collect = (chunk: Buffer | string): void => {
         for (const line of String(chunk).split('\n')) {
-          if (line.trim().length > 0) output.push(line.trim())
+          const text = line.trim()
+          if (text.length === 0) continue
+          output.push(text)
+          // The install takes minutes over a slow link; the page shows the last
+          // line so it is clear the command is alive.
+          this.#emit({ method: 'runtime.install', params: { line: text.slice(0, 200) } })
         }
       }
       child.stdout.on('data', collect)
