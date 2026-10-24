@@ -1,20 +1,22 @@
-import { Check, ChevronDown, Cpu, Image as ImageIcon, Sparkles } from 'lucide-react'
+import {
+  Boxes,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Cpu,
+  Image as ImageIcon,
+  Sparkles,
+} from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import type { ModelEntry, ProviderList } from '@pictor/shared'
 
 import { cn } from '../../lib/cn.js'
 import { capabilitiesOf, emptyModel } from '../settings/models.js'
 import { useChatStore } from './chat-store.js'
-import {
-  designedEffort,
-  effortColor,
-  effortLabel,
-  effortTone,
-  effortsOf,
-  pickEffort,
-} from './effort.js'
+import { EffortSlider } from './EffortSlider.js'
+import { designedEffort, effortLabel, effortTone, effortsOf, pickEffort } from './effort.js'
 
 export interface ModelPickerProps {
   /** Called after the host accepted the switch, so the chat can be reopened. */
@@ -26,8 +28,9 @@ const OFFSET = 6
 const VIEWPORT_MARGIN = 8
 const MIN_WIDTH = 300
 
-/** How many picks the "recent" group remembers. */
-const RECENT_LIMIT = 3
+/** Shortcuts shown in the popover, and how many picks the store keeps. */
+const RECENT_SHOWN = 2
+const RECENT_STORED = 4
 const RECENT_KEY = 'pictor.model.recents'
 
 interface Choice {
@@ -85,6 +88,8 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   const [recents, setRecents] = useState<string[]>([])
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
+  /** Which page of the popover is showing; the full list is one level deeper. */
+  const [view, setView] = useState<'recent' | 'all'>('recent')
   const [error, setError] = useState<string | null>(null)
   const [position, setPosition] = useState<{ left: number; bottom: number; width: number } | null>(
     null,
@@ -126,7 +131,10 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   const close = useCallback((): void => {
     setOpen(false)
     setPosition(null)
+    // Reopening starts at the shortcuts again, with no search left over from the
+    // last visit to the full list.
     setQuery('')
+    setView('recent')
   }, [])
 
   const place = useCallback((): void => {
@@ -190,8 +198,6 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   const levels = effortsOf(activeModel)
   const designed = designedEffort(activeModel)
   const effort = chosen === undefined ? designed : pickEffort(levels, chosen)
-  /** Slider position: 0 is "send none", then one notch per declared level. */
-  const effortIndex = effort === null ? 0 : levels.indexOf(effort) + 1
 
   // The store has to agree with what the slider shows, because the send reads the
   // store: an untouched level adopts the model's design, and one the model dropped
@@ -202,6 +208,18 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
     else if (chosen !== null && !levels.includes(chosen)) setEffort(designed)
   }, [list, chosen, designed, levels, setEffort])
 
+  const recentChoices = useMemo(() => {
+    const byKey = new Map(
+      choices.map((choice) => [keyOf(choice.providerId, choice.model.id), choice]),
+    )
+    return recents
+      .map((key) => byKey.get(key))
+      .filter((choice): choice is Choice => choice !== undefined)
+      .slice(0, RECENT_SHOWN)
+  }, [choices, recents])
+
+  // The full list is the only page with a search box, so it is also the only page
+  // that filters: a query typed there must not silently shrink the shortcuts.
   const matching = useMemo(() => {
     const needle = query.trim().toLowerCase()
     if (needle.length === 0) return choices
@@ -213,27 +231,15 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
     )
   }, [choices, query])
 
-  const recentChoices = useMemo(() => {
-    const byKey = new Map(
-      choices.map((choice) => [keyOf(choice.providerId, choice.model.id), choice]),
-    )
-    return recents
-      .map((key) => byKey.get(key))
-      .filter((choice): choice is Choice => choice !== undefined)
-      .filter((choice) => matching.includes(choice))
-      .slice(0, RECENT_LIMIT)
-  }, [choices, recents, matching])
-
   const groups = useMemo(() => {
     const byProvider = new Map<string, { name: string; items: Choice[] }>()
     for (const choice of matching) {
-      if (recentChoices.includes(choice)) continue
       const group = byProvider.get(choice.providerId) ?? { name: choice.providerName, items: [] }
       group.items.push(choice)
       byProvider.set(choice.providerId, group)
     }
     return [...byProvider.values()]
-  }, [matching, recentChoices])
+  }, [matching])
 
   // Nothing configured means nothing to choose: stay out of the way.
   if (list === null || choices.length === 0) return null
@@ -249,7 +255,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
       setList(await window.pictor.listProviders())
       const next = [keyOf(choice.providerId, choice.model.id), ...recents]
         .filter((key, index, all) => all.indexOf(key) === index)
-        .slice(0, RECENT_LIMIT)
+        .slice(0, RECENT_STORED)
       setRecents(next)
       try {
         window.localStorage.setItem(RECENT_KEY, JSON.stringify(next))
@@ -337,38 +343,79 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
             }}
             className="fixed z-50 flex max-h-80 flex-col overflow-hidden rounded-xl border border-border bg-surface-raised p-1 shadow-popover"
           >
-            <input
-              autoFocus
-              value={query}
-              aria-label="搜索模型"
-              placeholder="搜索模型"
-              onChange={(event) => setQuery(event.target.value)}
-              className="mx-1 mb-1 h-7 shrink-0 rounded-md border border-border bg-bg px-2 text-xs text-text placeholder:text-faint focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
-            />
-
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {recentChoices.length > 0 && (
-                <>
-                  <p className="px-2 pt-1 pb-0.5 text-2xs text-faint">最近使用</p>
-                  {recentChoices.map(renderRow)}
-                </>
-              )}
-
-              {groups.map((group) => (
-                <div key={group.name}>
-                  <p className="px-2 pt-1 pb-0.5 text-2xs text-faint">{group.name}</p>
-                  {group.items.map(renderRow)}
+            {view === 'all' ? (
+              // The full list is a page of its own: search only means something
+              // here, and the shortcuts above stay one click away.
+              <div key="all" data-page="all" className="picker-page flex min-h-0 flex-1 flex-col">
+                <div className="mx-1 mb-1 flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label="返回最近使用"
+                    onClick={() => {
+                      setView('recent')
+                      setQuery('')
+                    }}
+                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-faint transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+                  >
+                    <ChevronLeft className="size-3.5" aria-hidden />
+                  </button>
+                  <input
+                    autoFocus
+                    value={query}
+                    aria-label="搜索模型"
+                    placeholder="搜索模型"
+                    onChange={(event) => setQuery(event.target.value)}
+                    className="h-7 min-w-0 flex-1 rounded-md border border-border bg-bg px-2 text-xs text-text placeholder:text-faint focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
+                  />
                 </div>
-              ))}
 
-              {matching.length === 0 && (
-                <p className="px-2 py-3 text-xs text-faint">没有匹配的模型</p>
-              )}
-            </div>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {groups.map((group) => (
+                    <div key={group.name}>
+                      <p className="px-2 pt-1 pb-0.5 text-2xs text-faint">{group.name}</p>
+                      {group.items.map(renderRow)}
+                    </div>
+                  ))}
+
+                  {matching.length === 0 && (
+                    <p className="px-2 py-3 text-xs text-faint">没有匹配的模型</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div
+                key="recent"
+                data-page="recent"
+                className="picker-page flex min-h-0 flex-1 flex-col"
+              >
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {recentChoices.length > 0 ? (
+                    <>
+                      <p className="px-2 pt-1 pb-0.5 text-2xs text-faint">最近使用</p>
+                      {recentChoices.map(renderRow)}
+                    </>
+                  ) : (
+                    <p className="px-2 py-3 text-xs text-faint">还没有用过的模型</p>
+                  )}
+
+                  <button
+                    type="button"
+                    aria-label="所有模型"
+                    onClick={() => setView('all')}
+                    className="mt-1 flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+                  >
+                    <Boxes className="size-3 shrink-0 text-faint" aria-hidden />
+                    <span className="flex-1">所有模型</span>
+                    <span className="shrink-0 text-2xs text-faint">{choices.length}</span>
+                    <ChevronRight className="size-3 shrink-0 text-faint" aria-hidden />
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* The level belongs beside the list rather than in the composer row:
-                it only means something for the model picked here, and the slider
-                is one drag instead of one row per level. */}
+                it only means something for the model picked here, and one slider
+                beats a row per level. It stays put across both pages. */}
             {levels.length > 0 && (
               <div className="mt-1 shrink-0 border-t border-border px-2 pt-2 pb-1">
                 <div className="flex items-baseline justify-between">
@@ -377,27 +424,9 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
                     {effortLabel(effort)}
                   </span>
                 </div>
-                {/* The filled half and the thumb take the level's own colour, so the
-                    control answers "how much thinking" before the value is read. */}
-                <input
-                  type="range"
-                  aria-label="推理强度"
-                  min={0}
-                  max={levels.length}
-                  step={1}
-                  value={effortIndex}
-                  onChange={(event) => {
-                    const index = Number(event.target.value)
-                    setEffort(index === 0 ? null : (levels[index - 1] ?? null))
-                  }}
-                  style={
-                    {
-                      '--effort-progress': `${String((effortIndex / levels.length) * 100)}%`,
-                      '--effort-tone': effortColor(effort),
-                    } as CSSProperties
-                  }
-                  className="effort-slider mt-2 w-full"
-                />
+                <div className="mt-1.5">
+                  <EffortSlider levels={levels} value={effort} onChange={setEffort} />
+                </div>
                 <div className="mt-0.5 flex justify-between text-2xs text-faint">
                   <span>{effortLabel(null)}</span>
                   <span>{effortLabel(levels[levels.length - 1] ?? null)}</span>

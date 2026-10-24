@@ -140,48 +140,29 @@
   }
 
   /*
-   * Reasoning-level slider. The native range control is a light-mode widget whose
-   * track and thumb ignore the theme, so both halves are drawn here; only the
-   * thumb carries colour, which keeps the row quiet next to the model list.
+   * A page swap inside the model popover. It slides in from the side the reader
+   * travelled towards, so going deeper and coming back read as opposite moves
+   * instead of the same fade twice.
    */
-  .effort-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 14px;
-    background: transparent;
-    cursor: pointer;
+  .picker-page {
+    animation: picker-page-in 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
 
-  /*
-   * The filled half runs in the current level's colour; the caller passes the
-   * percentage and the colour, so the track needs no second control.
-   */
-  .effort-slider::-webkit-slider-runnable-track {
-    height: 4px;
-    border-radius: 999px;
-    background: linear-gradient(
-      to right,
-      var(--effort-tone, var(--color-accent)) var(--effort-progress, 0%),
-      var(--color-border-strong) var(--effort-progress, 0%)
-    );
+  .picker-page[data-page='recent'] {
+    animation-name: picker-page-back;
   }
 
-  .effort-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    margin-top: -4px;
-    border-radius: 999px;
-    background: var(--effort-tone, var(--color-accent));
-    box-shadow: 0 0 0 2px var(--color-surface-raised);
-    transition: box-shadow 150ms ease;
+  @keyframes picker-page-in {
+    from {
+      opacity: 0;
+      transform: translateX(10px);
+    }
   }
 
-  .effort-slider:focus-visible::-webkit-slider-thumb {
-    box-shadow:
-      0 0 0 2px var(--color-surface-raised),
-      0 0 0 5px color-mix(in srgb, var(--color-accent) 28%, transparent);
+  @keyframes picker-page-back {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
   }
 }

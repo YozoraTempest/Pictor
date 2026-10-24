@@ -101,6 +101,9 @@ export default {
 
       const picker = page.getByRole('dialog', { name: '选择模型' })
       await picker.waitFor({ timeout: 10_000 })
+      // The shortcuts page has no search box; the full list is one level deeper,
+      // which is where a reader who knows what they want goes.
+      await picker.getByRole('button', { name: '所有模型' }).click({ timeout: 10_000 })
       await picker.getByLabel('搜索模型').fill('stub-model')
       // Both services offer `stub-model`; the row names the service it belongs to.
       const beforePicker = b.requests.length
