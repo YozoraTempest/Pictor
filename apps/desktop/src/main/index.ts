@@ -714,16 +714,28 @@ function registerIpc(workspace: Workspace): void {
     return workspace.model.settings()
   })
 
+  /**
+   * Apply a settings change to the runtime that is already running.
+   *
+   * The patch and the key environment are read once at boot, so a change only
+   * lands on the next start. Waiting here is what makes "使用中" mean what the
+   * window says it means.
+   */
+  const applyToRuntime = async <T>(result: T): Promise<T> => {
+    await workspace.harness.applySettings()
+    return result
+  }
+
   ipcMain.handle('pictor:model.save', async (_event, input: unknown) => {
     if (typeof input !== 'object' || input === null) throw new Error('invalid model settings')
-    return workspace.model.save(input as Parameters<ModelService['save']>[0])
+    return applyToRuntime(await workspace.model.save(input as Parameters<ModelService['save']>[0]))
   })
 
   ipcMain.handle('pictor:model.select', async (_event, modelId: unknown) => {
     if (typeof modelId !== 'string' || modelId.trim().length === 0) {
       throw new Error('modelId must be a non-empty string')
     }
-    return workspace.model.selectModel(modelId)
+    return applyToRuntime(await workspace.model.selectModel(modelId))
   })
 
   ipcMain.handle('pictor:model.fetch', async (_event, input: unknown) => {
@@ -748,17 +760,19 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:provider.save', async (_event, input: unknown) => {
     if (typeof input !== 'object' || input === null) throw new Error('invalid provider')
-    return workspace.model.saveProvider(input as Parameters<ModelService['saveProvider']>[0])
+    return applyToRuntime(
+      await workspace.model.saveProvider(input as Parameters<ModelService['saveProvider']>[0]),
+    )
   })
 
   ipcMain.handle('pictor:provider.remove', async (_event, id: unknown) => {
     if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
-    return workspace.model.removeProvider(id)
+    return applyToRuntime(await workspace.model.removeProvider(id))
   })
 
   ipcMain.handle('pictor:provider.activate', async (_event, id: unknown) => {
     if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
-    return workspace.model.activateProvider(id)
+    return applyToRuntime(await workspace.model.activateProvider(id))
   })
 
   ipcMain.handle('pictor:model.ccswitch.scan', async () => {
@@ -770,7 +784,9 @@ function registerIpc(workspace: Workspace): void {
     async (_event, id: unknown, includeApiKey: unknown) => {
       if (typeof id !== 'string' || id.trim().length === 0)
         throw new Error('provider id is required')
-      return workspace.model.importCcSwitchProvider(id, includeApiKey === true)
+      return applyToRuntime(
+        await workspace.model.importCcSwitchProvider(id, includeApiKey === true),
+      )
     },
   )
 
@@ -883,6 +899,7 @@ function registerIpc(workspace: Workspace): void {
       if (!isPermissionMode(mode)) throw new Error('unknown permission mode')
       await workspace.client.putSetting('harness.permissionMode', mode)
       workspace.harness.setPermissionMode(mode)
+      await workspace.harness.applySettings()
       return workspace.harness.status()
     },
   )

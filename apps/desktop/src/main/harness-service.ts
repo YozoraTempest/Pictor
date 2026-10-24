@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
@@ -44,6 +44,24 @@ export interface HarnessStatus {
   /** Sandbox permission mode the runtime is (or will be) booted with. */
   permissionMode: PermissionMode
   error: string | null
+}
+
+/**
+ * Everything the runtime reads once, at boot.
+ *
+ * The patch file carries the route and the default model, and the key and the
+ * sandbox mode arrive as environment variables, so a change to any of them is a
+ * change to what the running kernel is doing — not a value it re-reads.
+ */
+function bootFingerprint(input: {
+  baseUrl: string
+  protocol: string
+  modelId: string
+  permissionMode: PermissionMode
+  apiKey: string | null
+}): string {
+  const key = input.apiKey === null ? '-' : createHash('sha256').update(input.apiKey).digest('hex')
+  return [input.baseUrl, input.protocol, input.modelId, input.permissionMode, key].join('|')
 }
 
 /** What one probe turn produced: the text, the durable events, or why it failed. */
@@ -155,6 +173,12 @@ export class HarnessService {
   #child: ChildProcess | null = null
   #cwd: string | null = null
   #sessionsLoaded = false
+  /** Runtime sessions with a turn in flight; a restart waits for these to finish. */
+  readonly #turns = new Set<string>()
+  /** A settings change that arrived mid-turn, applied when the last turn ends. */
+  #pendingApply = false
+  /** What the running kernel booted with; a difference is what a restart is for. */
+  #bootedWith: string | null = null
 
   #guardEndpoint(): { port: number; token: string } | null {
     return this.#options.guardEndpoint?.() ?? null
@@ -281,6 +305,13 @@ export class HarnessService {
         state: 'ready',
         serverInfo: { name: 'deepseek-harness-web', version: this.#runtimeVersion(binary) },
       }
+      this.#bootedWith = bootFingerprint({
+        baseUrl: settings.baseUrl,
+        protocol: settings.protocol,
+        modelId: settings.modelId,
+        permissionMode,
+        apiKey,
+      })
       return this.status()
     } catch (error) {
       this.#kill()
@@ -305,8 +336,55 @@ export class HarnessService {
     this.#remote = null
     this.#socket = null
     this.#kill()
+    this.#turns.clear()
+    this.#pendingApply = false
+    this.#bootedWith = null
     this.#status = { ...this.#status, state: 'stopped', serverInfo: null }
     return this.status()
+  }
+
+  /**
+   * Restart the runtime when what it boots with no longer matches the settings.
+   *
+   * A running turn is never cut in half for this: the change is remembered and
+   * applied when the last turn ends, so an answer someone is waiting for always
+   * arrives. Settings the kernel does not read at boot need no restart at all,
+   * which is what the fingerprint decides.
+   */
+  async applySettings(): Promise<void> {
+    if (this.#status.state !== 'ready') return
+
+    const current = await this.#currentFingerprint()
+    if (current === null || current === this.#bootedWith) return
+
+    // Another turn is still streaming; the restart would cancel it.
+    if (this.#turns.size > 0) {
+      this.#pendingApply = true
+      return
+    }
+    await this.#restart()
+  }
+
+  /** Stop and start with the settings that are stored now. */
+  async #restart(): Promise<void> {
+    const cwd = this.#cwd ?? homedir()
+    this.#pendingApply = false
+    await this.stop()
+    await this.start(cwd)
+  }
+
+  /** Fingerprint of the settings a boot right now would use. */
+  async #currentFingerprint(): Promise<string | null> {
+    const settings = await this.#options.model.settings()
+    if (settings.baseUrl.length === 0 || settings.modelId.length === 0) return null
+    const stored = await this.#options.readPermissionMode?.()
+    return bootFingerprint({
+      baseUrl: settings.baseUrl,
+      protocol: settings.protocol,
+      modelId: settings.modelId,
+      permissionMode: isPermissionMode(stored) ? stored : DEFAULT_PERMISSION_MODE,
+      apiKey: await this.#options.model.activeApiKey(),
+    })
   }
 
   /**
@@ -685,6 +763,13 @@ export class HarnessService {
           // the mirror current, so history reflects what the user just watched.
           this.#snapshots.get(harnessId)?.push(frame.event)
           this.#announceTitle(harnessId, frame.event)
+
+          // A pending settings change waits for exactly this boundary.
+          if (frame.event.type === 'turn/start') this.#turns.add(harnessId)
+          if (frame.event.type === 'turn/end') {
+            this.#turns.delete(harnessId)
+            if (this.#turns.size === 0 && this.#pendingApply) void this.#restart()
+          }
         }
         if (process.env['PICTOR_DEBUG_HARNESS'] === '1') {
           const detail =

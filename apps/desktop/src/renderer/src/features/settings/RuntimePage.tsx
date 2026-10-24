@@ -150,7 +150,7 @@ export function RuntimePage(): React.JSX.Element {
         title="权限模式"
         description={
           ready
-            ? '已保存；重启内核后生效。'
+            ? '已保存；内核会自动重启。'
             : '决定内核能以多大范围改动文件系统，以及是否需要逐次审批。'
         }
         control={
