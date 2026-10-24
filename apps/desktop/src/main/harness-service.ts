@@ -182,6 +182,10 @@ export class HarnessService {
   readonly #turns = new Set<string>()
   /** A settings change that arrived mid-turn, applied when the last turn ends. */
   #pendingApply = false
+  /** Child that was asked to stop and has not reported its exit yet. */
+  #exiting: ChildProcess | null = null
+  /** Callers waiting for that exit, woken once. */
+  readonly #exitWaiters = new Set<() => void>()
   /** The install in flight, so a second click joins it instead of racing it. */
   #installing: Promise<HarnessStatus> | null = null
   /** What the running kernel booted with; a difference is what a restart is for. */
@@ -248,6 +252,9 @@ export class HarnessService {
    */
   async start(cwd: string): Promise<HarnessStatus> {
     if (this.#status.state === 'ready') return this.status()
+    // A previous runtime gets its own few hundred milliseconds to leave; booting
+    // over it is how two runtimes end up sharing one home.
+    await this.#awaitExit()
     // Narrow once: `start` replaces the status object below, so a re-read would
     // lose the non-null guarantee.
     const binary = this.#status.binary
@@ -732,6 +739,17 @@ export class HarnessService {
     const child = this.#child
     this.#child = null
     if (child === null) return () => undefined
+
+    // Remember the child until it is really gone: it keeps writing to the runtime
+    // home on its way out, and a boot that starts meanwhile shares that home.
+    this.#exiting = child
+    const settle = (): void => {
+      if (this.#exiting === child) this.#exiting = null
+      for (const wake of this.#exitWaiters) wake()
+      this.#exitWaiters.clear()
+    }
+    child.once('exit', settle)
+
     try {
       child.kill('SIGTERM')
     } catch {
@@ -747,6 +765,26 @@ export class HarnessService {
     }, 3_000)
     timer.unref?.()
     return () => clearTimeout(timer)
+  }
+
+  /**
+   * Wait for a stopped runtime to actually leave.
+   *
+   * Stopping only sends the signal; the process keeps its profile, its session
+   * log and its plugin directory until it exits. Starting the next one inside that
+   * window is what made "stop, then start" fail now and then.
+   */
+  async #awaitExit(timeoutMs = 4_000): Promise<void> {
+    if (this.#exiting === null) return
+    await new Promise<void>((resolve) => {
+      const done = (): void => resolve()
+      this.#exitWaiters.add(done)
+      const timer = setTimeout(() => {
+        this.#exitWaiters.delete(done)
+        resolve()
+      }, timeoutMs)
+      timer.unref?.()
+    })
   }
 
   /**

@@ -88,6 +88,11 @@ isolated per plugin and surfaced in the plugin report.
 - **Process failures.** A runtime that exits marks the status `error` with the
   tail of its stderr; the settings page is the only place that starts and stops
   it.
+- **Stopping is not instant.** `stop()` only sends the signal; the process keeps
+  its home — profile, session log, plugin directory — until it exits. `start()`
+  therefore waits for the previous child (up to 4 s, after the 3 s SIGKILL
+  fallback) before booting, so "stop, then start" never runs two runtimes over one
+  home.
 
 ### Chat
 
