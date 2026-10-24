@@ -41,7 +41,7 @@ export default {
             baseUrl,
             protocol: 'openai-completions',
             modelId: 'stub-model',
-            models: [{ id: 'stub-model' }],
+            models: [{ id: 'stub-model', reasoning: true, efforts: ['low', 'medium', 'high'] }],
             apiKey: 'e2e-key',
           }),
         model.baseUrl,
@@ -65,6 +65,14 @@ export default {
       // placeholder title, which is what lets the runtime's own title replace it.
       await page.keyboard.press('Control+n')
 
+      // The reasoning level lives in the model menu and only reaches the wire if
+      // the host pins it before queuing the prompt, so the spec sets it to the
+      // strongest declared level and checks the request afterwards.
+      await page.getByLabel('选择模型').click()
+      await page.getByLabel('推理强度', { exact: true }).press('End')
+      await page.keyboard.press('Escape')
+      await page.getByLabel('推理强度 高').waitFor({ timeout: 15_000 })
+
       const input = page.getByLabel('消息输入')
       await input.fill('说三句话')
       await input.press('Enter')
@@ -75,6 +83,13 @@ export default {
       assert.ok(
         model.requests.some((line) => line.endsWith('/chat/completions')),
         'the runtime reached the model endpoint',
+      )
+
+      // The picker said "高"; the request has to say the same thing. A level the
+      // kernel dropped would leave the badge promising something that never ran.
+      assert.ok(
+        model.calls.some((call) => call.effort === 'high'),
+        'the runtime sent the reasoning level the picker showed',
       )
 
       // The composer reports what the turn used, from the provider's own usage

@@ -11,7 +11,7 @@ import { createServer } from 'node:http'
  * @typedef {object} StubModel
  * @property {string} baseUrl what a provider's `baseUrl` should be
  * @property {string[]} requests one line per call, for assertions
- * @property {{ hasImage: boolean, roles: string[] }[]} calls what each request carried
+ * @property {{ hasImage: boolean, roles: string[], effort: string | null }[]} calls what each request carried
  * @property {() => Promise<void>} close
  */
 
@@ -39,7 +39,7 @@ export async function startStubModel(options = {}) {
   const toolCalls = options.toolCalls ?? []
   /** @type {string[]} */
   const requests = []
-  /** @type {{ hasImage: boolean, roles: string[] }[]} */
+  /** @type {{ hasImage: boolean, roles: string[], effort: string | null }[]} */
   const calls = []
 
   const server = createServer((request, response) => {
@@ -80,6 +80,12 @@ export async function startStubModel(options = {}) {
             ),
         ),
         roles: messages.map((message) => (isRecord(message) ? String(message['role']) : '?')),
+        // The reasoning level the runtime actually sent, which is the only place a
+        // picker's promise can be checked.
+        effort:
+          isRecord(parsed) && typeof parsed['reasoning_effort'] === 'string'
+            ? parsed['reasoning_effort']
+            : null,
       })
       const system = messages
         .map((message) =>
