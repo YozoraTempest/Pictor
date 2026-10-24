@@ -738,6 +738,16 @@ function registerIpc(workspace: Workspace): void {
     return applyToRuntime(await workspace.model.selectModel(modelId))
   })
 
+  ipcMain.handle('pictor:model.use', async (_event, providerId: unknown, modelId: unknown) => {
+    if (typeof providerId !== 'string' || providerId.length === 0) {
+      throw new Error('providerId is required')
+    }
+    if (typeof modelId !== 'string' || modelId.trim().length === 0) {
+      throw new Error('modelId is required')
+    }
+    return applyToRuntime(await workspace.model.useModel(providerId, modelId))
+  })
+
   ipcMain.handle('pictor:model.fetch', async (_event, input: unknown) => {
     const override =
       typeof input === 'object' && input !== null

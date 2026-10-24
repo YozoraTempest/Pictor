@@ -1,6 +1,7 @@
 import type { ModelSettings, ModelSettingsInput } from '@pictor/shared'
 
 import {
+  activateProvider,
   EMPTY_PROVIDER_LIST,
   readProviders,
   saveProvider,
@@ -97,6 +98,29 @@ export async function selectModel(
 
   await setProviderModel(store, authPath, activeId, modelId)
   return readModelSettings(store, authPath)
+}
+
+/**
+ * Use one model of one service, switching the service if it is a different one.
+ *
+ * Picking a model from another provider is one intention, so it is one write:
+ * activating first and setting the model after would restart the runtime twice
+ * and briefly boot it with the previous model.
+ */
+export async function useModel(
+  store: SettingsStore,
+  authPath: string,
+  providerId: string,
+  modelId: string,
+): Promise<ProviderList> {
+  const current = await readProviders(store, authPath)
+  if (!current.providers.some((provider) => provider.id === providerId)) {
+    throw new Error(`unknown provider: ${providerId}`)
+  }
+
+  await setProviderModel(store, authPath, providerId, modelId)
+  await activateProvider(store, authPath, providerId)
+  return readProviders(store, authPath)
 }
 
 export { EMPTY_PROVIDER_LIST }

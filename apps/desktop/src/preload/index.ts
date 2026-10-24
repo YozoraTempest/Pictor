@@ -79,6 +79,7 @@ const bridge: PictorBridge = {
   removeProvider: (id) => invoke('pictor:provider.remove', id),
   activateProvider: (id) => invoke('pictor:provider.activate', id),
   selectModel: (modelId) => invoke('pictor:model.select', modelId),
+  useModel: (providerId, modelId) => invoke('pictor:model.use', providerId, modelId),
   saveModelSettings: (input) => invoke('pictor:model.save', input),
   fetchModels: (input) => invoke('pictor:model.fetch', input),
   testModelConnection: () => invoke('pictor:model.test'),

@@ -1,9 +1,10 @@
-import { Check, ChevronDown, Cpu } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, Cpu, Image as ImageIcon, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { ModelSettings } from '@pictor/shared'
+import type { ModelEntry, ProviderList } from '@pictor/shared'
 
 import { cn } from '../../lib/cn.js'
+import { capabilitiesOf, emptyModel } from '../settings/models.js'
 
 export interface ModelPickerProps {
   /** Called after the host accepted the switch, so the chat can be reopened. */
@@ -13,21 +14,66 @@ export interface ModelPickerProps {
 /** Gap between the trigger and the popover, and the least distance to the viewport. */
 const OFFSET = 6
 const VIEWPORT_MARGIN = 8
-const MIN_WIDTH = 260
+const MIN_WIDTH = 300
 
-function modelLabel(id: string, name: string | null): string {
-  return name !== null && name.length > 0 ? name : id
+/** How many picks the "recent" group remembers. */
+const RECENT_LIMIT = 3
+const RECENT_KEY = 'pictor.model.recents'
+
+interface Choice {
+  providerId: string
+  providerName: string
+  model: ModelEntry
+}
+
+function modelLabel(model: ModelEntry): string {
+  return model.name !== null && model.name.length > 0 ? model.name : model.id
+}
+
+/** Every model of every service, in the order the services were listed. */
+function choicesOf(list: ProviderList): Choice[] {
+  return list.providers.flatMap((provider) => {
+    // A service configured by hand may have a model id and no entry for it.
+    const models = provider.models.length > 0 ? provider.models : [emptyModel(provider.modelId)]
+    return models
+      .filter((model) => model.id.length > 0)
+      .map((model) => ({
+        providerId: provider.id,
+        providerName: provider.name.length > 0 ? provider.name : '未命名服务',
+        model,
+      }))
+  })
+}
+
+function keyOf(providerId: string, modelId: string): string {
+  return `${providerId}\u0000${modelId}`
+}
+
+/** Recently used picks, newest first; a corrupted entry is simply ignored. */
+function readRecents(): string[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY)
+    const parsed: unknown = raw === null ? [] : JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : []
+  } catch {
+    return []
+  }
 }
 
 /**
  * Active-model switch in the composer's footer.
  *
- * The model is a single host setting rather than per-session state, so the list
- * comes from the model profile and a change applies to the next opened chat —
- * the caller reopens the current one to make the switch take effect immediately.
+ * Keys live per service, so several services can be configured at once; this is
+ * where a reader picks which one answers. The choice is a (service, model) pair,
+ * because two services can offer a model with the same id, and because switching
+ * service is exactly what picking one of its models means.
  */
 export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element | null {
-  const [settings, setSettings] = useState<ModelSettings | null>(null)
+  const [list, setList] = useState<ProviderList | null>(null)
+  const [recents, setRecents] = useState<string[]>([])
+  const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [position, setPosition] = useState<{ left: number; bottom: number; width: number } | null>(
@@ -39,9 +85,11 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   useEffect(() => {
     let alive = true
     void window.pictor
-      .getModelSettings()
+      .listProviders()
       .then((next) => {
-        if (alive) setSettings(next)
+        if (!alive) return
+        setList(next)
+        setRecents(readRecents())
       })
       .catch(() => undefined)
     return () => {
@@ -52,6 +100,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   const close = useCallback((): void => {
     setOpen(false)
     setPosition(null)
+    setQuery('')
   }, [])
 
   const place = useCallback((): void => {
@@ -100,22 +149,95 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
     }
   }, [open, close, place])
 
-  // Nothing to choose from means no configured profile: stay out of the way.
-  if (settings === null || settings.models.length === 0) return null
+  const choices = useMemo(() => (list === null ? [] : choicesOf(list)), [list])
+  const activeId = list?.activeId ?? null
+  const activeProvider = list?.providers.find((provider) => provider.id === activeId) ?? null
+  const active = activeProvider?.modelId ?? ''
 
-  const active = settings.models.find((model) => model.id === settings.modelId) ?? null
-  const activeLabel = active === null ? settings.modelId : modelLabel(active.id, active.name)
+  const matching = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (needle.length === 0) return choices
+    return choices.filter(
+      (choice) =>
+        choice.model.id.toLowerCase().includes(needle) ||
+        modelLabel(choice.model).toLowerCase().includes(needle) ||
+        choice.providerName.toLowerCase().includes(needle),
+    )
+  }, [choices, query])
 
-  async function choose(modelId: string): Promise<void> {
+  const recentChoices = useMemo(() => {
+    const byKey = new Map(
+      choices.map((choice) => [keyOf(choice.providerId, choice.model.id), choice]),
+    )
+    return recents
+      .map((key) => byKey.get(key))
+      .filter((choice): choice is Choice => choice !== undefined)
+      .filter((choice) => matching.includes(choice))
+      .slice(0, RECENT_LIMIT)
+  }, [choices, recents, matching])
+
+  const groups = useMemo(() => {
+    const byProvider = new Map<string, { name: string; items: Choice[] }>()
+    for (const choice of matching) {
+      if (recentChoices.includes(choice)) continue
+      const group = byProvider.get(choice.providerId) ?? { name: choice.providerName, items: [] }
+      group.items.push(choice)
+      byProvider.set(choice.providerId, group)
+    }
+    return [...byProvider.values()]
+  }, [matching, recentChoices])
+
+  // Nothing configured means nothing to choose: stay out of the way.
+  if (list === null || choices.length === 0) return null
+
+  async function choose(choice: Choice): Promise<void> {
     close()
     setError(null)
     try {
-      const next = await window.pictor.selectModel(modelId)
-      setSettings(next)
+      await window.pictor.useModel(choice.providerId, choice.model.id)
+      setList(await window.pictor.listProviders())
+      const next = [keyOf(choice.providerId, choice.model.id), ...recents]
+        .filter((key, index, all) => all.indexOf(key) === index)
+        .slice(0, RECENT_LIMIT)
+      setRecents(next)
+      try {
+        window.localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+      } catch {
+        // A profile that refuses storage only loses the shortcut.
+      }
       onChanged?.()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
+      setOpen(true)
     }
+  }
+
+  function renderRow(choice: Choice): React.JSX.Element {
+    const capabilities = capabilitiesOf(choice.model)
+    const current = choice.providerId === activeId && choice.model.id === active
+    return (
+      <button
+        key={keyOf(choice.providerId, choice.model.id)}
+        type="button"
+        onClick={() => void choose(choice)}
+        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{modelLabel(choice.model)}</span>
+          <span className="block truncate text-2xs text-faint">{choice.model.id}</span>
+        </span>
+        {capabilities.image && (
+          <ImageIcon className="size-3 shrink-0 text-faint" aria-label="支持图片" />
+        )}
+        {capabilities.reasoning && (
+          <Sparkles className="size-3 shrink-0 text-faint" aria-label="支持推理" />
+        )}
+        <span className="max-w-24 shrink-0 truncate text-2xs text-faint">
+          {choice.providerName}
+        </span>
+        {current && <Check className="size-3.5 shrink-0 text-accent" aria-hidden />}
+      </button>
+    )
   }
 
   return (
@@ -133,7 +255,12 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
         className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-2xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
       >
         <Cpu className="size-3 shrink-0 text-faint" aria-hidden />
-        <span className="truncate">{activeLabel}</span>
+        <span className="truncate">
+          {activeProvider === null ? '未选择模型' : activeProvider.modelId || '未选择模型'}
+        </span>
+        {activeProvider !== null && activeProvider.name.length > 0 && (
+          <span className="shrink-0 text-faint">· {activeProvider.name}</span>
+        )}
         <ChevronDown
           className={cn('size-3 shrink-0 text-faint transition-transform', open && 'rotate-180')}
           aria-hidden
@@ -152,27 +279,35 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
               width: position?.width ?? MIN_WIDTH,
               visibility: position === null ? 'hidden' : 'visible',
             }}
-            className="fixed z-50 flex max-h-72 flex-col overflow-hidden rounded-xl border border-border bg-surface-raised p-1 shadow-popover"
+            className="fixed z-50 flex max-h-80 flex-col overflow-hidden rounded-xl border border-border bg-surface-raised p-1 shadow-popover"
           >
-            <p className="px-2 py-1 text-2xs text-faint">{settings.providerName || '当前端点'}</p>
+            <input
+              autoFocus
+              value={query}
+              aria-label="搜索模型"
+              placeholder="搜索模型"
+              onChange={(event) => setQuery(event.target.value)}
+              className="mx-1 mb-1 h-7 shrink-0 rounded-md border border-border bg-bg px-2 text-xs text-text placeholder:text-faint focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
+            />
 
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {settings.models.map((model) => (
-                <button
-                  key={model.id}
-                  type="button"
-                  onClick={() => void choose(model.id)}
-                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{modelLabel(model.id, model.name)}</span>
-                    <span className="block truncate text-2xs text-faint">{model.id}</span>
-                  </span>
-                  {model.id === settings.modelId && (
-                    <Check className="size-3.5 shrink-0 text-accent" aria-hidden />
-                  )}
-                </button>
+              {recentChoices.length > 0 && (
+                <>
+                  <p className="px-2 pt-1 pb-0.5 text-2xs text-faint">最近使用</p>
+                  {recentChoices.map(renderRow)}
+                </>
+              )}
+
+              {groups.map((group) => (
+                <div key={group.name}>
+                  <p className="px-2 pt-1 pb-0.5 text-2xs text-faint">{group.name}</p>
+                  {group.items.map(renderRow)}
+                </div>
               ))}
+
+              {matching.length === 0 && (
+                <p className="px-2 py-3 text-xs text-faint">没有匹配的模型</p>
+              )}
             </div>
 
             {error !== null && (

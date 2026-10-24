@@ -14,6 +14,7 @@ import {
   saveProvider,
   selectModel,
   testConnection,
+  useModel,
   type ProviderInput,
   type ProviderList,
 } from '@pictor/model-config'
@@ -73,6 +74,17 @@ export class ModelService {
   /** Switches the active model; the endpoint and key stay as they are. */
   async selectModel(modelId: string): Promise<ModelSettings> {
     return selectModel(this.#store, this.#authPath, modelId)
+  }
+
+  /**
+   * Uses one model of one service, switching the service when it differs.
+   *
+   * The picker in the composer offers models from every service, so choosing one
+   * is "use this", not "change a field of whichever service is active".
+   */
+  async useModel(providerId: string, modelId: string): Promise<ModelSettings> {
+    await useModel(this.#store, this.#authPath, providerId, modelId)
+    return readModelSettings(this.#store, this.#authPath)
   }
 
   /** Every configured provider, with whether each one holds a key. */

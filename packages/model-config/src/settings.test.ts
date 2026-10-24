@@ -8,7 +8,8 @@ import type { JsonValue, ModelSettings, SettingsMap } from '@pictor/shared'
 
 import { readApiKey, writeApiKey } from './auth.js'
 import { normalizeBaseUrl, parseModels, type SettingsStore } from './providers.js'
-import { readModelSettings, saveModelSettings } from './settings.js'
+import { readProviders, saveProvider } from './providers.js'
+import { readModelSettings, saveModelSettings, useModel } from './settings.js'
 
 class MemorySettings implements SettingsStore {
   readonly values: SettingsMap = {}
@@ -44,6 +45,87 @@ const settings: ModelSettings = {
   ],
   hasApiKey: true,
 }
+
+describe('useModel', () => {
+  /** Two services, each with its own key, as a reader would configure them. */
+  async function twoServices(): Promise<{ store: MemorySettings; path: string }> {
+    const store = new MemorySettings()
+    const path = authPath()
+    await saveProvider(store, path, {
+      name: 'A',
+      baseUrl: 'https://a.example.com',
+      protocol: 'openai-completions',
+      modelId: 'a-model',
+      models: [
+        {
+          id: 'a-model',
+          name: null,
+          reasoning: null,
+          input: null,
+          contextWindow: null,
+          maxTokens: null,
+        },
+        {
+          id: 'a-small',
+          name: null,
+          reasoning: null,
+          input: null,
+          contextWindow: null,
+          maxTokens: null,
+        },
+      ],
+      apiKey: 'key-a',
+    })
+    await saveProvider(store, path, {
+      name: 'B',
+      baseUrl: 'https://b.example.com',
+      protocol: 'openai-completions',
+      modelId: 'b-model',
+      models: [
+        {
+          id: 'b-model',
+          name: null,
+          reasoning: null,
+          input: null,
+          contextWindow: null,
+          maxTokens: null,
+        },
+      ],
+      apiKey: 'key-b',
+    })
+    return { store, path }
+  }
+
+  it('switches service and model in one write', async () => {
+    const { store, path } = await twoServices()
+    const before = await readProviders(store, path)
+    const target = before.providers.find((provider) => provider.name === 'A')
+    if (target === undefined) throw new Error('service A is missing')
+
+    await useModel(store, path, target.id, 'a-small')
+
+    const after = await readProviders(store, path)
+    expect(after.activeId).toBe(target.id)
+    expect(after.providers.find((provider) => provider.id === target.id)?.modelId).toBe('a-small')
+    // The other service keeps its own model and its own key.
+    expect(after.providers.find((provider) => provider.name === 'B')?.modelId).toBe('b-model')
+    expect(readApiKey(path, target.id)).toBe('key-a')
+  })
+
+  it('refuses a model that belongs to another service', async () => {
+    const { store, path } = await twoServices()
+    const before = await readProviders(store, path)
+    const a = before.providers.find((provider) => provider.name === 'A')
+
+    await expect(useModel(store, path, a?.id ?? '', 'b-model')).rejects.toThrow(/unknown model/)
+  })
+
+  it('refuses an unknown service', async () => {
+    const { store, path } = await twoServices()
+
+    await expect(useModel(store, path, 'missing', 'a-model')).rejects.toThrow(/unknown provider/)
+  })
+})
 
 describe('auth store', () => {
   it('writes and reads a key with 0600 permissions', () => {

@@ -184,6 +184,8 @@ export interface PictorBridge {
   saveModelSettings(input: ModelSettingsInput): Promise<ModelSettings>
   /** Switches the active model, leaving the endpoint and key untouched. */
   selectModel(modelId: string): Promise<ModelSettings>
+  /** Uses one model of one service, switching the service when it differs. */
+  useModel(providerId: string, modelId: string): Promise<ModelSettings>
   fetchModels(input?: {
     baseUrl?: string
     protocol?: ModelProtocol

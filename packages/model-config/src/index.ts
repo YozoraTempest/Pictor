@@ -24,6 +24,7 @@ export {
   readModelSettings,
   saveModelSettings,
   selectModel,
+  useModel,
 } from './settings.js'
 export {
   fetchModels,
