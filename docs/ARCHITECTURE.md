@@ -135,8 +135,11 @@ speaks:
   `sandbox_permissions` + `justification` becomes the question. A plain out-of-policy
   call is simply denied, which is why the card can never appear for it.
 - Images ride beside the text as content parts and are refused by the runtime for a
-  model that did not declare image input; the app stores that capability on the
-  model entry rather than assuming it.
+  model that did not declare image input. That capability lives on the model entry
+  and is declared in the service dialog (图片输入 / 推理 / 上下文窗口 / 最大输出),
+  because almost no endpoint reports it. `fetchModels` takes what an endpoint
+  volunteers and leaves the rest `null` — "unknown" stays distinct from "text
+  only" — and refreshing a listing merges by id, so what a person typed survives.
 - 试运行 runs one throwaway turn through the runtime (`HarnessService.probe`)
   instead of a second client, so the check a user runs proves the path a
   conversation takes. The probe session is never registered with Pictor.

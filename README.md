@@ -163,6 +163,9 @@ Open **Settings › Agent › Model**:
 
 Storage rules:
 
+- A service record carries its model's capabilities (image input, reasoning,
+  context window, output limit). The dialog asks for them because endpoints rarely
+  report them; a refresh keeps what was typed, and the row shows the result.
 - Non-secret settings live in SQLite (`pi.*` keys).
 - The API key is written to `<userData>/auth.json` with `0600` permissions and is
   never returned to the renderer; the UI only sees `hasApiKey`.
