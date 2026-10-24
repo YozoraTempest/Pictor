@@ -81,14 +81,38 @@ export async function fetchModels(
     models.push({
       id: record.id,
       name: typeof record.name === 'string' ? record.name : null,
-      reasoning: null,
-      input: null,
-      contextWindow: null,
-      maxTokens: null,
+      reasoning: typeof record.reasoning === 'boolean' ? record.reasoning : null,
+      input: modalitiesOf(record),
+      contextWindow:
+        positiveOf(record['context_window']) ??
+        positiveOf(record['context_length']) ??
+        positiveOf(record['max_model_len']),
+      maxTokens: positiveOf(record['max_output_tokens']) ?? positiveOf(record['max_tokens']),
     })
   }
 
   return models.sort((left, right) => left.id.localeCompare(right.id))
+}
+
+/**
+ * Modalities a listing declared, in the runtime's vocabulary.
+ *
+ * Endpoints disagree on the field and most say nothing at all; `null` keeps
+ * "unknown" distinct from "text only", because the settings page lets a person
+ * declare what the endpoint withheld.
+ */
+function modalitiesOf(record: Record<string, unknown>): string[] | null {
+  for (const value of [record['input_modalities'], record['modalities']]) {
+    if (!Array.isArray(value)) continue
+    const names = value.filter((item): item is string => typeof item === 'string')
+    if (names.length === 0) continue
+    return names.includes('image') ? ['text', 'image'] : ['text']
+  }
+  return null
+}
+
+function positiveOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
 }
 
 /**

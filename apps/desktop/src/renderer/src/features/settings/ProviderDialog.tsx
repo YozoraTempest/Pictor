@@ -3,7 +3,8 @@ import { useState } from 'react'
 
 import type { ModelEntry, ModelProtocol, ProviderList, ProviderView } from '@pictor/shared'
 
-import { Badge, Banner, Button, Dialog, Input, Select } from '../../components/ui/index.js'
+import { Badge, Banner, Button, Dialog, Input, Select, Switch } from '../../components/ui/index.js'
+import { capabilitiesOf, mergeModels, withCapabilities } from './models.js'
 import { SettingRow } from './SettingRow.js'
 
 interface FormState {
@@ -67,6 +68,19 @@ export function ProviderDialog({
   const [notice, setNotice] = useState<string | null>(null)
 
   const dirty = isDirty(form, provider)
+  const capabilities = capabilitiesOf(form.models.find((model) => model.id === form.modelId))
+  const hasModel = form.modelId.trim().length > 0
+
+  /** One capability at a time; the entry is created for a model that was typed. */
+  function setCapability(changes: Parameters<typeof withCapabilities>[2]): void {
+    if (!hasModel) return
+    patch({ models: withCapabilities(form.models, form.modelId, changes) })
+  }
+
+  function limitOf(value: string): number | null {
+    const parsed = Number(value.trim())
+    return value.trim().length === 0 || !Number.isFinite(parsed) ? null : parsed
+  }
 
   function patch(changes: Partial<FormState>): void {
     setForm((current) => ({ ...current, ...changes }))
@@ -225,6 +239,74 @@ export function ProviderDialog({
         />
 
         <SettingRow
+          id="pi.modelImage"
+          title="图片输入"
+          description={
+            hasModel
+              ? '这个模型能否接收图片；运行时会拒绝没有声明的模型。'
+              : '先填写模型 ID 或从上面的列表选一个。'
+          }
+          control={
+            <Switch
+              label="图片输入"
+              checked={capabilities.image}
+              disabled={!hasModel}
+              onChange={(next) => setCapability({ image: next })}
+            />
+          }
+        />
+
+        <SettingRow
+          id="pi.modelReasoning"
+          title="推理"
+          description="模型会先输出思考过程，界面把它折叠成一行。"
+          control={
+            <Switch
+              label="推理"
+              checked={capabilities.reasoning}
+              disabled={!hasModel}
+              onChange={(next) => setCapability({ reasoning: next })}
+            />
+          }
+        />
+
+        <SettingRow
+          id="pi.modelContext"
+          title="上下文窗口"
+          description="留空表示未知，由端点自行决定。"
+          control={
+            <Input
+              type="number"
+              min={1}
+              className="w-32 font-mono"
+              placeholder="例如 128000"
+              aria-label="上下文窗口"
+              disabled={!hasModel}
+              value={capabilities.contextWindow ?? ''}
+              onChange={(event) => setCapability({ contextWindow: limitOf(event.target.value) })}
+            />
+          }
+        />
+
+        <SettingRow
+          id="pi.modelMaxTokens"
+          title="最大输出"
+          description="单次回复的 token 上限；留空表示未知。"
+          control={
+            <Input
+              type="number"
+              min={1}
+              className="w-32 font-mono"
+              placeholder="例如 8192"
+              aria-label="最大输出"
+              disabled={!hasModel}
+              value={capabilities.maxTokens ?? ''}
+              onChange={(event) => setCapability({ maxTokens: limitOf(event.target.value) })}
+            />
+          }
+        />
+
+        <SettingRow
           id="pi.apiKey"
           stacked
           title="API Key"
@@ -254,8 +336,10 @@ export function ProviderDialog({
                   protocol: form.protocol,
                   ...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey } : {}),
                 })
+                // The endpoint says which models exist; the capabilities already
+                // typed here are ours, so they survive the refresh.
                 patch({
-                  models,
+                  models: mergeModels(form.models, models),
                   modelId: form.modelId.length > 0 ? form.modelId : (models[0]?.id ?? ''),
                 })
                 setNotice(`获取到 ${String(models.length)} 个模型（保存后生效）`)

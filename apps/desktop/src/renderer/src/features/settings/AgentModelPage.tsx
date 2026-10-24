@@ -8,6 +8,7 @@ import { cn } from '../../lib/cn.js'
 import { AgentTestDialog } from './AgentTestDialog.js'
 import { ImportDialog } from './ImportDialog.js'
 import { ProviderDialog } from './ProviderDialog.js'
+import { capabilitiesOf } from './models.js'
 import { Section } from './Section.js'
 
 /** Host part of the endpoint, for the row's secondary line. */
@@ -18,6 +19,22 @@ function hostOf(baseUrl: string): string {
   } catch {
     return baseUrl
   }
+}
+
+/** What the active model declared, in the row's own shorthand. */
+function capabilityHints(provider: ProviderView): string {
+  const capabilities = capabilitiesOf(
+    provider.models.find((model) => model.id === provider.modelId),
+  )
+  return [
+    capabilities.image ? '图' : null,
+    capabilities.reasoning ? '思考' : null,
+    capabilities.contextWindow === null
+      ? null
+      : `${String(Math.round(capabilities.contextWindow / 1000))}k 上下文`,
+  ]
+    .filter((hint): hint is string => hint !== null)
+    .join(' · ')
 }
 
 function isUsable(provider: ProviderView): boolean {
@@ -143,6 +160,7 @@ export function AgentModelPage(): React.JSX.Element {
                   <span className="truncate text-2xs text-faint">
                     {hostOf(provider.baseUrl)} · {String(provider.models.length)} 个模型
                     {provider.modelId.length > 0 ? ` · ${provider.modelId}` : ''}
+                    {capabilityHints(provider).length > 0 ? ` · ${capabilityHints(provider)}` : ''}
                   </span>
                 </button>
 
