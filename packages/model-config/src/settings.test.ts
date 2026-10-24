@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { JsonValue, ModelSettings, SettingsMap } from '@pictor/shared'
 
-import { buildModelsJson } from './models-json.js'
 import { readApiKey, writeApiKey } from './auth.js'
 import { normalizeBaseUrl, parseModels, type SettingsStore } from './providers.js'
 import { readModelSettings, saveModelSettings } from './settings.js'
@@ -177,29 +176,5 @@ describe('settings', () => {
       models: [],
     })
     expect(saved.modelId).toBe('')
-  })
-})
-
-describe('buildModelsJson', () => {
-  it('uses environment interpolation instead of the literal key', () => {
-    const json = buildModelsJson(settings)
-    const serialised = JSON.stringify(json)
-
-    expect(serialised).toContain('$PICTOR_PROVIDER_API_KEY')
-    expect(serialised).not.toContain('secret-key')
-    expect(json).toMatchObject({
-      providers: {
-        pictor: {
-          baseUrl: 'https://api.example.com',
-          api: 'openai-completions',
-          models: [{ id: 'demo', contextWindow: 1000, maxTokens: 200 }],
-        },
-      },
-    })
-  })
-
-  it('maps the responses protocol', () => {
-    const json = buildModelsJson({ ...settings, protocol: 'openai-responses' })
-    expect(json).toMatchObject({ providers: { pictor: { api: 'openai-responses' } } })
   })
 })

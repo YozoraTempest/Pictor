@@ -12,9 +12,7 @@ export default defineConfig({
       '@pictor/application': fromRoot('./packages/application/src/index.ts'),
       '@pictor/plugin-sdk': fromRoot('./packages/plugin-sdk/src/index.ts'),
       '@pictor/plugin-host': fromRoot('./packages/plugin-host/src/index.ts'),
-      '@pictor/agent-runtime': fromRoot('./packages/agent-runtime/src/index.ts'),
       '@pictor/model-config': fromRoot('./packages/model-config/src/index.ts'),
-      '@pictor/chat': fromRoot('./packages/chat/src/index.ts'),
     },
   },
   test: {

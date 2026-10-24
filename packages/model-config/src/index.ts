@@ -1,4 +1,3 @@
-export { API_KEY_ENV, buildModelsJson, piApiName, writeModelsJson } from './models-json.js'
 export { clearApiKey, readApiKey, readAuthFile, writeApiKey, type AuthFile } from './auth.js'
 export {
   ACTIVE_PROVIDER_KEY,
