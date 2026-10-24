@@ -1,14 +1,34 @@
 # Testing and CI
 
-## Environment
+## What gets a test
 
-```bash
-pnpm install
-cargo --version
-```
+The suite exists to catch the failures this project actually has, not to describe
+the code. Three questions decide where a check goes:
 
-Node and pnpm versions come from `.nvmrc` and `package.json`. The Electron runtime
-is only needed for `pnpm dev` and packaging; install it with `pnpm deps:prepare`.
+1. **Does the code branch?** Pure functions that make decisions — grouping,
+   protocol framing, event mapping, path resolution, migrations — are unit tested
+   against their branches and edge cases.
+2. **Does data change shape at the seam?** A wire event becoming a transcript row,
+   a manifest becoming a plugin record, a profile patch becoming a file: these
+   are unit tested with a fake at the boundary, because the bug they hide is a
+   mismatch, not a computation.
+3. **Can only a running app show it?** Streaming, persistence across restarts,
+   window-level behaviour: end-to-end specs, because every earlier attempt to
+   cover them with fakes passed while the feature was broken.
+
+Everything else stays untested on purpose:
+
+- **Prop passthrough** (`<Panel title>` renders a heading), because the type
+  already says it and the browser shows it in a second.
+- **Class names and style strings** (`opacity-0` → `opacity-100` on hover), which
+  change with the design and prove nothing about behaviour.
+- **Constants and lookup tables**, unless the fallback is the interesting branch.
+- **Facts the compiler guarantees**, such as a registry entry having the shape its
+  interface declares.
+- **Third-party behaviour** — the runtime, the model SDK, `jsdom` itself.
+
+A test that would pass no matter which branch the code takes is deleted rather
+than kept for its count.
 
 ## Commands
 
@@ -19,46 +39,62 @@ is only needed for `pnpm dev` and packaging; install it with `pnpm deps:prepare`
 | Rust tests                     | `pnpm test:rust`                                   |
 | Type check only                | `pnpm typecheck`                                   |
 | Lint only                      | `pnpm lint`                                        |
-| Format check                   | `pnpm format:check`                                |
 | Production build               | `pnpm build`                                       |
-| Run one file                   | `pnpm vitest run packages/racp/src/client.test.ts` |
+| End-to-end specs               | `pnpm test:e2e`                                    |
+| One unit test file             | `pnpm vitest run packages/racp/src/client.test.ts` |
+| One spec                       | `pnpm test:e2e chat`                               |
 
-## Test domains
+## Unit tests
 
-- **Core**: `packages/*/src/**/*.test.ts` covering RACP framing, the host client,
-  the command engine, profile locking, plugin resolution/lifecycle, the wire
-  protocol of `@pictor/harness` (fake socket) and the agent runtime projection.
-- **Main process**: `apps/desktop/src/main/*.test.ts` covering the runtime event
-  bridge, the history projection and the profile patch generator.
-- **Rust**: `cargo test -p pictor-host-core` covering migrations, store operations
-  and JSON-RPC dispatch.
-- **Renderer**: `apps/desktop/src/renderer/src/**/*.test.tsx` under jsdom (stores,
-  presenters, registries, settings schema); interactive behaviour is still
-  verified by hand.
+| Layer         | Location                                           | Covers                                                                                                                                          |
+| ------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core packages | `packages/*/src/**/*.test.ts`                      | RACP framing, the host client, profile locking, plugin resolution and lifecycle, the `@pictor/harness` wire protocol, provider and auth storage |
+| Main process  | `apps/desktop/src/main/*.test.ts`                  | The runtime event bridge, history ownership, the profile patch, tool guards, title adoption                                                     |
+| Renderer      | `apps/desktop/src/renderer/src/**/*.test.{ts,tsx}` | Session grouping, transcript turns, stores, presenters, settings schema, and the few components whose logic is not layout                       |
+| Rust          | `crates/host-core`                                 | Migrations, store operations, JSON-RPC dispatch                                                                                                 |
 
-Tests must use temporary directories and must never touch the real user profile or
-a network endpoint. The harness transport is exercised through an injected fake
-socket, and the Pi adapter through pure mapping functions (`toPiModel`,
-`mapPiEvent`), so no API key or live model is required.
+Tests use temporary directories and injected fakes (a fake socket for the mux, a
+fake transport for RPC) and never touch the real profile or a network endpoint.
+The runtime is exercised through its wire format, not by booting it.
 
 ## End-to-end specs
 
 ```bash
 pnpm build          # the specs drive the built app, not the sources
 pnpm test:e2e       # every spec
-pnpm test:e2e search  # one spec, matched by file name
 ```
 
-Each spec runs against a real window: the harness launches Electron with a
-throwaway `PICTOR_USER_DATA` and a scratch project directory, connects over CDP
-with `playwright-core` (no browser download — it uses Electron's own Chromium),
-and hands the spec a `page`. A failing spec writes a screenshot to
-`$PI_SCRATCH_DIR`.
+`e2e/harness.mjs` launches the real application: `PICTOR_USER_DATA` points at a
+throwaway profile, a scratch directory stands in for a project, and the spec talks
+to the window over CDP with Electron's own Chromium (`playwright-core`, no browser
+download). Nothing is stubbed below the window.
 
-Specs need a display. On a headless machine run them under `xvfb-run`, and note
-that they are not part of `pnpm verify` — they are slower and they exercise the
-real runtime, so they belong in a job of their own rather than in the gate every
-commit waits on.
+Each spec says what it is about:
+
+| Spec      | Proves                                                                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chat`    | A message typed into the composer reaches the runtime, streams back, the runtime's title is adopted, and the conversation survives a restart |
+| `archive` | Archiving is undoable from the row that did it, and a sweeping archive asks first                                                            |
+| `search`  | The palette narrows as you type, land on a conversation, open and close on the advertised keys                                               |
+
+`e2e/stub-model.mjs` is a local OpenAI-compatible endpoint, so the chat spec
+asserts Pictor's behaviour and never a provider's output. It answers the runtime's
+titling request separately, which is what makes the adopted-title check meaningful.
+
+**The runtime is not installed by e2e.** A conversation needs the pinned
+`@deepseek-ai/dsh` package, which the app itself installs into a profile (about
+900 MB). The harness uses a runtime that already exists — `PICTOR_DSH_BIN`, or the
+one in the current profile — and the chat spec returns `{ skip }` when there is
+none. `PICTOR_E2E_STRICT=1` turns that skip into a failure, so CI cannot lose the
+coverage silently.
+
+Other knobs, all optional: `PICTOR_E2E_ELECTRON_ARGS` passes extra Chromium
+switches (CI needs `--no-sandbox`), and `PICTOR_NODE_BIN` tells the app which Node
+to boot the runtime with when the machine has several.
+
+Specs need a display; on a headless machine run them under `xvfb-run -a`. They are
+deliberately **not** part of `pnpm verify`: they are slower, and they belong in a
+job of their own.
 
 ## Packaging
 
@@ -67,64 +103,56 @@ pnpm pack:dir    # unpacked app under dist/<platform>-unpacked
 pnpm pack:dist   # installer under dist/
 ```
 
-Both run `pnpm build` first, so the sidecar and the bundles are current. The
-packager needs two things it cannot infer: the Rust binary is not an npm package
-(it ships as `resources/host-core/pictor-host-core`), and `electronVersion` is
-pinned in the config because `electron` is declared as a range.
+Both run `pnpm build` first. The packager needs two things it cannot infer: the
+Rust binary is not an npm package (it ships as
+`resources/host-core/pictor-host-core`), and `electronVersion` is pinned in the
+config because `electron` is declared as a range.
 
-## Desktop smoke test
-
-`pnpm build` then run the packaged main process without showing a window:
-
-```bash
-cd apps/desktop
-PICTOR_SMOKE=1 PICTOR_USER_DATA="$(mktemp -d)" ../../node_modules/.bin/electron .
-```
-
-The process starts host-core, activates bundled plugins, waits for the renderer's
-`ready-to-show`, prints `[smoke] window ready` and exits. `PICTOR_USER_DATA`
-keeps the real profile untouched, and `PICTOR_HOST_CORE` can point at a specific
-sidecar binary.
-
-## Live endpoint checks
-
-Both checks are skipped by default and read every value from the environment, so
-no endpoint or key is committed:
+The packaged app can be started without a window, which is how CI proves the
+sidecar resolution that only exists inside a package:
 
 ```bash
-PICTOR_LIVE_TEST=1 \
-PICTOR_LIVE_BASE_URL=https://api.example.com/v1 \
-PICTOR_LIVE_MODEL=<model-id> \
-PICTOR_LIVE_API_KEY=<key> \
-pnpm vitest run packages/model-config/src/live.test.ts
-
-PICTOR_LIVE_AGENT=1 \
-PICTOR_LIVE_BASE_URL=https://api.example.com/v1 \
-PICTOR_LIVE_MODEL=<model-id> \
-PICTOR_LIVE_API_KEY=<key> \
-pnpm vitest run packages/agent-runtime/src/live.test.ts
+PICTOR_SMOKE=1 PICTOR_USER_DATA="$(mktemp -d)" dist/linux-unpacked/pictor
 ```
 
-The first validates `/models` plus one completion; the second drives the real Pi
-SDK adapter with tools disabled.
+It prints `pictor host core …` and `[smoke] window loaded`, then exits. It waits
+for the document rather than `ready-to-show`, because a headless machine never
+paints.
 
-The chat loop has its own opt-in check (streaming, JSONL persistence, history
-reload and reopening the same transcript):
+## Live probes (manual)
+
+Opt-in checks against a real endpoint, skipped unless the environment says
+otherwise. No endpoint or key is ever committed:
 
 ```bash
-PICTOR_LIVE_CHAT=1 \
-PICTOR_LIVE_BASE_URL=https://api.example.com/v1 \
-PICTOR_LIVE_MODEL=<model-id> \
-PICTOR_LIVE_API_KEY=<key> \
-pnpm vitest run packages/chat/src/live.test.ts
+PICTOR_LIVE_TEST=1 PICTOR_LIVE_BASE_URL=… PICTOR_LIVE_MODEL=… PICTOR_LIVE_API_KEY=… \
+  pnpm vitest run packages/model-config/src/live.test.ts   # /models + one completion
+PICTOR_LIVE_AGENT=1 … pnpm vitest run packages/agent-runtime/src/live.test.ts
+PICTOR_LIVE_CHAT=1  … pnpm vitest run packages/chat/src/live.test.ts
 ```
+
+They are the only way to see a real provider refuse a request — a base URL that
+needs `/anthropic` rather than `/v1`, for instance. They are never part of CI.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on Node 22.22.2 and stable Rust:
+`.github/workflows/ci.yml` runs three jobs on Node 22.22.2 and stable Rust. All
+three are required:
 
-```text
-pnpm install --frozen-lockfile
+| Job       | Runs                                                                | Proves                                                         |
+| --------- | ------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `verify`  | `pnpm install`, `pnpm verify`, `pnpm build:js`                      | Formatting, types, lint, unit tests and Rust tests are clean   |
+| `e2e`     | `pnpm build`, then `xvfb-run pnpm test:e2e` with a cached runtime   | The app works as a whole: composer, runtime, streaming, reopen |
+| `package` | `pnpm pack:dir`, then a `PICTOR_SMOKE` start of the packaged binary | The sidecar ships, the executable is named right, it boots     |
+
+`e2e` installs the runtime into `~/.cache/pictor-dsh` behind an `actions/cache`
+keyed by the pinned version, so only a version bump pays the download. `verify`
+and `package` never need it.
+
+Reproduce CI locally:
+
+```bash
 pnpm verify
-pnpm build
+xvfb-run -a env PICTOR_E2E_STRICT=1 PICTOR_E2E_ELECTRON_ARGS=--no-sandbox pnpm test:e2e
+pnpm pack:dir && PICTOR_SMOKE=1 PICTOR_USER_DATA="$(mktemp -d)" dist/linux-unpacked/pictor
 ```
