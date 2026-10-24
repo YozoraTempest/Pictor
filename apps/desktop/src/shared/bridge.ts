@@ -197,7 +197,6 @@ export interface PictorBridge {
   openChat(sessionId: string): Promise<OpenChatResult>
   sendChat(sessionId: string, prompt: string, images?: ChatImage[]): Promise<void>
   stopChat(sessionId: string): Promise<void>
-  closeChat(sessionId: string): Promise<void>
   /** Branches one conversation at its latest completed turn; returns the new id. */
   forkSession(sessionId: string): Promise<string>
   chatHistory(path: string, limit: number, offset: number): Promise<ChatHistoryPage>

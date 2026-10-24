@@ -33,7 +33,6 @@ export interface MetadataStore {
   listSessions(projectId?: string): Promise<Session[]>
   createSession(projectId: string | null, title: string): Promise<Session>
   renameSession(id: string, title: string): Promise<Session>
-  bindPiSession(id: string, piSessionId: string | null): Promise<Session>
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
   setSessionArchived(id: string, archived: boolean): Promise<Session>
   archiveSessions(ids: string[]): Promise<number>
@@ -126,10 +125,6 @@ export class HostCoreClient implements MetadataStore {
 
   renameSession(id: string, title: string): Promise<Session> {
     return this.#rpc.request<Session>('session.rename', { id, title })
-  }
-
-  bindPiSession(id: string, piSessionId: string | null): Promise<Session> {
-    return this.#rpc.request<Session>('session.bindPiSession', { id, piSessionId })
   }
 
   setSessionPinned(id: string, pinned: boolean): Promise<Session> {

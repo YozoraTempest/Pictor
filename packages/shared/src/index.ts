@@ -28,6 +28,11 @@ export interface Session {
   /** `null` when the session does not belong to any project. */
   projectId: string | null
   title: string
+  /**
+   * Kept from the pre-runtime layout: the column still exists so an old
+   * profile opens unchanged, but nothing writes it and no reader branches on
+   * it. Transcripts belong to the runtime.
+   */
   piSessionId: string | null
   pinned: boolean
   /** Archived sessions stay in the database but leave the working list. */

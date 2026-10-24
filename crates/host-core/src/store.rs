@@ -551,22 +551,6 @@ pub fn get_session(connection: &Connection, id: &str) -> Result<Option<Session>,
     Ok(session)
 }
 
-pub fn bind_pi_session(
-    connection: &Connection,
-    id: &str,
-    pi_session_id: Option<&str>,
-) -> Result<Session, HostError> {
-    let updated = connection.execute(
-        "UPDATE sessions SET pi_session_id = ?2, updated_at = ?3 WHERE id = ?1",
-        params![id, pi_session_id, now_millis()],
-    )?;
-    if updated == 0 {
-        return Err(HostError::NotFound(format!("session {id}")));
-    }
-
-    get_session(connection, id)?.ok_or_else(|| HostError::NotFound(format!("session {id}")))
-}
-
 pub fn set_session_pinned(
     connection: &Connection,
     id: &str,
@@ -1028,20 +1012,6 @@ mod tests {
 
         let listed = list_sessions(&connection, None).unwrap();
         assert!(listed.iter().all(|entry| entry.archived));
-    }
-
-    #[test]
-    fn binds_a_pi_session_path() {
-        let directory = tempfile::tempdir().unwrap();
-        let connection = connection();
-        let project = add_project(&connection, directory.path().to_str().unwrap(), None).unwrap();
-        let session = create_session(&connection, Some(&project.id), "Draft", None).unwrap();
-
-        let bound = bind_pi_session(&connection, &session.id, Some("/tmp/pi/session.jsonl")).unwrap();
-        assert_eq!(bound.pi_session_id.as_deref(), Some("/tmp/pi/session.jsonl"));
-
-        let cleared = bind_pi_session(&connection, &session.id, None).unwrap();
-        assert_eq!(cleared.pi_session_id, None);
     }
 
     #[test]

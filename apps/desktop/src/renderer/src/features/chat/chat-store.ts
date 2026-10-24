@@ -168,7 +168,6 @@ export const useChatStore = create<ChatState>()((set, get) => {
           current: viewing === null ? EMPTY : (chats[viewing] ?? EMPTY),
         }
       })
-      await window.pictor.closeChat(sessionId)
     },
 
     async send(prompt, images = []) {

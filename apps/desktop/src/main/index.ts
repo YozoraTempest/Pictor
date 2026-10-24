@@ -4,7 +4,6 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@pictor/application'
-import { ChatService, loadHistoryPage } from '@pictor/chat'
 import { resolveHostCoreBinary, startHostCore } from '@pictor/host-client'
 import {
   PluginHost,
@@ -13,16 +12,13 @@ import {
   resolveActivationOrder,
 } from '@pictor/plugin-host'
 import {
-  evaluateToolGuards,
   parsePanelContributions,
   parseToolGuardContributions,
   parseToolViewContributions,
   type PanelContribution,
   type ToolViewContribution,
 } from '@pictor/plugin-sdk'
-import { readModelSettings, writeModelsJson } from '@pictor/model-config'
 import {
-  BLOCKED_REASON_PREFIX,
   type ApprovalRequest,
   type ChatImage,
   type JsonValue,
@@ -95,9 +91,6 @@ interface Workspace {
   harness: HarnessService
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
-  /** One runtime per open conversation, so several can run at the same time. */
-  chatFor: (sessionId: string) => ChatService
-  closeChat: (sessionId: string) => Promise<void>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
   panels: PanelContribution[]
   /** Presentation for agent tools; the renderer applies them to its presenters. */
@@ -309,59 +302,12 @@ async function startWorkspace(): Promise<Workspace | null> {
     }
   })
 
-  /** Shared by every runtime: the policy is the same whoever is running. */
-  const guardInterceptor = async ({
-    tool,
-    args,
-  }: {
-    tool: string
-    args: unknown
-  }): Promise<{ block: true; reason: string } | undefined> => {
-    const verdict = await evaluateToolGuards(toolGuards, { tool, args })
-    if (!verdict.blocked) return undefined
-    console.warn(`[tool-guard] blocked ${tool}: ${verdict.reason ?? 'no reason given'}`)
-    // The marker travels into Pi's JSONL, which is the only way a reloaded
-    // session can still tell "a guard refused this" from "the command failed".
-    return {
-      block: true,
-      reason: `${BLOCKED_REASON_PREFIX}${verdict.reason ?? 'blocked by a tool guard'}`,
-    }
-  }
-
-  /** Open conversations, keyed by Pictor session id. */
-  const chats = new Map<string, ChatService>()
-  const createChat = (): ChatService =>
-    new ChatService({
-      onEvent: (event) => {
-        mainWindow?.webContents.send('pictor:chat.event', event)
-      },
-    })
-
-  const chatFor = (sessionId: string): ChatService => {
-    const existing = chats.get(sessionId)
-    if (existing !== undefined) return existing
-
-    const chat = createChat()
-    if (toolGuards.length > 0) chat.setToolInterceptor(guardInterceptor)
-    chats.set(sessionId, chat)
-    return chat
-  }
-
-  const closeChat = async (sessionId: string): Promise<void> => {
-    const chat = chats.get(sessionId)
-    if (chat === undefined) return
-    chats.delete(sessionId)
-    await chat.close()
-  }
-
   return {
     appHost,
     pluginHost,
     model,
     harness,
     readPermissionMode,
-    chatFor,
-    closeChat,
     isDisposed: () => disposed,
     client: running.client,
     hostCore,
@@ -371,8 +317,6 @@ async function startWorkspace(): Promise<Workspace | null> {
     dispose: async () => {
       if (disposed) return
       disposed = true
-      await Promise.all([...chats.values()].map((chat) => chat.close()))
-      chats.clear()
       await pluginHost.stop()
       running.dispose()
       lock.release()
@@ -842,7 +786,10 @@ function registerIpc(workspace: Workspace): void {
           ? workingDirectory
           : app.getPath('userData')
 
-      return workspace.model.runTest(prompt, directory)
+      if (workspace.harness.status().state !== 'ready') {
+        return { ok: false, text: '', events: [], message: 'agent 运行时没有运行；先启动它再试' }
+      }
+      return workspace.harness.probe(prompt, directory)
     },
   )
 
@@ -853,49 +800,15 @@ function registerIpc(workspace: Workspace): void {
     const session = sessions.find((entry) => entry.id === sessionId)
     if (session === undefined) throw new Error('session not found')
 
-    const projects = await workspace.client.listProjects()
-    const project = projects.find((entry) => entry.id === session.projectId) ?? null
-
-    // The runtime's own log wins whenever it has one: a conversation that ran on
-    // both sides keeps its kernel transcript. Without a kernel record the Pi file
-    // is the only copy, and without either the runtime is the owner — falling
-    // through in that window would create a Pi session that never fills.
-    if (session.piSessionId === null || workspace.harness.owns(sessionId)) {
-      return {
-        path: `harness:${sessionId}`,
-        history:
-          workspace.harness.status().state === 'ready'
-            ? await workspace.harness.openHistory(sessionId)
-            : { messages: [], nextOffset: 0, hasMore: false },
-      }
-    }
-
-    const settings = await readModelSettings(workspace.client, workspace.model.authPath)
-    if (settings.baseUrl.length === 0 || settings.modelId.length === 0) {
-      throw new Error('model settings are incomplete; open Model settings first')
-    }
-
-    writeModelsJson(workspace.model.modelsPath, settings)
-
-    const sessionDir = join(app.getPath('userData'), 'pi', 'sessions', project?.id ?? 'unfiled')
-    const opened = await workspace.chatFor(sessionId).open({
-      sessionId,
-      cwd: project?.path ?? app.getPath('home'),
-      sessionDir,
-      agentDir: workspace.model.agentDir,
-      modelsPath: workspace.model.modelsPath,
-      modelId: settings.modelId,
-      apiKey: await workspace.model.activeApiKey(),
-      sessionPath: session.piSessionId,
-    })
-
-    if (session.piSessionId !== opened.path) {
-      await workspace.client.bindPiSession(sessionId, opened.path)
-    }
-
+    // The runtime owns every transcript: there is no second store, so an
+    // unready runtime is an empty page the window explains rather than a
+    // conversation that appears to have lost its history.
     return {
-      path: opened.path,
-      history: await workspace.chatFor(sessionId).history(opened.path, 50, 0),
+      path: `harness:${sessionId}`,
+      history:
+        workspace.harness.status().state === 'ready'
+          ? await workspace.harness.openHistory(sessionId)
+          : { messages: [], nextOffset: 0, hasMore: false },
     }
   })
 
@@ -934,42 +847,28 @@ function registerIpc(workspace: Workspace): void {
       if (prompt.trim().length === 0 && attachments.length === 0) {
         throw new Error('a message needs text or an image')
       }
-      // Conversations run on the kernel once it is up; the Pi path stays as the
-      // fallback so a profile without a runtime still works, but it takes text.
-      if (workspace.harness.status().state === 'ready') {
-        await workspace.harness.prompt(sessionId, prompt, attachments)
-        return
+      if (workspace.harness.status().state !== 'ready') {
+        throw new Error('agent 运行时没有运行；先启动它再发消息')
       }
-      await workspace.chatFor(sessionId).send(prompt)
+      await workspace.harness.prompt(sessionId, prompt, attachments)
     },
   )
 
   ipcMain.handle('pictor:chat.stop', async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
-    // Stopping is the runtime's own cancel when it owns the conversation; the Pi
-    // path only knows how to stop a turn it started.
-    if (workspace.harness.status().state === 'ready') {
-      await workspace.harness.cancel(sessionId)
-      return
-    }
-    await workspace.chatFor(sessionId).stop()
+    // Nothing to stop when the runtime is down: the turn died with it.
+    if (workspace.harness.status().state !== 'ready') return
+    await workspace.harness.cancel(sessionId)
   })
 
-  ipcMain.handle('pictor:chat.close', async (_event, sessionId: unknown) => {
-    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
-    await workspace.closeChat(sessionId)
-  })
   ipcMain.handle(
     'pictor:chat.history',
     async (_event, path: unknown, limit: unknown, offset: unknown) => {
       if (typeof path !== 'string') throw new Error('path must be a string')
       const size = typeof limit === 'number' && limit > 0 ? Math.min(limit, 200) : 50
       const from = typeof offset === 'number' && offset >= 0 ? offset : 0
-      if (path.startsWith('harness:')) {
-        const sessionId = path.slice('harness:'.length)
-        return workspace.harness.historyPage(sessionId, size, from)
-      }
-      return loadHistoryPage(path, size, from)
+      if (!path.startsWith('harness:')) throw new Error('unknown transcript path')
+      return workspace.harness.historyPage(path.slice('harness:'.length), size, from)
     },
   )
 

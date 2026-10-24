@@ -102,7 +102,6 @@ describe('chat-store open', () => {
         calls += 1
         return { path: 'harness:s1', history: { messages: [], nextOffset: 0, hasMore: false } }
       },
-      closeChat: async () => undefined,
     }
 
     await useChatStore.getState().open('s1')

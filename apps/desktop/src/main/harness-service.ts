@@ -46,6 +46,14 @@ export interface HarnessStatus {
   error: string | null
 }
 
+/** What one probe turn produced: the text, the durable events, or why it failed. */
+export interface AgentProbeResult {
+  ok: boolean
+  text: string
+  events: string[]
+  message?: string
+}
+
 export type PermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'workspace-write'
@@ -344,6 +352,98 @@ export class HarnessService {
   }
 
   /**
+   * Run one throwaway turn and report what came back.
+   *
+   * This is what the settings page means by 试运行: the same chain a conversation
+   * takes — route patch, key, protocol, runtime, model — rather than a second
+   * client that can disagree with it. The session is created, prompted, watched
+   * and dropped; nothing registers it here, so a probe never shows up in the
+   * sidebar and never becomes a conversation the user has to clean up.
+   */
+  async probe(prompt: string, cwd: string): Promise<AgentProbeResult> {
+    const remote = this.#remote
+    const socket = this.#socket
+    const cookie = remote?.cookie
+    if (remote === null || socket === null || cookie === undefined || cookie === null) {
+      throw new Error('agent 运行时尚未启动')
+    }
+
+    const created = await remote.call<SessionCreateValue>('session/create', {
+      request: { cwd: cwd.length > 0 ? cwd : (this.#cwd ?? homedir()), sessionId: randomUUID() },
+    })
+
+    let text = ''
+    let failure: string | null = null
+    const events: string[] = []
+    let finish: () => void = () => undefined
+    const done = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+
+    const stream = new FollowStream({
+      url: `${remote.baseUrl.replace(/^http/, 'ws')}/api/remote.mux`,
+      cookie,
+      WebSocket: socket,
+      onFrame: (frame) => {
+        if (frame.type === 'assistant-stream') {
+          const chunk = frame.frame.type === 'chunk' ? frame.frame.chunk : undefined
+          if (chunk?.type === 'text-delta') text += chunk.text
+          return
+        }
+        if (frame.type !== 'event' || typeof frame.event.type !== 'string') return
+
+        events.push(frame.event.type)
+        if (frame.event.type !== 'turn/end') return
+
+        // The runtime closes every turn with a reason; only `completed` is a pass.
+        const reason = (frame.event.data as { reason?: { kind?: unknown } } | null)?.reason
+        const kind = typeof reason?.kind === 'string' ? reason.kind : 'unknown'
+        if (kind !== 'completed') failure = `这一轮以 ${kind} 结束`
+        finish()
+      },
+      onError: (error) => {
+        failure = failure ?? error.message
+        finish()
+      },
+    })
+
+    try {
+      await stream.open({
+        address: { kind: 'session', sessionId: created.sessionId },
+        assistantStream: true,
+      })
+      await remote.call<SessionPromptValue>('session/prompt', {
+        request: {
+          requestId: randomUUID(),
+          sessionId: created.sessionId,
+          mode: 'queue',
+          content: [{ type: 'text' as const, text: prompt }],
+        },
+      })
+      await Promise.race([
+        done,
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            failure = failure ?? '试运行超时（120s）'
+            resolve()
+          }, 120_000).unref?.()
+        }),
+      ])
+    } finally {
+      stream.close()
+    }
+
+    const ok = failure === null && text.trim().length > 0
+    return {
+      ok,
+      text,
+      events: [...new Set(events)],
+      ...(failure === null ? {} : { message: failure }),
+      ...(failure === null && !ok ? { message: '模型没有返回文本' } : {}),
+    }
+  }
+
+  /**
    * Install the pinned runtime into the profile.
    *
    * The app ships no package manager and no bundler for the runtime, so the
@@ -477,12 +577,20 @@ export class HarnessService {
             `运行时启动失败 (code=${String(code)} signal=${String(signal)})${detail.length > 0 ? ` · ${detail}` : ''}`,
           ),
         )
-        this.#handleExit()
+        this.#handleExit(child)
       })
     })
   }
 
-  #handleExit(): void {
+  /**
+   * Tear the service down when the runtime it owns goes away.
+   *
+   * A stopped runtime's exit arrives after its replacement has booted, so only
+   * the current child may do this — otherwise a restart leaves the window showing
+   * "已退出" while a runtime runs, and the next stop kills nothing.
+   */
+  #handleExit(child: ChildProcess): void {
+    if (this.#child !== child) return
     const wasReady = this.#status.state === 'ready'
     this.#events = null
     this.#eventClientId = null
@@ -615,16 +723,6 @@ export class HarnessService {
       maxMessages: SNAPSHOT_MESSAGES,
       assistantStream: true,
     })
-  }
-
-  /**
-   * Whether the runtime holds a record for this conversation.
-   *
-   * The mapping is written when the runtime creates the session, so a hit means
-   * the runtime owns the transcript even if the row also names a Pi file.
-   */
-  owns(sessionId: string): boolean {
-    return this.#sessions.has(sessionId)
   }
 
   /** Opening history for one Pictor session, read from the runtime itself. */
