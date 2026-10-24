@@ -3,41 +3,50 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { PictorBridge } from '../shared/bridge.js'
 
 /**
+ * A rejection carries Electron's own sentence in front of the one main wrote
+ * (`Error invoking remote method 'pictor:chat.send': Error: …`). The page shows
+ * what main said, because that is the sentence written for a person.
+ */
+async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  try {
+    return (await ipcRenderer.invoke(channel, ...args)) as T
+  } catch (reason) {
+    const text = reason instanceof Error ? reason.message : String(reason)
+    throw new Error(text.replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, ''))
+  }
+}
+
+/**
  * The bridge is deliberately narrow: one method per IPC channel, no raw
  * `ipcRenderer`, and no Node object reachable from the page.
  */
 const bridge: PictorBridge = {
-  getSnapshot: () => ipcRenderer.invoke('pictor:snapshot'),
-  addProject: (path, name) => ipcRenderer.invoke('pictor:project.add', path, name),
-  removeProject: (id) => ipcRenderer.invoke('pictor:project.remove', id),
-  setProjectSection: (id, sectionId) =>
-    ipcRenderer.invoke('pictor:project.setSection', id, sectionId),
-  reorderSections: (ids) => ipcRenderer.invoke('pictor:sections.reorder', ids),
-  addProjectFolder: (id, path) => ipcRenderer.invoke('pictor:project.addFolder', id, path),
-  removeProjectFolder: (id, path) => ipcRenderer.invoke('pictor:project.removeFolder', id, path),
-  createSession: (projectId, title) =>
-    ipcRenderer.invoke('pictor:session.create', projectId, title),
-  deleteSession: (id) => ipcRenderer.invoke('pictor:session.delete', id),
-  setSessionPinned: (id, pinned) => ipcRenderer.invoke('pictor:session.setPinned', id, pinned),
-  setSessionArchived: (id, archived) =>
-    ipcRenderer.invoke('pictor:session.setArchived', id, archived),
-  archiveSessions: (ids) => ipcRenderer.invoke('pictor:session.archiveMany', ids),
-  reorderSessions: (ids) => ipcRenderer.invoke('pictor:session.reorder', ids),
-  setSessionProject: (id, projectId) =>
-    ipcRenderer.invoke('pictor:session.setProject', id, projectId),
-  setSessionSections: (id, sectionIds) =>
-    ipcRenderer.invoke('pictor:session.setSections', id, sectionIds),
-  pickDirectory: () => ipcRenderer.invoke('pictor:pickDirectory'),
+  getSnapshot: () => invoke('pictor:snapshot'),
+  addProject: (path, name) => invoke('pictor:project.add', path, name),
+  removeProject: (id) => invoke('pictor:project.remove', id),
+  setProjectSection: (id, sectionId) => invoke('pictor:project.setSection', id, sectionId),
+  reorderSections: (ids) => invoke('pictor:sections.reorder', ids),
+  addProjectFolder: (id, path) => invoke('pictor:project.addFolder', id, path),
+  removeProjectFolder: (id, path) => invoke('pictor:project.removeFolder', id, path),
+  createSession: (projectId, title) => invoke('pictor:session.create', projectId, title),
+  deleteSession: (id) => invoke('pictor:session.delete', id),
+  setSessionPinned: (id, pinned) => invoke('pictor:session.setPinned', id, pinned),
+  setSessionArchived: (id, archived) => invoke('pictor:session.setArchived', id, archived),
+  archiveSessions: (ids) => invoke('pictor:session.archiveMany', ids),
+  reorderSessions: (ids) => invoke('pictor:session.reorder', ids),
+  setSessionProject: (id, projectId) => invoke('pictor:session.setProject', id, projectId),
+  setSessionSections: (id, sectionIds) => invoke('pictor:session.setSections', id, sectionIds),
+  pickDirectory: () => invoke('pictor:pickDirectory'),
 
-  listSections: () => ipcRenderer.invoke('pictor:sections.list'),
-  createSection: (name) => ipcRenderer.invoke('pictor:sections.create', name),
-  renameSection: (id, name) => ipcRenderer.invoke('pictor:sections.rename', id, name),
-  removeSection: (id) => ipcRenderer.invoke('pictor:sections.remove', id),
+  listSections: () => invoke('pictor:sections.list'),
+  createSection: (name) => invoke('pictor:sections.create', name),
+  renameSection: (id, name) => invoke('pictor:sections.rename', id, name),
+  removeSection: (id) => invoke('pictor:sections.remove', id),
 
-  putSetting: (key, value) => ipcRenderer.invoke('pictor:settings.put', key, value),
+  putSetting: (key, value) => invoke('pictor:settings.put', key, value),
 
-  windowCommand: (command) => ipcRenderer.invoke('pictor:window.command', command),
-  getWindowState: () => ipcRenderer.invoke('pictor:window.state'),
+  windowCommand: (command) => invoke('pictor:window.command', command),
+  getWindowState: () => invoke('pictor:window.state'),
   onWindowState: (listener) => {
     const handler = (_event: unknown, payload: unknown): void => {
       listener(payload as Parameters<typeof listener>[0])
@@ -48,45 +57,42 @@ const bridge: PictorBridge = {
     }
   },
 
-  listPanels: () => ipcRenderer.invoke('pictor:panels.list'),
-  invokePanel: (id) => ipcRenderer.invoke('pictor:panels.invoke', id),
-  listToolViews: () => ipcRenderer.invoke('pictor:toolViews.list'),
+  listPanels: () => invoke('pictor:panels.list'),
+  invokePanel: (id) => invoke('pictor:panels.invoke', id),
+  listToolViews: () => invoke('pictor:toolViews.list'),
 
-  listPlugins: () => ipcRenderer.invoke('pictor:plugins.list'),
-  setPluginEnabled: (id, enabled) => ipcRenderer.invoke('pictor:plugins.setEnabled', id, enabled),
-  pluginReport: () => ipcRenderer.invoke('pictor:plugins.report'),
+  listPlugins: () => invoke('pictor:plugins.list'),
+  setPluginEnabled: (id, enabled) => invoke('pictor:plugins.setEnabled', id, enabled),
+  pluginReport: () => invoke('pictor:plugins.report'),
 
-  harnessStatus: () => ipcRenderer.invoke('pictor:harness.status'),
-  harnessStart: (cwd) => ipcRenderer.invoke('pictor:harness.start', cwd),
-  harnessStop: () => ipcRenderer.invoke('pictor:harness.stop'),
-  installHarness: () => ipcRenderer.invoke('pictor:harness.install'),
-  setHarnessPermissionMode: (mode) => ipcRenderer.invoke('pictor:harness.setPermissionMode', mode),
+  harnessStatus: () => invoke('pictor:harness.status'),
+  harnessStart: (cwd) => invoke('pictor:harness.start', cwd),
+  harnessStop: () => invoke('pictor:harness.stop'),
+  installHarness: () => invoke('pictor:harness.install'),
+  setHarnessPermissionMode: (mode) => invoke('pictor:harness.setPermissionMode', mode),
 
-  getAppInfo: () => ipcRenderer.invoke('pictor:appInfo'),
+  getAppInfo: () => invoke('pictor:appInfo'),
 
-  getModelSettings: () => ipcRenderer.invoke('pictor:model.get'),
-  listProviders: () => ipcRenderer.invoke('pictor:provider.list'),
-  saveProvider: (input) => ipcRenderer.invoke('pictor:provider.save', input),
-  removeProvider: (id) => ipcRenderer.invoke('pictor:provider.remove', id),
-  activateProvider: (id) => ipcRenderer.invoke('pictor:provider.activate', id),
-  selectModel: (modelId) => ipcRenderer.invoke('pictor:model.select', modelId),
-  saveModelSettings: (input) => ipcRenderer.invoke('pictor:model.save', input),
-  fetchModels: (input) => ipcRenderer.invoke('pictor:model.fetch', input),
-  testModelConnection: () => ipcRenderer.invoke('pictor:model.test'),
-  scanCcSwitch: () => ipcRenderer.invoke('pictor:model.ccswitch.scan'),
+  getModelSettings: () => invoke('pictor:model.get'),
+  listProviders: () => invoke('pictor:provider.list'),
+  saveProvider: (input) => invoke('pictor:provider.save', input),
+  removeProvider: (id) => invoke('pictor:provider.remove', id),
+  activateProvider: (id) => invoke('pictor:provider.activate', id),
+  selectModel: (modelId) => invoke('pictor:model.select', modelId),
+  saveModelSettings: (input) => invoke('pictor:model.save', input),
+  fetchModels: (input) => invoke('pictor:model.fetch', input),
+  testModelConnection: () => invoke('pictor:model.test'),
+  scanCcSwitch: () => invoke('pictor:model.ccswitch.scan'),
   importCcSwitchProvider: (id, includeApiKey) =>
-    ipcRenderer.invoke('pictor:model.ccswitch.import', id, includeApiKey),
+    invoke('pictor:model.ccswitch.import', id, includeApiKey),
   runAgentTest: (prompt, workingDirectory) =>
-    ipcRenderer.invoke('pictor:model.agentTest', prompt, workingDirectory),
+    invoke('pictor:model.agentTest', prompt, workingDirectory),
 
-  openChat: (sessionId) => ipcRenderer.invoke('pictor:chat.open', sessionId),
-  sendChat: (sessionId, prompt, images) =>
-    ipcRenderer.invoke('pictor:chat.send', sessionId, prompt, images),
-  stopChat: (sessionId) => ipcRenderer.invoke('pictor:chat.stop', sessionId),
-  closeChat: (sessionId) => ipcRenderer.invoke('pictor:chat.close', sessionId),
-  forkSession: (sessionId) => ipcRenderer.invoke('pictor:session.fork', sessionId),
-  chatHistory: (path, limit, offset) =>
-    ipcRenderer.invoke('pictor:chat.history', path, limit, offset),
+  openChat: (sessionId) => invoke('pictor:chat.open', sessionId),
+  sendChat: (sessionId, prompt, images) => invoke('pictor:chat.send', sessionId, prompt, images),
+  stopChat: (sessionId) => invoke('pictor:chat.stop', sessionId),
+  forkSession: (sessionId) => invoke('pictor:session.fork', sessionId),
+  chatHistory: (path, limit, offset) => invoke('pictor:chat.history', path, limit, offset),
   onChatEvent: (listener) => {
     const handler = (_event: unknown, payload: unknown): void => {
       listener(payload as Parameters<typeof listener>[0])
@@ -114,8 +120,7 @@ const bridge: PictorBridge = {
       ipcRenderer.removeListener('pictor:harness.approval', handler)
     }
   },
-  answerApproval: (eventId, allow) =>
-    ipcRenderer.invoke('pictor:harness.approvalAnswer', eventId, allow),
+  answerApproval: (eventId, allow) => invoke('pictor:harness.approvalAnswer', eventId, allow),
   onHarnessStatus: (listener) => {
     const handler = (_event: unknown, payload: unknown): void => {
       listener(payload as Parameters<typeof listener>[0])
