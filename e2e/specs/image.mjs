@@ -42,32 +42,45 @@ export default {
       }, kind)
 
     try {
-      const listed = await page.evaluate(
-        (baseUrl) =>
-          window.pictor.saveProvider({
-            name: 'e2e 图片',
-            baseUrl,
-            protocol: 'openai-completions',
-            modelId: 'stub-model',
-            // The runtime refuses images for a model that never declared them, so
-            // the service has to say it accepts them — as a real one would.
-            models: [
-              {
-                id: 'stub-model',
-                name: null,
-                reasoning: null,
-                input: ['text', 'image'],
-                contextWindow: null,
-                maxTokens: null,
-              },
-            ],
-            apiKey: 'e2e-key',
-          }),
-        model.baseUrl,
+      // The service is configured the way a person would: the image capability is
+      // a switch in the dialog, because the runtime refuses images for a model
+      // that never declared them.
+      await page.keyboard.press('Control+,')
+      const sidebar = page.getByRole('navigation', { name: '设置分类' })
+      await sidebar.getByRole('button', { name: '模型' }).click({ timeout: 15_000 })
+      await page.getByRole('button', { name: '添加服务' }).click({ timeout: 15_000 })
+
+      const editor = page.getByRole('dialog', { name: '添加服务' })
+      await editor.getByLabel('服务名称').fill('e2e 图片')
+      await editor.getByLabel('Base URL').fill(model.baseUrl)
+      await editor.getByLabel('模型 ID').fill('stub-model')
+      await editor.getByLabel('API Key').fill('e2e-key')
+
+      const imageSwitch = editor.getByRole('switch', { name: '图片输入' })
+      assert.equal(await imageSwitch.getAttribute('aria-checked'), 'false', 'text-only by default')
+      await imageSwitch.click()
+      await editor.getByRole('button', { name: '添加' }).click()
+      await editor.waitFor({ state: 'detached', timeout: 15_000 })
+
+      // The first service of a fresh profile is already the active one, so the row
+      // may offer 「使用中」 instead of 「使用」.
+      await page
+        .getByRole('button', { name: /(使用 e2e 图片|e2e 图片 使用中)/ })
+        .first()
+        .click({ timeout: 15_000 })
+
+      // Reopening shows what was saved; the capability is a stored fact, not a
+      // one-off in the form.
+      await page.getByRole('button', { name: '编辑 e2e 图片' }).click({ timeout: 15_000 })
+      const reopened = page.getByRole('dialog', { name: '编辑「e2e 图片」' })
+      await reopened.waitFor({ timeout: 10_000 })
+      assert.equal(
+        await reopened.getByRole('switch', { name: '图片输入' }).getAttribute('aria-checked'),
+        'true',
+        'the saved capability survives a reopen',
       )
-      const provider = listed.providers.find((entry) => entry.baseUrl === model.baseUrl)
-      assert.ok(provider !== undefined, 'the provider was saved')
-      await page.evaluate((id) => window.pictor.activateProvider(id), provider.id)
+      await page.keyboard.press('Escape')
+      await reopened.waitFor({ state: 'detached', timeout: 10_000 })
 
       await page.evaluate(() => window.pictor.harnessStop())
       const booted = await page.evaluate((cwd) => window.pictor.harnessStart(cwd), app.workdir)
