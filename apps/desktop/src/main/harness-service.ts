@@ -908,14 +908,16 @@ export class HarnessService {
    * runtime id; mapping it to a Pictor conversation is the caller's job because
    * only this process knows which ids belong together.
    */
-  async fork(pictorSessionId: string): Promise<string> {
+  async fork(pictorSessionId: string, atSeq?: number): Promise<string> {
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
     const harnessId = this.#sessions.get(pictorSessionId)
     if (harnessId === undefined) throw new Error('这个会话在运行时里还没有记录，无法分叉')
 
     const created = await remote.call<SessionForkValue>('session/fork', {
-      request: { sessionId: harnessId },
+      // The boundary is inclusive: omitting it copies the latest completed turn,
+      // which is what "branch from here" means when no message was picked.
+      request: { sessionId: harnessId, ...(atSeq === undefined ? {} : { atSeq }) },
     })
     return created.sessionId
   }

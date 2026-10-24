@@ -58,8 +58,8 @@ interface WorkspaceState {
   addProjectFolder: (id: string) => Promise<void>
   removeProjectFolder: (id: string, path: string) => Promise<void>
   createSession: (title: string, projectId?: string | null) => Promise<Session | null>
-  /** Branches a conversation at its latest completed turn and selects the copy. */
-  forkSession: (sessionId: string) => Promise<void>
+  /** Branches a conversation and selects the copy. */
+  forkSession: (sessionId: string, atSeq?: number) => Promise<void>
   startDraft: (input: { sectionId: string | null; projectId?: string | null }) => void
   clearDraft: () => void
   deleteSession: (id: string) => Promise<void>
@@ -258,9 +258,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     return created
   },
 
-  async forkSession(sessionId) {
+  async forkSession(sessionId, atSeq) {
     await guard(set, async () => {
-      const created = await window.pictor.forkSession(sessionId)
+      const created = await window.pictor.forkSession(sessionId, atSeq)
       set({ selectedSessionId: created })
       await get().refresh()
     })

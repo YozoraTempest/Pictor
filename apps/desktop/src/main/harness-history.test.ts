@@ -31,6 +31,12 @@ describe('projectHarnessEvents', () => {
     ])
   })
 
+  it('keeps the event sequence so a row can be a fork point', () => {
+    const messages = projectHarnessEvents([userMessage('m1', 'ping'), assistantMessage('pong')])
+
+    expect(messages.map((message) => message.seq)).toEqual([1, 2])
+  })
+
   it('shows one row per tool call, filled in by its result', () => {
     const messages = projectHarnessEvents([
       userMessage('m1', 'read the file'),

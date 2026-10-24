@@ -18,6 +18,11 @@ function textOf(content: unknown): string {
     .join('')
 }
 
+/** A row's own event sequence, when the wire carried one. */
+function seqOf(event: SessionEvent): { seq?: number } {
+  return typeof event.seq === 'number' ? { seq: event.seq } : {}
+}
+
 function messageContent(data: Record<string, unknown>): unknown {
   return (data['message'] as { content?: unknown } | null)?.content ?? data['content']
 }
@@ -49,14 +54,14 @@ export function projectHarnessEvents(events: readonly unknown[]): ChatMessage[] 
         const text = textOf(data['content'] ?? messageContent(data))
         if (text.length === 0) continue
         seen.add(id)
-        messages.push({ id, role: 'user', text, timestamp })
+        messages.push({ id, role: 'user', text, timestamp, ...seqOf(event) })
         break
       }
 
       case 'assistant/message': {
         const text = textOf(messageContent(data))
         if (text.length === 0) continue
-        messages.push({ id, role: 'assistant', text, timestamp })
+        messages.push({ id, role: 'assistant', text, timestamp, ...seqOf(event) })
         break
       }
 
@@ -69,6 +74,7 @@ export function projectHarnessEvents(events: readonly unknown[]): ChatMessage[] 
           role: 'tool',
           text: '',
           timestamp,
+          ...seqOf(event),
           toolName: String(data['name'] ?? data['tool'] ?? 'tool'),
           input: data['arguments'] ?? data['input'] ?? null,
         })
@@ -89,6 +95,7 @@ export function projectHarnessEvents(events: readonly unknown[]): ChatMessage[] 
             role: 'tool',
             text,
             timestamp,
+            ...seqOf(event),
             toolName: String(data['name'] ?? data['tool'] ?? 'tool'),
             isError,
           })

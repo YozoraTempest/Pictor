@@ -4,7 +4,7 @@ import type { ChatMessage } from '@pictor/shared'
 export type TurnPart =
   /** Reasoning and tool calls, in the order they happened. */
   | { kind: 'activity'; id: string; messages: ChatMessage[] }
-  | { kind: 'text'; id: string; text: string }
+  | { kind: 'text'; id: string; text: string; seq?: number }
 
 export interface Turn {
   id: string
@@ -13,6 +13,15 @@ export interface Turn {
   parts: TurnPart[]
   startedAt: number | null
   finishedAt: number | null
+  /** Boundary a fork after this turn keeps: the last event that belonged to it. */
+  endSeq: number | null
+  /**
+   * Boundary a fork *before* this turn keeps: where the previous turn ended.
+   *
+   * The runtime copies whole turns, so branching at a question means branching at
+   * the turn before it; the copy then ends there and the question can be re-asked.
+   */
+  beforeSeq: number | null
   /** Prompt text, shown by the timeline rail. */
   prompt: string
   /** Answer text without reasoning or tool output, shown as the rail summary. */
@@ -32,6 +41,8 @@ export function buildTurns(messages: readonly ChatMessage[]): Turn[] {
         parts: [],
         startedAt: message.timestamp,
         finishedAt: null,
+        endSeq: message.seq ?? null,
+        beforeSeq: turns.at(-1)?.endSeq ?? null,
         prompt: message.text,
         answer: '',
       }
@@ -48,6 +59,8 @@ export function buildTurns(messages: readonly ChatMessage[]): Turn[] {
         parts: [],
         startedAt: message.timestamp,
         finishedAt: null,
+        endSeq: null,
+        beforeSeq: null,
         prompt: '',
         answer: '',
       }
@@ -62,6 +75,8 @@ export function buildTurns(messages: readonly ChatMessage[]): Turn[] {
 }
 
 function appendPart(turn: Turn, message: ChatMessage): void {
+  if (typeof message.seq === 'number') turn.endSeq = message.seq
+
   // Reasoning belongs to the work the agent did, not to a block of its own: it
   // joins the same list as the tool calls, so one group holds the whole trail
   // and the transcript stays a short column instead of a stack of boxes.
@@ -78,8 +93,16 @@ function appendPart(turn: Turn, message: ChatMessage): void {
   const last = turn.parts.at(-1)
   if (last?.kind === 'text') {
     last.text += message.text
+    // The merged block ends where its newest row ends, which is the boundary a
+    // fork after that block keeps.
+    if (typeof message.seq === 'number') last.seq = message.seq
   } else {
-    turn.parts.push({ kind: 'text', id: `text-${message.id}`, text: message.text })
+    turn.parts.push({
+      kind: 'text',
+      id: `text-${message.id}`,
+      text: message.text,
+      ...(typeof message.seq === 'number' ? { seq: message.seq } : {}),
+    })
   }
   turn.answer += message.text
 }

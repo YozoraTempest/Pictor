@@ -27,6 +27,26 @@ describe('buildTurns', () => {
     expect(turns[1]).toMatchObject({ prompt: '第二个问题', answer: '第二个回答' })
   })
 
+  it('carries the event boundary of each block, for branching from it', () => {
+    const turns = buildTurns([
+      msg({ id: 'u1', role: 'user', text: '问', timestamp: 100, seq: 4 }),
+      msg({ id: 'a1', role: 'assistant', text: '答', timestamp: 200, seq: 7 }),
+    ])
+
+    expect(turns[0]?.user?.seq).toBe(4)
+    expect(turns[0]?.parts[0]).toMatchObject({ kind: 'text', text: '答', seq: 7 })
+    expect(turns[0]?.endSeq).toBe(7)
+    // Nothing precedes the first turn, so only the second one can branch before it.
+    expect(turns[0]?.beforeSeq).toBeNull()
+    expect(
+      buildTurns([
+        msg({ id: 'u1', role: 'user', text: '问一', seq: 4 }),
+        msg({ id: 'a1', role: 'assistant', text: '答一', seq: 7 }),
+        msg({ id: 'u2', role: 'user', text: '问二', seq: 9 }),
+      ])[1]?.beforeSeq,
+    ).toBe(7)
+  })
+
   it('keeps reasoning inside the activity group and out of the answer', () => {
     const turns = buildTurns([
       msg({ id: 'u1', role: 'user', text: '问题' }),

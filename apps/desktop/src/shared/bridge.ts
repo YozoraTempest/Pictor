@@ -197,8 +197,13 @@ export interface PictorBridge {
   openChat(sessionId: string): Promise<OpenChatResult>
   sendChat(sessionId: string, prompt: string, images?: ChatImage[]): Promise<void>
   stopChat(sessionId: string): Promise<void>
-  /** Branches one conversation at its latest completed turn; returns the new id. */
-  forkSession(sessionId: string): Promise<string>
+  /**
+   * Branches a conversation; returns the new session id.
+   *
+   * `atSeq` is an inclusive event boundary — one message's `seq` — and omitting
+   * it copies the latest completed turn.
+   */
+  forkSession(sessionId: string, atSeq?: number): Promise<string>
   chatHistory(path: string, limit: number, offset: number): Promise<ChatHistoryPage>
   onChatEvent(listener: (event: ChatEvent) => void): () => void
   /** Fires whenever the runtime starts, stops or fails; a transcript may be stale. */

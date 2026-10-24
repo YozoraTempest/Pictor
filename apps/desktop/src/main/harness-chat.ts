@@ -171,7 +171,16 @@ export class HarnessChatBridge {
         const runId = `t${String(data['turn'] ?? 0)}`
         this.#runs.set(sessionId, runId)
         this.#streamed.delete(runId)
-        return [{ type: 'run.started', sessionId, runId }]
+        // `turn/start` sits right after the prompt, so its sequence is what a
+        // fork from the user's question keeps.
+        return [
+          {
+            type: 'run.started',
+            sessionId,
+            runId,
+            ...(typeof event.seq === 'number' ? { seq: event.seq } : {}),
+          },
+        ]
       }
 
       case 'assistant/message': {
@@ -259,6 +268,8 @@ export class HarnessChatBridge {
             runId,
             reason: finishReason(data['reason']),
             ...(detail === undefined ? {} : { message: detail }),
+            // `turn/end` closes the turn: a fork after this answer keeps it.
+            ...(typeof event.seq === 'number' ? { seq: event.seq } : {}),
           },
         ]
       }

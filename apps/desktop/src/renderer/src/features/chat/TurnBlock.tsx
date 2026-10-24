@@ -1,6 +1,7 @@
-import { Sparkles } from 'lucide-react'
+import { GitBranch, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { IconButton } from '../../components/ui/index.js'
 import { formatClock, formatDuration, phaseLabel, type AgentPhase } from '../../lib/format-time.js'
 import { Markdown } from './Markdown.js'
 import { ActivityGroup } from './ActivityGroup.js'
@@ -13,6 +14,8 @@ export interface TurnBlockProps {
   live: boolean
   phase: AgentPhase
   currentTool: string | null
+  /** Branch the conversation at one message, keeping it; absent when unsupported. */
+  onFork?: (seq: number) => void
 }
 
 /**
@@ -21,14 +24,23 @@ export interface TurnBlockProps {
  * Reasoning, tool calls and the answer share a single agent block so the reply
  * reads as one piece of work rather than a pile of unrelated rows.
  */
-export function TurnBlock({ turn, live, phase, currentTool }: TurnBlockProps): React.JSX.Element {
+export function TurnBlock({
+  turn,
+  live,
+  phase,
+  currentTool,
+  onFork,
+}: TurnBlockProps): React.JSX.Element {
   const startedAt = turn.startedAt ?? turn.finishedAt
   const finishedAt = live ? null : turn.finishedAt
 
   return (
     <section id={turn.id} className="flex scroll-mt-4 flex-col gap-3">
       {turn.user !== null && (
-        <div className="group flex justify-end">
+        <div className="group flex items-center justify-end gap-1">
+          {onFork !== undefined && turn.beforeSeq !== null && (
+            <ForkButton seq={turn.beforeSeq} label="在这一问之前分叉" onFork={onFork} />
+          )}
           <div className="flex max-w-2xl flex-col items-end gap-1">
             <div className="selectable flex flex-col gap-2 rounded-lg rounded-br-sm border border-border bg-surface-raised px-3.5 py-2 text-sm whitespace-pre-wrap">
               {turn.user.images !== undefined && turn.user.images.length > 0 && (
@@ -71,8 +83,13 @@ export function TurnBlock({ turn, live, phase, currentTool }: TurnBlockProps): R
               return <ActivityGroup key={part.id} messages={part.messages} running={live} />
             }
             return (
-              <div key={part.id} className="selectable text-sm leading-relaxed">
+              <div key={part.id} className="group/part selectable text-sm leading-relaxed">
                 <Markdown text={part.text} />
+                {onFork !== undefined && part.seq !== undefined && (
+                  <div className="mt-1 flex justify-end">
+                    <ForkButton seq={part.seq} label="从这条回答分叉" onFork={onFork} />
+                  </div>
+                )}
               </div>
             )
           })}
@@ -81,6 +98,35 @@ export function TurnBlock({ turn, live, phase, currentTool }: TurnBlockProps): R
         </div>
       </div>
     </section>
+  )
+}
+
+/**
+ * Branch from one message.
+ *
+ * Only rows that carry an event boundary can be a fork point, which is why the
+ * button is rendered by the parent rather than always.
+ */
+function ForkButton({
+  seq,
+  label,
+  onFork,
+}: {
+  seq: number
+  /** Two rows in one turn can both fork, so each says which one it branches. */
+  label: string
+  onFork: (seq: number) => void
+}): React.JSX.Element {
+  return (
+    <span className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within/part:opacity-100">
+      <IconButton
+        label={label}
+        className="size-6 text-faint hover:text-text"
+        onClick={() => onFork(seq)}
+      >
+        <GitBranch className="size-3" />
+      </IconButton>
+    </span>
   )
 }
 

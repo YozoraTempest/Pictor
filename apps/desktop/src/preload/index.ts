@@ -91,7 +91,7 @@ const bridge: PictorBridge = {
   openChat: (sessionId) => invoke('pictor:chat.open', sessionId),
   sendChat: (sessionId, prompt, images) => invoke('pictor:chat.send', sessionId, prompt, images),
   stopChat: (sessionId) => invoke('pictor:chat.stop', sessionId),
-  forkSession: (sessionId) => invoke('pictor:session.fork', sessionId),
+  forkSession: (sessionId, atSeq) => invoke('pictor:session.fork', sessionId, atSeq),
   chatHistory: (path, limit, offset) => invoke('pictor:chat.history', path, limit, offset),
   onChatEvent: (listener) => {
     const handler = (_event: unknown, payload: unknown): void => {

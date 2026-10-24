@@ -14,8 +14,9 @@ describe('HarnessChatBridge', () => {
   it('opens a run on turn/start and names it after the turn', () => {
     const bridge = new HarnessChatBridge()
 
+    // The sequence is the fork boundary a question can be branched from.
     expect(bridge.map(sessionEvent('turn/start', { turn: 3 }))).toEqual([
-      { type: 'run.started', sessionId: 's1', runId: 't3' },
+      { type: 'run.started', sessionId: 's1', runId: 't3', seq: 1 },
     ])
   })
 
@@ -81,7 +82,7 @@ describe('HarnessChatBridge', () => {
 
     expect(
       bridge.map(sessionEvent('turn/end', { turn: 4, reason: { kind: 'completed' } })),
-    ).toEqual([{ type: 'run.finished', sessionId: 's1', runId: 't4', reason: 'stop' }])
+    ).toEqual([{ type: 'run.finished', sessionId: 's1', runId: 't4', reason: 'stop', seq: 1 }])
 
     // A later message outside a turn falls back to the neutral run id.
     expect(
@@ -258,7 +259,7 @@ describe('follow stream', () => {
           event: { type: 'turn/start', seq: 1, time: 0, data: { turn: 4 } },
         }),
       ),
-    ).toEqual([{ type: 'run.started', sessionId: 's1', runId: 't4' }])
+    ).toEqual([{ type: 'run.started', sessionId: 's1', runId: 't4', seq: 1 }])
   })
   describe('tools', () => {
     const call = (name: string, callId: string, args: unknown) =>
@@ -322,7 +323,7 @@ describe('follow stream', () => {
 
     expect(
       bridge.map(sessionEvent('turn/end', { turn: 1, reason: { kind: 'interrupted' } })),
-    ).toEqual([{ type: 'run.finished', sessionId: 's1', runId: 't1', reason: 'cancelled' }])
+    ).toEqual([{ type: 'run.finished', sessionId: 's1', runId: 't1', reason: 'cancelled', seq: 1 }])
   })
 
   it('carries the failure message a failed turn reports', () => {
@@ -349,6 +350,7 @@ describe('follow stream', () => {
         runId: 't1',
         reason: 'error',
         message: 'DeepSeek Messages SSE event type mismatch',
+        seq: 1,
       },
     ])
   })

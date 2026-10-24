@@ -15,6 +15,8 @@ export interface TranscriptProps {
   hasMore: boolean
   loading: boolean
   onLoadOlder: () => void
+  /** Branch the conversation at one message; threaded down to each row. */
+  onFork?: (seq: number) => void
   /** Width of the conversation panel; the scroller spans the whole column. */
   panelWidth: number
   /** Exposed so the resizer can sit exactly on the panel's edge. */
@@ -52,6 +54,7 @@ export function Transcript({
   hasMore,
   loading,
   onLoadOlder,
+  onFork,
   panelWidth,
   panelRef,
   animateWidth = false,
@@ -261,6 +264,7 @@ export function Transcript({
                         live={running && index === turns.length - 1}
                         phase={phase}
                         currentTool={currentTool}
+                        {...(onFork === undefined ? {} : { onFork })}
                       />
                     ))}
                   </div>

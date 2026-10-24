@@ -6,6 +6,14 @@ export interface ChatMessage {
   role: ChatRole
   text: string
   timestamp: number | null
+  /**
+   * Event boundary a fork from this row keeps (`session/fork` atSeq).
+   *
+   * A row read from history carries its own event's sequence; a row the window
+   * streamed carries the boundary the runtime reported for its turn. Absent means
+   * the row is not a place to branch from.
+   */
+  seq?: number
   toolName?: string
   isError?: boolean
   /** True when a tool guard denied the call; the text holds the reason. */
@@ -44,7 +52,7 @@ export interface ChatHistoryPage {
 
 /** Events forwarded from the main process to the renderer. */
 export type ChatEvent =
-  | { type: 'run.started'; sessionId: string; runId: string }
+  | { type: 'run.started'; sessionId: string; runId: string; seq?: number }
   | { type: 'message.delta'; sessionId: string; runId: string; text: string }
   | { type: 'thinking.delta'; sessionId: string; runId: string; text: string }
   | { type: 'tool.started'; sessionId: string; runId: string; tool: string; input: unknown }
@@ -71,6 +79,8 @@ export type ChatEvent =
       runId: string
       reason: 'stop' | 'cancelled' | 'error'
       message?: string
+      /** Sequence of `turn/end`: the boundary a fork after this turn keeps. */
+      seq?: number
     }
   | {
       /** The runtime is re-running a failed model step inside the same turn. */

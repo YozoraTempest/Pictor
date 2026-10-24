@@ -834,15 +834,16 @@ function registerIpc(workspace: Workspace): void {
    * The runtime owns the copy, so the new conversation is created here and then
    * pointed at the runtime's child id; opening it reads the inherited history.
    */
-  ipcMain.handle('pictor:session.fork', async (_event, sessionId: unknown) => {
+  ipcMain.handle('pictor:session.fork', async (_event, sessionId: unknown, atSeq: unknown) => {
     if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    if (atSeq !== undefined && typeof atSeq !== 'number') throw new Error('atSeq must be a number')
     if (workspace.harness.status().state !== 'ready') throw new Error('先启动 agent 运行时')
 
     const sessions = await workspace.client.listSessions()
     const source = sessions.find((entry) => entry.id === sessionId)
     if (source === undefined) throw new Error('session not found')
 
-    const child = await workspace.harness.fork(sessionId)
+    const child = await workspace.harness.fork(sessionId, atSeq)
     // The parent is recorded here, not in the runtime: only Pictor knows which
     // conversations belong to the same family.
     const created = await workspace.client.createSession(

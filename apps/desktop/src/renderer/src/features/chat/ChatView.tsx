@@ -33,6 +33,7 @@ export function ChatView(): React.JSX.Element {
   const approval = useApprovalStore((state) => state.pending)
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const clearDraft = useWorkspaceStore((state) => state.clearDraft)
+  const forkSession = useWorkspaceStore((state) => state.forkSession)
   const setDraftProject = useWorkspaceStore((state) => state.setDraftProject)
   const messages = useChatStore((state) => state.current.messages)
   const running = useChatStore((state) => state.current.running)
@@ -297,6 +298,9 @@ export function ChatView(): React.JSX.Element {
               {...(runtimeEmptyState === undefined ? {} : { emptyState: runtimeEmptyState })}
               loading={loading}
               onLoadOlder={() => void loadOlder()}
+              onFork={(seq) => {
+                if (selectedSessionId !== null) void forkSession(selectedSessionId, seq)
+              }}
               panelWidth={panelWidth}
               panelRef={attachPanel}
               animateWidth={!resizing}

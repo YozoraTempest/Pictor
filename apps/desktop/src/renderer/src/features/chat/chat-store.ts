@@ -91,6 +91,32 @@ function findLastToolRow(messages: readonly ChatMessage[], tool: string): number
   return -1
 }
 
+/**
+ * Newest question that has no boundary yet.
+ *
+ * One prompt produces exactly one `turn/start`, so the oldest unanswered question
+ * is the one that boundary belongs to; without this the menu could never branch
+ * from something the user just typed.
+ */
+function lastUnsequencedUserRow(messages: readonly ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'user' && message.seq === undefined) return index
+  }
+
+  return -1
+}
+
+/** Newest answered row of a turn; the boundary a fork after it would keep. */
+function lastAnswerRow(messages: readonly ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'assistant' && message.kind !== 'thinking') return index
+  }
+
+  return -1
+}
+
 /** Guards a slow history load against a newer one for the same conversation. */
 const loadTokens = new Map<string, number>()
 
@@ -238,7 +264,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       const sessionId = event.sessionId
 
       if (event.type === 'run.started') {
-        patch(sessionId, () => ({
+        patch(sessionId, (state) => ({
           running: true,
           error: null,
           phase: 'connecting',
@@ -246,6 +272,17 @@ export const useChatStore = create<ChatState>()((set, get) => {
           runFinishedAt: null,
           currentTool: null,
           retry: null,
+          // The prompt row was appended here, without a sequence; the turn opens
+          // right after it, so that boundary is what a fork from the question
+          // keeps. Only the newest unanswered row can claim it.
+          messages:
+            event.seq === undefined
+              ? state.messages
+              : state.messages.map((message, index) =>
+                  index === lastUnsequencedUserRow(state.messages)
+                    ? { ...message, seq: event.seq }
+                    : message,
+                ),
         }))
         return
       }
@@ -427,18 +464,25 @@ export const useChatStore = create<ChatState>()((set, get) => {
 
       // The run is over: any tool row still waiting for a result would spin
       // forever, so close it with an explicit outcome.
-      patch(sessionId, (state) => ({
-        running: false,
-        phase: 'idle',
-        currentTool: null,
-        runFinishedAt: Date.now(),
-        ...(event.reason === 'error' ? { error: event.message ?? 'run failed' } : {}),
-        messages: state.messages.map((message) =>
+      patch(sessionId, (state) => {
+        const messages = state.messages.map((message) =>
           message.role === 'tool' && message.text === ''
             ? { ...message, text: '运行结束时没有拿到结果', isError: true }
             : message,
-        ),
-      }))
+        )
+        const answer = lastAnswerRow(messages)
+        if (event.seq !== undefined && answer >= 0) {
+          messages[answer] = { ...messages[answer]!, seq: event.seq }
+        }
+        return {
+          running: false,
+          phase: 'idle',
+          currentTool: null,
+          runFinishedAt: Date.now(),
+          ...(event.reason === 'error' ? { error: event.message ?? 'run failed' } : {}),
+          messages,
+        }
+      })
     },
   }
 })
