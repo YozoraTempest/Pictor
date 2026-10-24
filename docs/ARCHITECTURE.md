@@ -140,6 +140,11 @@ speaks:
   process reads it, and the bridge exposes `hasApiKey` instead of the value.
 - The runtime receives its key in `PICTOR_LLM_API_KEY` at boot and resolves it per
   request, so the secret never lands in the profile patch.
+- The runtime reads its route, model, key and sandbox mode once, at boot, so a
+  saved change restarts it (`HarnessService.applySettings`) instead of waiting for
+  someone to press a button. A fingerprint of those four values decides whether a
+  restart is needed at all, and a turn that is already streaming is never cut: the
+  change waits for `turn/end` and lands before the next message.
 - cc-switch access is read-only and implemented in Rust (`ccswitch.scan` /
   `ccswitch.read`); the scan response never contains a key.
 
