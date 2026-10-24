@@ -104,10 +104,15 @@ export default {
       // The shortcuts page has no search box; the full list is one level deeper,
       // which is where a reader who knows what they want goes.
       await picker.getByRole('button', { name: '所有模型' }).click({ timeout: 10_000 })
-      await picker.getByLabel('搜索模型').fill('stub-model')
-      // Both services offer `stub-model`; the row names the service it belongs to.
+      // Both services offer `stub-model`, and the rows no longer repeat the service
+      // name — the group heading says it. Searching by service is still the way to
+      // narrow to one of them.
+      await picker.getByLabel('搜索模型').fill('e2e A')
       const beforePicker = b.requests.length
-      await picker.getByRole('button', { name: /e2e A/ }).first().click({ timeout: 15_000 })
+      await picker
+        .getByRole('button', { name: /stub-model/ })
+        .first()
+        .click({ timeout: 15_000 })
 
       // Choosing restarts the runtime on the new service; a message sent mid-boot
       // would be refused, so wait for it like the window does.

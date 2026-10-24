@@ -143,8 +143,11 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
 
     const rect = trigger.getBoundingClientRect()
     const width = Math.max(rect.width, MIN_WIDTH)
+    // The trigger sits at the right end of the composer row, so the panel grows
+    // leftwards from that edge: matching the two right edges keeps the popover
+    // under the control it belongs to instead of hanging off to one side.
     const left = Math.min(
-      Math.max(VIEWPORT_MARGIN, rect.left),
+      Math.max(VIEWPORT_MARGIN, rect.right - width),
       window.innerWidth - width - VIEWPORT_MARGIN,
     )
     setPosition({ left, bottom: window.innerHeight - rect.top + OFFSET, width })
@@ -269,7 +272,14 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
     }
   }
 
-  function renderRow(choice: Choice): React.JSX.Element {
+  /**
+   * One model row.
+   *
+   * The two pages carry different supporting facts: the shortcuts page spans every
+   * service at once, so it names the service; the full list is already grouped by
+   * service, so it spends the space on what the model can do instead.
+   */
+  function renderRow(choice: Choice, detail: 'service' | 'capabilities'): React.JSX.Element {
     const capabilities = capabilitiesOf(choice.model)
     const current = choice.providerId === activeId && choice.model.id === active
     return (
@@ -283,15 +293,20 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
           <span className="block truncate">{modelLabel(choice.model)}</span>
           <span className="block truncate text-2xs text-faint">{choice.model.id}</span>
         </span>
-        {capabilities.image && (
-          <ImageIcon className="size-3 shrink-0 text-faint" aria-label="支持图片" />
+        {detail === 'capabilities' ? (
+          <>
+            {capabilities.image && (
+              <ImageIcon className="size-3 shrink-0 text-faint" aria-label="支持图片" />
+            )}
+            {capabilities.reasoning && (
+              <Sparkles className="size-3 shrink-0 text-faint" aria-label="支持推理" />
+            )}
+          </>
+        ) : (
+          <span className="max-w-24 shrink-0 truncate text-2xs text-faint">
+            {choice.providerName}
+          </span>
         )}
-        {capabilities.reasoning && (
-          <Sparkles className="size-3 shrink-0 text-faint" aria-label="支持推理" />
-        )}
-        <span className="max-w-24 shrink-0 truncate text-2xs text-faint">
-          {choice.providerName}
-        </span>
         {current && <Check className="size-3.5 shrink-0 text-accent" aria-hidden />}
       </button>
     )
@@ -373,7 +388,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
                   {groups.map((group) => (
                     <div key={group.name}>
                       <p className="px-2 pt-1 pb-0.5 text-2xs text-faint">{group.name}</p>
-                      {group.items.map(renderRow)}
+                      {group.items.map((choice) => renderRow(choice, 'capabilities'))}
                     </div>
                   ))}
 
@@ -392,7 +407,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
                   {recentChoices.length > 0 ? (
                     <>
                       <p className="px-2 pt-1 pb-0.5 text-2xs text-faint">最近使用</p>
-                      {recentChoices.map(renderRow)}
+                      {recentChoices.map((choice) => renderRow(choice, 'service'))}
                     </>
                   ) : (
                     <p className="px-2 py-3 text-xs text-faint">还没有用过的模型</p>
