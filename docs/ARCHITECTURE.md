@@ -155,6 +155,10 @@ speaks:
   a namespace kept from the first layout.
 - `auth.json` holds keys per service with `0600` permissions; only the main
   process reads it, and the bridge exposes `hasApiKey` instead of the value.
+- Keys are stored per service, so several services can be configured at once.
+  Choosing a model in the composer is a (service, model) pair — `useModel` writes
+  both in one go, so a switch restarts the runtime once on the service that was
+  picked rather than twice with the previous model in between.
 - The runtime receives its key in `PICTOR_LLM_API_KEY` at boot and resolves it per
   request, so the secret never lands in the profile patch.
 - The runtime reads its route, model, key and sandbox mode once, at boot, so a
