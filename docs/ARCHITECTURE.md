@@ -161,6 +161,11 @@ speaks:
   picked rather than twice with the previous model in between.
 - The runtime receives its key in `PICTOR_LLM_API_KEY` at boot and resolves it per
   request, so the secret never lands in the profile patch.
+- The app pins one runtime version (`RUNTIME_PACKAGE`). `HarnessStatus` reports the
+  version the launcher on disk declares next to the pinned one, and the runtime page
+  says which of the two it is looking at: `unknown` when the launcher is a hand-
+  pointed checkout without a readable manifest, so nobody is nagged about a version
+  they chose themselves.
 - The runtime reads its route, model, key and sandbox mode once, at boot, so a
   saved change restarts it (`HarnessService.applySettings`) instead of waiting for
   someone to press a button. A fingerprint of those four values decides whether a

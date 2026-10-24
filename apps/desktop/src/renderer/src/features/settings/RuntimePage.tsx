@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 
 import type { HarnessStatus, PermissionMode } from '../../../../shared/bridge.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
+import { versionStateOf } from '../../../../main/runtime-version.js'
 import { Badge, Banner, Button, Spinner } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { Section } from './Section.js'
@@ -84,6 +85,8 @@ export function RuntimePage(): React.JSX.Element {
   useEffect(() => window.pictor.onHarnessInstall(setInstallLine), [])
 
   const ready = status?.state === 'ready'
+  const version =
+    status === null ? 'unknown' : versionStateOf(status.expectedVersion, status.version)
 
   return (
     <Section
@@ -157,6 +160,35 @@ export function RuntimePage(): React.JSX.Element {
           <Badge tone={status === null ? 'neutral' : STATE_TONE[status.state]}>
             {status === null ? '读取中' : STATE_LABEL[status.state]}
           </Badge>
+        }
+      />
+
+      <SettingRow
+        title="版本"
+        description={
+          version === 'mismatch'
+            ? '本机的运行时与这一版 Pictor 内置的不是同一版；重装会改写它。'
+            : '内置的那一版，安装时按它拉取。'
+        }
+        control={
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-2xs text-muted">{status?.version ?? '未安装'}</span>
+            {version === 'mismatch' && (
+              <>
+                <span className="text-2xs text-faint">期望 {status?.expectedVersion ?? '?'}</span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void run(() => window.pictor.installHarness())}
+                >
+                  {busy ? <Spinner className="size-3.5" /> : <Download className="size-3.5" />}
+                  重新安装
+                </Button>
+              </>
+            )}
+            {version === 'match' && <Badge tone="success">与内置一致</Badge>}
+          </div>
         }
       />
 

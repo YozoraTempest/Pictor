@@ -84,6 +84,10 @@ export interface HarnessStatus {
   state: 'stopped' | 'starting' | 'ready' | 'error'
   /** Launcher path, or null when no runtime is installed. */
   binary: string | null
+  /** Version the launcher on this machine reports, or null when unreadable. */
+  version: string | null
+  /** Version this build pins; a difference is what "stale" means. */
+  expectedVersion: string | null
   /** Runtime home: profiles, session logs and storages live here. */
   home: string
   provider: string | null

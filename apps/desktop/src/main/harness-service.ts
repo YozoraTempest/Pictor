@@ -30,12 +30,17 @@ import {
   GUARD_PLUGIN_SOURCE,
 } from './harness-guard-plugin.js'
 import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
+import { pinnedVersionOf } from './runtime-version.js'
 import type { ModelService } from './model-service.js'
 
 export interface HarnessStatus {
   state: 'stopped' | 'starting' | 'ready' | 'error'
   /** Launcher the app would run, or null when no runtime is installed. */
   binary: string | null
+  /** Version the launcher on this machine reports, or null when unreadable. */
+  version: string | null
+  /** Version this build pins; a difference is what "stale" means. */
+  expectedVersion: string | null
   /** Isolated runtime home: profiles, sessions and storages live here. */
   home: string
   provider: string | null
@@ -195,6 +200,8 @@ export class HarnessService {
     this.#status = {
       state: 'stopped',
       binary,
+      version: binary === null ? null : this.#readVersion(binary),
+      expectedVersion: pinnedVersionOf(RUNTIME_PACKAGE),
       home: join(options.userData, 'harness'),
       provider: null,
       model: null,
@@ -206,6 +213,17 @@ export class HarnessService {
 
   status(): HarnessStatus {
     return { ...this.#status }
+  }
+
+  /**
+   * Version of the launcher at this path, or null when there is nothing to read.
+   *
+   * `#runtimeVersion` answers `unknown` for a checkout without a manifest; that is
+   * "cannot compare", not "wrong", so it becomes null here.
+   */
+  #readVersion(binary: string): string | null {
+    const version = this.#runtimeVersion(binary)
+    return version === 'unknown' ? null : version
   }
 
   /** Record the configured mode before a read, so status reflects the setting. */
@@ -255,6 +273,8 @@ export class HarnessService {
       permissionMode,
       provider: ROUTE,
       model: settings.modelId,
+      // Re-read: the launcher on disk is what is about to run.
+      version: this.#readVersion(binary),
       error: null,
     }
 
@@ -600,6 +620,7 @@ export class HarnessService {
       ...this.#status,
       state: 'stopped',
       binary,
+      version: binary === null ? null : this.#readVersion(binary),
       error: code === 0 && binary !== null ? null : tail.length > 0 ? tail : '安装失败',
     }
     return this.status()
