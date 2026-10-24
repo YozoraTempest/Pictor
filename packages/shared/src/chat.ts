@@ -116,3 +116,45 @@ export interface ApprovalRequest {
   /** Why approval is needed, in the runtime's words. */
   reason: string | null
 }
+
+/** One answer a model offered for a question it asked. */
+export interface ChatQuestionOption {
+  label: string
+  description?: string
+}
+
+/**
+ * One question the model asked through `ask_user_question`.
+ *
+ * The runtime holds the tool call until an answer arrives, so this is not a
+ * transcript row: it is a prompt the window has to settle, like an approval.
+ */
+export interface ChatQuestion {
+  id: string
+  question: string
+  /** Short label the model wants above the question. */
+  header?: string
+  /** Context the question is about, when the model attached any. */
+  detail?: string
+  /** Offered answers; absent when the model wants free text. */
+  options?: ChatQuestionOption[]
+  multiSelect?: boolean
+}
+
+/** A batch of questions one tool call is waiting on. */
+export interface ChatQuestionRequest {
+  eventId: string
+  questions: ChatQuestion[]
+}
+
+/**
+ * One settled answer.
+ *
+ * `selected` holds the labels of the options picked; `custom` is the text typed
+ * instead of (or beside) them. Both empty is a deliberate "no answer".
+ */
+export interface ChatAnswer {
+  id: string
+  selected: string[]
+  custom?: string
+}

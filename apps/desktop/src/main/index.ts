@@ -21,7 +21,10 @@ import {
 import {
   MODEL_EFFORTS,
   type ApprovalRequest,
+  type ChatAnswer,
   type ChatImage,
+  type ChatQuestion,
+  type ChatQuestionRequest,
   type JsonValue,
   type ModelEffort,
   type ModelProtocol,
@@ -289,6 +292,18 @@ async function startWorkspace(): Promise<Workspace | null> {
         }
       }
     }
+    if (notification.method === 'question.request') {
+      const params = (notification.params ?? {}) as { eventId?: unknown; questions?: unknown }
+      if (typeof params.eventId === 'string' && Array.isArray(params.questions)) {
+        const request: ChatQuestionRequest = {
+          eventId: params.eventId,
+          questions: params.questions as ChatQuestion[],
+        }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('pictor:harness.question', request)
+        }
+      }
+    }
     if (notification.method === 'runtime.install') {
       const line = (notification.params as { line?: unknown } | null)?.line
       if (typeof line === 'string') {
@@ -503,6 +518,37 @@ function parseEffort(value: unknown): ModelEffort | null {
   const level = MODEL_EFFORTS.find((entry) => entry === value)
   if (level === undefined) throw new Error(`不认识的推理强度：${String(value)}`)
   return level
+}
+
+/**
+ * The answers the question card sent.
+ *
+ * Shapes are checked here rather than trusted, because the renderer is the only
+ * caller but the value still crosses a process boundary: an answer with no `id`
+ * or a non-string selection would reach the runtime as a malformed batch and be
+ * refused, leaving the tool call to fail for the wrong reason.
+ */
+function parseAnswers(value: unknown): ChatAnswer[] {
+  if (!Array.isArray(value)) throw new Error('answers must be an array')
+  return value.map((entry): ChatAnswer => {
+    if (typeof entry !== 'object' || entry === null) throw new Error('invalid answer')
+    const record = entry as Record<string, unknown>
+    const id = record['id']
+    const selected = record['selected']
+    const custom = record['custom']
+    if (typeof id !== 'string' || id.length === 0) throw new Error('answer id is required')
+    if (!Array.isArray(selected) || selected.some((label) => typeof label !== 'string')) {
+      throw new Error('answer selected must be a string array')
+    }
+    if (custom !== undefined && typeof custom !== 'string') {
+      throw new Error('answer custom must be a string')
+    }
+    return {
+      id,
+      selected: selected as string[],
+      ...(typeof custom === 'string' ? { custom } : {}),
+    }
+  })
 }
 
 function registerIpc(workspace: Workspace): void {
@@ -954,6 +1000,17 @@ function registerIpc(workspace: Workspace): void {
         throw new Error('eventId is required')
       if (typeof allow !== 'boolean') throw new Error('allow must be a boolean')
       await workspace.harness.answerApproval(eventId, allow)
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:harness.questionAnswer',
+    async (_event, eventId: unknown, answers: unknown) => {
+      if (typeof eventId !== 'string' || eventId.length === 0)
+        throw new Error('eventId is required')
+      // `null` is the dismissed card; anything else has to be a list of answers.
+      const list = answers === null ? null : parseAnswers(answers)
+      await workspace.harness.answerQuestions(eventId, list)
     },
   )
 

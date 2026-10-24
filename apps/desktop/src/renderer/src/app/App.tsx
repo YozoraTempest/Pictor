@@ -4,6 +4,7 @@ import { Banner } from '../components/ui/index.js'
 import { useChatStore } from '../features/chat/chat-store.js'
 import { AppShell } from '../shell/AppShell.js'
 import { useApprovalStore } from './approval-store.js'
+import { useQuestionStore } from './question-store.js'
 import { useRuntimeStore } from './runtime-store.js'
 import { useUiStore } from './ui-store.js'
 import { findView } from './views.js'
@@ -41,6 +42,16 @@ export function App(): React.JSX.Element {
     () =>
       window.pictor.onApprovalRequest((request) => {
         useApprovalStore.getState().show(request)
+      }),
+    [],
+  )
+
+  // Same contract for the model's own questions: the tool call is held until one
+  // of these is settled, so an unanswered request is a stalled turn.
+  useEffect(
+    () =>
+      window.pictor.onQuestionRequest((request) => {
+        useQuestionStore.getState().show(request)
       }),
     [],
   )

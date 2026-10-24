@@ -86,6 +86,14 @@ export async function startStubModel(options = {}) {
           isRecord(parsed) && typeof parsed['reasoning_effort'] === 'string'
             ? parsed['reasoning_effort']
             : null,
+        // What every tool message carried, flattened: an answer the reader typed
+        // can only be proven here, where the runtime feeds it back to the model.
+        toolText: messages
+          .filter((message) => isRecord(message) && message['role'] === 'tool')
+          .map((message) =>
+            isRecord(message) && typeof message['content'] === 'string' ? message['content'] : '',
+          )
+          .join('\n'),
       })
       const system = messages
         .map((message) =>

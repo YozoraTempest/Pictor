@@ -20,10 +20,18 @@ import {
   type WebSocketLike,
 } from '@pictor/harness'
 
-import type { ChatHistoryPage, ChatImage, ModelEffort, ModelSettings } from '@pictor/shared'
+import type {
+  ChatAnswer,
+  ChatHistoryPage,
+  ChatImage,
+  ChatQuestion,
+  ModelEffort,
+  ModelSettings,
+} from '@pictor/shared'
 
 import { loadHarnessHistory } from './harness-history.js'
 import { sessionTitleOf } from './harness-title.js'
+import { answerValue, questionsOf } from './harness-questions.js'
 import {
   GUARD_PLUGIN_NAME,
   GUARD_PLUGIN_PACKAGE,
@@ -168,6 +176,8 @@ export class HarnessService {
   /** The application-wide event stream; without it, approvals go unanswered. */
   #events: EventStream | null = null
   #eventClientId: string | null = null
+  /** Questions a tool call is waiting on, by the event id the answer must quote. */
+  readonly #questions = new Map<string, ChatQuestion[]>()
   /** Pictor session id → runtime session id; persisted so restarts reattach. */
   readonly #sessions = new Map<string, string>()
   /** Live mirror of each session log: the opening window plus every later event. */
@@ -1012,18 +1022,32 @@ export class HarnessService {
         this.#eventClientId = clientId
       },
       onWaterfall: (frame) => {
-        // One request shape today; anything else is answered by nobody, as before.
-        if (frame.event !== 'approval/request') return
         const request = (frame.request ?? {}) as Record<string, unknown>
-        this.#emit({
-          method: 'approval.request',
-          params: {
-            eventId: frame.eventId,
-            agentId: frame.agentId ?? null,
-            tool: typeof request['toolName'] === 'string' ? request['toolName'] : null,
-            reason: typeof request['reason'] === 'string' ? request['reason'] : null,
-          },
-        })
+
+        if (frame.event === 'approval/request') {
+          this.#emit({
+            method: 'approval.request',
+            params: {
+              eventId: frame.eventId,
+              agentId: frame.agentId ?? null,
+              tool: typeof request['toolName'] === 'string' ? request['toolName'] : null,
+              reason: typeof request['reason'] === 'string' ? request['reason'] : null,
+            },
+          })
+          return
+        }
+
+        // The model's own question. The tool call is held until this is answered,
+        // so an event nobody listens to is a hung turn, not a missed nicety.
+        if (frame.event === 'user-questions/request') {
+          const questions = questionsOf(request)
+          if (questions.length === 0) return
+          this.#questions.set(frame.eventId, questions)
+          this.#emit({
+            method: 'question.request',
+            params: { eventId: frame.eventId, agentId: frame.agentId ?? null, questions },
+          })
+        }
       },
       onError: (error) => {
         if (this.#options.debug === true) console.warn('[harness] events', error.message)
@@ -1078,6 +1102,38 @@ export class HarnessService {
       eventId,
       // The runtime's own vocabulary: an allow covers this call only.
       outcome: { kind: 'result', value: allow ? 'allowed-once' : 'rejected' },
+    })
+  }
+
+  /**
+   * Settle the questions one tool call is waiting on.
+   *
+   * `answers` omitted means the reader dismissed the card: the runtime is told the
+   * question was refused rather than left to wait forever, which is what a closed
+   * window used to leave behind.
+   */
+  async answerQuestions(eventId: string, answers: readonly ChatAnswer[] | null): Promise<void> {
+    const remote = this.#remote
+    const clientId = this.#eventClientId
+    const questions = this.#questions.get(eventId)
+    if (remote === null || clientId === null) throw new Error('agent 运行时尚未就绪')
+    if (questions === undefined) throw new Error('这个提问已经结束了')
+
+    // Forget it first: a second click on a card that is already gone must not be
+    // able to answer the same event twice.
+    this.#questions.delete(eventId)
+
+    await remote.call('$events/result', {
+      clientId,
+      eventId,
+      outcome:
+        answers === null
+          ? {
+              kind: 'rejected',
+              // The shape the runtime restores into an Error for the tool call.
+              error: { name: 'UserQuestionError', message: '用户关闭了提问', code: 'NO_PROVIDER' },
+            }
+          : { kind: 'result', value: answerValue(questions, answers) },
     })
   }
 

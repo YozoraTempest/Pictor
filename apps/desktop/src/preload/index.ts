@@ -123,6 +123,16 @@ const bridge: PictorBridge = {
     }
   },
   answerApproval: (eventId, allow) => invoke('pictor:harness.approvalAnswer', eventId, allow),
+  onQuestionRequest: (listener) => {
+    const handler = (_event: unknown, payload: unknown): void => {
+      listener(payload as Parameters<typeof listener>[0])
+    }
+    ipcRenderer.on('pictor:harness.question', handler)
+    return () => {
+      ipcRenderer.removeListener('pictor:harness.question', handler)
+    }
+  },
+  answerQuestions: (eventId, answers) => invoke('pictor:harness.questionAnswer', eventId, answers),
   onHarnessInstall: (listener) => {
     const handler = (_event: unknown, line: unknown): void => {
       if (typeof line === 'string') listener(line)

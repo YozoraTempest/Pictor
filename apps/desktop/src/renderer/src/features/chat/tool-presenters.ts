@@ -2,8 +2,10 @@ import {
   FileDiff,
   FilePen,
   FileText,
-  FolderOpen,
   FolderSearch,
+  Globe,
+  ListChecks,
+  Presentation,
   Search,
   Terminal,
   type LucideIcon,
@@ -266,7 +268,7 @@ registerToolPresenter('grep', (message) => {
   }
 })
 
-registerToolPresenter('find', (message) => {
+registerToolPresenter('glob', (message) => {
   const args = asRecord(message.input)
   return {
     label: '查找文件',
@@ -276,12 +278,68 @@ registerToolPresenter('find', (message) => {
   }
 })
 
-registerToolPresenter('ls', (message) => {
+registerToolPresenter('str_replace_editor', (message) => {
+  const args = asRecord(message.input)
+  const command = field(args, 'command')
+  const label =
+    command === 'create'
+      ? '新建'
+      : command === 'insert'
+        ? '插入'
+        : command === 'view'
+          ? '查看'
+          : '编辑'
+  return {
+    label,
+    icon: command === 'view' ? FileText : FilePen,
+    target: baseName(pathArg(args)),
+    sections: [
+      ...(message.diff === undefined
+        ? []
+        : [{ title: '改动', body: message.diff, format: 'diff' as const }]),
+      ...(message.text.length === 0 ? [] : [{ title: '结果', body: message.text }]),
+    ],
+  }
+})
+
+registerToolPresenter('todo_write', (message) => {
+  const args = asRecord(message.input)
+  const todos = Array.isArray(args['todos']) ? args['todos'] : []
+  return {
+    label: '更新待办',
+    icon: ListChecks,
+    target: `${String(todos.length)} 项`,
+    sections: message.text.length === 0 ? [] : [{ title: '待办清单', body: message.text }],
+  }
+})
+
+registerToolPresenter('web_search', (message) => {
   const args = asRecord(message.input)
   return {
-    label: '列目录',
-    icon: FolderOpen,
-    target: baseName(pathArg(args)),
-    sections: [{ title: '目录内容', body: message.text }],
+    label: '联网搜索',
+    icon: Globe,
+    target: clip(field(args, 'query')),
+    sections: [{ title: '搜索结果', body: message.text }],
+  }
+})
+
+registerToolPresenter('web_fetch', (message) => {
+  const args = asRecord(message.input)
+  return {
+    label: '抓取网页',
+    icon: Globe,
+    target: clip(field(args, 'url')),
+    sections: [{ title: '正文', body: message.text }],
+  }
+})
+
+registerToolPresenter('present', (message) => {
+  const args = asRecord(message.input)
+  const title = field(args, 'title')
+  return {
+    label: '展示',
+    icon: Presentation,
+    target: clip(title.length > 0 ? title : field(args, 'path')),
+    sections: message.text.length === 0 ? [] : [{ title: '内容', body: message.text }],
   }
 })

@@ -1,6 +1,8 @@
 import type {
   ApprovalRequest,
+  ChatAnswer,
   ChatImage,
+  ChatQuestionRequest,
   CcSwitchProviderSummary,
   ProviderInput,
   ProviderList,
@@ -227,4 +229,8 @@ export interface PictorBridge {
   /** Fires when the runtime holds a tool call until a decision arrives. */
   onApprovalRequest(listener: (request: ApprovalRequest) => void): () => void
   answerApproval(eventId: string, allow: boolean): Promise<void>
+  /** Fires when the model asked something and the runtime is waiting on the answer. */
+  onQuestionRequest(listener: (request: ChatQuestionRequest) => void): () => void
+  /** Answer a pending question; `null` dismisses it and fails the tool call. */
+  answerQuestions(eventId: string, answers: ChatAnswer[] | null): Promise<void>
 }

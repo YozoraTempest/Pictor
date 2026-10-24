@@ -8,8 +8,10 @@ import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { formatDuration, newSessionTitle, phaseLabel } from '../../lib/format-time.js'
 import { useApprovalStore } from '../../app/approval-store.js'
+import { useQuestionStore } from '../../app/question-store.js'
 import { useRuntimeStore } from '../../app/runtime-store.js'
 import { ApprovalCard } from './ApprovalCard.js'
+import { QuestionCard } from './QuestionCard.js'
 import { useChatStore } from './chat-store.js'
 import { Composer } from './Composer.js'
 import { ProjectPicker } from './ProjectPicker.js'
@@ -31,6 +33,7 @@ export function ChatView(): React.JSX.Element {
   const setSessionSections = useWorkspaceStore((state) => state.setSessionSections)
   const draft = useWorkspaceStore((state) => state.draft)
   const approval = useApprovalStore((state) => state.pending)
+  const question = useQuestionStore((state) => state.pending)
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const clearDraft = useWorkspaceStore((state) => state.clearDraft)
   const forkSession = useWorkspaceStore((state) => state.forkSession)
@@ -308,6 +311,7 @@ export function ChatView(): React.JSX.Element {
               footer={
                 <div className="flex flex-col gap-2">
                   {approval !== null && <ApprovalCard request={approval} />}
+                  {question !== null && <QuestionCard request={question} />}
                   {status}
                   {draft !== null && (
                     <ProjectPicker projectId={draft.projectId} onChange={setDraftProject} />
