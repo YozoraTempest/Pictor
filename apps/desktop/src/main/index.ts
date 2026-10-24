@@ -399,15 +399,20 @@ function createWindow(): void {
     },
   })
 
-  mainWindow.once('ready-to-show', () => {
-    if (process.env.PICTOR_SMOKE === '1') {
-      console.info('[smoke] window ready')
+  // The smoke start exists for packaging checks: it proves the bundled sidecar
+  // spawns and the bundled renderer loads, then leaves. It waits for the document
+  // rather than `ready-to-show`, which a headless machine never paints.
+  if (process.env.PICTOR_SMOKE === '1') {
+    mainWindow.webContents.once('did-finish-load', () => {
+      console.info('[smoke] window loaded')
       // Let the renderer's first refresh settle before quitting.
       setTimeout(() => app.quit(), 400)
-      return
-    }
-    mainWindow?.show()
-  })
+    })
+  } else {
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show()
+    })
+  }
   const sendWindowState = (): void => {
     mainWindow?.webContents.send('pictor:window.state', {
       maximized: mainWindow.isMaximized(),
