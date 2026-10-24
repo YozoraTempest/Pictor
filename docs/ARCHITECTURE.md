@@ -129,7 +129,14 @@ speaks:
   before the runtime was up.
 - Tool approval is a seam, not a policy. The request arrives as an
   `approval/request` waterfall on the application event stream, and the app answers
-  it over `$events/result`; a request nobody answers settles as `unavailable`.
+  it over `$events/result`; a request nobody answers settles as `unavailable`. It is
+  only raised by an _escalation_: the sandbox denies a write outside the workspace,
+  the tool reports that a wider retry is available, and the retry that names
+  `sandbox_permissions` + `justification` becomes the question. A plain out-of-policy
+  call is simply denied, which is why the card can never appear for it.
+- Images ride beside the text as content parts and are refused by the runtime for a
+  model that did not declare image input; the app stores that capability on the
+  model entry rather than assuming it.
 - 试运行 runs one throwaway turn through the runtime (`HarnessService.probe`)
   instead of a second client, so the check a user runs proves the path a
   conversation takes. The probe session is never registered with Pictor.
