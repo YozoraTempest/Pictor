@@ -26,7 +26,13 @@ export interface ModelPickerProps {
 /** Gap between the trigger and the popover, and the least distance to the viewport. */
 const OFFSET = 6
 const VIEWPORT_MARGIN = 8
-const MIN_WIDTH = 300
+/**
+ * The panel only has to fit a model name and one short fact beside it, so it is
+ * narrower than the default popover width; a longer trigger widens it a little,
+ * and a very long model name is truncated rather than stretching the panel.
+ */
+const MIN_WIDTH = 240
+const MAX_WIDTH = 320
 
 /** Shortcuts shown in the popover, and how many picks the store keeps. */
 const RECENT_SHOWN = 2
@@ -142,7 +148,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
     if (trigger === null) return
 
     const rect = trigger.getBoundingClientRect()
-    const width = Math.max(rect.width, MIN_WIDTH)
+    const width = Math.min(Math.max(rect.width, MIN_WIDTH), MAX_WIDTH)
     // The trigger sits at the right end of the composer row, so the panel grows
     // leftwards from that edge: matching the two right edges keeps the popover
     // under the control it belongs to instead of hanging off to one side.
@@ -288,7 +294,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
         key={keyOf(choice.providerId, choice.model.id)}
         type="button"
         onClick={() => void choose(choice)}
-        className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
       >
         <span className="min-w-0 flex-1 truncate">{modelLabel(choice.model)}</span>
         {detail === 'capabilities' ? (
@@ -301,7 +307,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
             )}
           </>
         ) : (
-          <span className="max-w-24 shrink-0 truncate text-2xs text-faint">
+          <span className="max-w-20 shrink-0 truncate text-2xs text-faint">
             {choice.providerName}
           </span>
         )}
@@ -415,7 +421,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
                     type="button"
                     aria-label="所有模型"
                     onClick={() => setView('all')}
-                    className="mt-1 flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+                    className="mt-1 flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
                   >
                     <Boxes className="size-3 shrink-0 text-faint" aria-hidden />
                     <span className="flex-1">所有模型</span>
