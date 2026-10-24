@@ -94,8 +94,37 @@ export async function launch() {
         ...(dsh === null ? {} : { PICTOR_DSH_BIN: dsh }),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Its own group: the launcher spawns the real binary and cannot forward a
+      // SIGKILL, so a window would outlive the run that started it.
+      detached: true,
     },
   )
+
+  /**
+   * Stop the app and everything it spawned.
+   *
+   * `electron/cli.js` only launches the binary; killing the launcher leaves the
+   * window running, which is how a pass can leave a screen full of windows.
+   */
+  const killApp = (signal) => {
+    try {
+      process.kill(-child.pid, signal)
+    } catch {
+      // Already gone.
+    }
+  }
+
+  // A spec run that is itself killed must still take its window with it.
+  const onExit = () => {
+    killApp('SIGKILL')
+  }
+  const onSignal = () => {
+    killApp('SIGKILL')
+    process.exit(1)
+  }
+  process.once('exit', onExit)
+  process.once('SIGTERM', onSignal)
+  process.once('SIGINT', onSignal)
 
   const logs = []
   child.stdout?.setEncoding('utf8')
@@ -117,7 +146,7 @@ export async function launch() {
   }
 
   if (browser === null) {
-    child.kill('SIGKILL')
+    killApp('SIGKILL')
     throw new Error(`e2e: the app never exposed CDP\n${logs.join('').slice(-2000)}`)
   }
 
@@ -125,7 +154,7 @@ export async function launch() {
   const page = context?.pages()[0]
   if (page === undefined) {
     await browser.close()
-    child.kill('SIGKILL')
+    killApp('SIGKILL')
     throw new Error('e2e: no window to drive')
   }
 
@@ -145,8 +174,13 @@ export async function launch() {
       // kill; killing the window first would leave that child behind.
       await new Promise((r) => setTimeout(r, 3_500))
       await browser.close().catch(() => undefined)
-      child.kill('SIGKILL')
+      killApp('SIGTERM')
+      await new Promise((r) => setTimeout(r, 800))
+      killApp('SIGKILL')
       await new Promise((r) => setTimeout(r, 300))
+      process.removeListener('exit', onExit)
+      process.removeListener('SIGTERM', onSignal)
+      process.removeListener('SIGINT', onSignal)
       rmSync(profile, { recursive: true, force: true })
       rmSync(workdir, { recursive: true, force: true })
     },

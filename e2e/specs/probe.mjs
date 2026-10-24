@@ -80,11 +80,13 @@ export default {
       assert.match(refusal ?? '', /运行时/, 'the refusal names the runtime')
       assert.equal(model.requests.length, before, 'no other engine answered the message')
 
-      // The specs share one window, so this one leaves it where it found it.
+      // The specs share one window, so this one leaves it where it found it —
+      // and waits for the home view to render before handing over.
       await page
         .getByRole('navigation', { name: '主导航' })
         .getByRole('button', { name: '首页' })
         .click()
+      await page.getByRole('button', { name: '搜索会话' }).waitFor({ timeout: 15_000 })
     } finally {
       await model.close()
     }
