@@ -364,29 +364,18 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
           >
             {view === 'all' ? (
               // The full list is a page of its own: search only means something
-              // here, and the shortcuts above stay one click away.
+              // here, and the way back sits where "所有模型" sat on the page before,
+              // so the row under the pointer does the reverse of the one that led
+              // here.
               <div key="all" data-page="all" className="picker-page flex min-h-0 flex-1 flex-col">
-                <div className="mx-1 mb-1 flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    aria-label="返回最近使用"
-                    onClick={() => {
-                      setView('recent')
-                      setQuery('')
-                    }}
-                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-faint transition-colors duration-150 hover:bg-surface-hover hover:text-text"
-                  >
-                    <ChevronLeft className="size-3.5" aria-hidden />
-                  </button>
-                  <input
-                    autoFocus
-                    value={query}
-                    aria-label="搜索模型"
-                    placeholder="搜索模型"
-                    onChange={(event) => setQuery(event.target.value)}
-                    className="h-7 min-w-0 flex-1 rounded-md border border-border bg-bg px-2 text-xs text-text placeholder:text-faint focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
-                  />
-                </div>
+                <input
+                  autoFocus
+                  value={query}
+                  aria-label="搜索模型"
+                  placeholder="搜索模型"
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="mx-1 mb-1 h-7 shrink-0 rounded-md border border-border bg-bg px-2 text-xs text-text placeholder:text-faint focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
+                />
 
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   {groups.map((group) => (
@@ -400,6 +389,20 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
                     <p className="px-2 py-3 text-xs text-faint">没有匹配的模型</p>
                   )}
                 </div>
+
+                <button
+                  type="button"
+                  aria-label="返回最近使用"
+                  onClick={() => {
+                    setView('recent')
+                    setQuery('')
+                  }}
+                  className="mt-1 flex w-full shrink-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+                >
+                  <ChevronLeft className="size-3 shrink-0 text-faint" aria-hidden />
+                  <span className="flex-1">最近使用</span>
+                  <span className="shrink-0 text-2xs text-faint">{recentChoices.length}</span>
+                </button>
               </div>
             ) : (
               <div
