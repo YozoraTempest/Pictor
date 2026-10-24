@@ -43,11 +43,25 @@ function routeModels(input: ProfileSettingsInput): ModelEntry[] {
       id: input.modelId,
       name: null,
       reasoning: null,
+      efforts: null,
       input: null,
       contextWindow: null,
       maxTokens: null,
     },
   ]
+}
+
+/**
+ * The reasoning levels a model offers, as the runtime spells them.
+ *
+ * `off` is the one level that may leave its wire value empty: it means "send no
+ * reasoning parameter at all". Every other level must name the value dispatch
+ * sends, and a level left out of the dict is pinned to unsupported — so this
+ * declares exactly the levels the settings page ticked, nothing more.
+ */
+function reasoningEfforts(model: ModelEntry): Record<string, string | null> | null {
+  if (model.efforts === null || model.efforts.length === 0) return null
+  return { off: null, ...Object.fromEntries(model.efforts.map((level) => [level, level])) }
 }
 
 /**
@@ -65,14 +79,18 @@ export function buildProfilePatch(input: ProfileSettingsInput): string {
     api: input.protocol,
     baseURL: input.baseUrl,
     apiKeyEnv: ROUTE_API_KEY_ENV,
-    models: routeModels(input).map((model) => ({
-      id: model.id,
-      ...(model.name === null ? {} : { name: model.name }),
-      ...(model.reasoning === null ? {} : { reasoning: model.reasoning }),
-      ...(model.input === null ? {} : { input: model.input }),
-      ...(model.contextWindow === null ? {} : { contextWindow: model.contextWindow }),
-      ...(model.maxTokens === null ? {} : { maxTokens: model.maxTokens }),
-    })),
+    models: routeModels(input).map((model) => {
+      const efforts = reasoningEfforts(model)
+      return {
+        id: model.id,
+        ...(model.name === null ? {} : { name: model.name }),
+        ...(model.reasoning === null ? {} : { reasoning: model.reasoning }),
+        ...(efforts === null ? {} : { reasoningEfforts: efforts }),
+        ...(model.input === null ? {} : { input: model.input }),
+        ...(model.contextWindow === null ? {} : { contextWindow: model.contextWindow }),
+        ...(model.maxTokens === null ? {} : { maxTokens: model.maxTokens }),
+      }
+    }),
   }
 
   const patch: unknown[] = [

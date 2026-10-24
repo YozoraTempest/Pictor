@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import type { ModelEffort } from '@pictor/shared'
+
 import { buildProfilePatch, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
 
 type Entry = {
@@ -29,6 +31,7 @@ describe('buildProfilePatch', () => {
         id: 'demo',
         name: 'Demo',
         reasoning: true,
+        efforts: ['low', 'high'] as ModelEffort[],
         input: ['text'],
         contextWindow: 1000,
         maxTokens: 100,
@@ -65,6 +68,14 @@ describe('buildProfilePatch', () => {
     expect(routeOf(buildProfilePatch({ ...base, models: [] }))['models']).toEqual([{ id: 'demo' }])
   })
 
+  it('declares the levels the model offers and nothing else', () => {
+    const models = routeOf(buildProfilePatch(base))['models'] as Record<string, unknown>[]
+
+    // `off` may leave its wire value empty; every other level has to name what
+    // dispatch sends, and an undeclared level is pinned to unsupported.
+    expect(models[0]?.['reasoningEfforts']).toEqual({ off: null, low: 'low', high: 'high' })
+  })
+
   it('omits fields the endpoint did not describe', () => {
     const route = routeOf(
       buildProfilePatch({
@@ -74,6 +85,7 @@ describe('buildProfilePatch', () => {
             id: 'demo',
             name: null,
             reasoning: null,
+            efforts: null,
             input: null,
             contextWindow: null,
             maxTokens: null,

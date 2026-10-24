@@ -182,6 +182,7 @@ describe('provider list', () => {
             id: 'known',
             name: null,
             reasoning: null,
+            efforts: null,
             input: null,
             contextWindow: null,
             maxTokens: null,

@@ -1,5 +1,6 @@
 import type {
   JsonValue,
+  ModelEffort,
   ModelEntry,
   ModelProtocol,
   ModelProvider,
@@ -7,6 +8,7 @@ import type {
   ProviderList,
   ProviderView,
 } from '@pictor/shared'
+import { MODEL_EFFORTS } from '@pictor/shared'
 
 import { clearApiKey, readApiKey, writeApiKey } from './auth.js'
 
@@ -58,6 +60,19 @@ function parseProtocol(value: unknown): ModelProtocol {
   return 'openai-completions'
 }
 
+/**
+ * The declared reasoning levels, or `null` when the entry names none.
+ *
+ * Unknown spellings are dropped rather than passed on: a level the runtime does
+ * not know would make the whole model entry invalid, and one bad value must not
+ * cost the model.
+ */
+function parseEfforts(value: unknown): ModelEffort[] | null {
+  if (!Array.isArray(value)) return null
+  const levels = MODEL_EFFORTS.filter((level) => value.includes(level))
+  return levels.length === 0 ? null : levels
+}
+
 /** Drops anything that is not a usable model entry rather than trusting the store. */
 export function parseModels(value: unknown): ModelEntry[] {
   if (!Array.isArray(value)) return []
@@ -70,6 +85,7 @@ export function parseModels(value: unknown): ModelEntry[] {
 
     const name = record['name']
     const reasoning = record['reasoning']
+    const efforts = record['efforts']
     const input = record['input']
     const contextWindow = record['contextWindow']
     const maxTokens = record['maxTokens']
@@ -79,6 +95,7 @@ export function parseModels(value: unknown): ModelEntry[] {
         id,
         name: typeof name === 'string' && name.length > 0 ? name : null,
         reasoning: typeof reasoning === 'boolean' ? reasoning : null,
+        efforts: parseEfforts(efforts),
         input:
           Array.isArray(input) && input.every((entry) => typeof entry === 'string')
             ? (input as string[])

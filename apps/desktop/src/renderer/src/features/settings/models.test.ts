@@ -8,6 +8,7 @@ function entry(overrides: Partial<ModelEntry> & Pick<ModelEntry, 'id'>): ModelEn
   return {
     name: null,
     reasoning: null,
+    efforts: null,
     input: null,
     contextWindow: null,
     maxTokens: null,
@@ -22,6 +23,7 @@ describe('capabilitiesOf', () => {
     expect(capabilitiesOf(model)).toEqual({
       image: true,
       reasoning: true,
+      efforts: null,
       contextWindow: null,
       maxTokens: 8000,
     })
@@ -31,6 +33,7 @@ describe('capabilitiesOf', () => {
     expect(capabilitiesOf(undefined)).toEqual({
       image: false,
       reasoning: false,
+      efforts: null,
       contextWindow: null,
       maxTokens: null,
     })
@@ -52,6 +55,7 @@ describe('withCapabilities', () => {
         id: 'fresh',
         name: null,
         reasoning: null,
+        efforts: null,
         input: ['text', 'image'],
         contextWindow: 1000,
         maxTokens: null,
@@ -81,6 +85,28 @@ describe('withCapabilities', () => {
     expect(models[0]?.maxTokens).toBe(10)
     expect(models[1]?.reasoning).toBe(true)
   })
+
+  it('declares the standard levels when reasoning is switched on', () => {
+    const models = withCapabilities([entry({ id: 'm' })], 'm', { reasoning: true })
+
+    expect(models[0]?.efforts).toEqual(['low', 'medium', 'high'])
+  })
+
+  it('drops the levels when reasoning is switched off', () => {
+    const models = withCapabilities([entry({ id: 'm', reasoning: true, efforts: ['high'] })], 'm', {
+      reasoning: false,
+    })
+
+    expect(models[0]?.efforts).toBeNull()
+  })
+
+  it('keeps a level list the user narrowed', () => {
+    const models = withCapabilities([entry({ id: 'm', reasoning: true })], 'm', {
+      efforts: ['minimal', 'max'],
+    })
+
+    expect(models[0]?.efforts).toEqual(['minimal', 'max'])
+  })
 })
 
 describe('mergeModels', () => {
@@ -93,6 +119,7 @@ describe('mergeModels', () => {
         id: 'm',
         name: 'Model M',
         reasoning: null,
+        efforts: null,
         input: ['text', 'image'],
         contextWindow: 100_000,
         maxTokens: null,

@@ -14,6 +14,10 @@ pub struct CcSwitchModel {
     pub name: Option<String>,
     #[serde(default)]
     pub reasoning: Option<bool>,
+    /// Levels the model accepts; cc-switch never records them, so this is always
+    /// null on import and the settings page fills it in.
+    #[serde(default)]
+    pub efforts: Option<Vec<String>>,
     #[serde(default)]
     pub input: Option<Vec<String>>,
     #[serde(default)]

@@ -1,9 +1,18 @@
 import { Check, Loader2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 
-import type { ModelEntry, ModelProtocol, ProviderList, ProviderView } from '@pictor/shared'
+import type {
+  ModelEffort,
+  ModelEntry,
+  ModelProtocol,
+  ProviderList,
+  ProviderView,
+} from '@pictor/shared'
+import { MODEL_EFFORTS } from '@pictor/shared'
 
 import { Badge, Banner, Button, Dialog, Input, Select, Switch } from '../../components/ui/index.js'
+import { cn } from '../../lib/cn.js'
+import { effortLabel } from '../chat/effort.js'
 import { capabilitiesOf, mergeModels, withCapabilities } from './models.js'
 import { SettingRow } from './SettingRow.js'
 
@@ -77,6 +86,21 @@ export function ProviderDialog({
     patch({ models: withCapabilities(form.models, form.modelId, changes) })
   }
 
+  /**
+   * Toggle one level on or off.
+   *
+   * The last remaining level is not removable: a model that declares reasoning but
+   * offers no level would show a picker with nothing in it, and the runtime refuses
+   * that declaration outright.
+   */
+  function toggleEffort(level: ModelEffort): void {
+    const current = capabilities.efforts ?? []
+    const next = current.includes(level)
+      ? current.filter((entry) => entry !== level)
+      : [...current, level]
+    if (next.length === 0) return
+    setCapability({ efforts: MODEL_EFFORTS.filter((entry) => next.includes(entry)) })
+  }
   function limitOf(value: string): number | null {
     const parsed = Number(value.trim())
     return value.trim().length === 0 || !Number.isFinite(parsed) ? null : parsed
@@ -269,6 +293,40 @@ export function ProviderDialog({
             />
           }
         />
+
+        {/* Only meaningful once the model declares reasoning: a level offered for a
+            model that ignores the switch would be a choice that does nothing. */}
+        {capabilities.reasoning && (
+          <SettingRow
+            id="pi.modelEfforts"
+            title="推理强度"
+            description="输入框里能选的档位，最弱在前；不选就是端点的默认行为。"
+            control={
+              <div className="flex flex-wrap justify-end gap-1">
+                {MODEL_EFFORTS.map((level) => {
+                  const on = (capabilities.efforts ?? []).includes(level)
+                  return (
+                    <button
+                      key={level}
+                      type="button"
+                      aria-pressed={on}
+                      aria-label={`推理强度 ${effortLabel(level)}`}
+                      onClick={() => toggleEffort(level)}
+                      className={cn(
+                        'rounded-md border px-2 py-0.5 text-2xs transition-colors duration-150',
+                        on
+                          ? 'border-accent/40 bg-accent/10 text-accent'
+                          : 'border-border text-faint hover:border-border-strong hover:text-muted',
+                      )}
+                    >
+                      {effortLabel(level)}
+                    </button>
+                  )
+                })}
+              </div>
+            }
+          />
+        )}
 
         <SettingRow
           id="pi.modelContext"
