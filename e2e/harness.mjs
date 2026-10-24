@@ -141,6 +141,9 @@ export async function launch() {
       // The runtime is a child of the app, and killing the window would leave it
       // running for the next spec — and every later run — to trip over.
       await page.evaluate(() => window.pictor.harnessStop()).catch(() => undefined)
+      // Stopping asks the runtime to leave and gives it three seconds before the
+      // kill; killing the window first would leave that child behind.
+      await new Promise((r) => setTimeout(r, 3_500))
       await browser.close().catch(() => undefined)
       child.kill('SIGKILL')
       await new Promise((r) => setTimeout(r, 300))
