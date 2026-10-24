@@ -20,7 +20,7 @@ import {
   type WebSocketLike,
 } from '@pictor/harness'
 
-import type { ChatHistoryPage, ChatImage, ModelSettings } from '@pictor/shared'
+import type { ChatHistoryPage, ChatImage, ModelEffort, ModelSettings } from '@pictor/shared'
 
 import { loadHarnessHistory } from './harness-history.js'
 import { sessionTitleOf } from './harness-title.js'
@@ -423,12 +423,21 @@ export class HarnessService {
    * there under the same id, and the follow stream is opened before the prompt so
    * the very first token is not missed.
    */
-  async prompt(sessionId: string, text: string, images: readonly ChatImage[] = []): Promise<void> {
+  async prompt(
+    sessionId: string,
+    text: string,
+    images: readonly ChatImage[] = [],
+    effort: ModelEffort | null = null,
+  ): Promise<void> {
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
 
     const harnessId = await this.#sessionFor(sessionId)
     await this.#ensureFollow(harnessId)
+    // The level applies to the request this prompt starts, so it is pinned first:
+    // a refusal that arrived after the queue call would leave the turn answering
+    // at the provider default while the picker claimed otherwise.
+    if (effort !== null) await this.#selectEffort(remote, harnessId, effort)
     // Images ride beside the text; the runtime feeds them to a model that declared
     // image input, and rejects them for one that did not.
     const content: PromptContentPart[] = [
@@ -448,6 +457,37 @@ export class HarnessService {
         content,
       },
     })
+  }
+
+  /**
+   * Pin the reasoning level the next turn on one session runs at.
+   *
+   * The route is the authority on which levels a model takes, so a level it never
+   * declared is a stale picker value and is skipped: the user already wrote the
+   * message, and refusing it would report an error about a control they cannot see
+   * from here. A level the route does declare is pinned for real, and a refusal
+   * fails the send — answering at the provider default while the picker says "high"
+   * is worse than an error.
+   */
+  async #selectEffort(
+    remote: HarnessRemote,
+    sessionId: string,
+    effort: ModelEffort,
+  ): Promise<void> {
+    const model = this.#status.model
+    if (model === null || model.length === 0) throw new Error('还没有选定模型，无法设置推理强度')
+    const settings = await this.#options.model.settings()
+    const declared = settings.models.find((entry) => entry.id === model)?.efforts ?? []
+    if (!declared.includes(effort)) return
+    try {
+      await remote.call('session/selectModel', {
+        request: { sessionId, provider: ROUTE, model, reasoningEffort: effort },
+      })
+    } catch (error) {
+      throw new Error(
+        `内核拒绝了推理强度「${effort}」：${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
   }
 
   /** Stop the turn the runtime is running for one session. */

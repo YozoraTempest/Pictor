@@ -7,6 +7,7 @@ import type {
   ChatEvent,
   ChatHistoryPage,
   JsonValue,
+  ModelEffort,
   ModelEntry,
   ModelProtocol,
   ModelSettings,
@@ -201,7 +202,12 @@ export interface PictorBridge {
   runAgentTest(prompt: string, workingDirectory: string): Promise<AgentTestResult>
 
   openChat(sessionId: string): Promise<OpenChatResult>
-  sendChat(sessionId: string, prompt: string, images?: ChatImage[]): Promise<void>
+  sendChat(
+    sessionId: string,
+    prompt: string,
+    images?: ChatImage[],
+    effort?: ModelEffort | null,
+  ): Promise<void>
   stopChat(sessionId: string): Promise<void>
   /**
    * Branches a conversation; returns the new session id.

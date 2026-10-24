@@ -90,7 +90,8 @@ const bridge: PictorBridge = {
     invoke('pictor:model.agentTest', prompt, workingDirectory),
 
   openChat: (sessionId) => invoke('pictor:chat.open', sessionId),
-  sendChat: (sessionId, prompt, images) => invoke('pictor:chat.send', sessionId, prompt, images),
+  sendChat: (sessionId, prompt, images, effort) =>
+    invoke('pictor:chat.send', sessionId, prompt, images, effort),
   stopChat: (sessionId) => invoke('pictor:chat.stop', sessionId),
   forkSession: (sessionId, atSeq) => invoke('pictor:session.fork', sessionId, atSeq),
   chatHistory: (path, limit, offset) => invoke('pictor:chat.history', path, limit, offset),

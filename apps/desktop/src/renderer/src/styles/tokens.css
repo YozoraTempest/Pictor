@@ -16,6 +16,11 @@
   --color-accent-strong: #9cc4ff;
   --color-danger: #ff6b6b;
   --color-success: #5fd68f;
+  /* Reasoning levels read cool to warm, so a glance says how much thinking runs. */
+  --color-effort-low: #7f93b0;
+  --color-effort-mid: #6ea8fe;
+  --color-effort-high: #f0a860;
+  --color-effort-max: #ff7d6b;
 
   --radius-sm: 6px;
   --radius-md: 8px;

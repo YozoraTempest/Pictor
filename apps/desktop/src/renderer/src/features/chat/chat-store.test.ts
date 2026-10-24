@@ -145,7 +145,7 @@ describe('chat-store send', () => {
     const image = { mediaType: 'image/png', data: 'AAAA', name: 'shot.png' }
     await useChatStore.getState().send('看看这张图', [image])
 
-    expect(calls[0]).toEqual(['s1', '看看这张图', [image]])
+    expect(calls[0]).toEqual(['s1', '看看这张图', [image], null])
     expect(useChatStore.getState().current.messages[0]?.images).toEqual([image])
   })
 

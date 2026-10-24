@@ -19,9 +19,11 @@ import {
   type ToolViewContribution,
 } from '@pictor/plugin-sdk'
 import {
+  MODEL_EFFORTS,
   type ApprovalRequest,
   type ChatImage,
   type JsonValue,
+  type ModelEffort,
   type ModelProtocol,
   type PluginRecord,
   type Section,
@@ -495,6 +497,14 @@ function parseImages(value: unknown): ChatImage[] {
   })
 }
 
+/** The reasoning level the composer asked for, or `null` when it asked for none. */
+function parseEffort(value: unknown): ModelEffort | null {
+  if (value === undefined || value === null) return null
+  const level = MODEL_EFFORTS.find((entry) => entry === value)
+  if (level === undefined) throw new Error(`不认识的推理强度：${String(value)}`)
+  return level
+}
+
 function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:window.command', (event, command: unknown) => {
     if (!isWindowCommand(command)) throw new Error('unknown window command')
@@ -875,17 +885,18 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle(
     'pictor:chat.send',
-    async (_event, sessionId: unknown, prompt: unknown, images: unknown) => {
+    async (_event, sessionId: unknown, prompt: unknown, images: unknown, effort: unknown) => {
       if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
       if (typeof prompt !== 'string') throw new Error('prompt must be a string')
       const attachments = parseImages(images)
+      const level = parseEffort(effort)
       if (prompt.trim().length === 0 && attachments.length === 0) {
         throw new Error('a message needs text or an image')
       }
       if (workspace.harness.status().state !== 'ready') {
         throw new Error('agent 运行时没有运行；先启动它再发消息')
       }
-      await workspace.harness.prompt(sessionId, prompt, attachments)
+      await workspace.harness.prompt(sessionId, prompt, attachments, level)
     },
   )
 

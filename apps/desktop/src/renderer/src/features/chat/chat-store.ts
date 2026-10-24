@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 
-import type { ChatEvent, ChatImage, ChatMessage } from '@pictor/shared'
+import type { ChatEvent, ChatImage, ChatMessage, ModelEffort } from '@pictor/shared'
 
+import { readEffort, writeEffort } from './effort.js'
 /** Phase of a running agent, shown next to its name. */
 export type ChatPhase = 'idle' | 'connecting' | 'thinking' | 'tool' | 'writing'
 
@@ -33,7 +34,9 @@ interface ChatState {
   chats: Record<string, ChatSlice>
   /** Slice of `viewing`, so components read one stable object. */
   current: ChatSlice
-
+  /** Reasoning level the next send asks for; `null` means the provider default. */
+  effort: ModelEffort | null
+  setEffort: (level: ModelEffort | null) => void
   open: (sessionId: string | null, options?: { reload?: boolean }) => Promise<void>
   close: (sessionId: string) => Promise<void>
   send: (prompt: string, images?: ChatImage[]) => Promise<void>
@@ -140,6 +143,12 @@ export const useChatStore = create<ChatState>()((set, get) => {
     viewing: null,
     chats: {},
     current: EMPTY,
+    effort: readEffort(),
+
+    setEffort(level) {
+      writeEffort(level)
+      set({ effort: level })
+    },
 
     async open(sessionId, options = {}) {
       if (sessionId === null) {
@@ -224,7 +233,12 @@ export const useChatStore = create<ChatState>()((set, get) => {
       }))
 
       try {
-        await window.pictor.sendChat(sessionId, trimmed, images.length === 0 ? undefined : images)
+        await window.pictor.sendChat(
+          sessionId,
+          trimmed,
+          images.length === 0 ? undefined : images,
+          get().effort,
+        )
       } catch (reason) {
         patch(sessionId, () => ({
           running: false,

@@ -1,10 +1,12 @@
 import { Check, ChevronDown, Cpu, Image as ImageIcon, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import type { ModelEntry, ProviderList } from '@pictor/shared'
-
 import { cn } from '../../lib/cn.js'
 import { capabilitiesOf, emptyModel } from '../settings/models.js'
+import { useChatStore } from './chat-store.js'
+import { effortColor, effortLabel, effortTone, effortsOf, pickEffort } from './effort.js'
 
 export interface ModelPickerProps {
   /** Called after the host accepted the switch, so the chat can be reopened. */
@@ -169,10 +171,27 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   const activeId = list?.activeId ?? null
   const activeProvider = list?.providers.find((provider) => provider.id === activeId) ?? null
   const active = activeProvider?.modelId ?? ''
-  const activeName =
-    activeProvider === null
-      ? ''
-      : modelLabel(activeProvider.models.find((model) => model.id === active) ?? emptyModel(active))
+  const activeModel =
+    activeProvider?.models.find((model) => model.id === active) ?? emptyModel(active)
+  const activeName = activeProvider === null ? '' : modelLabel(activeModel)
+  // The level is a property of the conversation, not of one model: a saved level
+  // survives a switch, but only counts while the new model still offers it.
+  const storedEffort = useChatStore((state) => state.effort)
+  const setEffort = useChatStore((state) => state.setEffort)
+  const levels = effortsOf(activeModel)
+  const effort = pickEffort(levels, storedEffort)
+  /** Slider position: 0 is "default", then one notch per declared level. */
+  const effortIndex = effort === null ? 0 : levels.indexOf(effort) + 1
+
+  // Drop a level this model does not offer instead of only hiding it: the send
+  // reads the store, so a leftover level would be refused by the kernel and the
+  // message would never leave. The model list has to be loaded first — an empty
+  // list before that is "not known yet", not "offers nothing".
+  useEffect(() => {
+    if (list === null || storedEffort === null) return
+    if (levels.includes(storedEffort)) return
+    setEffort(null)
+  }, [list, storedEffort, levels, setEffort])
 
   const matching = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -278,6 +297,14 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
         <span className="truncate">
           {activeProvider === null || active.length === 0 ? '未选择模型' : activeName}
         </span>
+        {levels.length > 0 && (
+          <span
+            className={cn('shrink-0 font-medium', effortTone(effort))}
+            aria-label={`推理强度 ${effortLabel(effort)}`}
+          >
+            {effortLabel(effort)}
+          </span>
+        )}
         {activeProvider !== null && activeProvider.name.length > 0 && (
           <span className="shrink-0 text-faint">· {activeProvider.name}</span>
         )}
@@ -329,6 +356,45 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
                 <p className="px-2 py-3 text-xs text-faint">没有匹配的模型</p>
               )}
             </div>
+
+            {/* The level belongs beside the list rather than in the composer row:
+                it only means something for the model picked here, and the slider
+                is one drag instead of one row per level. */}
+            {levels.length > 0 && (
+              <div className="mt-1 shrink-0 border-t border-border px-2 pt-2 pb-1">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xs text-faint">推理强度</span>
+                  <span className={cn('text-2xs font-medium', effortTone(effort))}>
+                    {effortLabel(effort)}
+                  </span>
+                </div>
+                {/* The filled half and the thumb take the level's own colour, so the
+                    control answers "how much thinking" before the value is read. */}
+                <input
+                  type="range"
+                  aria-label="推理强度"
+                  min={0}
+                  max={levels.length}
+                  step={1}
+                  value={effortIndex}
+                  onChange={(event) => {
+                    const index = Number(event.target.value)
+                    setEffort(index === 0 ? null : (levels[index - 1] ?? null))
+                  }}
+                  style={
+                    {
+                      '--effort-progress': `${String((effortIndex / levels.length) * 100)}%`,
+                      '--effort-tone': effortColor(effort),
+                    } as CSSProperties
+                  }
+                  className="effort-slider mt-2 w-full"
+                />
+                <div className="mt-0.5 flex justify-between text-2xs text-faint">
+                  <span>默认</span>
+                  <span>{effortLabel(levels[levels.length - 1] ?? null)}</span>
+                </div>
+              </div>
+            )}
 
             {error !== null && (
               <p className="px-2 py-1 text-2xs text-danger" role="alert">
