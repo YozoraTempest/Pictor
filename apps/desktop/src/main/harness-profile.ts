@@ -1,7 +1,7 @@
 import type { ModelEntry, ModelProtocol } from '@pictor/shared'
+import { acceptedEfforts } from '@pictor/shared'
 
 import { GUARD_PLUGIN_NAME } from './harness-guard-plugin.js'
-
 /**
  * Route name the kernel sees for the provider Pictor configured.
  *
@@ -60,8 +60,9 @@ function routeModels(input: ProfileSettingsInput): ModelEntry[] {
  * declares exactly the levels the settings page ticked, nothing more.
  */
 function reasoningEfforts(model: ModelEntry): Record<string, string | null> | null {
-  if (model.efforts === null || model.efforts.length === 0) return null
-  return { off: null, ...Object.fromEntries(model.efforts.map((level) => [level, level])) }
+  const levels = acceptedEfforts(model)
+  if (levels.length === 0) return null
+  return { off: null, ...Object.fromEntries(levels.map((level) => [level, level])) }
 }
 
 /**

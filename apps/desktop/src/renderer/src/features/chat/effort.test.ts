@@ -34,6 +34,10 @@ describe('pickEffort', () => {
     expect(pickEffort(['low', 'high'], 'high')).toBe('high')
   })
 
+  it('gives a model that reasons but names no levels the standard three', () => {
+    expect(effortsOf(model({ id: 'm', reasoning: true }))).toEqual(['low', 'medium', 'high'])
+  })
+
   it('drops a saved level the model does not offer', () => {
     // Sending it anyway would fail the turn; keeping it would claim a level the
     // picker cannot honour.

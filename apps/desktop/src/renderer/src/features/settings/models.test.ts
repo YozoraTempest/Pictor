@@ -23,7 +23,9 @@ describe('capabilitiesOf', () => {
     expect(capabilitiesOf(model)).toEqual({
       image: true,
       reasoning: true,
-      efforts: null,
+      // A model that reasons but names no levels gets the standard three, so the
+      // settings dialog opens with something ticked rather than all grey.
+      efforts: ['low', 'medium', 'high'],
       contextWindow: null,
       maxTokens: 8000,
     })
@@ -33,7 +35,7 @@ describe('capabilitiesOf', () => {
     expect(capabilitiesOf(undefined)).toEqual({
       image: false,
       reasoning: false,
-      efforts: null,
+      efforts: [],
       contextWindow: null,
       maxTokens: null,
     })

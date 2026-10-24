@@ -1,5 +1,5 @@
 import type { ModelEffort, ModelEntry } from '@pictor/shared'
-import { MODEL_EFFORTS } from '@pictor/shared'
+import { acceptedEfforts, MODEL_EFFORTS } from '@pictor/shared'
 
 /** How each level reads in the picker; the wire spelling stays English. */
 const LABELS: Record<ModelEffort, string> = {
@@ -16,7 +16,7 @@ const STORAGE_KEY = 'pictor.model.effort'
 
 /** Levels this model accepts, in the order the slider shows them. */
 export function effortsOf(model: ModelEntry | undefined): ModelEffort[] {
-  return model?.efforts ?? []
+  return acceptedEfforts(model)
 }
 
 /**

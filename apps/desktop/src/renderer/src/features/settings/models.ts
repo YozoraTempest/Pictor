@@ -1,5 +1,5 @@
 import type { ModelEffort, ModelEntry } from '@pictor/shared'
-import { DEFAULT_MODEL_EFFORTS } from '@pictor/shared'
+import { acceptedEfforts, DEFAULT_MODEL_EFFORTS } from '@pictor/shared'
 
 /** What a model can do, as far as the runtime is concerned. */
 export interface Capabilities {
@@ -7,8 +7,8 @@ export interface Capabilities {
   image: boolean
   /** Supports a reasoning channel. */
   reasoning: boolean
-  /** Levels it accepts when it does reason; `null` means none were declared. */
-  efforts: ModelEffort[] | null
+  /** Levels it accepts, resolved: a model that only reasons gets the standard three. */
+  efforts: ModelEffort[]
   contextWindow: number | null
   maxTokens: number | null
 }
@@ -32,7 +32,7 @@ export function capabilitiesOf(entry: ModelEntry | undefined): Capabilities {
   return {
     image: entry?.input?.includes(IMAGE) ?? false,
     reasoning: entry?.reasoning === true,
-    efforts: entry?.efforts ?? null,
+    efforts: acceptedEfforts(entry),
     contextWindow: entry?.contextWindow ?? null,
     maxTokens: entry?.maxTokens ?? null,
   }

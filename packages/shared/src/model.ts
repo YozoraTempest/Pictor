@@ -46,14 +46,30 @@ export interface ModelEntry {
   name: string | null
   reasoning: boolean | null
   /**
-   * Levels the model accepts, weakest first. `null` means never declared, which
-   * is not the same as "no levels": the picker only appears for a model that
-   * names some.
+   * Levels the model accepts, weakest first; `null` means never declared, which
+   * {@link acceptedEfforts} resolves against the reasoning flag. Storing the
+   * levels the user narrowed is what makes "high only" survive a reopen.
    */
   efforts: ModelEffort[] | null
   input: string[] | null
   contextWindow: number | null
   maxTokens: number | null
+}
+
+/**
+ * The levels a model actually accepts.
+ *
+ * A model that only says it reasons predates the level list, so it gets the
+ * standard three: the settings page shows them ticked, the picker offers them, and
+ * the route declares them. Anything else would leave "supports reasoning" as a
+ * capability with no control behind it.
+ */
+export function acceptedEfforts(
+  entry: Pick<ModelEntry, 'reasoning' | 'efforts'> | undefined,
+): ModelEffort[] {
+  if (entry === undefined) return []
+  if (entry.efforts !== null) return entry.efforts
+  return entry.reasoning === true ? [...DEFAULT_MODEL_EFFORTS] : []
 }
 
 /** Non-secret model configuration plus a mask of whether a key is stored. */
