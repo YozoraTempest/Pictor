@@ -23,6 +23,7 @@ import {
 import type { ChatHistoryPage, ChatImage, ModelSettings } from '@pictor/shared'
 
 import { loadHarnessHistory } from './harness-history.js'
+import { sessionTitleOf } from './harness-title.js'
 import {
   GUARD_PLUGIN_NAME,
   GUARD_PLUGIN_PACKAGE,
@@ -568,10 +569,14 @@ export class HarnessService {
             harnessId,
             frame.records.map((record) => record.event),
           )
+          // Reopening a conversation must not lose a title generated while the
+          // window was closed.
+          for (const record of frame.records) this.#announceTitle(harnessId, record.event)
         } else if (frame.type === 'event') {
           // The opening window is a cut, not the whole session: later events keep
           // the mirror current, so history reflects what the user just watched.
           this.#snapshots.get(harnessId)?.push(frame.event)
+          this.#announceTitle(harnessId, frame.event)
         }
         if (process.env['PICTOR_DEBUG_HARNESS'] === '1') {
           const detail =
@@ -647,6 +652,22 @@ export class HarnessService {
     const harnessId = known
     const events = this.#snapshots.get(harnessId) ?? (await this.#loadSnapshot(harnessId))
     return loadHarnessHistory(events ?? [], limit, offset)
+  }
+
+  /**
+   * Report a title the runtime generated for a conversation.
+   *
+   * The runtime names a session from its first prompt (a fallback first, then an
+   * llm-generated one). Renaming belongs to whoever owns the metadata, so this
+   * only reports; the caller decides whether the name may be replaced.
+   */
+  #announceTitle(harnessId: string, event: SessionWireEvent): void {
+    const title = sessionTitleOf(event)
+    if (title === null) return
+    this.#emit({
+      method: 'session.title',
+      params: { sessionId: this.#pictorIdOf(harnessId), title },
+    })
   }
 
   /**

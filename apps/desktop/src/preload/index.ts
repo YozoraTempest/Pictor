@@ -96,6 +96,15 @@ const bridge: PictorBridge = {
       ipcRenderer.removeListener('pictor:chat.event', handler)
     }
   },
+  onWorkspaceChanged: (listener) => {
+    const handler = (): void => {
+      listener()
+    }
+    ipcRenderer.on('pictor:workspace.changed', handler)
+    return () => {
+      ipcRenderer.removeListener('pictor:workspace.changed', handler)
+    }
+  },
   onApprovalRequest: (listener) => {
     const handler = (_event: unknown, payload: unknown): void => {
       listener(payload as Parameters<typeof listener>[0])

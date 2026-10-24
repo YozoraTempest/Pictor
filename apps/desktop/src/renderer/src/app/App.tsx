@@ -31,6 +31,10 @@ export function App(): React.JSX.Element {
 
   useEffect(() => window.pictor.onChatEvent(useChatStore.getState().handleEvent), [])
 
+  // The runtime names a conversation after its first prompt; the sidebar should
+  // show that name without waiting for the next manual refresh.
+  useEffect(() => window.pictor.onWorkspaceChanged(() => void refresh()), [refresh])
+
   // The runtime blocks a tool call until a decision arrives; keep the request
   // where every window can render it, not inside a transcript.
   useEffect(

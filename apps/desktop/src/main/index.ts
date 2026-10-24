@@ -33,6 +33,7 @@ import {
 
 import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
+import { shouldAdoptTitle } from './harness-title.js'
 import {
   DEFAULT_PERMISSION_MODE,
   HarnessService,
@@ -270,6 +271,12 @@ async function startWorkspace(): Promise<Workspace | null> {
   harness.onNotification((notification) => {
     // The runtime explains its own failures on stderr; without this the status is
     // the only place a user could read them.
+    if (notification.method === 'session.title') {
+      const params = (notification.params ?? {}) as { sessionId?: unknown; title?: unknown }
+      if (typeof params.sessionId === 'string' && typeof params.title === 'string') {
+        void adoptSessionTitle(running.client, params.sessionId, params.title)
+      }
+    }
     if (notification.method === 'approval.request') {
       const params = (notification.params ?? {}) as {
         eventId?: unknown
@@ -458,6 +465,50 @@ function isWindowCommand(value: unknown): value is WindowCommand {
 function broadcastHarnessStatus(status: HarnessStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('pictor:harness.status', status)
+  }
+}
+
+/**
+ * Take the runtime's name for a conversation, if it is still unnamed.
+ *
+ * The runtime titles a session from its first prompt. Anything typed by hand must
+ * win, so the rename only happens while the row still carries Pictor's generated
+ * placeholder; a manual rename produces a different string and is left alone.
+ */
+/**
+ * Titles the runtime has already produced for each conversation.
+ *
+ * The runtime writes two: a truncation of the first prompt, then the generated
+ * name. Remembering the first lets the second replace it — and still keeps a
+ * hand-typed name safe, because that name was never produced by the runtime.
+ */
+const runtimeTitles = new Map<string, Set<string>>()
+
+async function adoptSessionTitle(
+  client: Workspace['client'],
+  sessionId: string,
+  title: string,
+): Promise<void> {
+  try {
+    const known = runtimeTitles.get(sessionId) ?? new Set<string>()
+    runtimeTitles.set(sessionId, known)
+
+    const sessions = await client.listSessions()
+    const session = sessions.find((entry) => entry.id === sessionId)
+    if (session === undefined) return
+    if (!shouldAdoptTitle(session.title, title, known)) {
+      if (session.title === title) known.add(title)
+      return
+    }
+
+    await client.renameSession(sessionId, title)
+    known.add(title)
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('pictor:workspace.changed')
+    }
+  } catch (error) {
+    // A title is cosmetic: failing to store it must never surface as a chat error.
+    console.warn('[session] 标题未能更新', error instanceof Error ? error.message : error)
   }
 }
 

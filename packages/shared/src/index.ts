@@ -42,6 +42,19 @@ export interface Session {
   updatedAt: number
 }
 
+/**
+ * Titles Pictor writes before anyone has named a conversation.
+ *
+ * `新会话 09:41` for a fresh one, and the same with ` · 分支` for a branch. The
+ * runtime generates a real title from the first prompt; adopting it is only safe
+ * while the title is still one of these, because anything else was typed by hand.
+ */
+const AUTO_TITLE = /^新会话 \d{2}:\d{2}(?: · 分支)*$/
+
+export function isAutoSessionTitle(title: string): boolean {
+  return AUTO_TITLE.test(title.trim())
+}
+
 /** A user-defined tag sessions can be filed under; purely a display grouping. */
 export interface Section {
   id: string

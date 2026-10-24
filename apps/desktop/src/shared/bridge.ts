@@ -204,6 +204,8 @@ export interface PictorBridge {
   onChatEvent(listener: (event: ChatEvent) => void): () => void
   /** Fires whenever the runtime starts, stops or fails; a transcript may be stale. */
   onHarnessStatus(listener: (status: HarnessStatus) => void): () => void
+  /** Fires when the main process changed workspace metadata (a session title). */
+  onWorkspaceChanged(listener: () => void): () => void
   /** Fires when the runtime holds a tool call until a decision arrives. */
   onApprovalRequest(listener: (request: ApprovalRequest) => void): () => void
   answerApproval(eventId: string, allow: boolean): Promise<void>

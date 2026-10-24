@@ -121,6 +121,9 @@ Selecting a session opens its transcript and a composer:
   text as content blocks and shown in the user's bubble.
 - Tool executions appear as rows with a presenter per tool (command and output
   for `bash`, file content for `read`, a diff for `edit`).
+- A conversation is named after its first prompt: the runtime titles it and the
+  sidebar adopts that name, so rows read `ETag 与 Last-Modified 的区别` instead of
+  `新会话 09:41`. A name typed by hand is never replaced.
 - Conversations live in the runtime's log, so an empty panel means one of two
   things: a fresh conversation, or a runtime that is not running. The panel says
   which, and offers to start the runtime instead of claiming the history is gone.

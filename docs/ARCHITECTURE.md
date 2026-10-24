@@ -110,6 +110,11 @@ does not care which runtime produced it:
   not the runtime: the runtime hands back a new session id with no lineage, and
   only the app knows which conversations are related. The column is
   `ON DELETE SET NULL`, because deleting a parent must not remove its branches.
+- The runtime names a conversation after its first prompt (`session/title`: a
+  fallback first, the generated name later). `main` adopts it while the row still
+  carries Pictor's placeholder, and keeps replacing names the runtime itself
+  produced; a title a person typed is never touched. The sidebar refreshes on
+  `pictor:workspace.changed`.
 - Events are normalised in `main` and forwarded to the renderer over one IPC
   channel (`pictor:chat.event`). Runtime status travels on its own channel
   (`pictor:harness.status`) so a window can re-read a transcript that was opened
