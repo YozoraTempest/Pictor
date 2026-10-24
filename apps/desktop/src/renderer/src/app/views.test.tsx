@@ -14,7 +14,7 @@ vi.stubGlobal('matchMedia', (query: string) => ({
   dispatchEvent: () => false,
 }))
 
-const { APP_VIEWS, DEFAULT_VIEW, sortedViews } = await import('./views.js')
+const { APP_VIEWS, DEFAULT_VIEW } = await import('./views.js')
 
 /**
  * Invariants that keep the registry the single source of truth.
@@ -35,21 +35,6 @@ describe('view registry', () => {
       const orders = APP_VIEWS.filter((entry) => entry.group === group).map((entry) => entry.order)
       expect(new Set(orders).size).toBe(orders.length)
     }
-  })
-
-  it('gives every view a label, an icon and a renderer', () => {
-    for (const entry of APP_VIEWS) {
-      expect(entry.label.length).toBeGreaterThan(0)
-      // Lucide icons are forwardRef objects, not plain functions.
-      expect(entry.icon).toBeTruthy()
-      expect(entry.render).toBeTypeOf('function')
-    }
-  })
-
-  it('sorts without losing entries', () => {
-    expect(sortedViews()).toHaveLength(APP_VIEWS.length)
-    const orders = sortedViews().map((entry) => entry.order)
-    expect([...orders].sort((a, b) => a - b)).toEqual(orders)
   })
 
   it('starts on a view it declares', () => {

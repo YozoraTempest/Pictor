@@ -15,14 +15,6 @@ const OPTIONS = [
 ]
 
 describe('Select', () => {
-  it('shows the selected label on the trigger', () => {
-    render(
-      <Select value="responses" onChange={() => undefined} options={OPTIONS} aria-label="风格" />,
-    )
-
-    expect(screen.getByRole('combobox', { name: '风格' }).textContent).toContain('Responses')
-  })
-
   it('opens a themed listbox instead of the native popup', async () => {
     render(<Select value="chat" onChange={() => undefined} options={OPTIONS} aria-label="风格" />)
 

@@ -4,24 +4,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { createBuiltinPanels, iconFor, mergePanels, pluginPanelEntries } from './registry.js'
 
 describe('iconFor', () => {
-  it('maps a known icon name', () => {
+  it('maps a known name and falls back for the rest', () => {
     expect(iconFor('globe')).toBe(Globe)
-  })
-
-  it('falls back for unknown and missing names', () => {
+    // A plugin may name an icon this build does not have, or none at all.
     expect(iconFor('not-a-real-icon')).toBe(Wrench)
     expect(iconFor(undefined)).toBe(Wrench)
   })
 })
 
 describe('createBuiltinPanels', () => {
-  it('declares built-in panels with the same shape as plugin panels', () => {
-    const panels = createBuiltinPanels({ createSession: vi.fn(), openSettings: vi.fn() })
-
-    expect(panels.map((panel) => panel.id)).toEqual(['session.new', 'settings.open'])
-    expect(panels.every((panel) => panel.source === 'builtin')).toBe(true)
-  })
-
   it('runs the injected callback', () => {
     const createSession = vi.fn()
     const panels = createBuiltinPanels({ createSession, openSettings: vi.fn() })

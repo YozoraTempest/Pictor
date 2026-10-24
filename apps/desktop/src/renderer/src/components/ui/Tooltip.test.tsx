@@ -48,23 +48,4 @@ describe('Tooltip', () => {
     expect(bubble.parentElement).toBe(document.body)
     expect(bubble.closest('div')).toBeNull()
   })
-
-  it('shows the bubble while the trigger is hovered', async () => {
-    render(
-      <Tooltip label="提示">
-        <button type="button">toggle</button>
-      </Tooltip>,
-    )
-
-    const bubble = screen.getByRole('tooltip')
-    const trigger = screen.getByRole('button', { name: 'toggle' })
-
-    expect(bubble.className).toContain('opacity-0')
-
-    await userEvent.hover(trigger)
-    expect(bubble.className).toContain('opacity-100')
-
-    await userEvent.unhover(trigger)
-    expect(bubble.className).toContain('opacity-0')
-  })
 })

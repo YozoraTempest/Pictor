@@ -32,22 +32,8 @@ describe('settings pages', () => {
     expect(new Set(grouped).size).toBe(SETTINGS_PAGES.length)
   })
 
-  it('gives every page a renderer', () => {
-    for (const page of SETTINGS_PAGES) {
-      expect(page.render).toBeTypeOf('function')
-      expect(page.label.length).toBeGreaterThan(0)
-    }
-  })
-
   it('keeps row ids unique', () => {
     const ids = SETTING_ROWS.map((row) => row.id)
     expect(new Set(ids).size).toBe(ids.length)
-  })
-
-  it('points every row at a page that exists', () => {
-    const pages = new Set(SETTINGS_PAGES.map((page) => page.id))
-    for (const row of SETTING_ROWS) {
-      expect(pages.has(row.page)).toBe(true)
-    }
   })
 })

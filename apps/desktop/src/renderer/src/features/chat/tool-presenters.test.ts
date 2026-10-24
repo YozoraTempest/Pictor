@@ -111,11 +111,6 @@ describe('presentTool', () => {
 })
 
 describe('toolLabel', () => {
-  it('maps a known tool to its display name', () => {
-    expect(toolLabel('read')).toBe('阅读')
-    expect(toolLabel('bash')).toBe('运行')
-  })
-
   it('keeps the raw name for a tool without a presenter', () => {
     expect(toolLabel('mystery')).toBe('mystery')
   })

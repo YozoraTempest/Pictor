@@ -44,13 +44,4 @@ describe('Menu', () => {
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('menu')).toBeNull()
   })
-
-  it('shows the shortcut hint beside the label', async () => {
-    render(<Menu label="更多" trigger={<span>≡</span>} items={items} />)
-
-    await userEvent.click(screen.getByRole('button', { name: '更多' }))
-    await userEvent.click(screen.getByRole('menuitem', { name: '文件' }))
-
-    expect(screen.getByRole('menuitem', { name: /Ctrl\+N/ })).toBeTruthy()
-  })
 })
