@@ -82,9 +82,12 @@ export default {
       await page.keyboard.press('Escape')
       await reopened.waitFor({ state: 'detached', timeout: 10_000 })
 
-      await page.evaluate(() => window.pictor.harnessStop())
-      const booted = await page.evaluate((cwd) => window.pictor.harnessStart(cwd), app.workdir)
-      assert.equal(booted.state, 'ready', `the runtime booted: ${booted.error ?? ''}`)
+      // Saving the service and making it active already restarted the runtime on
+      // it; stopping it again here would boot a new one while the old is still
+      // exiting, and the runtime's profile is locked until it does.
+      await page.evaluate((cwd) => window.pictor.harnessStart(cwd), app.workdir)
+      const status = await page.evaluate(() => window.pictor.harnessStatus())
+      assert.equal(status.state, 'ready', `the runtime is up: ${status.error ?? ''}`)
 
       await page.evaluate(() => window.pictor.createSession(null, 'e2e 图片'))
       await page.reload()

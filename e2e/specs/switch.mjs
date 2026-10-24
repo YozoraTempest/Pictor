@@ -21,7 +21,11 @@ export default {
     }
 
     // A answers slowly enough that a switch can land while its turn is running.
-    const a = await startStubModel({ reply: 'A 端点给的回答。', delayMs: 2_500 })
+    const a = await startStubModel({
+      reply: 'A 端点给的回答。',
+      delayMs: 2_500,
+      title: 'e2e 切换服务',
+    })
     const b = await startStubModel({ reply: 'B 端点给的回答。' })
 
     /** Save a provider and make it the one conversations use. */
@@ -87,6 +91,36 @@ export default {
 
       await page.evaluate(([id, text]) => window.pictor.sendChat(id, text), [session.id, '第四条'])
       await waitForReply(session.id, 'B 端点给的回答。')
+
+      // 4. The composer's own picker: one click switches service *and* model,
+      //    which is what a reader picking a row there means.
+      await page.reload()
+      await page.waitForSelector('header', { timeout: 30_000 })
+      await page.getByRole('button', { name: 'e2e 切换服务' }).first().click({ timeout: 15_000 })
+      await page.getByRole('button', { name: '选择模型' }).click({ timeout: 15_000 })
+
+      const picker = page.getByRole('dialog', { name: '选择模型' })
+      await picker.waitFor({ timeout: 10_000 })
+      await picker.getByLabel('搜索模型').fill('stub-model')
+      // Both services offer `stub-model`; the row names the service it belongs to.
+      const beforePicker = b.requests.length
+      await picker.getByRole('button', { name: /e2e A/ }).first().click({ timeout: 15_000 })
+
+      // Choosing restarts the runtime on the new service; a message sent mid-boot
+      // would be refused, so wait for it like the window does.
+      await page.evaluate(async () => {
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          const status = await window.pictor.harnessStatus()
+          if (status.state === 'ready') return
+          await new Promise((resolve) => setTimeout(resolve, 250))
+        }
+        throw new Error('the runtime never came back after the switch')
+      })
+
+      await page.getByLabel('消息输入').fill('从选择器切换')
+      await page.getByLabel('消息输入').press('Enter')
+      await page.getByText('A 端点给的回答。').first().waitFor({ timeout: 60_000 })
+      assert.equal(b.requests.length, beforePicker, 'the other service received nothing')
     } finally {
       await a.close()
       await b.close()
