@@ -1,9 +1,11 @@
-import { PanelLeft, PanelRight, Search } from 'lucide-react'
+import { GitBranch, PanelLeft, PanelRight, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { useUiStore } from '../../app/ui-store.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Tooltip } from '../../components/ui/index.js'
+import { BranchTreeDialog } from '../sessions/BranchTreeDialog.js'
+import { familySize } from '../sessions/family.js'
 import { SessionSearchDialog } from '../sessions/SessionSearchDialog.js'
 import { cn } from '../../lib/cn.js'
 
@@ -40,7 +42,12 @@ export function WorkspaceLeading(): React.JSX.Element {
 export function WorkspaceTrailing(): React.JSX.Element {
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
   const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
+  const showBranchTree = useUiStore((state) => state.showBranchTree)
+  const sessions = useWorkspaceStore((state) => state.sessions)
+  const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
   const [searchOpen, setSearchOpen] = useState(false)
+  // A conversation with no branches has no tree worth opening.
+  const branches = familySize(sessions, selectedSessionId)
 
   // The shortcut belongs to the view that owns the button, so it works wherever
   // the reader is inside 首页.
@@ -56,6 +63,19 @@ export function WorkspaceTrailing(): React.JSX.Element {
 
   return (
     <>
+      {branches > 1 && selectedSessionId !== null && (
+        <Tooltip label={`分支树（${String(branches)}）`} side="bottom" align="end">
+          <button
+            type="button"
+            aria-label="分支树"
+            onClick={() => showBranchTree(selectedSessionId)}
+            className="grid size-7 place-items-center rounded-sm text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+          >
+            <GitBranch className="size-3.5" />
+          </button>
+        </Tooltip>
+      )}
+
       <Tooltip label="搜索会话" side="bottom" align="end">
         <button
           type="button"
@@ -83,6 +103,7 @@ export function WorkspaceTrailing(): React.JSX.Element {
       </Tooltip>
 
       <SessionSearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <BranchTreeDialog />
     </>
   )
 }

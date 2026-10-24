@@ -37,6 +37,8 @@ interface UiState {
   /** Visited places, oldest first. `historyIndex` points at the current one. */
   history: AppLocation[]
   historyIndex: number
+  /** Conversation whose family tree is open; `null` closes the dialog. */
+  branchTreeFor: string | null
   setView: (view: AppView) => void
   toggleLeftPanel: () => void
   toggleRightPanel: () => void
@@ -49,6 +51,8 @@ interface UiState {
   recordLocation: (location: AppLocation) => void
   /** Moves through history and returns the place to show, or null at an end. */
   stepHistory: (direction: -1 | 1) => AppLocation | null
+  showBranchTree: (sessionId: string) => void
+  hideBranchTree: () => void
 }
 
 /** Pending "close the preview" timer, shared by the switch and the drawer. */
@@ -70,6 +74,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   sidebarPeeking: false,
   history: [],
   historyIndex: -1,
+  branchTreeFor: null,
   setView: (view) => set({ view }),
   toggleLeftPanel: () =>
     set((state) => {
@@ -111,6 +116,8 @@ export const useUiStore = create<UiState>()((set, get) => ({
       const kept = state.history.slice(0, state.historyIndex + 1)
       return { history: [...kept, location], historyIndex: kept.length }
     }),
+  showBranchTree: (sessionId) => set({ branchTreeFor: sessionId }),
+  hideBranchTree: () => set({ branchTreeFor: null }),
   stepHistory: (direction) => {
     const { history, historyIndex } = get()
     const next = historyIndex + direction

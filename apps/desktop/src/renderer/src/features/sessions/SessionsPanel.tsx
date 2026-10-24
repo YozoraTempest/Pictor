@@ -6,6 +6,7 @@ import {
   CornerUpLeft,
   FolderGit2,
   GitBranch,
+  ListTree,
   Loader2,
   MessageSquare,
   MoreHorizontal,
@@ -19,6 +20,7 @@ import {
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import type { Project, Session } from '@pictor/shared'
 
+import { useUiStore } from '../../app/ui-store.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { useChatStore } from '../chat/chat-store.js'
 import {
@@ -41,6 +43,7 @@ import {
   sectionKey,
   type SectionSort,
 } from './grouping.js'
+import { familySize } from './family.js'
 
 type Dragged =
   | { kind: 'section'; id: string }
@@ -1161,6 +1164,10 @@ function SessionRow({
 }): React.JSX.Element {
   const running = useChatStore((state) => state.chats[session.id]?.running === true)
   const forkSession = useWorkspaceStore((state) => state.forkSession)
+  const showBranchTree = useUiStore((state) => state.showBranchTree)
+  // Whether this row has a family to show, decided from the same list the panel
+  // groups, so a row never offers a tree of one.
+  const hasFamily = useWorkspaceStore((state) => familySize(state.sessions, session.id) > 1)
   const setSessionArchived = useWorkspaceStore((state) => state.setSessionArchived)
   const selectSession = useWorkspaceStore((state) => state.selectSession)
   const onSelectSessionById = (id: string): void => {
@@ -1263,6 +1270,16 @@ function SessionRow({
               icon: <GitBranch className="size-3" />,
               onSelect: () => void forkSession(session.id),
             },
+            // Only a family with more than one conversation has a tree to show.
+            ...(hasFamily
+              ? [
+                  {
+                    label: '查看分支树',
+                    icon: <ListTree className="size-3" />,
+                    onSelect: () => showBranchTree(session.id),
+                  },
+                ]
+              : []),
             // Archiving is reversible, so the same row offers the way back.
             session.archived
               ? {
