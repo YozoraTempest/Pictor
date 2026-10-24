@@ -71,7 +71,7 @@ export default {
       await page.getByLabel('选择模型').click()
       await page.getByLabel('推理强度', { exact: true }).press('End')
       await page.keyboard.press('Escape')
-      await page.getByLabel('推理强度 高').waitFor({ timeout: 15_000 })
+      await page.getByLabel('推理强度 high').waitFor({ timeout: 15_000 })
 
       const input = page.getByLabel('消息输入')
       await input.fill('说三句话')

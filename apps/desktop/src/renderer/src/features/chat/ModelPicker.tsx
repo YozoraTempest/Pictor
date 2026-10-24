@@ -305,9 +305,6 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
             {effortLabel(effort)}
           </span>
         )}
-        {activeProvider !== null && activeProvider.name.length > 0 && (
-          <span className="shrink-0 text-faint">· {activeProvider.name}</span>
-        )}
         <ChevronDown
           className={cn('size-3 shrink-0 text-faint transition-transform', open && 'rotate-180')}
           aria-hidden
@@ -390,7 +387,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
                   className="effort-slider mt-2 w-full"
                 />
                 <div className="mt-0.5 flex justify-between text-2xs text-faint">
-                  <span>默认</span>
+                  <span>{effortLabel(null)}</span>
                   <span>{effortLabel(levels[levels.length - 1] ?? null)}</span>
                 </div>
               </div>

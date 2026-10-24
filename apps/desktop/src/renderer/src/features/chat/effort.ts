@@ -1,19 +1,8 @@
 import type { ModelEffort, ModelEntry } from '@pictor/shared'
 import { acceptedEfforts, MODEL_EFFORTS } from '@pictor/shared'
 
-/** How each level reads in the picker; the wire spelling stays English. */
-const LABELS: Record<ModelEffort, string> = {
-  minimal: '极低',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '极高',
-  max: '最高',
-}
-
 /** Where the chosen level survives a restart. */
 const STORAGE_KEY = 'pictor.model.effort'
-
 /** Levels this model accepts, in the order the slider shows them. */
 export function effortsOf(model: ModelEntry | undefined): ModelEffort[] {
   return acceptedEfforts(model)
@@ -33,9 +22,15 @@ export function pickEffort(
   return saved !== null && levels.includes(saved) ? saved : null
 }
 
-/** Label for one level, or for "whatever the provider does by default". */
+/**
+ * How one level reads, which is the level's own name.
+ *
+ * Providers disagree about what these are called and what each one buys, so
+ * translating them would invent a common denominator that does not exist. The one
+ * exception is "no level at all": that is not a level, and `default` says so.
+ */
 export function effortLabel(level: ModelEffort | null): string {
-  return level === null ? '默认' : LABELS[level]
+  return level ?? 'default'
 }
 
 /**
