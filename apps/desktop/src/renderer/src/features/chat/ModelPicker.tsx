@@ -273,11 +273,12 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   }
 
   /**
-   * One model row.
+   * One model row: a single line, so a short list stays a short list.
    *
-   * The two pages carry different supporting facts: the shortcuts page spans every
-   * service at once, so it names the service; the full list is already grouped by
-   * service, so it spends the space on what the model can do instead.
+   * The model id is not shown — it is configuration, not something a reader picks
+   * by. The two pages differ only in what fills the right side: the shortcuts page
+   * spans every service, so it names the service; the full list is already grouped
+   * by service, so it uses the space for what the model can do.
    */
   function renderRow(choice: Choice, detail: 'service' | 'capabilities'): React.JSX.Element {
     const capabilities = capabilitiesOf(choice.model)
@@ -287,12 +288,9 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
         key={keyOf(choice.providerId, choice.model.id)}
         type="button"
         onClick={() => void choose(choice)}
-        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+        className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
       >
-        <span className="min-w-0 flex-1">
-          <span className="block truncate">{modelLabel(choice.model)}</span>
-          <span className="block truncate text-2xs text-faint">{choice.model.id}</span>
-        </span>
+        <span className="min-w-0 flex-1 truncate">{modelLabel(choice.model)}</span>
         {detail === 'capabilities' ? (
           <>
             {capabilities.image && (
@@ -417,7 +415,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
                     type="button"
                     aria-label="所有模型"
                     onClick={() => setView('all')}
-                    className="mt-1 flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+                    className="mt-1 flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
                   >
                     <Boxes className="size-3 shrink-0 text-faint" aria-hidden />
                     <span className="flex-1">所有模型</span>
