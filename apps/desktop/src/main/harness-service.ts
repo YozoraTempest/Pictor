@@ -706,6 +706,19 @@ export class HarnessService {
     return () => clearTimeout(timer)
   }
 
+  /**
+   * Drop a session from the busy set, applying a change that was waiting on it.
+   *
+   * A turn only ends while its stream is alive; if the stream closes first, the
+   * bookkeeping has to follow it, or every later settings change would be parked
+   * behind a turn that will never end.
+   */
+  #forgetTurn(harnessId: string): void {
+    this.#turns.delete(harnessId)
+    if (this.#turns.size > 0 || !this.#pendingApply) return
+    void this.#restart()
+  }
+
   /** Runtime session id for one Pictor session, creating it on first use. */
   async #sessionFor(pictorId: string): Promise<string> {
     const known = this.#sessions.get(pictorId)
@@ -788,6 +801,8 @@ export class HarnessService {
         })
       },
       onError: (error) => {
+        // A subscription that failed is not going to report a turn end either.
+        this.#forgetTurn(harnessId)
         // Opening history for a session the runtime does not know is expected;
         // only a live subscription reports its own failure.
         if (options.silent === true) return
@@ -798,6 +813,9 @@ export class HarnessService {
       },
       onClose: () => {
         if (this.#follows.get(harnessId) === stream) this.#follows.delete(harnessId)
+        // Whatever was streaming into this stream is gone: a pending settings
+        // change must not wait for a `turn/end` that can no longer arrive.
+        this.#forgetTurn(harnessId)
       },
     })
     this.#follows.set(harnessId, stream)
