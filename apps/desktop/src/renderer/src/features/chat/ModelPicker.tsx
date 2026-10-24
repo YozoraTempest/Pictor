@@ -3,10 +3,18 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import type { ModelEntry, ProviderList } from '@pictor/shared'
+
 import { cn } from '../../lib/cn.js'
 import { capabilitiesOf, emptyModel } from '../settings/models.js'
 import { useChatStore } from './chat-store.js'
-import { effortColor, effortLabel, effortTone, effortsOf, pickEffort } from './effort.js'
+import {
+  designedEffort,
+  effortColor,
+  effortLabel,
+  effortTone,
+  effortsOf,
+  pickEffort,
+} from './effort.js'
 
 export interface ModelPickerProps {
   /** Called after the host accepted the switch, so the chat can be reopened. */
@@ -174,24 +182,25 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   const activeModel =
     activeProvider?.models.find((model) => model.id === active) ?? emptyModel(active)
   const activeName = activeProvider === null ? '' : modelLabel(activeModel)
-  // The level is a property of the conversation, not of one model: a saved level
-  // survives a switch, but only counts while the new model still offers it.
-  const storedEffort = useChatStore((state) => state.effort)
+  // The level starts wherever the model says: the designed default in that model's
+  // own settings is what the user set up, so picking the model is enough to get it.
+  // `undefined` in the store means "untouched", and follows the model from then on.
+  const chosen = useChatStore((state) => state.effort)
   const setEffort = useChatStore((state) => state.setEffort)
   const levels = effortsOf(activeModel)
-  const effort = pickEffort(levels, storedEffort)
-  /** Slider position: 0 is "default", then one notch per declared level. */
+  const designed = designedEffort(activeModel)
+  const effort = chosen === undefined ? designed : pickEffort(levels, chosen)
+  /** Slider position: 0 is "send none", then one notch per declared level. */
   const effortIndex = effort === null ? 0 : levels.indexOf(effort) + 1
 
-  // Drop a level this model does not offer instead of only hiding it: the send
-  // reads the store, so a leftover level would be refused by the kernel and the
-  // message would never leave. The model list has to be loaded first — an empty
-  // list before that is "not known yet", not "offers nothing".
+  // The store has to agree with what the slider shows, because the send reads the
+  // store: an untouched level adopts the model's design, and one the model dropped
+  // falls back to it rather than being sent and refused.
   useEffect(() => {
-    if (list === null || storedEffort === null) return
-    if (levels.includes(storedEffort)) return
-    setEffort(null)
-  }, [list, storedEffort, levels, setEffort])
+    if (list === null) return
+    if (chosen === undefined) setEffort(designed)
+    else if (chosen !== null && !levels.includes(chosen)) setEffort(designed)
+  }, [list, chosen, designed, levels, setEffort])
 
   const matching = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -234,6 +243,9 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
     setError(null)
     try {
       await window.pictor.useModel(choice.providerId, choice.model.id)
+      // A switch adopts the new model's own designed level, so the badge and the
+      // next request describe the same behaviour straight away.
+      setEffort(undefined)
       setList(await window.pictor.listProviders())
       const next = [keyOf(choice.providerId, choice.model.id), ...recents]
         .filter((key, index, all) => all.indexOf(key) === index)

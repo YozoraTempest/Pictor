@@ -41,7 +41,16 @@ export default {
             baseUrl,
             protocol: 'openai-completions',
             modelId: 'stub-model',
-            models: [{ id: 'stub-model', reasoning: true, efforts: ['low', 'medium', 'high'] }],
+            models: [
+              {
+                id: 'stub-model',
+                reasoning: true,
+                efforts: ['low', 'medium', 'high'],
+                // The level the model is designed to start at. Nothing in the spec
+                // touches the slider: picking the model has to be enough.
+                defaultEffort: 'high',
+              },
+            ],
             apiKey: 'e2e-key',
           }),
         model.baseUrl,
@@ -65,12 +74,9 @@ export default {
       // placeholder title, which is what lets the runtime's own title replace it.
       await page.keyboard.press('Control+n')
 
-      // The reasoning level lives in the model menu and only reaches the wire if
-      // the host pins it before queuing the prompt, so the spec sets it to the
-      // strongest declared level and checks the request afterwards.
-      await page.getByLabel('选择模型').click()
-      await page.getByLabel('推理强度', { exact: true }).press('End')
-      await page.keyboard.press('Escape')
+      // The model was set up to start at `high`, so the composer must already say
+      // so without anyone touching the slider — that is the whole point of a
+      // designed default. The request afterwards proves it reached the wire.
       await page.getByLabel('推理强度 high').waitFor({ timeout: 15_000 })
 
       const input = page.getByLabel('消息输入')

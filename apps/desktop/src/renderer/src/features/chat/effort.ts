@@ -1,25 +1,32 @@
 import type { ModelEffort, ModelEntry } from '@pictor/shared'
-import { acceptedEfforts, MODEL_EFFORTS } from '@pictor/shared'
+import { acceptedEfforts, defaultEffortOf, OMIT_EFFORT } from '@pictor/shared'
 
-/** Where the chosen level survives a restart. */
-const STORAGE_KEY = 'pictor.model.effort'
 /** Levels this model accepts, in the order the slider shows them. */
 export function effortsOf(model: ModelEntry | undefined): ModelEffort[] {
   return acceptedEfforts(model)
 }
 
 /**
- * The level to actually send.
+ * The level one model is designed to start at, or `null` for {@link OMIT_EFFORT}.
  *
- * A saved level only survives while the model it was chosen for still offers it:
- * switching to a model without that level must not keep sending it, and must not
- * silently pretend it did.
+ * This lives in the model's own settings, so the composer can follow it instead of
+ * asking again: picking a model is enough to get the behaviour configured for it.
+ */
+export function designedEffort(model: ModelEntry | undefined): ModelEffort | null {
+  return defaultEffortOf(model)
+}
+
+/**
+ * The level the slider can show, or `null` for "send nothing".
+ *
+ * A choice survives only while the model still offers that level: sending one it
+ * dropped would fail the turn, and showing it would promise what cannot happen.
  */
 export function pickEffort(
   levels: readonly ModelEffort[],
-  saved: ModelEffort | null,
+  chosen: ModelEffort | null,
 ): ModelEffort | null {
-  return saved !== null && levels.includes(saved) ? saved : null
+  return chosen !== null && levels.includes(chosen) ? chosen : null
 }
 
 /**
@@ -27,10 +34,10 @@ export function pickEffort(
  *
  * Providers disagree about what these are called and what each one buys, so
  * translating them would invent a common denominator that does not exist. The one
- * exception is "no level at all": that is not a level, and `default` says so.
+ * exception is "no level at all": that is not a level, and it says what happens.
  */
 export function effortLabel(level: ModelEffort | null): string {
-  return level ?? 'default'
+  return level ?? OMIT_EFFORT
 }
 
 /**
@@ -46,32 +53,7 @@ export function effortTone(level: ModelEffort | null): string {
   return 'text-faint'
 }
 
-/** The stored level, or null when nothing usable is stored. */
-export function readEffort(): ModelEffort | null {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    return MODEL_EFFORTS.find((level) => level === raw) ?? null
-  } catch {
-    // A profile that refuses storage only loses the shortcut.
-    return null
-  }
-}
-
-export function writeEffort(level: ModelEffort | null): void {
-  try {
-    if (level === null) window.localStorage.removeItem(STORAGE_KEY)
-    else window.localStorage.setItem(STORAGE_KEY, level)
-  } catch {
-    // Same as above: the picker still works for this run.
-  }
-}
-
-/**
- * The colour of one level as a CSS value, for parts that cannot take a class.
- *
- * The slider paints its filled half and its thumb from this, so the control and
- * the badge above it always agree.
- */
+/** The colour of one level as a CSS value, for parts that cannot take a class. */
 export function effortColor(level: ModelEffort | null): string {
   if (level === 'minimal' || level === 'low') return 'var(--color-effort-low)'
   if (level === 'medium') return 'var(--color-effort-mid)'

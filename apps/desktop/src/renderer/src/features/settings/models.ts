@@ -1,5 +1,5 @@
 import type { ModelEffort, ModelEntry } from '@pictor/shared'
-import { acceptedEfforts, DEFAULT_MODEL_EFFORTS } from '@pictor/shared'
+import { acceptedEfforts, DEFAULT_MODEL_EFFORTS, defaultEffortOf } from '@pictor/shared'
 
 /** What a model can do, as far as the runtime is concerned. */
 export interface Capabilities {
@@ -9,6 +9,8 @@ export interface Capabilities {
   reasoning: boolean
   /** Levels it accepts, resolved: a model that only reasons gets the standard three. */
   efforts: ModelEffort[]
+  /** Level the composer selects when this model is picked; `null` means omit. */
+  defaultEffort: ModelEffort | null
   contextWindow: number | null
   maxTokens: number | null
 }
@@ -22,6 +24,7 @@ export function emptyModel(id: string, name: string | null = null): ModelEntry {
     name,
     reasoning: null,
     efforts: null,
+    defaultEffort: null,
     input: null,
     contextWindow: null,
     maxTokens: null,
@@ -33,11 +36,11 @@ export function capabilitiesOf(entry: ModelEntry | undefined): Capabilities {
     image: entry?.input?.includes(IMAGE) ?? false,
     reasoning: entry?.reasoning === true,
     efforts: acceptedEfforts(entry),
+    defaultEffort: defaultEffortOf(entry),
     contextWindow: entry?.contextWindow ?? null,
     maxTokens: entry?.maxTokens ?? null,
   }
 }
-
 /**
  * Write capabilities back onto one model.
  *
@@ -62,12 +65,17 @@ export function withCapabilities(
       : reasoning === true
         ? (base.efforts ?? [...DEFAULT_MODEL_EFFORTS])
         : null
+  // The designed default only survives while the model still offers that level:
+  // keeping a level the list no longer has would send something that gets refused.
+  const wanted = capabilities.defaultEffort ?? base.defaultEffort
+  const defaultEffort = wanted !== null && (efforts ?? []).includes(wanted) ? wanted : null
   const next: ModelEntry = {
     ...base,
     // `null` on the entry means "never declared", so an untouched field keeps it
     // instead of flattening to false.
     reasoning,
     efforts,
+    defaultEffort,
     // Only an explicit answer changes the modality list: `null` means "the
     // endpoint never said", which is not the same as "text only".
     input: capabilities.image === undefined ? base.input : image ? ['text', IMAGE] : ['text'],
@@ -102,6 +110,7 @@ export function mergeModels(
       name: listed.name ?? kept.name,
       reasoning: kept.reasoning ?? listed.reasoning,
       efforts: kept.efforts ?? listed.efforts,
+      defaultEffort: kept.defaultEffort ?? listed.defaultEffort,
       input: kept.input ?? listed.input,
       contextWindow: kept.contextWindow ?? listed.contextWindow,
       maxTokens: kept.maxTokens ?? listed.maxTokens,

@@ -39,6 +39,7 @@ describe('fetchModels', () => {
             max_output_tokens: 8192,
             reasoning: true,
             efforts: null,
+            defaultEffort: null,
           },
           { id: 'plain', modalities: ['text'], max_tokens: 4096 },
           { id: 'silent' },
@@ -58,12 +59,14 @@ describe('fetchModels', () => {
       maxTokens: 8192,
       reasoning: true,
       efforts: null,
+      defaultEffort: null,
     })
     expect(byId.get('plain')).toMatchObject({
       input: ['text'],
       maxTokens: 4096,
       reasoning: null,
       efforts: null,
+      defaultEffort: null,
       contextWindow: null,
     })
     // Unknown stays unknown: the settings page is where a person fills it in.

@@ -2,7 +2,6 @@ import { create } from 'zustand'
 
 import type { ChatEvent, ChatImage, ChatMessage, ModelEffort } from '@pictor/shared'
 
-import { readEffort, writeEffort } from './effort.js'
 /** Phase of a running agent, shown next to its name. */
 export type ChatPhase = 'idle' | 'connecting' | 'thinking' | 'tool' | 'writing'
 
@@ -34,9 +33,12 @@ interface ChatState {
   chats: Record<string, ChatSlice>
   /** Slice of `viewing`, so components read one stable object. */
   current: ChatSlice
-  /** Reasoning level the next send asks for; `null` means the provider default. */
-  effort: ModelEffort | null
-  setEffort: (level: ModelEffort | null) => void
+  /**
+   * Reasoning level the next send asks for. `null` means "send none"; `undefined`
+   * means the user has not touched it, so the active model's designed level applies.
+   */
+  effort: ModelEffort | null | undefined
+  setEffort: (level: ModelEffort | null | undefined) => void
   open: (sessionId: string | null, options?: { reload?: boolean }) => Promise<void>
   close: (sessionId: string) => Promise<void>
   send: (prompt: string, images?: ChatImage[]) => Promise<void>
@@ -143,10 +145,11 @@ export const useChatStore = create<ChatState>()((set, get) => {
     viewing: null,
     chats: {},
     current: EMPTY,
-    effort: readEffort(),
+    // Untouched until the composer knows which model is active; that model's own
+    // designed level is what applies, so nothing is remembered here.
+    effort: undefined,
 
     setEffort(level) {
-      writeEffort(level)
       set({ effort: level })
     },
 
@@ -237,7 +240,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
           sessionId,
           trimmed,
           images.length === 0 ? undefined : images,
-          get().effort,
+          // An untouched level travels as "none": the host then sends no effort,
+          // which is exactly what the model's own design asked for.
+          get().effort ?? null,
         )
       } catch (reason) {
         patch(sessionId, () => ({

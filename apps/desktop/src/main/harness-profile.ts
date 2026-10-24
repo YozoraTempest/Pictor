@@ -44,6 +44,7 @@ function routeModels(input: ProfileSettingsInput): ModelEntry[] {
       name: null,
       reasoning: null,
       efforts: null,
+      defaultEffort: null,
       input: null,
       contextWindow: null,
       maxTokens: null,

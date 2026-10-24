@@ -9,6 +9,7 @@ function entry(overrides: Partial<ModelEntry> & Pick<ModelEntry, 'id'>): ModelEn
     name: null,
     reasoning: null,
     efforts: null,
+    defaultEffort: null,
     input: null,
     contextWindow: null,
     maxTokens: null,
@@ -26,6 +27,7 @@ describe('capabilitiesOf', () => {
       // A model that reasons but names no levels gets the standard three, so the
       // settings dialog opens with something ticked rather than all grey.
       efforts: ['low', 'medium', 'high'],
+      defaultEffort: null,
       contextWindow: null,
       maxTokens: 8000,
     })
@@ -36,6 +38,7 @@ describe('capabilitiesOf', () => {
       image: false,
       reasoning: false,
       efforts: [],
+      defaultEffort: null,
       contextWindow: null,
       maxTokens: null,
     })
@@ -58,6 +61,7 @@ describe('withCapabilities', () => {
         name: null,
         reasoning: null,
         efforts: null,
+        defaultEffort: null,
         input: ['text', 'image'],
         contextWindow: 1000,
         maxTokens: null,
@@ -105,9 +109,29 @@ describe('withCapabilities', () => {
   it('keeps a level list the user narrowed', () => {
     const models = withCapabilities([entry({ id: 'm', reasoning: true })], 'm', {
       efforts: ['minimal', 'max'],
+      defaultEffort: null,
     })
 
     expect(models[0]?.efforts).toEqual(['minimal', 'max'])
+  })
+
+  it('keeps a designed default the model still offers', () => {
+    const models = withCapabilities([entry({ id: 'm', reasoning: true })], 'm', {
+      defaultEffort: 'high',
+    })
+
+    expect(models[0]?.defaultEffort).toBe('high')
+  })
+
+  it('drops a designed default once that level is removed', () => {
+    const models = withCapabilities(
+      [entry({ id: 'm', reasoning: true, efforts: ['low', 'high'], defaultEffort: 'high' })],
+      'm',
+      { efforts: ['low'] },
+    )
+
+    // Keeping it would make every send fail against a level the model dropped.
+    expect(models[0]?.defaultEffort).toBeNull()
   })
 })
 
@@ -122,6 +146,7 @@ describe('mergeModels', () => {
         name: 'Model M',
         reasoning: null,
         efforts: null,
+        defaultEffort: null,
         input: ['text', 'image'],
         contextWindow: 100_000,
         maxTokens: null,

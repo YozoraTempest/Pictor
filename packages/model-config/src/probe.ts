@@ -82,10 +82,10 @@ export async function fetchModels(
       id: record.id,
       name: typeof record.name === 'string' ? record.name : null,
       reasoning: typeof record.reasoning === 'boolean' ? record.reasoning : null,
-      // Discovery says whether a model reasons, never which levels it takes, and a
-      // wrong level is refused at send time. Declaring one here would be a guess
-      // the settings page then has to undo.
+      // Discovery says whether a model reasons, never which levels it takes, so the
+      // level list stays undeclared here; the settings page is where it is designed.
       efforts: null,
+      defaultEffort: null,
       input: modalitiesOf(record),
       contextWindow:
         positiveOf(record['context_window']) ??

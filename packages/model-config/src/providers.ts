@@ -85,7 +85,8 @@ export function parseModels(value: unknown): ModelEntry[] {
 
     const name = record['name']
     const reasoning = record['reasoning']
-    const efforts = record['efforts']
+    const efforts = parseEfforts(record['efforts'])
+    const defaultEffort = record['defaultEffort']
     const input = record['input']
     const contextWindow = record['contextWindow']
     const maxTokens = record['maxTokens']
@@ -95,7 +96,15 @@ export function parseModels(value: unknown): ModelEntry[] {
         id,
         name: typeof name === 'string' && name.length > 0 ? name : null,
         reasoning: typeof reasoning === 'boolean' ? reasoning : null,
-        efforts: parseEfforts(efforts),
+        efforts,
+        // Only a level this model actually offers may be its default; anything else
+        // would be refused at send time.
+        defaultEffort:
+          typeof defaultEffort === 'string' &&
+          efforts !== null &&
+          efforts.some((level) => level === defaultEffort)
+            ? (defaultEffort as ModelEffort)
+            : null,
         input:
           Array.isArray(input) && input.every((entry) => typeof entry === 'string')
             ? (input as string[])

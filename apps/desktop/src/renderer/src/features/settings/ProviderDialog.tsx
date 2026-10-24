@@ -8,7 +8,7 @@ import type {
   ProviderList,
   ProviderView,
 } from '@pictor/shared'
-import { MODEL_EFFORTS } from '@pictor/shared'
+import { MODEL_EFFORTS, OMIT_EFFORT } from '@pictor/shared'
 
 import { Badge, Banner, Button, Dialog, Input, Select, Switch } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
@@ -94,13 +94,14 @@ export function ProviderDialog({
    * that declaration outright.
    */
   function toggleEffort(level: ModelEffort): void {
-    const current = capabilities.efforts ?? []
+    const current = capabilities.efforts
     const next = current.includes(level)
       ? current.filter((entry) => entry !== level)
       : [...current, level]
     if (next.length === 0) return
     setCapability({ efforts: MODEL_EFFORTS.filter((entry) => next.includes(entry)) })
   }
+
   function limitOf(value: string): number | null {
     const parsed = Number(value.trim())
     return value.trim().length === 0 || !Number.isFinite(parsed) ? null : parsed
@@ -324,6 +325,35 @@ export function ProviderDialog({
                   )
                 })}
               </div>
+            }
+          />
+        )}
+
+        {/* What the composer selects the moment this model is picked. Without it,
+            switching models would silently drop back to sending no level. */}
+        {capabilities.reasoning && capabilities.efforts.length > 0 && (
+          <SettingRow
+            id="pi.modelDefaultEffort"
+            title="默认强度"
+            description="在输入框里选中这个模型时自动使用这一档。"
+            control={
+              <Select
+                aria-label="默认强度"
+                className="w-32"
+                value={capabilities.defaultEffort ?? OMIT_EFFORT}
+                onChange={(next) =>
+                  setCapability({
+                    defaultEffort: capabilities.efforts.find((level) => level === next) ?? null,
+                  })
+                }
+                options={[
+                  { value: OMIT_EFFORT, label: OMIT_EFFORT },
+                  ...capabilities.efforts.map((level) => ({
+                    value: level,
+                    label: effortLabel(level),
+                  })),
+                ]}
+              />
             }
           />
         )}

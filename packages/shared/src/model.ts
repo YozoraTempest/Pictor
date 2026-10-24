@@ -51,6 +51,14 @@ export interface ModelEntry {
    * levels the user narrowed is what makes "high only" survive a reopen.
    */
   efforts: ModelEffort[] | null
+  /**
+   * Level this model starts at, as the user designed it.
+   *
+   * Picking the model in the composer selects this level, so the setting survives
+   * the picker instead of being re-chosen on every switch. `null` means the model
+   * starts at {@link OMIT}: no level is sent until someone picks one.
+   */
+  defaultEffort: ModelEffort | null
   input: string[] | null
   contextWindow: number | null
   maxTokens: number | null
@@ -72,6 +80,28 @@ export function acceptedEfforts(
   return entry.reasoning === true ? [...DEFAULT_MODEL_EFFORTS] : []
 }
 
+/**
+ * How "send no level at all" reads.
+ *
+ * It is not a level, so it has no wire name: the request simply carries no
+ * `reasoning_effort`. Calling it `off` would promise a switch that only
+ * DeepSeek-shaped endpoints honour; `omit` says exactly what happens.
+ */
+export const OMIT_EFFORT = 'omit'
+
+/**
+ * The level a model starts at, or `null` when it starts at {@link OMIT_EFFORT}.
+ *
+ * A designed default that the model no longer offers is treated as no default:
+ * sending it would be refused, and showing it would be a promise the picker cannot
+ * keep.
+ */
+export function defaultEffortOf(
+  entry: Pick<ModelEntry, 'reasoning' | 'efforts' | 'defaultEffort'> | undefined,
+): ModelEffort | null {
+  if (entry === undefined || entry.defaultEffort === null) return null
+  return acceptedEfforts(entry).includes(entry.defaultEffort) ? entry.defaultEffort : null
+}
 /** Non-secret model configuration plus a mask of whether a key is stored. */
 export interface ModelSettings {
   /** Provider the runtime uses; `null` when none is configured yet. */
