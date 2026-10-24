@@ -424,12 +424,8 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
                     {effortLabel(effort)}
                   </span>
                 </div>
-                <div className="mt-1.5">
+                <div className="mt-1">
                   <EffortSlider levels={levels} value={effort} onChange={setEffort} />
-                </div>
-                <div className="mt-0.5 flex justify-between text-2xs text-faint">
-                  <span>{effortLabel(null)}</span>
-                  <span>{effortLabel(levels[levels.length - 1] ?? null)}</span>
                 </div>
               </div>
             )}

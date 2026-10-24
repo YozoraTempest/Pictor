@@ -145,24 +145,29 @@
    * instead of the same fade twice.
    */
   .picker-page {
-    animation: picker-page-in 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation: picker-page-in 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   .picker-page[data-page='recent'] {
     animation-name: picker-page-back;
   }
 
+  /*
+   * The travel is short and the curve decelerates hard, so the page reads as
+   * arriving rather than sliding: a long slide at this size looks like the panel
+   * itself moved.
+   */
   @keyframes picker-page-in {
     from {
       opacity: 0;
-      transform: translateX(10px);
+      transform: translateX(6px);
     }
   }
 
   @keyframes picker-page-back {
     from {
       opacity: 0;
-      transform: translateX(-10px);
+      transform: translateX(-6px);
     }
   }
 }
