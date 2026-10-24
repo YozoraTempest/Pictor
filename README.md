@@ -60,7 +60,6 @@ packages/application/  ApplicationHost, Command Engine, Profile lock, events
 packages/plugin-sdk/   Manifest, Module and Contribution contract
 packages/plugin-host/  Discovery, SemVer resolution, lifecycle, installer
 packages/harness/      dsh transport: unary calls, session stream, follow frames
-packages/agent-runtime/AgentRuntime contract, Pi adapter, JSONL projection
 ```
 
 ## How it fits together
@@ -101,8 +100,9 @@ the runtime's own HTTP and WebSocket API.
   opening window and then streams.
 - **Sessions.** The runtime owns conversation transcripts. The app keeps the
   mapping from its own session ids to runtime ids in
-  `<DSH_HOME>/pictor-sessions.json`; a session that ran on Pi (before the runtime
-  existed) keeps using its own log.
+  `<DSH_HOME>/pictor-sessions.json`. There is no second store: sending a message
+  while the runtime is down is refused, so a turn never lands somewhere the next
+  boot cannot read.
 - **Permissions.** **Settings › Runtime** selects `read-only`,
   `workspace-write` or `danger-full-access`, which reaches the runtime as
   `DSH_PERMISSION_MODE`.
@@ -162,8 +162,8 @@ Storage rules:
 - Non-secret settings live in SQLite (`pi.*` keys).
 - The API key is written to `<userData>/auth.json` with `0600` permissions and is
   never returned to the renderer; the UI only sees `hasApiKey`.
-- `<userData>/pi/models.json` references the key as `$PICTOR_PROVIDER_API_KEY`;
-  the value is injected into the process only for the duration of a run.
+- The runtime gets the key as `PICTOR_LLM_API_KEY` when it boots; it never enters
+  the generated profile patch.
 
 Override discovery for tests with `PICTOR_CCSWITCH_DB` (database path) and
 `PICTOR_USER_DATA` (profile directory).

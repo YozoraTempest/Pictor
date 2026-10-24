@@ -26,14 +26,13 @@ knowledge base.
 Renderer -> bridge types -> preload -> IPC -> main -> application -> host-client -> racp -> stdio
 main -> plugin-host -> plugin-sdk
 main -> harness -> dsh (child process: HTTP + WebSocket)
-main -> agent-runtime -> AgentRuntime (legacy Pi path)
 host-core (Rust) -> SQLite
 ```
 
 Forbidden:
 
 - `packages/shared` importing Node, Electron, React or any concrete package.
-- `packages/plugin-sdk` importing `src/`, Electron, React or the Pi SDK.
+- `packages/plugin-sdk` importing `src/`, Electron or React.
 - `packages/harness` importing Electron, the renderer or `@pictor/shared` beyond
   type-only imports; it is a transport library and must stay testable with a fake
   socket.
@@ -92,14 +91,16 @@ isolated per plugin and surfaced in the plugin report.
 
 ### Chat
 
-`@pictor/chat` still owns the legacy Pi session, and the renderer's transcript
-does not care which runtime produced it:
+The runtime is the only owner of a transcript; the renderer does not care how it
+speaks:
 
 - `apps/desktop/src/main/harness-history.ts` projects runtime events into
-  transcript rows; `chat.ts` does the same for Pi JSONL. Both paginate from the
-  newest message backwards.
-- A conversation with no Pi record belongs to the runtime. Only a session that
-  actually ran on Pi keeps `session.piSessionId` and reads its own log.
+  transcript rows and paginates from the newest message backwards.
+- Every conversation belongs to the runtime. `chat.open` always answers with a
+  `harness:` path, and an unready runtime yields an empty page the window explains
+  rather than a second engine: sending a message while it is down is refused, so a
+  turn can never land somewhere the next boot cannot read. `sessions.pi_session_id`
+  survives from the pre-runtime layout and is never written; nothing reads it.
 - The app keeps `pictorId -> runtimeId` in `<DSH_HOME>/pictor-sessions.json`. A
   miss means the runtime never created that conversation, so there is no history
   to subscribe to.
@@ -119,11 +120,12 @@ does not care which runtime produced it:
   channel (`pictor:chat.event`). Runtime status travels on its own channel
   (`pictor:harness.status`) so a window can re-read a transcript that was opened
   before the runtime was up.
-- Tool approval is a seam, not a policy. On the Pi path
-  `setToolInterceptor` installs a `beforeToolCall` hook. On the runtime path the
-  request arrives as an `approval/request` waterfall on the application event
-  stream, and the app answers it over `$events/result`; a request nobody answers
-  settles as `unavailable`.
+- Tool approval is a seam, not a policy. The request arrives as an
+  `approval/request` waterfall on the application event stream, and the app answers
+  it over `$events/result`; a request nobody answers settles as `unavailable`.
+- 试运行 runs one throwaway turn through the runtime (`HarnessService.probe`)
+  instead of a second client, so the check a user runs proves the path a
+  conversation takes. The probe session is never registered with Pictor.
 
 ### Model configuration
 
@@ -132,22 +134,20 @@ does not care which runtime produced it:
 - `ModelProtocol` uses the runtime's own vocabulary (`openai-completions`,
   `openai-responses`, `anthropic-messages`), so a saved service reaches the kernel
   without a translation table.
-- Non-secret values (`pi.*`) go through `MetadataStore` into SQLite.
+- Non-secret values go through `MetadataStore` into SQLite under the `pi.*` keys,
+  a namespace kept from the first layout.
 - `auth.json` holds keys per service with `0600` permissions; only the main
   process reads it, and the bridge exposes `hasApiKey` instead of the value.
 - The runtime receives its key in `PICTOR_LLM_API_KEY` at boot and resolves it per
   request, so the secret never lands in the profile patch.
-- `models.json` is still generated for the legacy Pi path with
-  `apiKey: "$PICTOR_PROVIDER_API_KEY"`.
 - cc-switch access is read-only and implemented in Rust (`ccswitch.scan` /
   `ccswitch.read`); the scan response never contains a key.
 
 ### Storage
 
 SQLite holds projects, sessions, plugin records and settings. Conversation
-transcripts do not live there: the runtime owns its own session log, and Pi JSONL
-remains the source for sessions that predate the runtime. Both are read, never
-written twice.
+transcripts do not live there: the runtime owns its own session log and is the
+only place a transcript is read from.
 
 ## Adding code
 
@@ -161,8 +161,7 @@ written twice.
 - Tool guard: `contributes('toolGuards', { id, tools?, decide })` polices agent
   tool calls before they run. Guards run in contribution order, the first deny
   wins, and a guard that throws fails closed.
-  On the Pi path they ride `setToolInterceptor`. On the runtime path the app
-  writes a small package into the profile (`node_modules/pictor-guard`) and mounts
+  The app writes a small package into the profile (`node_modules/pictor-guard`) and mounts
   it with `{ insert: [...] }` — a user-layer entry without `insert` is read as a
   patch to an existing id and the plugin silently never loads. The plugin asks
   `ToolGuardServer` over loopback for every `tools/pre-execute` call and turns the

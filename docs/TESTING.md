@@ -49,7 +49,7 @@ than kept for its count.
 | Layer         | Location                                           | Covers                                                                                                                                          |
 | ------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Core packages | `packages/*/src/**/*.test.ts`                      | RACP framing, the host client, profile locking, plugin resolution and lifecycle, the `@pictor/harness` wire protocol, provider and auth storage |
-| Main process  | `apps/desktop/src/main/*.test.ts`                  | The runtime event bridge, history ownership, the profile patch, tool guards, title adoption                                                     |
+| Main process  | `apps/desktop/src/main/*.test.ts`                  | The runtime event bridge, history projection, the profile patch, tool guards, title adoption                                                    |
 | Renderer      | `apps/desktop/src/renderer/src/**/*.test.{ts,tsx}` | Session grouping, transcript turns, stores, presenters, settings schema, and the few components whose logic is not layout                       |
 | Rust          | `crates/host-core`                                 | Migrations, store operations, JSON-RPC dispatch                                                                                                 |
 
@@ -74,6 +74,7 @@ Each spec says what it is about:
 | Spec      | Proves                                                                                                                                       |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `chat`    | A message typed into the composer reaches the runtime, streams back, the runtime's title is adopted, and the conversation survives a restart |
+| `probe`   | 试运行 returns the runtime's answer and events, and with the runtime down a message is refused instead of being answered elsewhere           |
 | `archive` | Archiving is undoable from the row that did it, and a sweeping archive asks first                                                            |
 | `search`  | The palette narrows as you type, land on a conversation, open and close on the advertised keys                                               |
 
@@ -84,8 +85,8 @@ titling request separately, which is what makes the adopted-title check meaningf
 **The runtime is not installed by e2e.** A conversation needs the pinned
 `@deepseek-ai/dsh` package, which the app itself installs into a profile (about
 900 MB). The harness uses a runtime that already exists — `PICTOR_DSH_BIN`, or the
-one in the current profile — and the chat spec returns `{ skip }` when there is
-none. `PICTOR_E2E_STRICT=1` turns that skip into a failure, so CI cannot lose the
+one in the current profile — and the specs that need a turn return `{ skip }` when
+there is none. `PICTOR_E2E_STRICT=1` turns that skip into a failure, so CI cannot lose the
 coverage silently.
 
 Other knobs, all optional: `PICTOR_E2E_ELECTRON_ARGS` passes extra Chromium
@@ -127,9 +128,10 @@ otherwise. No endpoint or key is ever committed:
 ```bash
 PICTOR_LIVE_TEST=1 PICTOR_LIVE_BASE_URL=… PICTOR_LIVE_MODEL=… PICTOR_LIVE_API_KEY=… \
   pnpm vitest run packages/model-config/src/live.test.ts   # /models + one completion
-PICTOR_LIVE_AGENT=1 … pnpm vitest run packages/agent-runtime/src/live.test.ts
-PICTOR_LIVE_CHAT=1  … pnpm vitest run packages/chat/src/live.test.ts
 ```
+
+The full chat loop is a spec, not a live test: `pnpm test:e2e chat` runs a real
+turn through the runtime against a local stub endpoint.
 
 They are the only way to see a real provider refuse a request — a base URL that
 needs `/anthropic` rather than `/v1`, for instance. They are never part of CI.
