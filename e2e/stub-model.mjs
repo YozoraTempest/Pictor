@@ -1,0 +1,134 @@
+import { createServer } from 'node:http'
+
+/**
+ * A model endpoint that answers like the real one, without a network.
+ *
+ * The point of the chat spec is the path between the window and the runtime, so
+ * the far end of that path must be predictable: the same text, the same order,
+ * on every run. The stub speaks the OpenAI chat-completions wire format because
+ * that is what the runtime's default route expects.
+ *
+ * @typedef {object} StubModel
+ * @property {string} baseUrl what a provider's `baseUrl` should be
+ * @property {string[]} requests one line per call, for assertions
+ * @property {() => Promise<void>} close
+ */
+
+const TITLE_HINT = 'title for an'
+
+/** @param {unknown} value */
+const isRecord = (value) => typeof value === 'object' && value !== null
+
+/**
+ * @param {object} [options]
+ * @param {string} [options.reply] what the assistant says, streamed in pieces
+ * @param {string} [options.title] what the titling request returns
+ * @returns {Promise<StubModel>}
+ */
+export async function startStubModel(options = {}) {
+  const reply = options.reply ?? '这是 e2e 模型的回答。'
+  const title = options.title ?? 'e2e 自动标题'
+  /** @type {string[]} */
+  const requests = []
+
+  const server = createServer((request, response) => {
+    let body = ''
+    request.on('data', (chunk) => {
+      body += String(chunk)
+    })
+    request.on('end', () => {
+      requests.push(`${request.method ?? ''} ${request.url ?? ''}`)
+
+      if (request.url?.endsWith('/models') === true) {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ data: [{ id: 'stub-model' }] }))
+        return
+      }
+
+      let parsed = {}
+      try {
+        parsed = JSON.parse(body)
+      } catch {
+        parsed = {}
+      }
+
+      const model =
+        isRecord(parsed) && typeof parsed['model'] === 'string' ? parsed['model'] : 'stub-model'
+      const messages =
+        isRecord(parsed) && Array.isArray(parsed['messages']) ? parsed['messages'] : []
+      const system = messages
+        .map((message) =>
+          isRecord(message) && typeof message['content'] === 'string' ? message['content'] : '',
+        )
+        .join('\n')
+      const wantsStream = isRecord(parsed) && parsed['stream'] === true
+
+      // The runtime asks for a conversation title with its own prompt; giving it
+      // a fixed answer is what lets the spec check that Pictor adopts it.
+      const content = system.includes(TITLE_HINT) ? title : reply
+
+      if (!wantsStream) {
+        response.writeHead(200, { 'content-type': 'application/json' })
+        response.end(
+          JSON.stringify({
+            id: 'stub-1',
+            object: 'chat.completion',
+            created: 1,
+            model,
+            choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 8, completion_tokens: 8, total_tokens: 16 },
+          }),
+        )
+        return
+      }
+
+      response.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      })
+      const chunk = (/** @type {object} */ delta, /** @type {string | null} */ finish = null) =>
+        `data: ${JSON.stringify({
+          id: 'stub-1',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model,
+          choices: [{ index: 0, delta, finish_reason: finish }],
+        })}\n\n`
+
+      response.write(chunk({ role: 'assistant', content: '' }))
+      // Two pieces, so a spec can see the transcript grow rather than appear.
+      const head = content.length > 4 ? content.slice(0, Math.ceil(content.length / 2)) : ''
+      if (head.length > 0) response.write(chunk({ content: head }))
+      response.write(chunk({ content: content.slice(head.length) }))
+      response.write(chunk({}, 'stop'))
+      response.write(
+        `data: ${JSON.stringify({
+          id: 'stub-1',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model,
+          choices: [],
+          usage: { prompt_tokens: 8, completion_tokens: 8, total_tokens: 16 },
+        })}\n\n`,
+      )
+      response.end('data: [DONE]\n\n')
+    })
+  })
+
+  await new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve(undefined))
+  })
+  const address = server.address()
+  const port = typeof address === 'object' && address !== null ? address.port : 0
+
+  return {
+    baseUrl: `http://127.0.0.1:${String(port)}/v1`,
+    requests,
+    close: async () => {
+      await new Promise((resolve) => {
+        server.close(() => resolve(undefined))
+      })
+    },
+  }
+}
