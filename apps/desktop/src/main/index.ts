@@ -993,6 +993,19 @@ function registerIpc(workspace: Workspace): void {
     return status
   })
 
+  ipcMain.handle('pictor:harness.skills', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0)
+      throw new Error('sessionId is required')
+    return workspace.harness.listSkills(sessionId)
+  })
+
+  // A skill's instructions live in a file the runtime discovered; showing it in
+  // the file manager is the shortest path from "what is this skill" to the text.
+  ipcMain.handle('pictor:shell.showItem', async (_event, path: unknown) => {
+    if (typeof path !== 'string' || path.length === 0) throw new Error('path is required')
+    shell.showItemInFolder(path)
+  })
+
   ipcMain.handle(
     'pictor:harness.approvalAnswer',
     async (_event, eventId: unknown, allow: unknown) => {

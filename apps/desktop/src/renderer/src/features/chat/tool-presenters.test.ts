@@ -108,6 +108,47 @@ describe('presentTool', () => {
 
     expect(view.sections.at(-1)?.title).toBe('拦截原因')
   })
+
+  it('unwraps a loaded skill into its location and instructions', () => {
+    const view = presentTool(
+      call({
+        toolName: 'skill',
+        input: { name: 'grilling' },
+        text: [
+          '<skill_content name="grilling">',
+          '<skill_resources>',
+          'Base directory for this skill: /repo/.agents/skills/grilling',
+          'Resolve relative paths mentioned by this skill against the base directory.',
+          '</skill_resources>',
+          '',
+          '<skill_instructions>',
+          'Interview the user relentlessly.',
+          '</skill_instructions>',
+          '</skill_content>',
+        ].join('\n'),
+      }),
+    )
+
+    expect(view.label).toBe('技能')
+    expect(view.target).toBe('grilling')
+    expect(view.sections).toEqual([
+      {
+        title: '资源位置',
+        body: 'Base directory for this skill: /repo/.agents/skills/grilling\nResolve relative paths mentioned by this skill against the base directory.',
+      },
+      { title: '技能说明', body: 'Interview the user relentlessly.' },
+    ])
+  })
+
+  it('shows the arguments beside a skill call that failed to load', () => {
+    const view = presentTool(
+      call({ toolName: 'skill', input: { name: 'nope' }, text: 'Error: unknown skill "nope"' }),
+    )
+
+    expect(view.target).toBe('nope')
+    expect(view.sections.map((section) => section.title)).toEqual(['入参', '出参'])
+    expect(view.sections.at(-1)?.body).toBe('Error: unknown skill "nope"')
+  })
 })
 
 describe('toolLabel', () => {

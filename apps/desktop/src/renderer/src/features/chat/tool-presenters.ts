@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   FileDiff,
   FilePen,
   FileText,
@@ -351,5 +352,50 @@ registerToolPresenter('present', (message) => {
     icon: Presentation,
     target: clip(title.length > 0 ? title : field(args, 'path')),
     sections: message.text.length === 0 ? [] : [{ title: '内容', body: message.text }],
+  }
+})
+
+/**
+ * The loader wraps a skill body in a canonical block: the resource hint, then
+ * the instructions. Rendering the wrapper would put three lines of tags around
+ * every paragraph, so it is unwrapped here.
+ *
+ * A block that is missing entirely means the call did not load anything — an
+ * invalid name, an unknown skill, a model-invocation ban. That text is the
+ * error, so it belongs in the generic arguments-plus-output view rather than
+ * being captioned as if it were the skill's own instructions.
+ */
+function skillPayload(text: string): { loaded: boolean; instructions: string; resources: string } {
+  const content = /<skill_content\b[^>]*>([\s\S]*?)<\/skill_content>/.exec(text)?.[1]
+  if (content === undefined) return { loaded: false, instructions: '', resources: '' }
+
+  const instructions = /<skill_instructions>([\s\S]*?)<\/skill_instructions>/.exec(content)?.[1]
+  const resources = /<skill_resources>([\s\S]*?)<\/skill_resources>/.exec(content)?.[1]
+  return {
+    loaded: true,
+    instructions: (instructions ?? content).trim(),
+    resources: (resources ?? '').trim(),
+  }
+}
+
+registerToolPresenter('skill', (message) => {
+  const args = asRecord(message.input)
+  const name = field(args, 'name')
+  const payload = skillPayload(message.text)
+
+  return {
+    label: '技能',
+    icon: BookOpen,
+    target: name.length > 0 ? name : '加载技能',
+    sections: payload.loaded
+      ? [
+          ...(payload.resources.length === 0
+            ? []
+            : [{ title: '资源位置', body: payload.resources }]),
+          ...(payload.instructions.length === 0
+            ? []
+            : [{ title: '技能说明', body: payload.instructions }]),
+        ]
+      : fallbackPresentation(message, 'skill').sections,
   }
 })

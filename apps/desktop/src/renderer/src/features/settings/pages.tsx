@@ -1,4 +1,4 @@
-import { Blocks, Cpu, Info, Settings2, Terminal, type LucideIcon } from 'lucide-react'
+import { Blocks, BookOpen, Cpu, Info, Settings2, Terminal, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { AboutSection } from './AboutSection.js'
@@ -6,6 +6,7 @@ import { AgentModelPage } from './AgentModelPage.js'
 import { GeneralSection } from './GeneralSection.js'
 import { PluginsSection } from './PluginsSection.js'
 import { RuntimePage } from './RuntimePage.js'
+import { SkillsSection } from './SkillsSection.js'
 
 /** One page in the settings sidebar. */
 export interface SettingsPage {
@@ -52,6 +53,16 @@ const PAGES = [
     group: '智能体',
     order: 1,
     render: () => <RuntimePage />,
+  },
+  {
+    id: 'skills',
+    label: '技能',
+    icon: BookOpen,
+    description: '当前会话能看到的技能，以及它们来自哪个文件',
+    keywords: '技能 skill 技能目录 SKILL.md 提示 说明',
+    group: '智能体',
+    order: 2,
+    render: () => <SkillsSection />,
   },
   {
     id: 'plugins',

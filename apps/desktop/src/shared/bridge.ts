@@ -19,6 +19,7 @@ import type {
   Section,
   Session,
   SettingsMap,
+  SkillEntry,
 } from '@pictor/shared'
 
 export interface AppInfo {
@@ -179,6 +180,10 @@ export interface PictorBridge {
   installHarness(): Promise<HarnessStatus>
   /** Persisted sandbox mode; the runtime picks it up on its next start. */
   setHarnessPermissionMode(mode: PermissionMode): Promise<HarnessStatus>
+  /** Skills the conversation behind `sessionId` can see, for `/` and settings. */
+  listSkills(sessionId: string): Promise<SkillEntry[]>
+  /** Reveals a file in the OS file manager; no-op when the path is unknown. */
+  showInFolder(path: string): Promise<void>
 
   getAppInfo(): Promise<AppInfo>
 

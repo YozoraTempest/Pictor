@@ -11,7 +11,7 @@ import { createServer } from 'node:http'
  * @typedef {object} StubModel
  * @property {string} baseUrl what a provider's `baseUrl` should be
  * @property {string[]} requests one line per call, for assertions
- * @property {{ hasImage: boolean, roles: string[], effort: string | null }[]} calls what each request carried
+ * @property {{ text: string, hasImage: boolean, roles: string[], effort: string | null, toolText: string }[]} calls what each request carried
  * @property {() => Promise<void>} close
  */
 
@@ -39,7 +39,7 @@ export async function startStubModel(options = {}) {
   const toolCalls = options.toolCalls ?? []
   /** @type {string[]} */
   const requests = []
-  /** @type {{ hasImage: boolean, roles: string[], effort: string | null }[]} */
+  /** @type {{ text: string, hasImage: boolean, roles: string[], effort: string | null, toolText: string }[]} */
   const calls = []
 
   const server = createServer((request, response) => {
@@ -68,8 +68,17 @@ export async function startStubModel(options = {}) {
       const messages =
         isRecord(parsed) && Array.isArray(parsed['messages']) ? parsed['messages'] : []
 
+      // Every message's text, flattened: what the runtime injected (a skill body
+      // from `/name`, a catalog) can only be seen here.
+      const prompt = messages
+        .map((message) =>
+          isRecord(message) && typeof message['content'] === 'string' ? message['content'] : '',
+        )
+        .join('\n')
+
       // A spec asks whether the runtime sent an image; the bytes stay out of here.
       calls.push({
+        text: prompt,
         hasImage: messages.some(
           (message) =>
             isRecord(message) &&
@@ -95,11 +104,6 @@ export async function startStubModel(options = {}) {
           )
           .join('\n'),
       })
-      const system = messages
-        .map((message) =>
-          isRecord(message) && typeof message['content'] === 'string' ? message['content'] : '',
-        )
-        .join('\n')
       const wantsStream = isRecord(parsed) && parsed['stream'] === true
 
       // A tool result in the conversation means an earlier call has finished, so
@@ -107,7 +111,7 @@ export async function startStubModel(options = {}) {
       const toolResults = messages.filter(
         (message) => isRecord(message) && message['role'] === 'tool',
       ).length
-      if (toolCalls.length > toolResults && !system.includes(TITLE_HINT)) {
+      if (toolCalls.length > toolResults && !prompt.includes(TITLE_HINT)) {
         const call = toolCalls[toolResults]
         response.writeHead(200, {
           'content-type': 'text/event-stream',
@@ -144,7 +148,7 @@ export async function startStubModel(options = {}) {
       // a fixed answer is what lets the spec check that Pictor adopts it.
       // A titling request is not a turn, so only a conversation walks the list.
       let content = reply
-      if (system.includes(TITLE_HINT)) content = title
+      if (prompt.includes(TITLE_HINT)) content = title
       else if (replies.length > 0) {
         content = replies[Math.min(answered, replies.length - 1)] ?? reply
         answered += 1

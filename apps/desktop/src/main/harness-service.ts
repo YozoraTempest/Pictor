@@ -20,13 +20,15 @@ import {
   type WebSocketLike,
 } from '@pictor/harness'
 
-import type {
-  ChatAnswer,
-  ChatHistoryPage,
-  ChatImage,
-  ChatQuestion,
-  ModelEffort,
-  ModelSettings,
+import {
+  parseSkills,
+  type ChatAnswer,
+  type ChatHistoryPage,
+  type ChatImage,
+  type ChatQuestion,
+  type ModelEffort,
+  type ModelSettings,
+  type SkillEntry,
 } from '@pictor/shared'
 
 import { loadHarnessHistory } from './harness-history.js'
@@ -498,6 +500,24 @@ export class HarnessService {
         `内核拒绝了推理强度「${effort}」：${error instanceof Error ? error.message : String(error)}`,
       )
     }
+  }
+
+  /**
+   * The skills one conversation can see.
+   *
+   * A catalog is resolved per session — the working directory and the preset
+   * decide which roots get scanned — so this asks about a conversation rather
+   * than about the app. Resolving the session is the same step a prompt takes,
+   * so a conversation that exists only in Pictor is opened in the runtime first.
+   */
+  async listSkills(sessionId: string): Promise<SkillEntry[]> {
+    const remote = this.#remote
+    if (remote === null) throw new Error('agent 运行时尚未启动')
+    const harnessId = await this.#sessionFor(sessionId)
+    const value = await remote.call<{ skills: unknown }>('skills/list', {
+      request: { sessionId: harnessId },
+    })
+    return parseSkills(value)
   }
 
   /** Stop the turn the runtime is running for one session. */

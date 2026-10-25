@@ -1,12 +1,16 @@
 import { ArrowUp, Square } from 'lucide-react'
 import { X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
-import type { ChatImage } from '@pictor/shared'
+import type { ChatImage, SkillEntry } from '@pictor/shared'
 
 import { Button } from '../../components/ui/index.js'
+import { cn } from '../../lib/cn.js'
+import { useChatStore } from './chat-store.js'
 import { ContextMeter } from './ContextMeter.js'
 import { ModelPicker } from './ModelPicker.js'
+import { matchSkills, slashTokenAt, type SlashToken } from './slash.js'
 
 /** Refuses anything the runtime could not accept, before the user commits it. */
 const ACCEPTED = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
@@ -42,7 +46,13 @@ export function Composer({
 }: ComposerProps): React.JSX.Element {
   const [value, setValue] = useState('')
   const [images, setImages] = useState<ChatImage[]>([])
+  const [skills, setSkills] = useState<SkillEntry[] | null>(null)
+  const [slash, setSlash] = useState<SlashToken | null>(null)
+  const [active, setActive] = useState(0)
+  const [anchor, setAnchor] = useState<{ left: number; bottom: number; width: number } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const sessionId = useChatStore((state) => state.current.sessionId)
 
   /** Takes whatever image files a paste or a drop carried. */
   async function attach(files: readonly File[]): Promise<void> {
@@ -61,99 +71,252 @@ export function Composer({
     textarea.style.height = `${String(Math.min(textarea.scrollHeight, 200))}px`
   }, [value])
 
+  // The catalog belongs to the conversation, so it is read when a `/` starts a
+  // token rather than on mount: most drafts never ask for a skill.
+  useEffect(() => {
+    if (slash === null || skills !== null || sessionId.length === 0) return
+    let alive = true
+    void window.pictor
+      .listSkills(sessionId)
+      .then((next) => {
+        if (alive) setSkills(next)
+      })
+      .catch(() => {
+        // A runtime that cannot answer leaves the menu closed; the draft is still
+        // sendable, and the runtime ignores an unknown `/name`.
+        if (alive) setSkills([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [slash, skills, sessionId])
+
+  const matches = useMemo(
+    () => (slash === null ? [] : matchSkills(skills ?? [], slash.query)),
+    [slash, skills],
+  )
+
+  useEffect(() => {
+    setActive(0)
+  }, [slash?.query, skills])
+
+  // Above the textarea, so the menu never covers the words being typed under it.
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (textarea === null || slash === null || matches.length === 0) {
+      setAnchor(null)
+      return
+    }
+    const rect = textarea.getBoundingClientRect()
+    const width = Math.min(Math.max(rect.width, 220), 380)
+    setAnchor({
+      left: Math.min(Math.max(8, rect.left), window.innerWidth - width - 8),
+      bottom: window.innerHeight - rect.top + 6,
+      width,
+    })
+  }, [slash, matches.length])
+
+  // Clicking elsewhere abandons the menu without touching the draft.
+  useEffect(() => {
+    if (slash === null) return
+    const onPointerDown = (event: MouseEvent): void => {
+      const target = event.target as Node
+      if (menuRef.current?.contains(target) === true) return
+      if (textareaRef.current?.contains(target) === true) return
+      setSlash(null)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+    }
+  }, [slash])
+
+  function choose(skill: SkillEntry): void {
+    if (slash === null) return
+    const next = `${value.slice(0, slash.start)}/${skill.name} ${value.slice(slash.end)}`
+    const caret = slash.start + skill.name.length + 2
+    setValue(next)
+    setSlash(null)
+    // The menu closes on the same tick; the caret has to be placed after the
+    // value React writes, or it jumps to the end of the draft.
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (textarea === null) return
+      textarea.focus()
+      textarea.setSelectionRange(caret, caret)
+    })
+  }
+
   function submit(): void {
     const prompt = value.trim()
     if ((prompt.length === 0 && images.length === 0) || disabled || running) return
     const attached = images
     setValue('')
     setImages([])
+    setSlash(null)
     onSend(prompt, attached)
   }
 
   return (
-    <div
-      className="rounded-xl border border-border bg-surface p-2 focus-within:border-border-strong focus-within:ring-1 focus-within:ring-accent/20"
-      onDragOver={(event) => {
-        if (!event.dataTransfer.types.includes('Files')) return
-        event.preventDefault()
-      }}
-      onDrop={(event) => {
-        if (event.dataTransfer.files.length === 0) return
-        event.preventDefault()
-        void attach([...event.dataTransfer.files])
-      }}
-    >
-      {images.length > 0 && (
-        <div className="flex flex-wrap gap-2 px-1 pt-1">
-          {images.map((image, index) => (
-            <div key={`${image.name ?? 'image'}-${String(index)}`} className="group relative">
-              <img
-                src={`data:${image.mediaType};base64,${image.data}`}
-                alt={image.name ?? '附图'}
-                className="size-14 rounded-md border border-border object-cover"
-              />
-              <button
-                type="button"
-                aria-label="移除图片"
-                onClick={() => setImages((current) => current.filter((_, at) => at !== index))}
-                className="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-full bg-surface-raised text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-text"
+    <>
+      <div
+        className="rounded-xl border border-border bg-surface p-2 focus-within:border-border-strong focus-within:ring-1 focus-within:ring-accent/20"
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes('Files')) return
+          event.preventDefault()
+        }}
+        onDrop={(event) => {
+          if (event.dataTransfer.files.length === 0) return
+          event.preventDefault()
+          void attach([...event.dataTransfer.files])
+        }}
+      >
+        {images.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-1 pt-1">
+            {images.map((image, index) => (
+              <div key={`${image.name ?? 'image'}-${String(index)}`} className="group relative">
+                <img
+                  src={`data:${image.mediaType};base64,${image.data}`}
+                  alt={image.name ?? '附图'}
+                  className="size-14 rounded-md border border-border object-cover"
+                />
+                <button
+                  type="button"
+                  aria-label="移除图片"
+                  onClick={() => setImages((current) => current.filter((_, at) => at !== index))}
+                  className="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-full bg-surface-raised text-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-text"
+                >
+                  <X className="size-2.5" aria-hidden />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <textarea
+          ref={textareaRef}
+          value={value}
+          rows={1}
+          disabled={disabled}
+          placeholder={disabled ? '先选择或新建一个会话' : '描述你要完成的任务…'}
+          aria-label="消息输入"
+          onChange={(event) => {
+            const next = event.target.value
+            setValue(next)
+            setSlash(slashTokenAt(next, event.target.selectionStart))
+          }}
+          onKeyUp={(event) => {
+            // Moving the caret back into a `/` token reopens the menu.
+            if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
+              const caret = event.currentTarget.selectionStart
+              setSlash(slashTokenAt(event.currentTarget.value, caret))
+            }
+          }}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files]
+            if (files.length === 0) return
+            event.preventDefault()
+            void attach(files)
+          }}
+          onKeyDown={(event) => {
+            if (slash !== null && matches.length > 0) {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                setActive((index) => (index + 1) % matches.length)
+                return
+              }
+              if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                setActive((index) => (index - 1 + matches.length) % matches.length)
+                return
+              }
+              if (event.key === 'Enter' || event.key === 'Tab') {
+                const skill = matches[active]
+                if (skill !== undefined) {
+                  event.preventDefault()
+                  choose(skill)
+                  return
+                }
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                setSlash(null)
+                return
+              }
+            }
+            if (event.key !== 'Enter' || event.shiftKey) return
+            if (event.nativeEvent.isComposing) return
+            event.preventDefault()
+            submit()
+          }}
+          className="max-h-48 w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-faint disabled:cursor-not-allowed"
+        />
+
+        {/* One row, right-aligned: what this conversation has used, which model
+            answers it, then the action. The key hints lived here before; they are a
+            reminder, and the rest of the row is information. */}
+        <div className="flex items-center px-1 pt-1">
+          <div className="ml-auto flex min-w-0 items-center gap-1">
+            <ContextMeter />
+            <ModelPicker onChanged={onModelChanged} />
+            {running ? (
+              <Button variant="secondary" size="sm" className="ml-1" onClick={onStop}>
+                <Square className="size-3 fill-current" />
+                停止
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="icon"
+                className="ml-1 rounded-full"
+                disabled={disabled || (value.trim().length === 0 && images.length === 0)}
+                onClick={submit}
+                aria-label="发送"
               >
-                <X className="size-2.5" aria-hidden />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <textarea
-        ref={textareaRef}
-        value={value}
-        rows={1}
-        disabled={disabled}
-        placeholder={disabled ? '先选择或新建一个会话' : '描述你要完成的任务…'}
-        aria-label="消息输入"
-        onChange={(event) => setValue(event.target.value)}
-        onPaste={(event) => {
-          const files = [...event.clipboardData.files]
-          if (files.length === 0) return
-          event.preventDefault()
-          void attach(files)
-        }}
-        onKeyDown={(event) => {
-          if (event.key !== 'Enter' || event.shiftKey) return
-          if (event.nativeEvent.isComposing) return
-          event.preventDefault()
-          submit()
-        }}
-        className="max-h-48 w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-faint disabled:cursor-not-allowed"
-      />
-
-      {/* One row, right-aligned: what this conversation has used, which model
-          answers it, then the action. The key hints lived here before; they are a
-          reminder, and the rest of the row is information. */}
-      <div className="flex items-center px-1 pt-1">
-        <div className="ml-auto flex min-w-0 items-center gap-1">
-          <ContextMeter />
-          <ModelPicker onChanged={onModelChanged} />
-          {running ? (
-            <Button variant="secondary" size="sm" className="ml-1" onClick={onStop}>
-              <Square className="size-3 fill-current" />
-              停止
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              size="icon"
-              className="ml-1 rounded-full"
-              disabled={disabled || (value.trim().length === 0 && images.length === 0)}
-              onClick={submit}
-              aria-label="发送"
-            >
-              <ArrowUp className="size-4" />
-            </Button>
-          )}
+                <ArrowUp className="size-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* The menu is a portal for the same reason the model picker is: the
+          composer sits inside panels that clip their children. */}
+      {slash !== null &&
+        matches.length > 0 &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            aria-label="选择技能"
+            style={{
+              left: anchor?.left ?? 0,
+              bottom: anchor?.bottom ?? 0,
+              width: anchor?.width ?? 240,
+              visibility: anchor === null ? 'hidden' : 'visible',
+            }}
+            className="fixed z-50 flex max-h-64 flex-col overflow-y-auto rounded-lg border border-border bg-surface-raised p-1 shadow-popover"
+          >
+            {matches.map((skill, index) => (
+              <button
+                key={skill.name}
+                type="button"
+                role="option"
+                aria-selected={index === active}
+                onMouseEnter={() => setActive(index)}
+                onClick={() => choose(skill)}
+                className={cn(
+                  'flex flex-col gap-0.5 rounded-sm px-2 py-1.5 text-left transition-colors duration-150',
+                  index === active ? 'bg-surface-hover' : 'bg-transparent',
+                )}
+              >
+                <span className="font-mono text-xs text-text">/{skill.name}</span>
+                <span className="line-clamp-1 text-2xs text-faint">{skill.description}</span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
   )
 }

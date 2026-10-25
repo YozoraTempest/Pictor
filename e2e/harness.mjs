@@ -58,6 +58,7 @@ function freePort() {
  * @typedef {object} App
  * @property {import('playwright-core').Page} page
  * @property {string} workdir an existing empty directory a spec may use as a project
+ * @property {string} profile the throwaway profile the app runs against
  * @property {string | null} dsh the runtime binary the app will boot, if any
  * @property {() => Promise<void>} close
  */
@@ -165,6 +166,7 @@ export async function launch() {
   return {
     page,
     workdir,
+    profile,
     dsh,
     close: async () => {
       // The runtime is a child of the app, and killing the window would leave it
