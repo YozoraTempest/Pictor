@@ -29,32 +29,18 @@ export interface KernelPickerProps {
  * one option is furniture.
  */
 export function KernelPicker({ onBranch }: KernelPickerProps): React.JSX.Element | null {
-  const [kernels, setKernels] = useState<KernelInfo[] | null>(null)
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<{ left: number; bottom: number } | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const sessionId = useChatStore((state) => state.current.sessionId)
-  // The kernel belongs to the conversation, which the workspace owns.
+  // The kernel belongs to the conversation, and the list arrives with the
+  // workspace snapshot: the picker reads both instead of asking again.
   const sessionKernel = useWorkspaceStore(
     (state) => state.sessions.find((entry) => entry.id === sessionId)?.kernelId ?? null,
   )
+  const kernels = useWorkspaceStore((state) => state.kernels)
   const branchToKernel = useWorkspaceStore((state) => state.branchToKernel)
-
-  useEffect(() => {
-    let alive = true
-    void window.pictor
-      .listKernels()
-      .then((next) => {
-        if (alive) setKernels(next)
-      })
-      .catch(() => {
-        if (alive) setKernels([])
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
 
   const close = useCallback((): void => {
     setOpen(false)
@@ -99,7 +85,7 @@ export function KernelPicker({ onBranch }: KernelPickerProps): React.JSX.Element
   }, [open, close])
 
   // One kernel is not a choice; nothing to draw.
-  if (kernels === null || kernels.length < 2) return null
+  if (kernels.length < 2) return null
 
   const active =
     kernels.find((kernel) => kernel.id === sessionKernel) ??

@@ -58,5 +58,34 @@ export default {
     // whole point of binding it to the conversation.
     await page.getByRole('button', { name: 'e2e 内核分支' }).first().click({ timeout: 15_000 })
     await page.locator('[aria-label="内核：Pi"]').waitFor({ timeout: 20_000 })
+
+    // What each kernel can do travels with it, so the window can stop promising
+    // things the kernel behind the conversation cannot deliver.
+    const declared = await page.evaluate(() => window.pictor.listKernels())
+    assert.deepEqual(declared.find((kernel) => kernel.id === 'pi')?.capabilities, {
+      permission: false,
+      model: false,
+      skills: false,
+      fork: false,
+    })
+    assert.deepEqual(declared.find((kernel) => kernel.id === 'dsh')?.capabilities, {
+      permission: true,
+      model: true,
+      skills: true,
+      fork: true,
+    })
+
+    // Pi decides its own sandbox, so its composer draws no switch. The row still
+    // shows "工作区可写" without one on dsh, which is what makes this the kernel's
+    // answer rather than a composer that failed to render.
+    assert.equal(
+      await page.locator('[aria-label^="会话权限："]').count(),
+      0,
+      'a kernel without a sandbox offers no sandbox picker',
+    )
+
+    await page.getByRole('button', { name: 'e2e 内核绑定' }).first().click({ timeout: 15_000 })
+    await page.locator('[aria-label="内核：DeepSeek Harness"]').waitFor({ timeout: 20_000 })
+    await page.locator('[aria-label^="会话权限："]').waitFor({ timeout: 20_000 })
   },
 }

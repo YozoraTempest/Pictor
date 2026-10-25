@@ -7,19 +7,15 @@ import type {
   ModelEffort,
 } from '@pictor/shared'
 
-import type { HarnessStatus, PermissionMode } from '../../shared/bridge.js'
+import type {
+  HarnessStatus,
+  KernelCapabilities,
+  KernelInfo,
+  PermissionMode,
+} from '../../shared/bridge.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
 
-/** What one kernel looks like from the renderer's side. */
-export interface KernelInfo {
-  id: string
-  /** Name of the driver, for the picker. */
-  label: string
-  /** The kernel this conversation would use if nothing says otherwise. */
-  default: boolean
-  /** Whether the kernel is installed and can be started here. */
-  available: boolean
-}
+export type { KernelInfo }
 
 /** A conversation belongs to exactly one kernel, so it has to be looked up. */
 export interface KernelLookup {
@@ -65,6 +61,11 @@ export class KernelRouter implements KernelDriver {
     return this.#fallback.id
   }
 
+  /** Lifecycle is the default kernel's, so its capabilities are the router's. */
+  get capabilities(): KernelCapabilities {
+    return this.#fallback.capabilities
+  }
+
   /** Every kernel, for the picker; `available` is the driver's own answer. */
   list(): KernelInfo[] {
     return [...this.#options.drivers.entries()].map(([id, driver]) => ({
@@ -72,6 +73,9 @@ export class KernelRouter implements KernelDriver {
       label: this.#options.labels?.[id] ?? id,
       default: id === this.#fallback.id,
       available: driver.status().binary !== null,
+      // What this kernel can actually do travels with it: the window hides the
+      // controls a kernel cannot answer instead of letting them fail on use.
+      capabilities: driver.capabilities,
     }))
   }
 

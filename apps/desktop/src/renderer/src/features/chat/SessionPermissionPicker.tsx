@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import type { PermissionMode } from '../../../../shared/bridge.js'
 import { Button, Dialog } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
+import { useKernelCapabilities } from '../kernels/capabilities.js'
 import { useChatStore } from './chat-store.js'
 
 /** The three modes the runtime ships, in the order it ranks them. */
@@ -51,6 +52,9 @@ const MENU_WIDTH = 240
  */
 export function SessionPermissionPicker(): React.JSX.Element | null {
   const sessionId = useChatStore((state) => state.current.sessionId)
+  // A kernel that runs with the sandbox its own settings chose has nothing to
+  // switch here; the button would only fail when pressed.
+  const canSwitch = useKernelCapabilities(sessionId.length === 0 ? null : sessionId).permission
   const [current, setCurrent] = useState<PermissionMode | null>(null)
   const [open, setOpen] = useState(false)
   const [confirm, setConfirm] = useState<PermissionMode | null>(null)
@@ -140,7 +144,7 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
     }
   }, [open, close, place])
 
-  if (sessionId.length === 0 || current === null) return null
+  if (sessionId.length === 0 || current === null || !canSwitch) return null
 
   const active = modeOf(current)
   const Icon = active?.icon ?? Shield

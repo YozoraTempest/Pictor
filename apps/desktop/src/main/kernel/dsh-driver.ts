@@ -41,26 +41,9 @@ import {
 } from '../harness-guard-plugin.js'
 import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from '../harness-profile.js'
 import { pinnedVersionOf } from '../runtime-version.js'
+import type { HarnessStatus, KernelCapabilities, PermissionMode } from '../../shared/bridge.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
 import type { ModelService } from '../model-service.js'
-
-export interface HarnessStatus {
-  state: 'stopped' | 'starting' | 'ready' | 'error'
-  /** Launcher the app would run, or null when no runtime is installed. */
-  binary: string | null
-  /** Version the launcher on this machine reports, or null when unreadable. */
-  version: string | null
-  /** Version this build pins; a difference is what "stale" means. */
-  expectedVersion: string | null
-  /** Isolated runtime home: profiles, sessions and storages live here. */
-  home: string
-  provider: string | null
-  model: string | null
-  serverInfo: { name: string; version: string } | null
-  /** Sandbox permission mode the runtime is (or will be) booted with. */
-  permissionMode: PermissionMode
-  error: string | null
-}
 
 /**
  * Everything the runtime reads once, at boot.
@@ -82,8 +65,6 @@ function bootFingerprint(input: {
   const key = input.apiKey === null ? '-' : createHash('sha256').update(input.apiKey).digest('hex')
   return [input.baseUrl, input.protocol, input.modelId, key].join('|')
 }
-
-export type PermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'workspace-write'
 
@@ -179,6 +160,16 @@ interface BootOptions {
  */
 export class DshDriver implements KernelDriver {
   readonly id = 'dsh'
+  /**
+   * Everything Pictor's vocabulary can express: this is the kernel the rest of the
+   * interface was built around, so every control applies.
+   */
+  readonly capabilities: KernelCapabilities = {
+    permission: true,
+    model: true,
+    skills: true,
+    fork: true,
+  }
   readonly #options: DshDriverOptions
   readonly #listeners = new Set<(notification: HarnessNotification) => void>()
   readonly #follows = new Map<string, FollowStream>()

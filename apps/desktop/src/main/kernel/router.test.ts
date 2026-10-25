@@ -27,6 +27,7 @@ function driver(id: string): KernelDriver & { seen: string[] } {
   return {
     id,
     seen,
+    capabilities: { permission: true, model: true, skills: true, fork: true },
     start: () => Promise.resolve(status(id)),
     stop: () => Promise.resolve(status(id)),
     status: () => status(id),
@@ -114,11 +115,27 @@ describe('KernelRouter', () => {
       lookup: { kernelOf: () => Promise.resolve(null) },
     })
 
+    const everything = { permission: true, model: true, skills: true, fork: true }
+
     expect(kernels.list()).toEqual([
-      { id: 'dsh', label: 'DeepSeek Harness', default: true, available: true },
+      {
+        id: 'dsh',
+        label: 'DeepSeek Harness',
+        default: true,
+        available: true,
+        // What a kernel declares travels with it, so the window can hide a
+        // control the conversation's kernel cannot answer.
+        capabilities: everything,
+      },
       // Not installed: `binary` is null, so the picker can say so instead of
       // offering a kernel that cannot start.
-      { id: 'other', label: 'other', default: false, available: false },
+      {
+        id: 'other',
+        label: 'other',
+        default: false,
+        available: false,
+        capabilities: everything,
+      },
     ])
   })
 

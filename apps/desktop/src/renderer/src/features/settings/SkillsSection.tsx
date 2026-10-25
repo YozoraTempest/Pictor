@@ -5,6 +5,7 @@ import type { SkillEntry, SkillOrigin } from '@pictor/shared'
 
 import { Badge, Button, Spinner, Switch } from '../../components/ui/index.js'
 import { useChatStore } from '../chat/chat-store.js'
+import { useKernelCapabilities } from '../kernels/capabilities.js'
 import { Section } from './Section.js'
 import { SettingRow } from './SettingRow.js'
 
@@ -45,6 +46,9 @@ const ROOTS = [
  */
 export function SkillsSection(): React.JSX.Element {
   const sessionId = useChatStore((state) => state.current.sessionId)
+  // A kernel that loads skills on its own has no catalog to show. Reading it
+  // anyway would list nothing and blame the scan roots for it.
+  const canList = useKernelCapabilities(sessionId.length === 0 ? null : sessionId).skills
   const [skills, setSkills] = useState<SkillEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -52,7 +56,7 @@ export function SkillsSection(): React.JSX.Element {
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    if (sessionId.length === 0) {
+    if (sessionId.length === 0 || !canList) {
       setSkills(null)
       setError(null)
       return
@@ -77,7 +81,7 @@ export function SkillsSection(): React.JSX.Element {
     return () => {
       alive = false
     }
-  }, [sessionId, attempt])
+  }, [sessionId, attempt, canList])
 
   const found = skills?.length ?? 0
   const enabled = skills?.filter((skill) => skill.enabled).length ?? 0
@@ -104,7 +108,11 @@ export function SkillsSection(): React.JSX.Element {
             <Spinner className="size-3.5" />
           ) : (
             <Badge tone="neutral">
-              {sessionId.length === 0 ? '无会话' : `${String(enabled)} / ${String(found)} 启用`}
+              {sessionId.length === 0
+                ? '无会话'
+                : canList
+                  ? `${String(enabled)} / ${String(found)} 启用`
+                  : '内核不支持'}
             </Badge>
           )}
           <Button
@@ -124,6 +132,12 @@ export function SkillsSection(): React.JSX.Element {
         <SettingRow
           title="先打开一个会话"
           description="技能按会话的工作目录解析，没有会话就无从知道该扫哪些目录。"
+          control={null}
+        />
+      ) : !canList ? (
+        <SettingRow
+          title="这个内核不提供技能目录"
+          description="它自己决定加载哪些技能，Pictor 看不到那份清单，所以这里没有可列的条目。"
           control={null}
         />
       ) : error !== null && skills === null ? (

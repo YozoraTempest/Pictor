@@ -39,16 +39,16 @@ import {
   parseToolRules,
 } from '@pictor/shared'
 
-import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
+import type {
+  AppInfo,
+  HarnessStatus,
+  HostSnapshot,
+  PermissionMode,
+  PluginReport,
+} from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
 import { shouldAdoptTitle } from './harness-title.js'
-import {
-  DEFAULT_PERMISSION_MODE,
-  DshDriver,
-  isPermissionMode,
-  type HarnessStatus,
-  type PermissionMode,
-} from './kernel/dsh-driver.js'
+import { DEFAULT_PERMISSION_MODE, DshDriver, isPermissionMode } from './kernel/dsh-driver.js'
 import type { KernelDriver } from './kernel/driver.js'
 import { PiCliDriver } from './kernel/pi-cli-driver.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'

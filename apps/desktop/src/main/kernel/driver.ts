@@ -7,7 +7,7 @@ import type {
   ModelEffort,
 } from '@pictor/shared'
 
-import type { HarnessStatus, PermissionMode } from '../../shared/bridge.js'
+import type { HarnessStatus, KernelCapabilities, PermissionMode } from '../../shared/bridge.js'
 
 /**
  * One agent kernel, as the main process needs it.
@@ -33,6 +33,14 @@ export interface AgentProbeResult {
 export interface KernelDriver {
   /** Stable id, used to remember which kernel a conversation belongs to. */
   readonly id: string
+  /**
+   * What this kernel can actually do.
+   *
+   * The window draws a control only where the kernel behind the conversation says
+   * it exists, so a driver that cannot set a sandbox declares `permission: false`
+   * and the picker disappears instead of failing on use.
+   */
+  readonly capabilities: KernelCapabilities
 
   // ---- lifecycle -----------------------------------------------------------
   /** Boots the kernel for this working directory; idempotent when already up. */

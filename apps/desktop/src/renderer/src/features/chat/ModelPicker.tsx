@@ -14,6 +14,7 @@ import type { ModelEntry, ProviderList } from '@pictor/shared'
 
 import { cn } from '../../lib/cn.js'
 import { capabilitiesOf, emptyModel } from '../settings/models.js'
+import { useKernelCapabilities } from '../kernels/capabilities.js'
 import { useChatStore } from './chat-store.js'
 import { EffortSlider } from './EffortSlider.js'
 import { designedEffort, effortLabel, effortTone, effortsOf, pickEffort } from './effort.js'
@@ -90,6 +91,11 @@ function readRecents(): string[] {
  * service is exactly what picking one of its models means.
  */
 export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element | null {
+  // Pi reads its own model and thinking level, so a picker here would be a
+  // promise the kernel does not answer.
+  const acceptsModel = useKernelCapabilities(
+    useChatStore((state) => state.current.sessionId) || null,
+  ).model
   const [list, setList] = useState<ProviderList | null>(null)
   const [recents, setRecents] = useState<string[]>([])
   const [query, setQuery] = useState('')
@@ -251,7 +257,7 @@ export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element 
   }, [matching])
 
   // Nothing configured means nothing to choose: stay out of the way.
-  if (list === null || choices.length === 0) return null
+  if (!acceptsModel || list === null || choices.length === 0) return null
 
   async function choose(choice: Choice): Promise<void> {
     close()

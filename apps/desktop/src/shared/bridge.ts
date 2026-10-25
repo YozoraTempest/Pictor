@@ -84,15 +84,35 @@ export interface ToolViewDescriptor {
 }
 export type PermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
-/** Status of the agent runtime process the main process owns. */
+/**
+ * What one kernel can actually do.
+ *
+ * A kernel that cannot express something must not have a control in the window
+ * pretending it can: a CLI with no sandbox still showed a permission picker, and
+ * a picker that errors is worse than an absent one. Each driver declares what it
+ * really offers, and the controls read that instead of assuming the default.
+ */
+export interface KernelCapabilities {
+  /** A sandbox mode the kernel applies per conversation. */
+  permission: boolean
+  /** The model chosen in Pictor reaches the kernel, effort included. */
+  model: boolean
+  /** The kernel exposes a skill catalog that a turn can load from. */
+  skills: boolean
+  /** The kernel can branch a conversation at a message boundary. */
+  fork: boolean
+}
+
 /** What one kernel looks like from the renderer's side. */
 export interface KernelInfo {
   id: string
   label: string
   default: boolean
   available: boolean
+  capabilities: KernelCapabilities
 }
 
+/** Status of one kernel: whether it can run, what it runs with, why it failed. */
 export interface HarnessStatus {
   state: 'stopped' | 'starting' | 'ready' | 'error'
   /** Launcher path, or null when no runtime is installed. */

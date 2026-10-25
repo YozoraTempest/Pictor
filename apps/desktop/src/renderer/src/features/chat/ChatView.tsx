@@ -12,6 +12,7 @@ import { useQuestionStore } from '../../app/question-store.js'
 import { useRuntimeStore } from '../../app/runtime-store.js'
 import { ApprovalCard } from './ApprovalCard.js'
 import { QuestionCard } from './QuestionCard.js'
+import { useKernelCapabilities } from '../kernels/capabilities.js'
 import { useChatStore } from './chat-store.js'
 import { Composer } from './Composer.js'
 import { ProjectPicker } from './ProjectPicker.js'
@@ -37,6 +38,9 @@ export function ChatView(): React.JSX.Element {
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const clearDraft = useWorkspaceStore((state) => state.clearDraft)
   const forkSession = useWorkspaceStore((state) => state.forkSession)
+  // A kernel without a message-level fork offers no branch button: the affordance
+  // would only explain, on click, that this conversation cannot be cut there.
+  const canFork = useKernelCapabilities(selectedSessionId).fork
   const setDraftProject = useWorkspaceStore((state) => state.setDraftProject)
   const messages = useChatStore((state) => state.current.messages)
   const running = useChatStore((state) => state.current.running)
@@ -301,9 +305,13 @@ export function ChatView(): React.JSX.Element {
               {...(runtimeEmptyState === undefined ? {} : { emptyState: runtimeEmptyState })}
               loading={loading}
               onLoadOlder={() => void loadOlder()}
-              onFork={(seq) => {
-                if (selectedSessionId !== null) void forkSession(selectedSessionId, seq)
-              }}
+              {...(canFork
+                ? {
+                    onFork: (seq: number) => {
+                      if (selectedSessionId !== null) void forkSession(selectedSessionId, seq)
+                    },
+                  }
+                : {})}
               panelWidth={panelWidth}
               panelRef={attachPanel}
               animateWidth={!resizing}

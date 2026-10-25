@@ -23,6 +23,7 @@ import type { Project, Session } from '@pictor/shared'
 import { useUiStore } from '../../app/ui-store.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { useChatStore } from '../chat/chat-store.js'
+import { useKernelCapabilities } from '../kernels/capabilities.js'
 import {
   Button,
   Dialog,
@@ -1164,6 +1165,9 @@ function SessionRow({
 }): React.JSX.Element {
   const running = useChatStore((state) => state.chats[session.id]?.running === true)
   const forkSession = useWorkspaceStore((state) => state.forkSession)
+  // The kernel decides whether a conversation can be cut at a message; a row for
+  // one that cannot must not offer the menu item that would only fail.
+  const canFork = useKernelCapabilities(session.id).fork
   const showBranchTree = useUiStore((state) => state.showBranchTree)
   // Whether this row has a family to show, decided from the same list the panel
   // groups, so a row never offers a tree of one.
@@ -1265,11 +1269,15 @@ function SessionRow({
                     onSelect: () => onSelectSessionById(session.parentId as string),
                   },
                 ]),
-            {
-              label: '分叉会话',
-              icon: <GitBranch className="size-3" />,
-              onSelect: () => void forkSession(session.id),
-            },
+            ...(canFork
+              ? [
+                  {
+                    label: '分叉会话',
+                    icon: <GitBranch className="size-3" />,
+                    onSelect: () => void forkSession(session.id),
+                  },
+                ]
+              : []),
             // Only a family with more than one conversation has a tree to show.
             ...(hasFamily
               ? [

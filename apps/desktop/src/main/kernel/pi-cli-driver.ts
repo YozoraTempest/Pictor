@@ -6,7 +6,7 @@ import { delimiter, isAbsolute, join } from 'node:path'
 import type { HarnessNotification } from '@pictor/harness'
 import type { CatalogSkill, ChatHistoryPage, ChatImage, ModelEffort } from '@pictor/shared'
 
-import type { HarnessStatus, PermissionMode } from '../../shared/bridge.js'
+import type { HarnessStatus, KernelCapabilities, PermissionMode } from '../../shared/bridge.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
 import { historyRows, textOf, type StoredRecord } from './pi-history.js'
 
@@ -58,6 +58,17 @@ function explain(stderr: string): string {
  */
 export class PiCliDriver implements KernelDriver {
   readonly id = 'pi'
+  /**
+   * Pi decides these itself, so the window offers none of them: the CLI has no
+   * per-conversation sandbox, cannot ask a question mid-turn, reads neither
+   * Pictor's model nor its skill catalog, and cannot fork at a message boundary.
+   */
+  readonly capabilities: KernelCapabilities = {
+    permission: false,
+    model: false,
+    skills: false,
+    fork: false,
+  }
 
   readonly #options: PiCliDriverOptions
   readonly #binary: string
