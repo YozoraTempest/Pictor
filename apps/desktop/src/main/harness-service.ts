@@ -108,6 +108,8 @@ export interface HarnessServiceOptions {
   binary?: string
   /** Sandbox mode read from settings; the runtime takes it as an env var. */
   readPermissionMode?: () => Promise<PermissionMode>
+  /** Answers an escalation prompt without asking, when an allow rule covers the tool. */
+  rules?: { allows: (tool: string) => boolean }
   /** Loopback bridge answering tool guards, when any guard is installed. */
   guardEndpoint?: () => { port: number; token: string } | null
 }
@@ -1127,12 +1129,20 @@ export class HarnessService {
         const request = (frame.request ?? {}) as Record<string, unknown>
 
         if (frame.event === 'approval/request') {
+          const tool = typeof request['toolName'] === 'string' ? request['toolName'] : null
+          // An allow rule is the person having already said yes for this tool. The
+          // runtime's prompt carries no arguments, so this is the whole of what an
+          // allow can mean here — which is why the page says so.
+          if (tool !== null && this.#options.rules?.allows(tool) === true) {
+            void this.#resolveEvent(frame.eventId, 'allowed-once').catch(() => undefined)
+            return
+          }
           this.#emit({
             method: 'approval.request',
             params: {
               eventId: frame.eventId,
               agentId: frame.agentId ?? null,
-              tool: typeof request['toolName'] === 'string' ? request['toolName'] : null,
+              tool,
               reason: typeof request['reason'] === 'string' ? request['reason'] : null,
             },
           })
@@ -1195,15 +1205,19 @@ export class HarnessService {
 
   /** Answer one pending approval; the runtime resumes the tool call on allow. */
   async answerApproval(eventId: string, allow: boolean): Promise<void> {
+    // The runtime's own vocabulary: an allow covers this call only.
+    await this.#resolveEvent(eventId, allow ? 'allowed-once' : 'rejected')
+  }
+
+  /** Settle one waterfall request this client is holding. */
+  async #resolveEvent(eventId: string, value: unknown): Promise<void> {
     const remote = this.#remote
     const clientId = this.#eventClientId
     if (remote === null || clientId === null) throw new Error('agent 运行时尚未就绪')
-
     await remote.call('$events/result', {
       clientId,
       eventId,
-      // The runtime's own vocabulary: an allow covers this call only.
-      outcome: { kind: 'result', value: allow ? 'allowed-once' : 'rejected' },
+      outcome: { kind: 'result', value },
     })
   }
 

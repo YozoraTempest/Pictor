@@ -17,6 +17,7 @@ import {
   parseToolGuardContributions,
   parseToolViewContributions,
   type PanelContribution,
+  type ToolGuardContribution,
   type ToolViewContribution,
 } from '@pictor/plugin-sdk'
 import {
@@ -32,7 +33,9 @@ import {
   type PluginRecord,
   type Section,
   type SkillEntry,
+  type ToolRule,
   composeSkills,
+  parseToolRules,
 } from '@pictor/shared'
 
 import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
@@ -47,6 +50,7 @@ import {
 } from './harness-service.js'
 import { ToolGuardServer } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
+import { RuleBook, describeRule } from './rule-book.js'
 import { SkillLibrary } from './skill-library.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -106,6 +110,8 @@ interface Workspace {
   toolViews: ToolViewContribution[]
   /** Skills Pictor owns, and the switches that apply to skills it does not. */
   skills: SkillLibrary
+  /** The person's tool rules; the guard and approval prompts read it live. */
+  rules: RuleBook
   client: ReturnType<typeof startHostCore>['client']
   hostCore: string
   database: string
@@ -288,17 +294,34 @@ async function startWorkspace(): Promise<Workspace | null> {
     const value = settings['harness.permissionMode']
     return isPermissionMode(value) ? value : DEFAULT_PERMISSION_MODE
   }
+  // A person's own tool rules live beside the plugin guards: one guard closes over
+  // the book and reads it per call, so saving a rule needs no restart.
+  const rules = new RuleBook(running.client)
+  await rules.load()
+  const ruleGuard: ToolGuardContribution = {
+    id: 'pictor-rules',
+    title: '工具规则',
+    decide: (context) => {
+      const rule = rules.denyFor(context)
+      return rule === null
+        ? { decision: 'allow' }
+        : { decision: 'deny', reason: `被工具规则拦截：${describeRule(rule)}` }
+    },
+  }
+
   // Guards are closures in this process, so the runtime asks them over a loopback
-  // socket instead of receiving them as configuration.
-  const guardBridge = toolGuards.length === 0 ? null : new ToolGuardServer(toolGuards, randomUUID())
-  void guardBridge?.start().catch((error: unknown) => {
+  // socket instead of receiving them as configuration. The bridge is always up:
+  // the rule guard is always present, and rules can be added while it runs.
+  const guardBridge = new ToolGuardServer([ruleGuard, ...toolGuards], randomUUID())
+  void guardBridge.start().catch((error: unknown) => {
     console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
   })
   const harness = new HarnessService({
     model,
     userData,
     readPermissionMode,
-    guardEndpoint: () => guardBridge?.endpoint ?? null,
+    guardEndpoint: () => guardBridge.endpoint,
+    rules,
   })
   // The runtime reports durable session events; the renderer renders runs and
   // deltas. One translation keeps the transcript unchanged by the swap.
@@ -377,6 +400,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     panels,
     toolViews,
     skills,
+    rules,
     dispose: async () => {
       if (disposed) return
       disposed = true
@@ -1070,6 +1094,14 @@ function registerIpc(workspace: Workspace): void {
       return readSkills(sessionId)
     },
   )
+
+  ipcMain.handle('pictor:rules.list', async (): Promise<ToolRule[]> => workspace.rules.rules)
+
+  ipcMain.handle('pictor:rules.save', async (_event, value: unknown): Promise<ToolRule[]> => {
+    // The renderer sends the whole list; validation is the book's, so a bad row is
+    // dropped here rather than reaching a guard that cannot explain itself.
+    return workspace.rules.save(parseToolRules(value))
+  })
 
   ipcMain.handle('pictor:harness.sessionPermission', async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0)

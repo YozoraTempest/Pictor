@@ -20,6 +20,7 @@ import type {
   Session,
   SettingsMap,
   SkillEntry,
+  ToolRule,
 } from '@pictor/shared'
 
 export interface AppInfo {
@@ -184,6 +185,9 @@ export interface PictorBridge {
   getSessionPermission(sessionId: string): Promise<PermissionMode | null>
   /** Switches one conversation's sandbox mode, without a restart. */
   setSessionPermission(sessionId: string, mode: PermissionMode): Promise<PermissionMode | null>
+  /** Per-tool rules: a deny refuses a call, an allow answers its escalation. */
+  listToolRules(): Promise<ToolRule[]>
+  saveToolRules(rules: ToolRule[]): Promise<ToolRule[]>
   /** Skills the conversation behind `sessionId` can see, for `/` and settings. */
   listSkills(sessionId: string): Promise<SkillEntry[]>
   /** Switches one skill on or off and answers with the new list. */

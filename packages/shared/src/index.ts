@@ -106,3 +106,5 @@ export * from './chat.js'
 export type { ApprovalRequest, ChatImage } from './chat.js'
 
 export * from './skill.js'
+
+export * from './tool-rule.js'

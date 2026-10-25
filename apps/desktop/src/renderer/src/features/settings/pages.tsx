@@ -1,4 +1,13 @@
-import { Blocks, BookOpen, Cpu, Info, Settings2, Terminal, type LucideIcon } from 'lucide-react'
+import {
+  Blocks,
+  BookOpen,
+  Cpu,
+  Info,
+  Settings2,
+  ShieldCheck,
+  Terminal,
+  type LucideIcon,
+} from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { AboutSection } from './AboutSection.js'
@@ -7,6 +16,7 @@ import { GeneralSection } from './GeneralSection.js'
 import { PluginsSection } from './PluginsSection.js'
 import { RuntimePage } from './RuntimePage.js'
 import { SkillsSection } from './SkillsSection.js'
+import { ToolRulesSection } from './ToolRulesSection.js'
 
 /** One page in the settings sidebar. */
 export interface SettingsPage {
@@ -55,13 +65,23 @@ const PAGES = [
     render: () => <RuntimePage />,
   },
   {
+    id: 'rules',
+    label: '工具规则',
+    icon: ShieldCheck,
+    description: '按工具拒绝或自动同意 agent 的调用',
+    keywords: '工具 规则 权限 拒绝 允许 bash 拦截 rule',
+    group: '智能体',
+    order: 2,
+    render: () => <ToolRulesSection />,
+  },
+  {
     id: 'skills',
     label: '技能',
     icon: BookOpen,
     description: '当前会话能看到的技能，以及它们来自哪个文件',
     keywords: '技能 skill 技能目录 SKILL.md 提示 说明',
     group: '智能体',
-    order: 2,
+    order: 3,
     render: () => <SkillsSection />,
   },
   {
