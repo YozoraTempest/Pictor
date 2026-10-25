@@ -14,7 +14,7 @@ import type { ModelEntry, ProviderList } from '@pictor/shared'
 
 import { cn } from '../../lib/cn.js'
 import { capabilitiesOf, emptyModel } from '../settings/models.js'
-import { useKernelCapabilities } from '../kernels/capabilities.js'
+import { useKernelModelSource } from '../kernels/capabilities.js'
 import { useChatStore } from './chat-store.js'
 import { EffortSlider } from './EffortSlider.js'
 import { designedEffort, effortLabel, effortTone, effortsOf, pickEffort } from './effort.js'
@@ -91,11 +91,11 @@ function readRecents(): string[] {
  * service is exactly what picking one of its models means.
  */
 export function ModelPicker({ onChanged }: ModelPickerProps): React.JSX.Element | null {
-  // Pi reads its own model and thinking level, so a picker here would be a
-  // promise the kernel does not answer.
-  const acceptsModel = useKernelCapabilities(
-    useChatStore((state) => state.current.sessionId) || null,
-  ).model
+  // Only for a kernel that runs Pictor's models: one that brings its own catalogue
+  // is drawn by `KernelModelPicker`, and this list is simply not its list.
+  const sessionId = useChatStore((state) => state.current.sessionId)
+  const modelSource = useKernelModelSource(sessionId.length === 0 ? null : sessionId)
+  const acceptsModel = modelSource === 'pictor'
   const [list, setList] = useState<ProviderList | null>(null)
   const [recents, setRecents] = useState<string[]>([])
   const [query, setQuery] = useState('')

@@ -10,6 +10,7 @@ import { cn } from '../../lib/cn.js'
 import { useChatStore } from './chat-store.js'
 import { ContextMeter } from './ContextMeter.js'
 import { KernelPicker } from './KernelPicker.js'
+import { KernelModelPicker } from './KernelModelPicker.js'
 import { ModelPicker } from './ModelPicker.js'
 import { SessionPermissionPicker } from './SessionPermissionPicker.js'
 import { matchSkills, slashTokenAt, type SlashToken } from './slash.js'
@@ -271,6 +272,7 @@ export function Composer({
             {showKernelPicker && <KernelPicker />}
             <ContextMeter />
             <ModelPicker onChanged={onModelChanged} />
+            <KernelModelPicker />
             {running ? (
               <Button variant="secondary" size="sm" className="ml-1" onClick={onStop}>
                 <Square className="size-3 fill-current" />

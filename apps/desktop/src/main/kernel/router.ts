@@ -11,9 +11,11 @@ import type {
   HarnessStatus,
   KernelCapabilities,
   KernelInfo,
+  KernelModelList,
   PermissionMode,
 } from '../../shared/bridge.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
+import { isModelSource } from './model-source.js'
 
 export type { KernelInfo }
 
@@ -76,6 +78,8 @@ export class KernelRouter implements KernelDriver {
       // What this kernel can actually do travels with it: the window hides the
       // controls a kernel cannot answer instead of letting them fail on use.
       capabilities: driver.capabilities,
+      // Whose model list the picker should show: Pictor's, the kernel's own, or none.
+      modelSource: isModelSource(driver) ? 'kernel' : driver.capabilities.model ? 'pictor' : null,
     }))
   }
 
@@ -174,6 +178,23 @@ export class KernelRouter implements KernelDriver {
 
   async projectRootFor(sessionId: string): Promise<string | null> {
     return (await this.#for(sessionId)).projectRootFor(sessionId)
+  }
+
+  /** The models the conversation's kernel offers, in its own words. */
+  async kernelModels(sessionId: string): Promise<KernelModelList> {
+    const driver = await this.#for(sessionId)
+    if (!isModelSource(driver)) {
+      throw new Error(`这个会话的内核「${driver.id}」不提供自己的模型列表`)
+    }
+    return driver.models(sessionId)
+  }
+
+  async selectKernelModel(sessionId: string, id: string): Promise<void> {
+    const driver = await this.#for(sessionId)
+    if (!isModelSource(driver)) {
+      throw new Error(`这个会话的内核「${driver.id}」不提供自己的模型列表`)
+    }
+    return driver.selectModel(sessionId, id)
   }
 
   async listSkills(sessionId: string): Promise<CatalogSkill[]> {

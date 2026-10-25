@@ -88,6 +88,13 @@ composer draws a control only where the conversation's kernel says it exists: a
 CLI kernel gets no sandbox switch and no model picker, instead of a control that
 throws when pressed.
 
+A kernel that brings its own models declares it (`KernelModelSource`), and
+`kernels.list` says whose list the picker should show: `pictor` for a kernel
+booted with Pictor's providers, `kernel` for one that answers for its own
+catalogue. The composer draws one picker or the other, never both — a list that
+is not the conversation's list is the same lie as a control the kernel cannot
+honour.
+
 The rail carries one destination per kernel (`app/kernel-scope.ts` maps a view id
 to its kernel). A kernel page lists only that kernel's conversations, filters the
 project rows to the ones that hold one, draws only the sections that hold one,

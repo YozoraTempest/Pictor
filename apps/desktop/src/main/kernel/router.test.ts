@@ -20,7 +20,7 @@ function status(id: string): HarnessStatus {
 }
 
 /** A driver that records which sessions it was asked about. */
-function driver(id: string): KernelDriver & { seen: string[] } {
+function driver(id: string, options: { models?: boolean } = {}): KernelDriver & { seen: string[] } {
   const seen: string[] = []
   const unsupported = () => Promise.reject(new Error(`${id} 不支持`))
 
@@ -28,6 +28,13 @@ function driver(id: string): KernelDriver & { seen: string[] } {
     id,
     seen,
     capabilities: { permission: true, model: true, skills: true, fork: true },
+    // A driver that answers for its own models; the picker follows this.
+    ...(options.models === true
+      ? {
+          models: () => Promise.resolve({ models: [], activeId: null }),
+          selectModel: () => Promise.resolve(),
+        }
+      : {}),
     start: () => Promise.resolve(status(id)),
     stop: () => Promise.resolve(status(id)),
     status: () => status(id),
@@ -126,6 +133,7 @@ describe('KernelRouter', () => {
         // What a kernel declares travels with it, so the window can hide a
         // control the conversation's kernel cannot answer.
         capabilities: everything,
+        modelSource: 'pictor',
       },
       // Not installed: `binary` is null, so the picker can say so instead of
       // offering a kernel that cannot start.
@@ -135,8 +143,27 @@ describe('KernelRouter', () => {
         default: false,
         available: false,
         capabilities: everything,
+        modelSource: 'pictor',
       },
     ])
+  })
+
+  it('says whose model list the picker should show', () => {
+    const kernels = router({}, [driver('dsh'), driver('other', { models: true })])
+    const listed = kernels.list()
+
+    // dsh runs Pictor's models; a kernel that keeps its own catalogue answers for it.
+    expect(listed.map((entry) => [entry.id, entry.modelSource])).toEqual([
+      ['dsh', 'pictor'],
+      ['other', 'kernel'],
+    ])
+  })
+
+  it('refuses a model request aimed at a kernel without its own models', async () => {
+    const kernels = router({ s1: 'dsh' }, [driver('dsh')])
+
+    await expect(kernels.kernelModels('s1')).rejects.toThrow(/不提供自己的模型列表/)
+    await expect(kernels.selectKernelModel('s1', 'x')).rejects.toThrow(/不提供自己的模型列表/)
   })
 
   it('settles an approval on whichever kernel is holding it', async () => {

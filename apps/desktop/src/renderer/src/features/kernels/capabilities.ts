@@ -1,4 +1,8 @@
-import type { KernelCapabilities, KernelInfo } from '../../../../shared/bridge.js'
+import type {
+  KernelCapabilities,
+  KernelInfo,
+  KernelModelSource,
+} from '../../../../shared/bridge.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 
 /**
@@ -33,13 +37,41 @@ export function capabilitiesOf(
   return kernels.find((kernel) => kernel.id === kernelId)?.capabilities ?? EVERYTHING
 }
 
-/** The capabilities of the kernel running `sessionId`, if it is known. */
-export function useKernelCapabilities(sessionId: string | null): KernelCapabilities {
-  const kernelId = useWorkspaceStore((state) =>
+/**
+ * Whose model list the composer should offer.
+ *
+ * Defaulting to Pictor's is the status quo: before the kernel list arrives, the
+ * app keeps drawing the picker it always drew rather than nothing at all.
+ */
+export function modelSourceOf(
+  kernels: readonly KernelInfo[],
+  kernelId: string | null,
+): KernelModelSource {
+  if (kernelId === null) return 'pictor'
+  return kernels.find((kernel) => kernel.id === kernelId)?.modelSource ?? 'pictor'
+}
+
+/** The model source of the kernel running `sessionId`. */
+export function useKernelModelSource(sessionId: string | null): KernelModelSource {
+  return modelSourceOf(
+    useWorkspaceStore((state) => state.kernels),
+    useKernelIdOf(sessionId),
+  )
+}
+
+/** The kernel of one conversation, as the workspace knows it. */
+export function useKernelIdOf(sessionId: string | null): string | null {
+  return useWorkspaceStore((state) =>
     sessionId === null
       ? null
       : (state.sessions.find((session) => session.id === sessionId)?.kernelId ?? null),
   )
-  const kernels = useWorkspaceStore((state) => state.kernels)
-  return capabilitiesOf(kernels, kernelId)
+}
+
+/** The capabilities of the kernel running `sessionId`, if it is known. */
+export function useKernelCapabilities(sessionId: string | null): KernelCapabilities {
+  return capabilitiesOf(
+    useWorkspaceStore((state) => state.kernels),
+    useKernelIdOf(sessionId),
+  )
 }

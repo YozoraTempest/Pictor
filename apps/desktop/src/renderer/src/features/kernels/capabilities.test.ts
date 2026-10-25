@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { KernelInfo } from '../../../../shared/bridge.js'
-import { capabilitiesOf } from './capabilities.js'
+import { capabilitiesOf, modelSourceOf } from './capabilities.js'
 
 function kernel(id: string, overrides: Partial<KernelInfo['capabilities']> = {}): KernelInfo {
   return {
@@ -10,6 +10,7 @@ function kernel(id: string, overrides: Partial<KernelInfo['capabilities']> = {})
     default: id === 'dsh',
     available: true,
     capabilities: { permission: true, model: true, skills: true, fork: true, ...overrides },
+    modelSource: 'pictor',
   }
 }
 
@@ -45,5 +46,23 @@ describe('capabilitiesOf', () => {
   it('assumes everything for a conversation that is not saved yet', () => {
     // A draft has no kernel until its first prompt files it under the default.
     expect(capabilitiesOf([kernel('pi', NO_SANDBOX)], null).model).toBe(true)
+  })
+})
+
+describe('modelSourceOf', () => {
+  it('tells the kernel that brings its own models apart from Pictor’s', () => {
+    const kernels = [
+      { ...kernel('dsh'), modelSource: 'pictor' as const },
+      { ...kernel('pi'), modelSource: 'kernel' as const },
+    ]
+
+    expect(modelSourceOf(kernels, 'dsh')).toBe('pictor')
+    expect(modelSourceOf(kernels, 'pi')).toBe('kernel')
+  })
+
+  it('falls back to Pictor’s list before the kernels have loaded', () => {
+    // The status quo: an unknown kernel keeps the picker the app always drew.
+    expect(modelSourceOf([], 'pi')).toBe('pictor')
+    expect(modelSourceOf([], null)).toBe('pictor')
   })
 })

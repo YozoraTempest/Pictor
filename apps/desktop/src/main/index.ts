@@ -1158,6 +1158,24 @@ function registerIpc(workspace: Workspace): void {
     return workspace.harness.list()
   })
 
+  // A kernel that brings its own models answers for them; Pictor only relays.
+  ipcMain.handle('pictor:kernel.models', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelModels(sessionId)
+  })
+
+  ipcMain.handle('pictor:kernel.selectModel', async (_event, sessionId: unknown, id: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof id !== 'string' || id.trim().length === 0) {
+      throw new Error('modelId must be a non-empty string')
+    }
+    await workspace.harness.selectKernelModel(sessionId, id)
+  })
+
   ipcMain.handle('pictor:rules.list', async (): Promise<ToolRule[]> => workspace.rules.rules)
 
   ipcMain.handle('pictor:rules.save', async (_event, value: unknown): Promise<ToolRule[]> => {

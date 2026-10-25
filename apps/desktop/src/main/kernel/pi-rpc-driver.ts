@@ -13,8 +13,15 @@ import { delimiter, dirname, join } from 'node:path'
 import type { HarnessNotification } from '@pictor/harness'
 import type { CatalogSkill, ChatHistoryPage, ChatImage, ModelEffort } from '@pictor/shared'
 
-import type { HarnessStatus, KernelCapabilities, PermissionMode } from '../../shared/bridge.js'
+import type {
+  HarnessStatus,
+  KernelCapabilities,
+  KernelModel,
+  KernelModelList,
+  PermissionMode,
+} from '../../shared/bridge.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
+import type { KernelModelSource } from './model-source.js'
 import { PiTranslator, type PiFrame } from './pi-events.js'
 import { historyRows, textOf, type StoredRecord } from './pi-history.js'
 
@@ -55,7 +62,7 @@ interface Kid {
   /** Turn number of the run in flight, or null when idle. */
   turn: number | null
   /** The model Pi is running, as of the last `get_state`. */
-  model: { id: string; name: string; provider: string | null; input: string[] } | null
+  model: { id: string; name: string; provider: string | null; input: string[]; key: string } | null
   /** Where Pi is writing this conversation, once it says so. */
   sessionFile: string | null
   /** Set once the child is known to answer commands. */
@@ -89,15 +96,15 @@ interface RpcResponse {
  * seam), set a sandbox per conversation, or branch at a message — those arrive
  * with their own work, and until then the driver says so instead of faking it.
  */
-export class PiRpcDriver implements KernelDriver {
+export class PiRpcDriver implements KernelDriver, KernelModelSource {
   readonly id = 'pi'
   /**
-   * Pi decides its own sandbox and skill catalog, and Pictor has no model picker
-   * for it yet: those controls are hidden rather than shown and failing.
+   * Pi answers for its own models, so its picker reads Pi's catalogue; it still
+   * decides the sandbox, the skill catalog and the fork boundaries itself.
    */
   readonly capabilities: KernelCapabilities = {
     permission: false,
-    model: false,
+    model: true,
     skills: false,
     fork: false,
   }
@@ -110,6 +117,10 @@ export class PiRpcDriver implements KernelDriver {
   readonly #turns = new Map<string, number>()
   /** Pictor session id → Pi session id; persisted so a restart can resume. */
   readonly #sessions = new Map<string, string>()
+  /** Pictor session id → chosen model key; persisted so a restart keeps it. */
+  readonly #models = new Map<string, string>()
+  /** Pi's catalogue, read once per app run: it changes when Pi does. */
+  #catalogue: KernelModel[] | null = null
   #sessionsLoaded = false
   #cwd: string | null = null
   #nextRequest = 0
@@ -124,6 +135,7 @@ export class PiRpcDriver implements KernelDriver {
   async start(cwd: string): Promise<HarnessStatus> {
     this.#cwd = cwd
     this.#loadSessions()
+    this.#loadModels()
     return this.status()
   }
 
@@ -239,6 +251,45 @@ export class PiRpcDriver implements KernelDriver {
   /** Pi can fork, but not yet through Pictor's message rows — see the class doc. */
   async fork(): Promise<string> {
     throw new Error('Pi 内核还不能在会话中分叉')
+  }
+
+  // ---- models, in Pi's own words --------------------------------------------
+
+  /**
+   * Pi's catalogue, with the conversation's current choice.
+   *
+   * The list comes from a throwaway child (`--no-session`): opening a picker must
+   * not start the conversation's process, and Pi's catalogue only changes when Pi
+   * does, so one read serves the whole app run.
+   */
+  async models(sessionId: string): Promise<KernelModelList> {
+    const models = await this.#catalogueOf()
+    const live = this.#kids.get(sessionId)
+    const running = live?.model?.key ?? null
+    return { models, activeId: this.#models.get(sessionId) ?? running }
+  }
+
+  /**
+   * Switches the conversation's model.
+   *
+   * A running child is told immediately; a conversation that has not started keeps
+   * the choice and is launched with it, so the picker means the same thing either
+   * way.
+   */
+  async selectModel(sessionId: string, id: string): Promise<void> {
+    const model = (await this.#catalogueOf()).find((entry) => entry.id === id)
+    if (model === undefined) throw new Error(`pi 没有这个模型：${id}`)
+
+    this.#models.set(sessionId, id)
+    this.#persistModels()
+
+    const kid = this.#kids.get(sessionId)
+    if (kid === undefined || kid.proc.exitCode !== null) return
+    await this.#request(kid, {
+      type: 'set_model',
+      ...(model.provider === null ? {} : { provider: model.provider }),
+      modelId: model.id.split('/').at(-1) ?? model.id,
+    })
   }
 
   adopt(sessionId: string, kernelSessionId: string): void {
@@ -604,11 +655,14 @@ export class PiRpcDriver implements KernelDriver {
     const input = Array.isArray(model['input'])
       ? model['input'].filter((entry): entry is string => typeof entry === 'string')
       : []
+    const provider = typeof model['provider'] === 'string' ? model['provider'] : null
+    const id = typeof model['id'] === 'string' ? model['id'] : ''
     kid.model = {
-      id: typeof model['id'] === 'string' ? model['id'] : '',
+      id,
       name: typeof model['name'] === 'string' ? model['name'] : '',
-      provider: typeof model['provider'] === 'string' ? model['provider'] : null,
+      provider,
       input,
+      key: modelKey(provider, id),
     }
     return kid.model
   }
@@ -703,6 +757,17 @@ export class PiRpcDriver implements KernelDriver {
     const args = [script, '--mode', 'rpc', '--session-dir', this.#sessionDirectory()]
     const known = sessionId === undefined ? undefined : this.#sessions.get(sessionId)
     if (known !== undefined) args.push('--session-id', known)
+    // A conversation that has a chosen model starts on it: the picker has to mean
+    // the same thing whether or not the process is already running.
+    const chosen = sessionId === undefined ? undefined : this.#models.get(sessionId)
+    if (chosen !== undefined) {
+      const [provider, ...rest] = chosen.split('/')
+      if (rest.length > 0 && provider !== undefined) {
+        args.push('--provider', provider, '--model', rest.join('/'))
+      } else {
+        args.push('--model', chosen)
+      }
+    }
     args.push(...extra)
 
     // A native binary runs on its own; a JavaScript entry point needs the runtime.
@@ -739,6 +804,126 @@ export class PiRpcDriver implements KernelDriver {
       }
     }
     return null
+  }
+
+  /**
+   * Pi's model catalogue, read through a throwaway child.
+   *
+   * `--no-session` keeps the query from creating a conversation; the child is shut
+   * down as soon as it answers. The result is cached for this app run.
+   */
+  async #catalogueOf(): Promise<KernelModel[]> {
+    if (this.#catalogue !== null) return this.#catalogue
+
+    const [command, args] = this.#invocation(['--no-session'])
+    if (command === null) throw new Error('没有找到 pi 可执行文件，先安装再试')
+
+    const proc = spawn(command, args, {
+      cwd: this.#cwd ?? homedir(),
+      env: { ...process.env, ...this.#runtimeEnv() },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let buffer = ''
+    let stderr = ''
+    proc.stderr?.setEncoding('utf8')
+    proc.stderr?.on('data', (data: string) => {
+      stderr = `${stderr}${data}`.slice(-1_000)
+    })
+
+    const answer = new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('pi 没有回应模型列表')), REQUEST_TIMEOUT_MS)
+      proc.stdout?.setEncoding('utf8')
+      proc.stdout?.on('data', (data: string) => {
+        buffer += data
+        for (;;) {
+          const newline = buffer.indexOf('\n')
+          if (newline === -1) return
+          const line = buffer.slice(0, newline).replace(/\r$/, '')
+          buffer = buffer.slice(newline + 1)
+          if (line.trim().length === 0) continue
+          let record: Record<string, unknown>
+          try {
+            record = JSON.parse(line) as Record<string, unknown>
+          } catch {
+            continue
+          }
+          if (record['type'] === 'response' && record['command'] === 'get_available_models') {
+            clearTimeout(timer)
+            resolve(record['data'])
+          }
+        }
+      })
+      proc.on('error', (error) => {
+        clearTimeout(timer)
+        reject(error)
+      })
+      proc.on('exit', (code) => {
+        clearTimeout(timer)
+        reject(new Error(`pi 查询模型后退出了（${String(code)}）${tail(stderr)}`))
+      })
+      proc.stdin?.write(
+        `${JSON.stringify({ id: 'pictor-models', type: 'get_available_models' })}\n`,
+      )
+    })
+
+    try {
+      const data = (await answer) as { models?: unknown } | null
+      const models = Array.isArray(data?.models)
+        ? data.models.flatMap((entry): KernelModel[] => {
+            if (typeof entry !== 'object' || entry === null) return []
+            const model = entry as Record<string, unknown>
+            const id = typeof model['id'] === 'string' ? model['id'] : ''
+            if (id.length === 0) return []
+            const provider = typeof model['provider'] === 'string' ? model['provider'] : null
+            const input = Array.isArray(model['input'])
+              ? model['input'].filter((value): value is string => typeof value === 'string')
+              : []
+            const window = model['contextWindow']
+            return [
+              {
+                id: modelKey(provider, id),
+                label: typeof model['name'] === 'string' ? model['name'] : id,
+                provider,
+                images: input.includes('image'),
+                contextWindow:
+                  typeof window === 'number' && Number.isFinite(window) ? window : null,
+              },
+            ]
+          })
+        : []
+      this.#catalogue = models
+      return models
+    } finally {
+      proc.kill('SIGTERM')
+    }
+  }
+
+  #modelsFile(): string {
+    return join(this.#options.userData, 'pi-models.json')
+  }
+
+  #loadModels(): void {
+    try {
+      const parsed = JSON.parse(readFileSync(this.#modelsFile(), 'utf8')) as Record<string, unknown>
+      for (const [pictor, model] of Object.entries(parsed)) {
+        if (typeof model === 'string' && model.length > 0) this.#models.set(pictor, model)
+      }
+    } catch {
+      // No choice recorded yet: Pi runs its own default.
+    }
+  }
+
+  #persistModels(): void {
+    try {
+      mkdirSync(this.#options.userData, { recursive: true })
+      writeFileSync(
+        this.#modelsFile(),
+        `${JSON.stringify(Object.fromEntries(this.#models), null, 2)}\n`,
+        'utf8',
+      )
+    } catch {
+      // A read-only profile only costs the choice, never the turn.
+    }
   }
 
   #sessionDirectory(): string {
@@ -790,6 +975,11 @@ export class PiRpcDriver implements KernelDriver {
       // A read-only profile only costs a resumed conversation, never the turn.
     }
   }
+}
+
+/** How one model is named across messages and the picker: `provider/id`. */
+function modelKey(provider: string | null, id: string): string {
+  return provider === null || id.includes('/') ? id : `${provider}/${id}`
 }
 
 /** Pi's version, read from the package the script belongs to. */

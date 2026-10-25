@@ -41,23 +41,25 @@ function fakePi(
     script,
     `#!/usr/bin/env node
 import { appendFileSync } from 'node:fs'
+const NL = String.fromCharCode(10)
 const log = ${JSON.stringify(log)}
 const reply = ${JSON.stringify(options.reply ?? '等于 2')}
 const input = ${JSON.stringify(options.input)}.split(',')
 const settle = ${JSON.stringify(options.settle ?? 'immediately')}
-const send = (record) => process.stdout.write(JSON.stringify(record) + '\\n')
+appendFileSync(log, JSON.stringify({ type: 'argv', argv: process.argv.slice(2) }) + NL)
+const send = (record) => process.stdout.write(JSON.stringify(record) + NL)
 let buffer = ''
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk) => {
   buffer += chunk
   for (;;) {
-    const newline = buffer.indexOf('\\n')
+    const newline = buffer.indexOf(NL)
     if (newline === -1) return
     const line = buffer.slice(0, newline)
     buffer = buffer.slice(newline + 1)
     if (line.trim().length === 0) continue
     const command = JSON.parse(line)
-    appendFileSync(log, JSON.stringify(command) + '\\n')
+    appendFileSync(log, JSON.stringify(command) + NL)
     handle(command)
   }
 })
@@ -65,6 +67,18 @@ function handle(command) {
   if (command.type === 'get_state') {
     send({ id: command.id, type: 'response', command: 'get_state', success: true,
       data: { model: { id: 'fake-1', name: 'Fake Model', provider: 'fake', input } } })
+    return
+  }
+  if (command.type === 'get_available_models') {
+    send({ id: command.id, type: 'response', command: 'get_available_models', success: true,
+      data: { models: [
+        { id: 'fake-1', name: 'Fake Model', provider: 'fake', input: ['text'], contextWindow: 1000 },
+        { id: 'vision-1', name: 'Vision Model', provider: 'fake', input: ['text', 'image'], contextWindow: 2000 },
+      ] } })
+    return
+  }
+  if (command.type === 'set_model') {
+    send({ id: command.id, type: 'response', command: 'set_model', success: true, data: {} })
     return
   }
   if (command.type === 'set_thinking_level') {
@@ -267,6 +281,64 @@ describe('PiRpcDriver', () => {
     })
     await driver.stop()
     expect(commands(fake).map((command) => command['type'])).toContain('shutdown')
+  })
+
+  it("offers Pi's own catalogue and switches a running conversation to it", async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    // Before the conversation has run, the list is Pi's and nothing is chosen.
+    expect(await driver.models('s1')).toEqual({
+      models: [
+        {
+          id: 'fake/fake-1',
+          label: 'Fake Model',
+          provider: 'fake',
+          images: false,
+          contextWindow: 1000,
+        },
+        {
+          id: 'fake/vision-1',
+          label: 'Vision Model',
+          provider: 'fake',
+          images: true,
+          contextWindow: 2000,
+        },
+      ],
+      activeId: null,
+    })
+
+    // Selecting on a live child is a command, not a restart.
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+    await driver.selectModel('s1', 'fake/vision-1')
+
+    const setModel = commands(fake).find((command) => command['type'] === 'set_model')
+    expect(setModel).toMatchObject({ provider: 'fake', modelId: 'vision-1' })
+    expect((await driver.models('s1')).activeId).toBe('fake/vision-1')
+    await driver.stop()
+  })
+
+  it('remembers a choice made before the conversation started', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    await driver.selectModel('s1', 'fake/vision-1')
+    expect((await driver.models('s1')).activeId).toBe('fake/vision-1')
+
+    // The next child is started on that model, so the picker means the same thing
+    // whether or not a process happens to be running.
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+    // The catalogue query runs in its own child, so look for the conversation's.
+    const started = commands(fake)
+      .filter((command) => command['type'] === 'argv')
+      .map((command) => command['argv'])
+      .find((argv): argv is string[] => Array.isArray(argv) && argv.includes('--provider'))
+    expect(started).toEqual(expect.arrayContaining(['--provider', 'fake', '--model', 'vision-1']))
+    await driver.stop()
   })
 
   it('says so instead of pretending when Pi cannot answer', async () => {

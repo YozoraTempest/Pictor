@@ -64,7 +64,8 @@ export default {
     const declared = await page.evaluate(() => window.pictor.listKernels())
     assert.deepEqual(declared.find((kernel) => kernel.id === 'pi')?.capabilities, {
       permission: false,
-      model: false,
+      // Pi brings its own model catalogue, so this one it can honour.
+      model: true,
       skills: false,
       fork: false,
     })
@@ -84,9 +85,23 @@ export default {
       'a kernel without a sandbox offers no sandbox picker',
     )
 
+    // The model picker follows the same rule, with one more distinction: a kernel
+    // that keeps its own catalogue gets its own control, and Pictor's list — which
+    // is not its list — stays out of the way.
+    assert.equal(
+      await page.locator('[aria-label="选择模型"]').count(),
+      0,
+      "the Pi page does not draw Pictor's model picker",
+    )
+    await page.locator('[aria-label^="内核模型"], [aria-label="选择内核模型"]').first().waitFor({
+      timeout: 20_000,
+    })
+
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().click({ timeout: 15_000 })
     await page.locator('[aria-label="内核：DeepSeek Harness"]').waitFor({ timeout: 20_000 })
     await page.locator('[aria-label^="会话权限："]').waitFor({ timeout: 20_000 })
+    // dsh runs Pictor's models, so the kernel control is gone and Pictor's is back.
+    assert.equal(await page.locator('[aria-label="选择内核模型"]').count(), 0)
 
     // The rail has one destination per kernel, in a fixed order.
     const rail = page.getByRole('navigation', { name: '主导航' })

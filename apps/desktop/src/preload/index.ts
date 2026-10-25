@@ -75,6 +75,8 @@ const bridge: PictorBridge = {
   setSessionPermission: (sessionId, mode) =>
     invoke('pictor:harness.setSessionPermission', sessionId, mode),
   listKernels: () => invoke('pictor:kernels.list'),
+  kernelModels: (sessionId) => invoke('pictor:kernel.models', sessionId),
+  selectKernelModel: (sessionId, id) => invoke('pictor:kernel.selectModel', sessionId, id),
   listToolRules: () => invoke('pictor:rules.list'),
   saveToolRules: (rules) => invoke('pictor:rules.save', rules),
   listSkills: (sessionId) => invoke('pictor:harness.skills', sessionId),

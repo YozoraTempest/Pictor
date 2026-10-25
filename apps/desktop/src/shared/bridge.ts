@@ -103,6 +103,33 @@ export interface KernelCapabilities {
   fork: boolean
 }
 
+/** One model a kernel can run, in that kernel's own words. */
+export interface KernelModel {
+  /** What the kernel calls it; opaque to Pictor. */
+  id: string
+  /** Human name, falling back to the id. */
+  label: string
+  provider: string | null
+  /** Whether this model accepts images. */
+  images: boolean
+  contextWindow: number | null
+}
+
+export interface KernelModelList {
+  models: KernelModel[]
+  /** The model this conversation is running, or null before it has run. */
+  activeId: string | null
+}
+
+/**
+ * Whose model set the composer's picker should show.
+ *
+ * `pictor` is the app's own provider list, which dsh is booted with; `kernel` means
+ * the kernel has its own catalogue and answers for it; null means there is nothing
+ * to choose — a kernel that runs whatever it was configured with.
+ */
+export type KernelModelSource = 'pictor' | 'kernel' | null
+
 /** What one kernel looks like from the renderer's side. */
 export interface KernelInfo {
   id: string
@@ -110,6 +137,7 @@ export interface KernelInfo {
   default: boolean
   available: boolean
   capabilities: KernelCapabilities
+  modelSource: KernelModelSource
 }
 
 /** Status of one kernel: whether it can run, what it runs with, why it failed. */
@@ -226,6 +254,10 @@ export interface PictorBridge {
   setSessionPermission(sessionId: string, mode: PermissionMode): Promise<PermissionMode | null>
   /** Every kernel this build can drive, for the picker. */
   listKernels(): Promise<KernelInfo[]>
+  /** The models a kernel offers for one conversation. */
+  kernelModels(sessionId: string): Promise<KernelModelList>
+  /** Selects one for that conversation, without a restart. */
+  selectKernelModel(sessionId: string, id: string): Promise<void>
   /** Per-tool rules: a deny refuses a call, an allow answers its escalation. */
   listToolRules(): Promise<ToolRule[]>
   saveToolRules(rules: ToolRule[]): Promise<ToolRule[]>
