@@ -1013,7 +1013,9 @@ function registerIpc(workspace: Workspace): void {
       if (!isPermissionMode(mode)) throw new Error('unknown permission mode')
       await workspace.client.putSetting('harness.permissionMode', mode)
       workspace.harness.setPermissionMode(mode)
-      await workspace.harness.applySettings()
+      // A live namespace setting, not a boot flag: asking the runtime to apply it
+      // keeps the process (and every stream on it) alive.
+      await workspace.harness.applyPermission(mode)
       return workspace.harness.status()
     },
   )

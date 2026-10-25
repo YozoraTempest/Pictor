@@ -194,11 +194,11 @@ export function RuntimePage(): React.JSX.Element {
 
       <SettingRow
         stacked
-        title="权限模式"
+        title="默认权限模式"
         description={
           ready
-            ? '已保存；内核会自动重启。'
-            : '决定内核能以多大范围改动文件系统，以及是否需要逐次审批。'
+            ? '决定内核能以多大范围改动文件系统，以及是否需要逐次审批。改动立即生效，不用重启。'
+            : '决定内核能以多大范围改动文件系统，以及是否需要逐次审批。runtime 启动后生效。'
         }
         control={
           <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="权限模式">

@@ -64,19 +64,22 @@ export interface HarnessStatus {
 /**
  * Everything the runtime reads once, at boot.
  *
- * The patch file carries the route and the default model, and the key and the
- * sandbox mode arrive as environment variables, so a change to any of them is a
- * change to what the running kernel is doing — not a value it re-reads.
+ * The patch file carries the route and the default model, and the key arrives as
+ * an environment variable, so a change to any of them is a change to what the
+ * running kernel is doing — not a value it re-reads.
+ *
+ * The permission default is deliberately absent: it is a live setting the
+ * runtime applies itself (see {@link HarnessService.applyPermission}), so moving
+ * it must not be mistaken for a reason to restart.
  */
 function bootFingerprint(input: {
   baseUrl: string
   protocol: string
   modelId: string
-  permissionMode: PermissionMode
   apiKey: string | null
 }): string {
   const key = input.apiKey === null ? '-' : createHash('sha256').update(input.apiKey).digest('hex')
-  return [input.baseUrl, input.protocol, input.modelId, input.permissionMode, key].join('|')
+  return [input.baseUrl, input.protocol, input.modelId, key].join('|')
 }
 
 /** What one probe turn produced: the text, the durable events, or why it failed. */
@@ -350,7 +353,6 @@ export class HarnessService {
         baseUrl: settings.baseUrl,
         protocol: settings.protocol,
         modelId: settings.modelId,
-        permissionMode,
         apiKey,
       })
       return this.status()
@@ -392,6 +394,23 @@ export class HarnessService {
    * arrives. Settings the kernel does not read at boot need no restart at all,
    * which is what the fingerprint decides.
    */
+  /**
+   * Applies the permission default to a running runtime.
+   *
+   * `permission/defaultPreset` is a live namespace setting: the runtime re-applies
+   * the sandbox and approval knobs itself, so nothing restarts and a turn that is
+   * streaming keeps streaming. The value is stored either way; with no runtime up
+   * there is nothing to apply, and the next boot passes it as the process default.
+   */
+  async applyPermission(mode: PermissionMode): Promise<void> {
+    const remote = this.#remote
+    if (remote === null) return
+    await remote.call('settings/mutate', {
+      ns: 'permission',
+      ops: [{ op: 'set', path: ['defaultPreset'], value: mode }],
+    })
+  }
+
   async applySettings(): Promise<void> {
     if (this.#status.state !== 'ready') return
 
@@ -418,12 +437,10 @@ export class HarnessService {
   async #currentFingerprint(): Promise<string | null> {
     const settings = await this.#options.model.settings()
     if (settings.baseUrl.length === 0 || settings.modelId.length === 0) return null
-    const stored = await this.#options.readPermissionMode?.()
     return bootFingerprint({
       baseUrl: settings.baseUrl,
       protocol: settings.protocol,
       modelId: settings.modelId,
-      permissionMode: isPermissionMode(stored) ? stored : DEFAULT_PERMISSION_MODE,
       apiKey: await this.#options.model.activeApiKey(),
     })
   }
