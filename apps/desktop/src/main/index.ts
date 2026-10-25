@@ -49,6 +49,8 @@ import {
   type HarnessStatus,
   type PermissionMode,
 } from './kernel/dsh-driver.js'
+import type { KernelDriver } from './kernel/driver.js'
+import { PiCliDriver } from './kernel/pi-cli-driver.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
 import { ToolGuardServer } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
@@ -330,9 +332,9 @@ async function startWorkspace(): Promise<Workspace | null> {
     return path !== null && existsSync(path) ? path : null
   }
 
-  // One process per kernel, one kernel per conversation. Today only dsh is
-  // registered; the router is what lets a second one appear later without the
-  // rest of the main process noticing.
+  // One kernel per conversation, and a conversation keeps the one it was opened
+  // on. Two are registered here; the router is what lets the rest of the main
+  // process stay unaware of how many there are or how each one runs.
   const dsh = new DshDriver({
     model,
     userData,
@@ -341,9 +343,15 @@ async function startWorkspace(): Promise<Workspace | null> {
     rules,
     resolveCwd,
   })
+  // Pi is driven as a CLI: no server, one process per turn. It is registered so
+  // the picker can offer it, and each conversation it runs stays on it.
+  const pi = new PiCliDriver({ userData, resolveCwd })
   const harness: KernelRouter = new KernelRouter({
-    drivers: new Map([[dsh.id, dsh]]),
-    labels: { dsh: 'DeepSeek Harness' },
+    drivers: new Map<string, KernelDriver>([
+      [dsh.id, dsh],
+      [pi.id, pi],
+    ]),
+    labels: { dsh: 'DeepSeek Harness', pi: 'Pi' },
     lookup: {
       kernelOf: async (sessionId) => {
         const session = (await running.client.listSessions()).find(

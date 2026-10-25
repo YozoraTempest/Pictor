@@ -180,8 +180,8 @@ export class KernelRouter implements KernelDriver {
    * An approval answers an event, not a conversation.
    *
    * The event ids are minted by one kernel, and only that kernel can settle it,
-   * so every driver is asked. Today only dsh holds approvals at all; a driver
-   * that has none throws, and the answer belongs to the one that does.
+   * so every driver is asked. A CLI kernel holds no approval at all and throws;
+   * the answer then belongs to the one that does.
    */
   async answerApproval(eventId: string, allow: boolean): Promise<void> {
     return this.#dispatchByEvent('answerApproval', (driver) =>
