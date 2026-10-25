@@ -253,12 +253,12 @@ export function Composer({
           className="max-h-48 w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none placeholder:text-faint disabled:cursor-not-allowed"
         />
 
-        {/* One row, right-aligned: what this conversation has used, which model
-            answers it, then the action. The key hints lived here before; they are a
-            reminder, and the rest of the row is information. */}
-        <div className="flex items-center px-1 pt-1">
+        {/* One row: the sandbox the turn runs under sits at the leading edge, so
+            it reads as a property of the conversation rather than of the model;
+            usage, model and the action stay together on the trailing edge. */}
+        <div className="flex items-center gap-1 px-1 pt-1">
+          <SessionPermissionPicker />
           <div className="ml-auto flex min-w-0 items-center gap-1">
-            <SessionPermissionPicker />
             <ContextMeter />
             <ModelPicker onChanged={onModelChanged} />
             {running ? (
