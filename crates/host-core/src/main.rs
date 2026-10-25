@@ -174,11 +174,15 @@ fn dispatch(
             let title = required_str(&params, "title")?;
             // Only branches name a parent; a plain conversation starts at the root.
             let parent_id = optional_str(&params, "parentId");
+            // The kernel is chosen when the conversation is created: switching one
+            // later is a branch on the target kernel, not a field to edit.
+            let kernel_id = optional_str(&params, "kernelId").unwrap_or_else(|| "dsh".to_string());
             Ok(serde_json::to_value(store::create_session(
                 connection,
                 project_id.as_deref(),
                 &title,
                 parent_id.as_deref(),
+                &kernel_id,
             )?)
             .map_err(to_internal)?)
         }

@@ -34,6 +34,7 @@ function session(overrides: Partial<Session> = {}): Session {
     id: 's1',
     projectId: null,
     title: 'Chat',
+    kernelId: 'dsh',
     piSessionId: null,
     pinned: false,
     archived: false,

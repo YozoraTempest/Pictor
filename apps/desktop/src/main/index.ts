@@ -49,7 +49,7 @@ import {
   type HarnessStatus,
   type PermissionMode,
 } from './kernel/dsh-driver.js'
-import type { KernelDriver } from './kernel/driver.js'
+import { KernelRouter, type KernelInfo } from './kernel/router.js'
 import { ToolGuardServer } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
 import { RuleBook, describeRule } from './rule-book.js'
@@ -102,8 +102,8 @@ interface Workspace {
   appHost: ApplicationHost
   pluginHost: PluginHost
   model: ModelService
-  /** The kernel every conversation runs on, owned by the main process. */
-  harness: KernelDriver
+  /** Routes each conversation to the kernel that owns it. */
+  harness: KernelRouter
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
@@ -330,13 +330,28 @@ async function startWorkspace(): Promise<Workspace | null> {
     return path !== null && existsSync(path) ? path : null
   }
 
-  const harness: KernelDriver = new DshDriver({
+  // One process per kernel, one kernel per conversation. Today only dsh is
+  // registered; the router is what lets a second one appear later without the
+  // rest of the main process noticing.
+  const dsh = new DshDriver({
     model,
     userData,
     readPermissionMode,
     guardEndpoint: () => guardBridge.endpoint,
     rules,
     resolveCwd,
+  })
+  const harness: KernelRouter = new KernelRouter({
+    drivers: new Map([[dsh.id, dsh]]),
+    labels: { dsh: 'DeepSeek Harness' },
+    lookup: {
+      kernelOf: async (sessionId) => {
+        const session = (await running.client.listSessions()).find(
+          (entry) => entry.id === sessionId,
+        )
+        return session?.kernelId ?? null
+      },
+    },
   })
   // The runtime reports durable session events; the renderer renders runs and
   // deltas. One translation keeps the transcript unchanged by the swap.
@@ -706,13 +721,33 @@ function registerIpc(workspace: Workspace): void {
     return workspace.appHost.commands.execute('project.remove', { id })
   })
 
-  ipcMain.handle('pictor:session.create', async (_event, projectId: unknown, title: unknown) => {
-    if (typeof title !== 'string') throw new Error('title must be a string')
-    if (projectId !== null && typeof projectId !== 'string') {
-      throw new Error('projectId must be a string or null')
-    }
-    return workspace.appHost.commands.execute('session.create', { projectId, title })
-  })
+  ipcMain.handle(
+    'pictor:session.create',
+    async (_event, projectId: unknown, title: unknown, kernelId: unknown, parentId: unknown) => {
+      if (typeof title !== 'string') throw new Error('title must be a string')
+      if (projectId !== null && typeof projectId !== 'string') {
+        throw new Error('projectId must be a string or null')
+      }
+      // `null` and an absent argument both mean "not specified": callers reach
+      // this from several layers, and a picker that clears a value sends null.
+      const kernel = kernelId === null || kernelId === undefined ? null : kernelId
+      const parent = parentId === null || parentId === undefined ? null : parentId
+      if (kernel !== null && (typeof kernel !== 'string' || kernel.length === 0)) {
+        throw new Error('kernelId must be a non-empty string')
+      }
+      if (parent !== null && (typeof parent !== 'string' || parent.length === 0)) {
+        throw new Error('parentId must be a non-empty string')
+      }
+      // The kernel is fixed at creation: a conversation's history belongs to the
+      // one that produced it, so switching later is a branch, not an edit.
+      return workspace.appHost.commands.execute('session.create', {
+        projectId,
+        title,
+        ...(kernel === null ? {} : { kernelId: kernel }),
+        ...(parent === null ? {} : { parentId: parent }),
+      })
+    },
+  )
 
   ipcMain.handle('pictor:session.delete', async (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('id must be a string')
@@ -1109,6 +1144,10 @@ function registerIpc(workspace: Workspace): void {
       return readSkills(sessionId)
     },
   )
+
+  ipcMain.handle('pictor:kernels.list', async (): Promise<KernelInfo[]> => {
+    return workspace.harness.list()
+  })
 
   ipcMain.handle('pictor:rules.list', async (): Promise<ToolRule[]> => workspace.rules.rules)
 

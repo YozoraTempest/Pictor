@@ -58,6 +58,14 @@ interface WorkspaceState {
   addProjectFolder: (id: string) => Promise<void>
   removeProjectFolder: (id: string, path: string) => Promise<void>
   createSession: (title: string, projectId?: string | null) => Promise<Session | null>
+  /**
+   * Continues the open conversation on another kernel.
+   *
+   * A conversation's history belongs to the kernel that produced it, so this
+   * cannot move one: it opens a branch on the target kernel, filed under the same
+   * project and pointing at the conversation it forked from.
+   */
+  branchToKernel: (kernelId: string, label: string) => Promise<Session | null>
   /** Branches a conversation and selects the copy. */
   forkSession: (sessionId: string, atSeq?: number) => Promise<void>
   startDraft: (input: { sectionId: string | null; projectId?: string | null }) => void
@@ -255,6 +263,25 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       await get().refresh()
     })
 
+    return created
+  },
+
+  async branchToKernel(kernelId, label) {
+    const state = get()
+    const source = state.sessions.find((entry) => entry.id === state.selectedSessionId) ?? null
+    if (source === null) return null
+
+    let created: Session | null = null
+    await guard(set, async () => {
+      created = await window.pictor.createSession(
+        source.projectId,
+        `${source.title} · ${label}`,
+        kernelId,
+        source.id,
+      )
+      set({ selectedSessionId: created.id })
+      await get().refresh()
+    })
     return created
   },
 

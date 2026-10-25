@@ -28,7 +28,8 @@ const bridge: PictorBridge = {
   reorderSections: (ids) => invoke('pictor:sections.reorder', ids),
   addProjectFolder: (id, path) => invoke('pictor:project.addFolder', id, path),
   removeProjectFolder: (id, path) => invoke('pictor:project.removeFolder', id, path),
-  createSession: (projectId, title) => invoke('pictor:session.create', projectId, title),
+  createSession: (projectId, title, kernelId, parentId) =>
+    invoke('pictor:session.create', projectId, title, kernelId, parentId),
   deleteSession: (id) => invoke('pictor:session.delete', id),
   setSessionPinned: (id, pinned) => invoke('pictor:session.setPinned', id, pinned),
   setSessionArchived: (id, archived) => invoke('pictor:session.setArchived', id, archived),
@@ -73,6 +74,7 @@ const bridge: PictorBridge = {
   getSessionPermission: (sessionId) => invoke('pictor:harness.sessionPermission', sessionId),
   setSessionPermission: (sessionId, mode) =>
     invoke('pictor:harness.setSessionPermission', sessionId, mode),
+  listKernels: () => invoke('pictor:kernels.list'),
   listToolRules: () => invoke('pictor:rules.list'),
   saveToolRules: (rules) => invoke('pictor:rules.save', rules),
   listSkills: (sessionId) => invoke('pictor:harness.skills', sessionId),

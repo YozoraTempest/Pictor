@@ -24,6 +24,7 @@ function session(overrides: Partial<Session> = {}): Session {
     id: 's1',
     projectId: 'p1',
     title: 'Draft',
+    kernelId: 'dsh',
     piSessionId: null,
     pinned: false,
     archived: false,

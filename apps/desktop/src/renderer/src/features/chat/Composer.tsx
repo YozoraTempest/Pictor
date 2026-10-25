@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { useChatStore } from './chat-store.js'
 import { ContextMeter } from './ContextMeter.js'
+import { KernelPicker } from './KernelPicker.js'
 import { ModelPicker } from './ModelPicker.js'
 import { SessionPermissionPicker } from './SessionPermissionPicker.js'
 import { matchSkills, slashTokenAt, type SlashToken } from './slash.js'
@@ -259,6 +260,7 @@ export function Composer({
         <div className="flex items-center gap-1 px-1 pt-1">
           <SessionPermissionPicker />
           <div className="ml-auto flex min-w-0 items-center gap-1">
+            <KernelPicker />
             <ContextMeter />
             <ModelPicker onChanged={onModelChanged} />
             {running ? (

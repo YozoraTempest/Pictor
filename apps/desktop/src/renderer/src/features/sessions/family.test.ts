@@ -10,6 +10,7 @@ function session(id: string, parentId: string | null, createdAt: number): Sessio
     parentId,
     projectId: null,
     title: id,
+    kernelId: 'dsh',
     piSessionId: null,
     pinned: false,
     archived: false,

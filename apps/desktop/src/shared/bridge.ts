@@ -85,6 +85,14 @@ export interface ToolViewDescriptor {
 export type PermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 /** Status of the agent runtime process the main process owns. */
+/** What one kernel looks like from the renderer's side. */
+export interface KernelInfo {
+  id: string
+  label: string
+  default: boolean
+  available: boolean
+}
+
 export interface HarnessStatus {
   state: 'stopped' | 'starting' | 'ready' | 'error'
   /** Launcher path, or null when no runtime is installed. */
@@ -145,7 +153,18 @@ export interface PictorBridge {
   reorderSections(ids: string[]): Promise<Section[]>
   addProjectFolder(id: string, path: string): Promise<string[]>
   removeProjectFolder(id: string, path: string): Promise<string[]>
-  createSession(projectId: string | null, title: string): Promise<Session>
+  /**
+   * Creates a conversation.
+   *
+   * `parentId` records lineage: a branch — including switching kernels, which is
+   * only expressible as a branch — points at the conversation it came from.
+   */
+  createSession(
+    projectId: string | null,
+    title: string,
+    kernelId?: string,
+    parentId?: string,
+  ): Promise<Session>
   deleteSession(id: string): Promise<void>
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
   setSessionArchived(id: string, archived: boolean): Promise<Session>
@@ -185,6 +204,8 @@ export interface PictorBridge {
   getSessionPermission(sessionId: string): Promise<PermissionMode | null>
   /** Switches one conversation's sandbox mode, without a restart. */
   setSessionPermission(sessionId: string, mode: PermissionMode): Promise<PermissionMode | null>
+  /** Every kernel this build can drive, for the picker. */
+  listKernels(): Promise<KernelInfo[]>
   /** Per-tool rules: a deny refuses a call, an allow answers its escalation. */
   listToolRules(): Promise<ToolRule[]>
   saveToolRules(rules: ToolRule[]): Promise<ToolRule[]>

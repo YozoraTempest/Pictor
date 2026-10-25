@@ -6,7 +6,7 @@ use crate::error::HostError;
 
 /// Current on-disk schema version. Bump when `SCHEMA_V1` changes shape and add a
 /// forward migration step in `migrate`.
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS projects (
@@ -115,6 +115,11 @@ const SCHEMA_V6: &str = r#"
 ALTER TABLE sessions ADD COLUMN parent_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;
 "#;
 
+/// A conversation is executed by one kernel; `dsh` is the one it started with.
+const SCHEMA_V7: &str = r#"
+ALTER TABLE sessions ADD COLUMN kernel_id TEXT NOT NULL DEFAULT 'dsh';
+"#;
+
 pub fn open(path: &Path) -> Result<Connection, HostError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -171,6 +176,10 @@ fn migrate(connection: &Connection) -> Result<(), HostError> {
 
     if version < 6 {
         connection.execute_batch(SCHEMA_V6)?;
+    }
+
+    if version < 7 {
+        connection.execute_batch(SCHEMA_V7)?;
     }
 
     connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -248,6 +257,15 @@ mod tests {
         assert_eq!(project_id.as_deref(), Some("p1"));
         assert_eq!(title, "Old chat");
         assert_eq!(pinned, 0);
+
+        // A conversation written before kernels existed belongs to the one that
+        // shipped first; the column has to answer that, not be empty.
+        let kernel: String = upgraded
+            .query_row("SELECT kernel_id FROM sessions WHERE id = 's1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(kernel, "dsh");
 
         let version: i64 = upgraded
             .query_row("PRAGMA user_version", [], |row| row.get(0))

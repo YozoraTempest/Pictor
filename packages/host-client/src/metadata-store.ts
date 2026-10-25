@@ -31,7 +31,7 @@ export interface MetadataStore {
   removeProjectFolder(id: string, path: string): Promise<string[]>
 
   listSessions(projectId?: string): Promise<Session[]>
-  createSession(projectId: string | null, title: string): Promise<Session>
+  createSession(projectId: string | null, title: string, kernelId?: string): Promise<Session>
   renameSession(id: string, title: string): Promise<Session>
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
   setSessionArchived(id: string, archived: boolean): Promise<Session>
@@ -119,8 +119,14 @@ export class HostCoreClient implements MetadataStore {
     projectId: string | null,
     title: string,
     parentId: string | null = null,
+    kernelId?: string,
   ): Promise<Session> {
-    return this.#rpc.request<Session>('session.create', { projectId, title, parentId })
+    return this.#rpc.request<Session>('session.create', {
+      projectId,
+      title,
+      parentId,
+      ...(kernelId === undefined ? {} : { kernelId }),
+    })
   }
 
   renameSession(id: string, title: string): Promise<Session> {

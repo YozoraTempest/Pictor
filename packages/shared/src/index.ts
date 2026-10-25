@@ -29,6 +29,14 @@ export interface Session {
   projectId: string | null
   title: string
   /**
+   * Kernel that executes this conversation.
+   *
+   * Fixed when the conversation is created: switching kernels later is a branch
+   * on the target kernel, because a conversation's history belongs to the one
+   * that produced it.
+   */
+  kernelId: string
+  /**
    * Kept from the pre-runtime layout: the column still exists so an old
    * profile opens unchanged, but nothing writes it and no reader branches on
    * it. Transcripts belong to the runtime.
