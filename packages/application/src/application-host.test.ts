@@ -88,8 +88,18 @@ class FakeStore implements ApplicationStore {
     return this.sessions
   }
 
-  async createSession(projectId: string | null, title: string): Promise<Session> {
-    const created = session({ projectId, title })
+  async createSession(
+    projectId: string | null,
+    title: string,
+    parentId?: string | null,
+    kernelId?: string,
+  ): Promise<Session> {
+    const created = session({
+      projectId,
+      title,
+      parentId: parentId ?? null,
+      kernelId: kernelId ?? 'dsh',
+    })
     this.sessions.push(created)
     return created
   }
@@ -230,6 +240,33 @@ describe('ApplicationHost', () => {
 
     expect(created.projectId).toBeNull()
     expect(store.sessions).toHaveLength(1)
+  })
+
+  it('carries the kernel and the branch parent into the store', async () => {
+    const store = new FakeStore()
+    store.sessions = [session()]
+    const host = new ApplicationHost(store)
+
+    const created = await host.commands.execute<Session>('session.create', {
+      title: 'Pi 分支',
+      kernelId: 'pi',
+      parentId: 's1',
+    })
+
+    expect(created.kernelId).toBe('pi')
+    expect(created.parentId).toBe('s1')
+    // The default only fills in what the caller left out.
+    const plain = await host.commands.execute<Session>('session.create', { title: '普通' })
+    expect(plain.kernelId).toBe('dsh')
+    expect(plain.parentId).toBeNull()
+  })
+
+  it('rejects a kernel id that is not a name', async () => {
+    const host = new ApplicationHost(new FakeStore())
+
+    await expect(
+      host.commands.execute('session.create', { title: 'x', kernelId: '' }),
+    ).rejects.toThrow(/kernelId/)
   })
 
   it('pins a session and emits session.updated', async () => {

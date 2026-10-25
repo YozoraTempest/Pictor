@@ -31,7 +31,12 @@ export interface MetadataStore {
   removeProjectFolder(id: string, path: string): Promise<string[]>
 
   listSessions(projectId?: string): Promise<Session[]>
-  createSession(projectId: string | null, title: string, kernelId?: string): Promise<Session>
+  createSession(
+    projectId: string | null,
+    title: string,
+    parentId?: string | null,
+    kernelId?: string,
+  ): Promise<Session>
   renameSession(id: string, title: string): Promise<Session>
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
   setSessionArchived(id: string, archived: boolean): Promise<Session>

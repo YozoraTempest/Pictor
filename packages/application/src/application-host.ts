@@ -12,7 +12,19 @@ export interface ApplicationStore {
   addProjectFolder(id: string, path: string): Promise<string[]>
   removeProjectFolder(id: string, path: string): Promise<string[]>
   listSessions(projectId?: string): Promise<Session[]>
-  createSession(projectId: string | null, title: string): Promise<Session>
+  /**
+   * Creates one conversation.
+   *
+   * `parentId` records lineage for a branch, and `kernelId` names the kernel that
+   * will execute it — both are fixed at creation, so they travel as arguments
+   * rather than through a later update.
+   */
+  createSession(
+    projectId: string | null,
+    title: string,
+    parentId?: string | null,
+    kernelId?: string,
+  ): Promise<Session>
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
   setSessionArchived(id: string, archived: boolean): Promise<Session>
   archiveSessions(ids: string[]): Promise<number>
@@ -49,6 +61,20 @@ function requireId(input: unknown, command: string): string {
     throw new Error(`${command} requires an id`)
   }
   return params.id
+}
+
+/**
+ * An optional id-shaped argument.
+ *
+ * `undefined` and `null` both mean "not given"; anything else that is not a
+ * non-empty string is a caller bug worth naming rather than a value to coerce.
+ */
+function optionalRef(value: unknown, what: string): string | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${what} must be a non-empty string or null`)
+  }
+  return value
 }
 
 function requireName(input: unknown, command: string): string {
@@ -175,7 +201,9 @@ export class ApplicationHost {
       id: 'session.create',
       description: 'Create a session, optionally inside a project',
       handler: async (input) => {
-        const params = input as { projectId?: unknown; title?: unknown } | undefined
+        const params = input as
+          | { projectId?: unknown; title?: unknown; parentId?: unknown; kernelId?: unknown }
+          | undefined
         if (typeof params?.title !== 'string') {
           throw new Error('session.create requires a title')
         }
@@ -186,9 +214,16 @@ export class ApplicationHost {
         ) {
           throw new Error('session.create projectId must be a string or null')
         }
+        const parentId = optionalRef(params.parentId, 'session.create parentId')
+        const kernelId = optionalRef(params.kernelId, 'session.create kernelId')
 
         const projectId = typeof params.projectId === 'string' ? params.projectId : null
-        const session = await this.#store.createSession(projectId, params.title)
+        const session = await this.#store.createSession(
+          projectId,
+          params.title,
+          parentId,
+          kernelId ?? undefined,
+        )
         this.events.emit('session.created', session)
         return session
       },
