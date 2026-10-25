@@ -1,0 +1,282 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import type { HarnessNotification } from '@pictor/harness'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { PiRpcDriver } from './pi-rpc-driver.js'
+
+/**
+ * The driver, driven by a stand-in that speaks Pi's RPC protocol.
+ *
+ * Everything that can go wrong here is a protocol mistake — a command that never
+ * gets a response, an event that is not translated, a turn that never closes — and
+ * none of it is visible until a real turn runs. The fake answers like `pi --mode
+ * rpc`: one JSON record per line, responses echoing the command id, events
+ * describing the session.
+ */
+
+const dirs: string[] = []
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+/** A fake Pi: `input` decides what `get_state` claims the model accepts. */
+function fakePi(
+  options: { input: string; reply?: string; settle?: 'immediately' | 'onAbort' } = {
+    input: 'text',
+  },
+): {
+  userData: string
+  script: string
+  log: string
+} {
+  const userData = mkdtempSync(join(tmpdir(), 'pictor-pi-rpc-'))
+  dirs.push(userData)
+  const script = join(userData, 'fake-pi.mjs')
+  const log = join(userData, 'commands.log')
+  writeFileSync(
+    script,
+    `#!/usr/bin/env node
+import { appendFileSync } from 'node:fs'
+const log = ${JSON.stringify(log)}
+const reply = ${JSON.stringify(options.reply ?? '等于 2')}
+const input = ${JSON.stringify(options.input)}.split(',')
+const settle = ${JSON.stringify(options.settle ?? 'immediately')}
+const send = (record) => process.stdout.write(JSON.stringify(record) + '\\n')
+let buffer = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk) => {
+  buffer += chunk
+  for (;;) {
+    const newline = buffer.indexOf('\\n')
+    if (newline === -1) return
+    const line = buffer.slice(0, newline)
+    buffer = buffer.slice(newline + 1)
+    if (line.trim().length === 0) continue
+    const command = JSON.parse(line)
+    appendFileSync(log, JSON.stringify(command) + '\\n')
+    handle(command)
+  }
+})
+function handle(command) {
+  if (command.type === 'get_state') {
+    send({ id: command.id, type: 'response', command: 'get_state', success: true,
+      data: { model: { id: 'fake-1', name: 'Fake Model', provider: 'fake', input } } })
+    return
+  }
+  if (command.type === 'set_thinking_level') {
+    send({ id: command.id, type: 'response', command: 'set_thinking_level', success: true, data: {} })
+    return
+  }
+  if (command.type === 'prompt') {
+    send({ id: command.id, type: 'response', command: 'prompt', success: true,
+      data: { disposition: 'started' } })
+    const images = Array.isArray(command.images) ? command.images.length : 0
+    send({ type: 'session', id: 'pi-fake-1' })
+    send({ type: 'turn_start' })
+    send({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '想' } })
+    send({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: reply } })
+    if (images > 0) {
+      send({ type: 'tool_execution_start', toolCallId: 'c1', toolName: 'read', args: { path: 'a.png' } })
+      send({ type: 'tool_execution_end', toolCallId: 'c1', isError: false,
+        result: { content: [{ type: 'text', text: 'Read image file' }] } })
+    }
+    send({ type: 'turn_end', message: { role: 'assistant', content: [{ type: 'text', text: reply }],
+      usage: { input: 7, output: 3, totalTokens: 10 } } })
+    if (settle === 'immediately') {
+      send({ type: 'agent_end', messages: [] })
+      send({ type: 'agent_settled', aborted: false })
+    }
+    return
+  }
+  if (command.type === 'abort') {
+    send({ id: command.id, type: 'response', command: 'abort', success: true, data: {} })
+    send({ type: 'agent_end', messages: [] })
+    send({ type: 'agent_settled', aborted: true })
+    return
+  }
+  if (command.type === 'shutdown') {
+    send({ id: command.id, type: 'response', command: 'shutdown', success: true, data: {} })
+    process.exit(0)
+  }
+}
+`,
+    { mode: 0o755 },
+  )
+  return { userData, script, log }
+}
+
+function driverFor(fake: { userData: string; script: string }): PiRpcDriver {
+  return new PiRpcDriver({
+    userData: fake.userData,
+    script: fake.script,
+    // The app's own runtime: exactly what production does, minus Electron.
+    runtime: process.execPath,
+    resolveCwd: () => Promise.resolve(fake.userData),
+  })
+}
+
+interface Collected {
+  frames: { type: string; data?: unknown; chunk?: Record<string, unknown> }[]
+}
+
+/** Collects frames until a turn closes, then returns everything seen. */
+async function collect(
+  driver: PiRpcDriver,
+  act: (done: () => void) => Promise<void>,
+): Promise<Collected> {
+  const frames: Collected['frames'] = []
+  let finish: () => void = () => undefined
+  const closed = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  driver.onNotification((notification: HarnessNotification) => {
+    const params = notification.params as {
+      frame?:
+        | { type: 'event'; event: { type: string; data?: unknown } }
+        | { type: 'assistant-stream'; frame: { chunk: Record<string, unknown> } }
+    }
+    const frame = params.frame
+    if (frame === undefined) return
+    if (frame.type === 'event') {
+      frames.push({ type: frame.event.type, data: frame.event.data })
+      if (frame.event.type === 'turn/end') finish()
+      return
+    }
+    frames.push({ type: 'chunk', chunk: frame.frame.chunk })
+  })
+  await act(finish)
+  await closed
+  return { frames }
+}
+
+function typesOf(collected: Collected): string[] {
+  return collected.frames.map((frame) =>
+    frame.type === 'chunk' ? `chunk:${String(frame.chunk?.['type'])}` : frame.type,
+  )
+}
+
+function commands(fake: { log: string }): Record<string, unknown>[] {
+  try {
+    return readFileSync(fake.log, 'utf8')
+      .split('\n')
+      .flatMap((line): Record<string, unknown>[] => {
+        if (line.trim().length === 0) return []
+        try {
+          return [JSON.parse(line) as Record<string, unknown>]
+        } catch {
+          return []
+        }
+      })
+  } catch {
+    return []
+  }
+}
+
+describe('PiRpcDriver', () => {
+  it('runs a prompt as one turn and closes it when Pi settles', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+
+    expect(typesOf(collected)).toEqual([
+      'turn/start',
+      'chunk:reasoning-delta',
+      'chunk:text-delta',
+      'chunk:usage',
+      'assistant/message',
+      'turn/end',
+    ])
+    expect(collected.frames[0]?.data).toEqual({ turn: 1 })
+    expect(collected.frames.at(-1)?.data).toEqual({ reason: { kind: 'completed' } })
+
+    // The child is started with the session directory, so Pi stores the transcript
+    // where Pictor reads it back from.
+    expect(commands(fake).map((command) => command['type'])).toContain('get_state')
+    await driver.stop()
+  })
+
+  it('sends images as content, and refuses them when the model cannot see', async () => {
+    const blind = fakePi({ input: 'text' })
+    const blindDriver = driverFor(blind)
+    await expect(
+      blindDriver.prompt('s1', '看图', [{ mediaType: 'image/png', data: 'AAAA' }]),
+    ).rejects.toThrow(/Fake Model 不接受图片/)
+    await blindDriver.stop()
+
+    const seeing = fakePi({ input: 'text,image', reply: '图上写着 TOKEN' })
+    const seeingDriver = driverFor(seeing)
+    const collected = await collect(seeingDriver, async () => {
+      await seeingDriver.prompt('s2', '看图', [{ mediaType: 'image/png', data: 'AAAA' }])
+    })
+
+    const prompt = commands(seeing).find((command) => command['type'] === 'prompt')
+    expect(prompt?.['images']).toEqual([{ type: 'image', data: 'AAAA', mimeType: 'image/png' }])
+    expect(typesOf(collected)).toContain('tool/call')
+    expect(typesOf(collected).at(-1)).toBe('turn/end')
+    await seeingDriver.stop()
+  })
+
+  it('cancels through a command, and reports the turn as aborted', async () => {
+    // This child keeps the run open until it is aborted, which is the case a cancel
+    // exists for.
+    const fake = fakePi({ input: 'text', settle: 'onAbort' })
+    const driver = driverFor(fake)
+
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+      await driver.cancel('s1')
+    })
+
+    expect(commands(fake).map((command) => command['type'])).toContain('abort')
+    expect(collected.frames.at(-1)?.data).toEqual({ reason: { kind: 'aborted' } })
+    await driver.stop()
+  })
+
+  it('reports a turn that reasoned but never answered as a failure', async () => {
+    // The fake always streams a thinking delta, so this is the "thought, then
+    // stopped" case: an answer bubble with nothing in it would be a lie.
+    const fake = fakePi({ input: 'text', reply: '' })
+    const driver = driverFor(fake)
+
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+
+    const end = collected.frames.at(-1)
+    expect(end?.type).toBe('turn/end')
+    expect(JSON.stringify(end?.data)).toContain('只给出了思考')
+    await driver.stop()
+  })
+
+  it('shuts its children down and reports what this machine can run', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    expect(driver.status().state).toBe('ready')
+    expect(driver.status().binary).toBe(fake.script)
+
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+    await driver.stop()
+    expect(commands(fake).map((command) => command['type'])).toContain('shutdown')
+  })
+
+  it('says so instead of pretending when Pi cannot answer', async () => {
+    const driver = new PiRpcDriver({
+      userData: mkdtempSync(join(tmpdir(), 'pictor-pi-none-')),
+      script: join('/', 'definitely', 'not', 'pi.js'),
+      resolveCwd: () => Promise.resolve('/tmp'),
+    })
+
+    expect(driver.status()).toMatchObject({ state: 'error', binary: null })
+    await expect(driver.prompt('s1', '你好')).rejects.toThrow(/没有找到 pi/)
+  })
+})

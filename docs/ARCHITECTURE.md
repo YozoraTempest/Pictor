@@ -70,11 +70,17 @@ Two kernels ship:
 
 - **dsh** (`kernel/dsh-driver.ts`) — the default, and the one the rest of this
   section describes: a server process booted with a profile Pictor owns.
-- **Pi** (`kernel/pi-cli-driver.ts`) — a CLI: one `pi -p --mode json` process per
-  turn, its JSONL translated into the same durable events and stream chunks. It
-  has no tool approvals, no mid-turn questions, no per-session sandbox and no
-  forking; it throws for each instead of faking them. Its transcript is read back
-  from Pi's own session file (`kernel/pi-history.ts`), because Pictor keeps none.
+- **Pi** (`kernel/pi-rpc-driver.ts`) — an RPC child per conversation: `pi --mode
+rpc` speaks JSONL commands on stdin and streams the same events over stdout,
+  translated by `kernel/pi-events.ts` into the durable events and chunks the window
+  already renders. The child runs on **this process's own runtime**
+  (`ELECTRON_RUN_AS_NODE`), not on whatever `node` PATH offers: Pi needs Node 22.19
+  or newer and a desktop app cannot assume the machine has it. Images travel as
+  content parts, and a model that cannot see them is refused by name before the
+  turn is spent. It still has no tool approvals, no mid-turn questions, no
+  per-session sandbox and no message-level fork; it throws for each instead of
+  faking them. Its transcript is read back from Pi's own session file
+  (`kernel/pi-history.ts`), because Pictor keeps none.
 
 Each driver also declares what it can do (`KernelCapabilities`: sandbox, model,
 skills, fork), and that declaration reaches the renderer with `kernels.list`. The

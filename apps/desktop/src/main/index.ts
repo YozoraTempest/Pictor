@@ -50,7 +50,7 @@ import { HarnessChatBridge } from './harness-chat.js'
 import { shouldAdoptTitle } from './harness-title.js'
 import { DEFAULT_PERMISSION_MODE, DshDriver, isPermissionMode } from './kernel/dsh-driver.js'
 import type { KernelDriver } from './kernel/driver.js'
-import { PiCliDriver } from './kernel/pi-cli-driver.js'
+import { PiRpcDriver } from './kernel/pi-rpc-driver.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
 import { ToolGuardServer } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
@@ -343,9 +343,10 @@ async function startWorkspace(): Promise<Workspace | null> {
     rules,
     resolveCwd,
   })
-  // Pi is driven as a CLI: no server, one process per turn. It is registered so
-  // the picker can offer it, and each conversation it runs stays on it.
-  const pi = new PiCliDriver({ userData, resolveCwd })
+  // Pi runs over its RPC protocol: one child per conversation, started on first
+  // use, driven by JSONL commands. Each conversation keeps the kernel it was
+  // opened on.
+  const pi = new PiRpcDriver({ userData, resolveCwd })
   const harness: KernelRouter = new KernelRouter({
     drivers: new Map<string, KernelDriver>([
       [dsh.id, dsh],
