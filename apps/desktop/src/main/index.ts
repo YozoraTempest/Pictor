@@ -44,11 +44,12 @@ import { HarnessChatBridge } from './harness-chat.js'
 import { shouldAdoptTitle } from './harness-title.js'
 import {
   DEFAULT_PERMISSION_MODE,
-  HarnessService,
+  DshDriver,
   isPermissionMode,
   type HarnessStatus,
   type PermissionMode,
-} from './harness-service.js'
+} from './kernel/dsh-driver.js'
+import type { KernelDriver } from './kernel/driver.js'
 import { ToolGuardServer } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
 import { RuleBook, describeRule } from './rule-book.js'
@@ -101,8 +102,8 @@ interface Workspace {
   appHost: ApplicationHost
   pluginHost: PluginHost
   model: ModelService
-  /** The agent runtime process, owned by the main process and shared by sessions. */
-  harness: HarnessService
+  /** The kernel every conversation runs on, owned by the main process. */
+  harness: KernelDriver
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
@@ -329,7 +330,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     return path !== null && existsSync(path) ? path : null
   }
 
-  const harness = new HarnessService({
+  const harness: KernelDriver = new DshDriver({
     model,
     userData,
     readPermissionMode,

@@ -31,17 +31,18 @@ import {
   type ModelSettings,
 } from '@pictor/shared'
 
-import { loadHarnessHistory } from './harness-history.js'
-import { sessionTitleOf } from './harness-title.js'
-import { answerValue, questionsOf } from './harness-questions.js'
+import { loadHarnessHistory } from '../harness-history.js'
+import { sessionTitleOf } from '../harness-title.js'
+import { answerValue, questionsOf } from '../harness-questions.js'
 import {
   GUARD_PLUGIN_NAME,
   GUARD_PLUGIN_PACKAGE,
   GUARD_PLUGIN_SOURCE,
-} from './harness-guard-plugin.js'
-import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
-import { pinnedVersionOf } from './runtime-version.js'
-import type { ModelService } from './model-service.js'
+} from '../harness-guard-plugin.js'
+import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from '../harness-profile.js'
+import { pinnedVersionOf } from '../runtime-version.js'
+import type { AgentProbeResult, KernelDriver } from './driver.js'
+import type { ModelService } from '../model-service.js'
 
 export interface HarnessStatus {
   state: 'stopped' | 'starting' | 'ready' | 'error'
@@ -82,14 +83,6 @@ function bootFingerprint(input: {
   return [input.baseUrl, input.protocol, input.modelId, key].join('|')
 }
 
-/** What one probe turn produced: the text, the durable events, or why it failed. */
-export interface AgentProbeResult {
-  ok: boolean
-  text: string
-  events: string[]
-  message?: string
-}
-
 export type PermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'workspace-write'
@@ -98,7 +91,7 @@ export function isPermissionMode(value: unknown): value is PermissionMode {
   return value === 'read-only' || value === 'workspace-write' || value === 'danger-full-access'
 }
 
-export interface HarnessServiceOptions {
+export interface DshDriverOptions {
   /** Verbose transport logging; set by PICTOR_DEBUG_HARNESS. */
   debug?: boolean
   model: ModelService
@@ -184,8 +177,9 @@ interface BootOptions {
  * the runtime reads, so a service saved in the settings page is the service
  * conversations use.
  */
-export class HarnessService {
-  readonly #options: HarnessServiceOptions
+export class DshDriver implements KernelDriver {
+  readonly id = 'dsh'
+  readonly #options: DshDriverOptions
   readonly #listeners = new Set<(notification: HarnessNotification) => void>()
   readonly #follows = new Map<string, FollowStream>()
   /** The application-wide event stream; without it, approvals go unanswered. */
@@ -220,7 +214,7 @@ export class HarnessService {
     return this.#options.guardEndpoint?.() ?? null
   }
 
-  constructor(options: HarnessServiceOptions) {
+  constructor(options: DshDriverOptions) {
     this.#options = {
       ...options,
       debug: options.debug ?? process.env['PICTOR_DEBUG_HARNESS'] === '1',
