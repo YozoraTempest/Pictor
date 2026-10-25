@@ -26,7 +26,8 @@
     "verify": "pnpm format:check && node scripts/check-style-tokens.mjs && pnpm typecheck && pnpm lint && pnpm test",
     "test:e2e": "node e2e/run.mjs",
     "pack:dir": "pnpm build && electron-builder --dir --projectDir apps/desktop --config electron-builder.json",
-    "pack:dist": "pnpm build && electron-builder --projectDir apps/desktop --config electron-builder.json"
+    "pack:dist": "pnpm build && electron-builder --projectDir apps/desktop --config electron-builder.json",
+    "kernel:probe": "node scripts/kernel-probe.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
