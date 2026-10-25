@@ -54,6 +54,13 @@ export interface PiRpcDriverOptions {
   script?: string
   /** Interpreter used to run the script; defaults to this process's own runtime. */
   runtime?: string
+  /**
+   * Writes (or refreshes) Pictor's guard extension and returns its path.
+   *
+   * Called once per child: the file carries the bridge's port and token, so a stale
+   * one would block every tool call. A null path means no guard is available.
+   */
+  guardExtension?: () => string | null
 }
 
 /** One Pi child process, and everything owed to it. */
@@ -870,6 +877,8 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
         args.push('--model', chosen)
       }
     }
+    const guard = this.#options.guardExtension?.() ?? null
+    if (guard !== null) args.push('--extension', guard)
     args.push(...extra)
 
     // A native binary runs on its own; a JavaScript entry point needs the runtime.

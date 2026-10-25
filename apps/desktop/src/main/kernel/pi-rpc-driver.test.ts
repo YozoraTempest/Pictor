@@ -418,6 +418,28 @@ describe('PiRpcDriver', () => {
     expect(end?.data).toMatchObject({ forkId: 'entry-1' })
   })
 
+  it('starts the child with the guard extension when one is available', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = new PiRpcDriver({
+      userData: fake.userData,
+      script: fake.script,
+      runtime: process.execPath,
+      resolveCwd: () => Promise.resolve(fake.userData),
+      guardExtension: () => '/tmp/pictor-guard.mjs',
+    })
+
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+
+    const started = commands(fake)
+      .filter((command) => command['type'] === 'argv')
+      .map((command) => command['argv'])
+      .find((argv): argv is string[] => Array.isArray(argv) && argv.includes('--extension'))
+    expect(started).toEqual(expect.arrayContaining(['--extension', '/tmp/pictor-guard.mjs']))
+    await driver.stop()
+  })
+
   it('says so instead of pretending when Pi cannot answer', async () => {
     const driver = new PiRpcDriver({
       userData: mkdtempSync(join(tmpdir(), 'pictor-pi-none-')),

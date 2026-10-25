@@ -52,6 +52,7 @@ import { shouldAdoptTitle } from './harness-title.js'
 import { DEFAULT_PERMISSION_MODE, DshDriver, isPermissionMode } from './kernel/dsh-driver.js'
 import type { KernelDriver } from './kernel/driver.js'
 import { PiRpcDriver } from './kernel/pi-rpc-driver.js'
+import { writeGuardExtension } from './pi-guard-extension.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
 import { ToolGuardServer } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
@@ -347,7 +348,14 @@ async function startWorkspace(): Promise<Workspace | null> {
   // Pi runs over its RPC protocol: one child per conversation, started on first
   // use, driven by JSONL commands. Each conversation keeps the kernel it was
   // opened on.
-  const pi = new PiRpcDriver({ userData, resolveCwd })
+  const pi = new PiRpcDriver({
+    userData,
+    resolveCwd,
+    // The same guard chain dsh asks over loopback, written as a Pi extension: a
+    // user's tool rules mean the same thing on both kernels. The endpoint is read
+    // per launch, and a missing one makes the extension block rather than allow.
+    guardExtension: () => writeGuardExtension(userData, guardBridge.endpoint),
+  })
   const harness: KernelRouter = new KernelRouter({
     drivers: new Map<string, KernelDriver>([
       [dsh.id, dsh],

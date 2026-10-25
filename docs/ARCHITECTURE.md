@@ -78,9 +78,13 @@ rpc` speaks JSONL commands on stdin and streams the same events over stdout,
   or newer and a desktop app cannot assume the machine has it. Images travel as
   content parts, and a model that cannot see them is refused by name before the
   turn is spent. It branches conversations at a user message's entry id, and it
-  answers for its own model catalogue (`KernelModelSource`). It still has no tool
-  approvals, no mid-turn questions and no per-session sandbox; it throws for each
-  instead of faking them. Its transcript is read back from Pi's own session file
+  answers for its own model catalogue (`KernelModelSource`). Its tool calls go
+  through the same guard chain as dsh's: Pictor writes a Pi extension
+  (`pi-guard-extension.ts`) that asks the loopback bridge about every call and
+  blocks it when a rule or a plugin guard says so, failing closed when the bridge
+  cannot be reached. What it still cannot express is an _interactive_ approval
+  held open until someone clicks, and a per-conversation sandbox; it throws for
+  each instead of faking them. Its transcript is read back from Pi's own session file
   (`kernel/pi-history.ts`), because Pictor keeps none.
 
 Each driver also declares what it can do (`KernelCapabilities`: sandbox, model,
