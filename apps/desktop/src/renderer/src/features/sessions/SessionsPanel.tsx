@@ -154,9 +154,15 @@ type PendingAction =
   /** `ids` is what the batch would touch, so the dialog can name the size. */
   | { kind: 'archive'; ids: string[]; title: string }
 
-export function SessionsPanel(): React.JSX.Element {
-  const sessions = useWorkspaceStore((state) => state.sessions)
-  const projects = useWorkspaceStore((state) => state.projects)
+export interface SessionsPanelProps {
+  /** Only this kernel's conversations; `null`/absent lists every one of them. */
+  kernelId?: string | null
+}
+
+export function SessionsPanel({ kernelId = null }: SessionsPanelProps): React.JSX.Element {
+  const allSessions = useWorkspaceStore((state) => state.sessions)
+  const allProjects = useWorkspaceStore((state) => state.projects)
+  const kernels = useWorkspaceStore((state) => state.kernels)
   const sections = useWorkspaceStore((state) => state.sections)
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
   const sorts = useWorkspaceStore((state) => state.sorts)
@@ -192,6 +198,29 @@ export function SessionsPanel(): React.JSX.Element {
   function askDelete(target: PendingAction): void {
     setConfirm(target)
   }
+
+  /**
+   * The view decides the pool, and the project rows follow it.
+   *
+   * Listing every project on a kernel's page would leave a column of empty folders,
+   * so a project appears only when it holds a conversation on that kernel. Archived
+   * rows are kept: hiding them would make restoring one impossible from here.
+   */
+  const { sessions, projects } = useMemo(() => {
+    if (kernelId === null) return { sessions: allSessions, projects: allProjects }
+    const scoped = allSessions.filter((session) => session.kernelId === kernelId)
+    const known = new Set(
+      scoped.flatMap((session): string[] =>
+        session.projectId === null ? [] : [session.projectId],
+      ),
+    )
+    return {
+      sessions: scoped,
+      projects: allProjects.filter((project) => known.has(project.id)),
+    }
+  }, [allSessions, allProjects, kernelId])
+
+  const kernelLabel = kernels.find((entry) => entry.id === kernelId)?.label ?? kernelId ?? ''
 
   const nodes = useMemo(
     () =>
@@ -562,6 +591,14 @@ export function SessionsPanel(): React.JSX.Element {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+        {/* A page that is one kernel's workspace can be empty on purpose; saying so
+            is better than a column with nothing in it. */}
+        {kernelId !== null && sessions.length === 0 && (
+          <p className="px-2 py-3 text-2xs leading-relaxed text-faint">
+            这里还没有 {kernelLabel}{' '}
+            的会话。点上方的「新聊天」或者在下方描述任务，第一条消息会建立它。
+          </p>
+        )}
         {nodes.map((node) => {
           const isCollapsed = collapsed[node.id] === true
           const Chevron = isCollapsed ? ChevronRight : ChevronDown

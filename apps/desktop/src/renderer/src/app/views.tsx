@@ -1,4 +1,4 @@
-import { House, Settings2, type LucideIcon } from 'lucide-react'
+import { Boxes, House, Settings2, Terminal, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { SettingsView } from '../features/settings/SettingsView.js'
@@ -55,10 +55,39 @@ const VIEWS = [
     icon: House,
     group: 'primary',
     order: 0,
+    // Every conversation, whatever kernel produced it: this is the only place the
+    // rail's destinations are compared side by side.
     render: () => <WorkspaceView />,
     title: () => <WorkspaceTitle />,
     leading: () => <WorkspaceLeading />,
     trailing: () => <WorkspaceTrailing />,
+    shortcut: 'Ctrl+1',
+  },
+  {
+    id: 'dsh',
+    label: 'DSH',
+    description: 'DeepSeek Harness 的会话',
+    icon: Boxes,
+    group: 'primary',
+    order: 1,
+    render: () => <WorkspaceView kernelId="dsh" />,
+    title: () => <WorkspaceTitle />,
+    leading: () => <WorkspaceLeading />,
+    trailing: () => <WorkspaceTrailing />,
+    shortcut: 'Ctrl+2',
+  },
+  {
+    id: 'pi',
+    label: 'PI',
+    description: 'Pi 的会话',
+    icon: Terminal,
+    group: 'primary',
+    order: 2,
+    render: () => <WorkspaceView kernelId="pi" />,
+    title: () => <WorkspaceTitle />,
+    leading: () => <WorkspaceLeading />,
+    trailing: () => <WorkspaceTrailing />,
+    shortcut: 'Ctrl+3',
   },
   {
     id: 'settings',

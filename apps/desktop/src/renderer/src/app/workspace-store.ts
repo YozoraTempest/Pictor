@@ -65,7 +65,16 @@ interface WorkspaceState {
   removeProject: (id: string) => Promise<void>
   addProjectFolder: (id: string) => Promise<void>
   removeProjectFolder: (id: string, path: string) => Promise<void>
-  createSession: (title: string, projectId?: string | null) => Promise<Session | null>
+  /**
+   * Creates a conversation on `kernelId`, or on the default kernel when it is left
+   * out. The page passes its own kernel, so starting one on the Pi page produces a
+   * Pi conversation.
+   */
+  createSession: (
+    title: string,
+    projectId?: string | null,
+    kernelId?: string | null,
+  ) => Promise<Session | null>
   /**
    * Continues the open conversation on another kernel.
    *
@@ -264,12 +273,12 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     })
   },
 
-  async createSession(title, projectId) {
+  async createSession(title, projectId, kernelId = null) {
     const target = projectId === undefined ? get().selectedProjectId : projectId
     let created: Session | null = null
 
     await guard(set, async () => {
-      created = await window.pictor.createSession(target, title)
+      created = await window.pictor.createSession(target, title, kernelId ?? undefined)
       set({ selectedSessionId: created.id })
       await get().refresh()
     })

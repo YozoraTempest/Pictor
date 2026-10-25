@@ -33,6 +33,13 @@ async function toImage(file: File): Promise<ChatImage | null> {
 export interface ComposerProps {
   disabled: boolean
   running: boolean
+  /**
+   * Whether the composer offers the kernel choice.
+   *
+   * A page that is one kernel's workspace has already answered that question, and
+   * a picker there would offer to leave the page it sits on.
+   */
+  showKernelPicker?: boolean
   onSend: (prompt: string, images: ChatImage[]) => void
   onStop: () => void
   /** Called after the active model changed, so the chat can be reopened. */
@@ -44,6 +51,7 @@ export function Composer({
   running,
   onSend,
   onStop,
+  showKernelPicker = true,
   onModelChanged,
 }: ComposerProps): React.JSX.Element {
   const [value, setValue] = useState('')
@@ -260,7 +268,7 @@ export function Composer({
         <div className="flex items-center gap-1 px-1 pt-1">
           <SessionPermissionPicker />
           <div className="ml-auto flex min-w-0 items-center gap-1">
-            <KernelPicker />
+            {showKernelPicker && <KernelPicker />}
             <ContextMeter />
             <ModelPicker onChanged={onModelChanged} />
             {running ? (

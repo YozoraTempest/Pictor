@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 
+import { KERNEL_VIEWS, kernelScopeOf } from './kernel-scope.js'
 import { openView } from './open-view.js'
 import { useUiStore } from './ui-store.js'
 import { useWorkspaceStore } from './workspace-store.js'
@@ -28,7 +29,13 @@ export function useAppShortcuts(): void {
       switch (event.key.toLowerCase()) {
         case 'n':
           event.preventDefault()
-          void createSession(newSessionTitle(), null)
+          // The open page decides the kernel, the same way its own 新聊天 does.
+          void createSession(newSessionTitle(), null, kernelScopeOf(useUiStore.getState().view))
+          return
+        // The rail's accelerators, in its own order: home, then one per kernel.
+        case '1':
+          event.preventDefault()
+          openView('home')
           return
         case ',':
           event.preventDefault()
@@ -55,8 +62,16 @@ export function useAppShortcuts(): void {
           event.preventDefault()
           void window.pictor.windowCommand('zoomReset')
           return
-        default:
+        default: {
+          // A kernel page's accelerator is derived, so adding a kernel to the rail
+          // does not leave its number unbound.
+          const index = Number(event.key) - 2
+          const target = KERNEL_VIEWS[index]
+          if (target === undefined) return
+          event.preventDefault()
+          openView(target.id)
           return
+        }
       }
     }
 

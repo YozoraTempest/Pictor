@@ -10,6 +10,8 @@ import {
   useUiStore,
 } from '../../app/ui-store.js'
 
+import { useWorkspaceStore } from '../../app/workspace-store.js'
+import { Banner } from '../../components/ui/index.js'
 import { ChatView } from '../chat/ChatView.js'
 import { SessionsPanel } from '../sessions/SessionsPanel.js'
 import { PanelResizer } from '../../shell/PanelResizer.js'
@@ -20,6 +22,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max))
 }
 
+export interface WorkspaceViewProps {
+  /**
+   * The kernel this page is about, when it is one kernel's page.
+   *
+   * `null`/absent is the home page: every conversation, and a composer that can
+   * start on either kernel. Set, it narrows the list and the new-conversation
+   * kernel, and the page stops offering a choice it has already made.
+   */
+  kernelId?: string | null
+}
+
 /**
  * The conversation workspace: sessions on the left, chat in the middle, panels on
  * the right.
@@ -28,7 +41,7 @@ function clamp(value: number, min: number, max: number): number {
  * its own grid: the shell only knows how to frame a view, never how wide its
  * columns are or how many it has.
  */
-export function WorkspaceView(): React.JSX.Element {
+export function WorkspaceView({ kernelId = null }: WorkspaceViewProps): React.JSX.Element {
   const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
   const sidebarWidth = useUiStore((state) => state.sidebarWidth)
@@ -43,91 +56,105 @@ export function WorkspaceView(): React.JSX.Element {
   const dragStart = useRef({ sidebar: sidebarWidth, right: rightWidth })
   const [dragging, setDragging] = useState<'sidebar' | 'right' | null>(null)
 
+  const kernels = useWorkspaceStore((state) => state.kernels)
+  const kernel = kernelId === null ? null : (kernels.find((entry) => entry.id === kernelId) ?? null)
+  const unavailable = kernel !== null && !kernel.available
+
   const sidebarVisible = leftPanelOpen || peeking
 
   return (
-    <div className="relative flex min-h-0 flex-1">
-      {/*
+    <div className="flex min-h-0 flex-1 flex-col">
+      {unavailable && (
+        <div className="shrink-0 px-3 pt-2">
+          <Banner tone="error">
+            {kernel?.label ?? kernelId}{' '}
+            在这台机器上还跑不起来：没有找到它的可执行文件。装好之后重新打开这一页。
+          </Banner>
+        </div>
+      )}
+      <div className="relative flex min-h-0 flex-1">
+        {/*
         The sidebar is a drawer. Pinned, it takes layout space and the workspace
         narrows; hovered, it floats over the content so nothing else moves — the
         title bar and its tools stay put either way.
       */}
-      <div
-        className={cn(
-          'flex flex-col overflow-hidden bg-bg',
-          leftPanelOpen
-            ? 'relative shrink-0 border-r border-border'
-            : 'absolute inset-y-0 left-0 z-30',
-          !leftPanelOpen && sidebarVisible && 'shadow-panel',
-          dragging === null && 'transition-[width] duration-300 ease-out',
-        )}
-        style={{ width: sidebarVisible ? sidebarWidth : 0 }}
-        onPointerEnter={() => peekSidebar(true)}
-        onPointerLeave={() => peekSidebar(false)}
-      >
-        {/* The content keeps its width while the drawer narrows, so a collapsing
+        <div
+          className={cn(
+            'flex flex-col overflow-hidden bg-bg',
+            leftPanelOpen
+              ? 'relative shrink-0 border-r border-border'
+              : 'absolute inset-y-0 left-0 z-30',
+            !leftPanelOpen && sidebarVisible && 'shadow-panel',
+            dragging === null && 'transition-[width] duration-300 ease-out',
+          )}
+          style={{ width: sidebarVisible ? sidebarWidth : 0 }}
+          onPointerEnter={() => peekSidebar(true)}
+          onPointerLeave={() => peekSidebar(false)}
+        >
+          {/* The content keeps its width while the drawer narrows, so a collapsing
             panel clips its labels instead of wrapping them. */}
-        <div className="flex min-h-0 flex-1 flex-col" style={{ width: sidebarWidth }}>
-          <aside className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface/30">
-            <SessionsPanel />
-          </aside>
+          <div className="flex min-h-0 flex-1 flex-col" style={{ width: sidebarWidth }}>
+            <aside className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface/30">
+              <SessionsPanel kernelId={kernelId} />
+            </aside>
+          </div>
         </div>
-      </div>
 
-      {/* Outside the drawer so clipping never eats the handle. */}
-      {sidebarVisible && (
-        <PanelResizer
-          attach="end"
-          style={{ left: sidebarWidth }}
-          label="调整侧栏宽度"
-          onStart={() => {
-            dragStart.current.sidebar = sidebarWidth
-            setDragging('sidebar')
-            setResizing(true)
-          }}
-          onMove={(deltaX) =>
-            setSidebarWidth(clamp(dragStart.current.sidebar + deltaX, SIDEBAR_MIN, SIDEBAR_MAX))
-          }
-          onEnd={() => {
-            setDragging(null)
-            setResizing(false)
-          }}
-          onReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
-        />
-      )}
-
-      <div
-        className={cn(
-          'relative grid min-h-0 min-w-0 flex-1',
-          dragging === null && 'transition-[grid-template-columns] duration-300 ease-out',
-        )}
-        style={{
-          gridTemplateColumns: `minmax(0, 1fr) ${rightPanelOpen ? `${String(rightWidth)}px` : '0px'}`,
-        }}
-      >
-        <main className="view-main min-h-0 min-w-0 overflow-hidden">
-          <ChatView />
-        </main>
-
-        <RightPanel />
-
-        {rightPanelOpen && (
+        {/* Outside the drawer so clipping never eats the handle. */}
+        {sidebarVisible && (
           <PanelResizer
-            attach="start"
-            style={{ right: rightWidth }}
-            label="调整右侧面板宽度"
+            attach="end"
+            style={{ left: sidebarWidth }}
+            label="调整侧栏宽度"
             onStart={() => {
-              dragStart.current.right = rightWidth
-              setDragging('right')
+              dragStart.current.sidebar = sidebarWidth
+              setDragging('sidebar')
+              setResizing(true)
             }}
             onMove={(deltaX) =>
-              // Dragging left widens the right panel.
-              setRightWidth(clamp(dragStart.current.right - deltaX, RIGHT_MIN, RIGHT_MAX))
+              setSidebarWidth(clamp(dragStart.current.sidebar + deltaX, SIDEBAR_MIN, SIDEBAR_MAX))
             }
-            onEnd={() => setDragging(null)}
-            onReset={() => setRightWidth(RIGHT_DEFAULT)}
+            onEnd={() => {
+              setDragging(null)
+              setResizing(false)
+            }}
+            onReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
           />
         )}
+
+        <div
+          className={cn(
+            'relative grid min-h-0 min-w-0 flex-1',
+            dragging === null && 'transition-[grid-template-columns] duration-300 ease-out',
+          )}
+          style={{
+            gridTemplateColumns: `minmax(0, 1fr) ${rightPanelOpen ? `${String(rightWidth)}px` : '0px'}`,
+          }}
+        >
+          <main className="view-main min-h-0 min-w-0 overflow-hidden">
+            <ChatView kernelId={kernelId} />
+          </main>
+
+          <RightPanel />
+
+          {rightPanelOpen && (
+            <PanelResizer
+              attach="start"
+              style={{ right: rightWidth }}
+              label="调整右侧面板宽度"
+              onStart={() => {
+                dragStart.current.right = rightWidth
+                setDragging('right')
+              }}
+              onMove={(deltaX) =>
+                // Dragging left widens the right panel.
+                setRightWidth(clamp(dragStart.current.right - deltaX, RIGHT_MIN, RIGHT_MAX))
+              }
+              onEnd={() => setDragging(null)}
+              onReset={() => setRightWidth(RIGHT_DEFAULT)}
+            />
+          )}
+        </div>
       </div>
     </div>
   )

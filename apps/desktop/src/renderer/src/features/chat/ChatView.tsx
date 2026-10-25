@@ -26,7 +26,12 @@ const MIN_PANEL_WIDTH = 520
 const MAX_PANEL_WIDTH = 1200
 const DEFAULT_PANEL_WIDTH = 860
 
-export function ChatView(): React.JSX.Element {
+export interface ChatViewProps {
+  /** The kernel this page is scoped to, or null when the page spans them all. */
+  kernelId?: string | null
+}
+
+export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element {
   const sessions = useWorkspaceStore((state) => state.sessions)
 
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
@@ -235,7 +240,7 @@ export function ChatView(): React.JSX.Element {
       return
     }
 
-    const created = await createSession(newSessionTitle(), draft.projectId)
+    const created = await createSession(newSessionTitle(), draft.projectId, kernelId)
     if (created === null) return
 
     if (draft.sectionId !== null) await setSessionSections(created.id, [draft.sectionId])
@@ -326,6 +331,7 @@ export function ChatView(): React.JSX.Element {
                   )}
                   <Composer
                     disabled={false}
+                    showKernelPicker={kernelId === null}
                     onModelChanged={() => void handleModelChanged()}
                     running={running}
                     onSend={(prompt, images) => void submit(prompt, images)}

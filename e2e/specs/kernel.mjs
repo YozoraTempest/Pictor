@@ -87,5 +87,44 @@ export default {
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().click({ timeout: 15_000 })
     await page.locator('[aria-label="内核：DeepSeek Harness"]').waitFor({ timeout: 20_000 })
     await page.locator('[aria-label^="会话权限："]').waitFor({ timeout: 20_000 })
+
+    // The rail has one destination per kernel, in a fixed order.
+    const rail = page.getByRole('navigation', { name: '主导航' })
+    assert.deepEqual(
+      await rail
+        .locator('button')
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label'))),
+      ['首页', 'DSH', 'PI', '设置'],
+    )
+
+    // A kernel's page lists that kernel's conversations and nobody else's. Both
+    // rows were created above, so each page must show exactly one of them.
+    await rail.getByRole('button', { name: 'PI', exact: true }).click()
+    await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
+    assert.equal(
+      await page.getByRole('button', { name: 'e2e 内核绑定' }).count(),
+      0,
+      'the Pi page does not list a dsh conversation',
+    )
+    // The page has already answered "which kernel", so it offers no picker.
+    assert.equal(
+      await page.locator('[aria-label^="内核："]').count(),
+      0,
+      'a scoped page draws no kernel picker',
+    )
+
+    await rail.getByRole('button', { name: 'DSH', exact: true }).click()
+    await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
+    assert.equal(
+      await page.getByRole('button', { name: 'e2e 内核分支' }).count(),
+      0,
+      'the DSH page does not list a Pi conversation',
+    )
+
+    // Home spans both, and is the only page that offers the choice.
+    await rail.getByRole('button', { name: '首页' }).click()
+    await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
+    await page.locator('[aria-label^="内核："]').first().waitFor({ timeout: 20_000 })
   },
 }

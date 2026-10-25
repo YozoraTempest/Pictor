@@ -15,6 +15,7 @@ vi.stubGlobal('matchMedia', (query: string) => ({
 }))
 
 const { APP_VIEWS, DEFAULT_VIEW } = await import('./views.js')
+const { KERNEL_VIEWS, kernelScopeOf } = await import('./kernel-scope.js')
 
 /**
  * Invariants that keep the registry the single source of truth.
@@ -46,5 +47,22 @@ describe('view registry', () => {
       entry.shortcut === undefined ? [] : [entry.shortcut],
     )
     expect(new Set(shortcuts).size).toBe(shortcuts.length)
+  })
+
+  it('puts the home page first and one page per kernel after it', () => {
+    const primary = APP_VIEWS.filter((entry) => entry.group === 'primary')
+      .sort((a, b) => a.order - b.order)
+      .map((entry) => entry.id)
+
+    expect(primary).toEqual(['home', ...KERNEL_VIEWS.map((entry) => entry.id)])
+  })
+
+  it('scopes exactly the kernel pages to their kernel', () => {
+    // The rail and the scope map are two lists that must not drift: a page listed
+    // here but missing there would show every kernel's conversations.
+    for (const entry of APP_VIEWS) {
+      const expected = KERNEL_VIEWS.find((view) => view.id === entry.id)?.kernelId ?? null
+      expect(kernelScopeOf(entry.id)).toBe(expected)
+    }
   })
 })
