@@ -57,9 +57,32 @@ Plugin lifecycle: discovery -> manifest validation -> engine check -> dependency
 resolution -> topological order -> activation -> reverse disposal. Failures are
 isolated per plugin and surfaced in the plugin report.
 
+### Kernels
+
+A conversation is executed by a kernel, never by Pictor itself. `KernelDriver`
+(`apps/desktop/src/main/kernel/driver.ts`) is the whole contract the rest of the
+main process may assume: lifecycle, one turn, history, events, settings,
+diagnosis. `KernelRouter` (`kernel/router.ts`) sends each call to the kernel that
+owns the conversation and **never falls back**: history sent to a kernel that
+never produced it would be a lie about where it came from.
+
+Two kernels ship:
+
+- **dsh** (`kernel/dsh-driver.ts`) — the default, and the one the rest of this
+  section describes: a server process booted with a profile Pictor owns.
+- **Pi** (`kernel/pi-cli-driver.ts`) — a CLI: one `pi -p --mode json` process per
+  turn, its JSONL translated into the same durable events and stream chunks. It
+  has no tool approvals, no mid-turn questions, no per-session sandbox and no
+  forking; it throws for each instead of faking them. Its transcript is read back
+  from Pi's own session file (`kernel/pi-history.ts`), because Pictor keeps none.
+
+The kernel is fixed when a conversation is created (`sessions.kernel_id`), so the
+picker opens a branch on the other kernel rather than rewriting one in place.
+Lifecycle calls carry no session id and stay on the default kernel.
+
 ### Runtime (dsh)
 
-`apps/desktop/src/main/harness-service.ts` owns the runtime lifecycle, and
+`apps/desktop/src/main/kernel/dsh-driver.ts` owns the runtime lifecycle, and
 `@pictor/harness` owns the wire protocol.
 
 - **Boot.** The runtime is spawned from `<userData>/harness-runtime` with
