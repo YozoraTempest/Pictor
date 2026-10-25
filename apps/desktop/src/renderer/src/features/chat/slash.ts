@@ -1,4 +1,4 @@
-import type { SkillEntry } from '@pictor/shared'
+import type { CatalogSkill } from '@pictor/shared'
 
 /** A `/` token being typed, and the span it occupies in the draft. */
 export interface SlashToken {
@@ -37,7 +37,7 @@ export const SLASH_MENU_LIMIT = 8
  * what it is called types the description instead, so both are matched. An empty
  * query lists the whole catalog: typing `/` alone is how someone browses.
  */
-export function matchSkills(skills: readonly SkillEntry[], query: string): SkillEntry[] {
+export function matchSkills(skills: readonly CatalogSkill[], query: string): CatalogSkill[] {
   const needle = query.trim().toLowerCase()
   return skills
     .filter(

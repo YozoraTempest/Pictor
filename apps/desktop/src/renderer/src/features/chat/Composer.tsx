@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import type { ChatImage, SkillEntry } from '@pictor/shared'
+import type { CatalogSkill, ChatImage } from '@pictor/shared'
 
 import { Button } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
@@ -46,7 +46,7 @@ export function Composer({
 }: ComposerProps): React.JSX.Element {
   const [value, setValue] = useState('')
   const [images, setImages] = useState<ChatImage[]>([])
-  const [skills, setSkills] = useState<SkillEntry[] | null>(null)
+  const [skills, setSkills] = useState<CatalogSkill[] | null>(null)
   const [slash, setSlash] = useState<SlashToken | null>(null)
   const [active, setActive] = useState(0)
   const [anchor, setAnchor] = useState<{ left: number; bottom: number; width: number } | null>(null)
@@ -131,7 +131,7 @@ export function Composer({
     }
   }, [slash])
 
-  function choose(skill: SkillEntry): void {
+  function choose(skill: CatalogSkill): void {
     if (slash === null) return
     const next = `${value.slice(0, slash.start)}/${skill.name} ${value.slice(slash.end)}`
     const caret = slash.start + skill.name.length + 2

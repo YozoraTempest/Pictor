@@ -182,6 +182,8 @@ export interface PictorBridge {
   setHarnessPermissionMode(mode: PermissionMode): Promise<HarnessStatus>
   /** Skills the conversation behind `sessionId` can see, for `/` and settings. */
   listSkills(sessionId: string): Promise<SkillEntry[]>
+  /** Switches one skill on or off and answers with the new list. */
+  setSkillEnabled(sessionId: string, name: string, enabled: boolean): Promise<SkillEntry[]>
   /** Reveals a file in the OS file manager; no-op when the path is unknown. */
   showInFolder(path: string): Promise<void>
 

@@ -22,13 +22,13 @@ import {
 
 import {
   parseSkills,
+  type CatalogSkill,
   type ChatAnswer,
   type ChatHistoryPage,
   type ChatImage,
   type ChatQuestion,
   type ModelEffort,
   type ModelSettings,
-  type SkillEntry,
 } from '@pictor/shared'
 
 import { loadHarnessHistory } from './harness-history.js'
@@ -510,7 +510,27 @@ export class HarnessService {
    * than about the app. Resolving the session is the same step a prompt takes,
    * so a conversation that exists only in Pictor is opened in the runtime first.
    */
-  async listSkills(sessionId: string): Promise<SkillEntry[]> {
+  /**
+   * Nearest ancestor of the working directory that is a repository.
+   *
+   * The runtime ranks a project's own skill roots above the user's, so telling a
+   * project skill from a personal one means knowing where the project starts —
+   * which is a `.git` ancestor, not the working directory, because running in the
+   * home directory would otherwise make `~/.agents/skills` look like a project's.
+   */
+  get projectRoot(): string | null {
+    const cwd = this.#cwd
+    if (cwd === null) return null
+    let current = cwd
+    for (;;) {
+      if (existsSync(join(current, '.git'))) return current
+      const parent = dirname(current)
+      if (parent === current) return null
+      current = parent
+    }
+  }
+
+  async listSkills(sessionId: string): Promise<CatalogSkill[]> {
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
     const harnessId = await this.#sessionFor(sessionId)

@@ -44,7 +44,8 @@ interface ActivePlugin {
 export class PluginHost {
   readonly #options: PluginHostOptions
   readonly #logger: PluginLogger
-  readonly #contributions = new Map<string, unknown[]>()
+  /** Contributions by point, each tagged with the plugin that made it. */
+  readonly #contributions = new Map<string, Array<{ pluginId: string; value: unknown }>>()
   readonly #active: ActivePlugin[] = []
   readonly #failures: PluginFailure[] = []
   readonly #activated: string[] = []
@@ -96,6 +97,16 @@ export class PluginHost {
   }
 
   contributions(point: string): unknown[] {
+    return (this.#contributions.get(point) ?? []).map((entry) => entry.value)
+  }
+
+  /**
+   * The same contributions, still tagged with their plugin.
+   *
+   * A registration product — a skill written to disk, say — has to be undone when
+   * its plugin goes away, so the host has to know who contributed what.
+   */
+  contributionsWithSource(point: string): Array<{ pluginId: string; value: unknown }> {
     return [...(this.#contributions.get(point) ?? [])]
   }
 
@@ -138,13 +149,14 @@ export class PluginHost {
       logger: this.#logger,
       contribute: (point, value) => {
         const values = this.#contributions.get(point) ?? []
-        values.push(value)
+        const entry = { pluginId: plugin.id, value }
+        values.push(entry)
         this.#contributions.set(point, values)
 
         const dispose = (): void => {
           const current = this.#contributions.get(point)
           if (current === undefined) return
-          const index = current.indexOf(value)
+          const index = current.indexOf(entry)
           if (index >= 0) current.splice(index, 1)
         }
         record.disposers.push(dispose)

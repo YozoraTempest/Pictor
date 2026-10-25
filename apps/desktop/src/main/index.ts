@@ -13,6 +13,7 @@ import {
 } from '@pictor/plugin-host'
 import {
   parsePanelContributions,
+  parseSkillContributions,
   parseToolGuardContributions,
   parseToolViewContributions,
   type PanelContribution,
@@ -30,6 +31,8 @@ import {
   type ModelProtocol,
   type PluginRecord,
   type Section,
+  type SkillEntry,
+  composeSkills,
 } from '@pictor/shared'
 
 import type { AppInfo, HostSnapshot, PluginReport } from '../shared/bridge.js'
@@ -44,6 +47,7 @@ import {
 } from './harness-service.js'
 import { ToolGuardServer } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
+import { SkillLibrary } from './skill-library.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const appRoot = resolve(here, '../..')
@@ -100,6 +104,8 @@ interface Workspace {
   panels: PanelContribution[]
   /** Presentation for agent tools; the renderer applies them to its presenters. */
   toolViews: ToolViewContribution[]
+  /** Skills Pictor owns, and the switches that apply to skills it does not. */
+  skills: SkillLibrary
   client: ReturnType<typeof startHostCore>['client']
   hostCore: string
   database: string
@@ -242,6 +248,37 @@ async function startWorkspace(): Promise<Workspace | null> {
   }
   const toolGuards = parsedGuards.guards
 
+  // Skills live in one root the runtime already scans; a plugin contributes data
+  // and Pictor writes the file, so the plugin never touches the runtime's home.
+  const skills = new SkillLibrary({
+    root: join(userData, 'harness', 'skills'),
+    stash: join(userData, 'skill-library', 'disabled'),
+    stateFile: join(userData, 'skill-library.json'),
+    logger: (message) => console.warn(`[skill] ${message}`),
+  })
+
+  const pluginSkills = new Map<string, unknown[]>()
+  for (const { pluginId, value } of pluginHost.contributionsWithSource('skills')) {
+    const values = pluginSkills.get(pluginId) ?? []
+    values.push(value)
+    pluginSkills.set(pluginId, values)
+  }
+
+  for (const [pluginId, values] of pluginSkills) {
+    const parsed = parseSkillContributions(values)
+    for (const failure of parsed.failures) {
+      console.warn(`[plugin] skill ignored: ${failure.reason}`)
+    }
+    skills.syncPlugin(pluginId, parsed.skills)
+  }
+
+  // A plugin that is installed but not activated owns no files: whatever an
+  // earlier run wrote for it has to go, or its skills would outlive the switch.
+  for (const plugin of discovery.plugins) {
+    if (pluginHost.report().activated.includes(plugin.id)) continue
+    skills.clearPlugin(plugin.id)
+  }
+
   console.info(`pictor host core ${info.version} (schema ${info.schemaVersion})`)
 
   let disposed = false
@@ -339,6 +376,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     database,
     panels,
     toolViews,
+    skills,
     dispose: async () => {
       if (disposed) return
       disposed = true
@@ -993,11 +1031,43 @@ function registerIpc(workspace: Workspace): void {
     return status
   })
 
+  // The runtime reports what it can load; Pictor adds what it owns and what it
+  // switched off, because a disabled skill is missing from the catalog.
+  const readSkills = async (sessionId: string): Promise<SkillEntry[]> =>
+    composeSkills(
+      await workspace.harness.listSkills(sessionId),
+      workspace.skills.view(),
+      workspace.harness.projectRoot,
+    )
+
   ipcMain.handle('pictor:harness.skills', async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0)
       throw new Error('sessionId is required')
-    return workspace.harness.listSkills(sessionId)
+    return readSkills(sessionId)
   })
+
+  ipcMain.handle(
+    'pictor:harness.skillEnabled',
+    async (_event, sessionId: unknown, name: unknown, enabled: unknown) => {
+      if (typeof sessionId !== 'string' || sessionId.length === 0)
+        throw new Error('sessionId is required')
+      if (typeof name !== 'string' || name.length === 0) throw new Error('skill name is required')
+      if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean')
+
+      const current = await readSkills(sessionId)
+      const entry = current.find((skill) => skill.name === name)
+      if (entry === undefined) throw new Error(`没有这个技能：${name}`)
+
+      workspace.skills.setEnabled(name, enabled, {
+        name: entry.name,
+        description: entry.description,
+        whenToUse: entry.whenToUse,
+        path: entry.path,
+        origin: entry.origin,
+      })
+      return readSkills(sessionId)
+    },
+  )
 
   // A skill's instructions live in a file the runtime discovered; showing it in
   // the file manager is the shortest path from "what is this skill" to the text.

@@ -71,6 +71,8 @@ const bridge: PictorBridge = {
   installHarness: () => invoke('pictor:harness.install'),
   setHarnessPermissionMode: (mode) => invoke('pictor:harness.setPermissionMode', mode),
   listSkills: (sessionId) => invoke('pictor:harness.skills', sessionId),
+  setSkillEnabled: (sessionId, name, enabled) =>
+    invoke('pictor:harness.skillEnabled', sessionId, name, enabled),
   showInFolder: (path) => invoke('pictor:shell.showItem', path),
 
   getAppInfo: () => invoke('pictor:appInfo'),

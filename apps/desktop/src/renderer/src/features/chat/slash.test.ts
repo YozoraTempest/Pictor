@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import type { SkillEntry } from '@pictor/shared'
+import type { CatalogSkill } from '@pictor/shared'
 
 import { matchSkills, slashTokenAt } from './slash.js'
 
-function skill(name: string, description = ''): SkillEntry {
+function skill(name: string, description = ''): CatalogSkill {
   return { name, description, whenToUse: null, path: null, modelInvocable: true }
 }
 

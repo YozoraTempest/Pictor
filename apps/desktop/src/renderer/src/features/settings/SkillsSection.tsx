@@ -1,12 +1,20 @@
-import { BookOpen, FolderOpen, RefreshCw } from 'lucide-react'
+import { FolderOpen, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { SkillEntry } from '@pictor/shared'
+import type { SkillEntry, SkillOrigin } from '@pictor/shared'
 
-import { Badge, Button, Spinner } from '../../components/ui/index.js'
+import { Badge, Button, Spinner, Switch } from '../../components/ui/index.js'
 import { useChatStore } from '../chat/chat-store.js'
 import { Section } from './Section.js'
 import { SettingRow } from './SettingRow.js'
+
+/** Where a row came from, in the words a reader would use for it. */
+const ORIGIN_LABEL: Record<SkillOrigin, string> = {
+  plugin: '插件',
+  library: 'Pictor',
+  filesystem: '文件',
+  project: '项目',
+}
 
 /**
  * Where skills are looked for, in the order the runtime scans them.
@@ -29,12 +37,18 @@ const ROOTS = [
  * session's working directory and the preset it runs under. That is why this page
  * asks for a session first instead of listing something global — a list assembled
  * any other way would name skills that session cannot actually load.
+ *
+ * The switch is not one mechanism. Skills Pictor owns are moved out of the
+ * scanned root; a skill the user wrote is shadowed by a same-named placeholder;
+ * one that belongs to the project is ranked above both and can only be changed
+ * in the repository, so its switch is disabled rather than lying.
  */
 export function SkillsSection(): React.JSX.Element {
   const sessionId = useChatStore((state) => state.current.sessionId)
   const [skills, setSkills] = useState<SkillEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
@@ -66,6 +80,19 @@ export function SkillsSection(): React.JSX.Element {
   }, [sessionId, attempt])
 
   const found = skills?.length ?? 0
+  const enabled = skills?.filter((skill) => skill.enabled).length ?? 0
+
+  async function toggle(skill: SkillEntry, next: boolean): Promise<void> {
+    setBusy(skill.name)
+    setError(null)
+    try {
+      setSkills(await window.pictor.setSkillEnabled(sessionId, skill.name, next))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(null)
+    }
+  }
 
   return (
     <Section
@@ -77,7 +104,7 @@ export function SkillsSection(): React.JSX.Element {
             <Spinner className="size-3.5" />
           ) : (
             <Badge tone="neutral">
-              {sessionId.length === 0 ? '无会话' : `${String(found)} 个`}
+              {sessionId.length === 0 ? '无会话' : `${String(enabled)} / ${String(found)} 启用`}
             </Badge>
           )}
           <Button
@@ -99,7 +126,7 @@ export function SkillsSection(): React.JSX.Element {
           description="技能按会话的工作目录解析，没有会话就无从知道该扫哪些目录。"
           control={null}
         />
-      ) : error !== null ? (
+      ) : error !== null && skills === null ? (
         <SettingRow title="读取失败" description={error} control={null} />
       ) : skills !== null && skills.length === 0 ? (
         <SettingRow
@@ -115,16 +142,30 @@ export function SkillsSection(): React.JSX.Element {
             description={skill.whenToUse ?? skill.description}
             control={
               <div className="flex items-center gap-2">
-                {!skill.modelInvocable && <Badge tone="neutral">仅自己可用</Badge>}
+                <Badge tone="neutral">
+                  {skill.origin === 'plugin' && skill.source !== null
+                    ? `${ORIGIN_LABEL[skill.origin]} · ${skill.source}`
+                    : ORIGIN_LABEL[skill.origin]}
+                </Badge>
                 {skill.path !== null && (
                   <Button
-                    size="sm"
+                    size="icon"
                     variant="ghost"
+                    aria-label={`打开 ${skill.name} 的位置`}
                     onClick={() => void window.pictor.showInFolder(skill.path ?? '')}
                   >
                     <FolderOpen className="size-3.5" />
-                    位置
                   </Button>
+                )}
+                {busy === skill.name ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <Switch
+                    label={`切换技能 ${skill.name}`}
+                    checked={skill.enabled}
+                    disabled={skill.origin === 'project'}
+                    onChange={(next) => void toggle(skill, next)}
+                  />
                 )}
               </div>
             }
@@ -132,14 +173,9 @@ export function SkillsSection(): React.JSX.Element {
         ))
       )}
 
-      {sessionId.length > 0 && (skills ?? []).length > 0 && (
-        <div className="flex items-start gap-2 px-4 py-3 text-2xs text-faint">
-          <BookOpen className="mt-0.5 size-3 shrink-0" aria-hidden />
-          <span>
-            在输入框里打 <span className="font-mono text-muted">/</span>{' '}
-            选择技能，说明会在这一轮里直接注入； 模型自己判断需要时，会调用{' '}
-            <span className="font-mono text-muted">skill</span> 工具加载。
-          </span>
+      {error !== null && skills !== null && (
+        <div className="flex items-start gap-2 px-4 py-3 text-2xs text-danger" role="alert">
+          {error}
         </div>
       )}
     </Section>

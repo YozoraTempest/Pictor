@@ -32,3 +32,10 @@ export {
   type ToolViewContribution,
   type ToolViewContributionFailure,
 } from './tool-views.js'
+export {
+  SkillContributionError,
+  parseSkillContribution,
+  parseSkillContributions,
+  type SkillContribution,
+  type SkillContributionFailure,
+} from './skills.js'
