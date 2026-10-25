@@ -30,7 +30,7 @@ import type {
 import type { AgentProbeResult, KernelDriver } from './driver.js'
 import type { KernelModelSource } from './model-source.js'
 import { PiTranslator, type PiFrame } from './pi-events.js'
-import { historyRows, storedLevel, textOf, type StoredRecord } from './pi-history.js'
+import { historyRows, storedLevel, storedModel, textOf, type StoredRecord } from './pi-history.js'
 
 /** How long one command may take before the caller gives up on Pi answering. */
 const REQUEST_TIMEOUT_MS = 30_000
@@ -341,15 +341,18 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     const live = this.#kids.get(sessionId)
     const running = live?.model?.key ?? null
     // A conversation that is not running has no process to ask, so its own file is
-    // the last word on the level it will resume at.
-    const recorded =
-      this.#efforts.get(sessionId) ??
-      live?.effort ??
-      (live === undefined ? storedLevel(this.#records(sessionId)) : null)
+    // the last word on the model and level it will resume with.
+    const recorded = live === undefined ? this.#records(sessionId) : null
     return {
       models,
-      activeId: this.#models.get(sessionId) ?? running,
-      activeEffort: recorded,
+      activeId:
+        this.#models.get(sessionId) ??
+        running ??
+        (recorded === null ? null : storedModel(recorded)),
+      activeEffort:
+        this.#efforts.get(sessionId) ??
+        live?.effort ??
+        (recorded === null ? null : storedLevel(recorded)),
     }
   }
 

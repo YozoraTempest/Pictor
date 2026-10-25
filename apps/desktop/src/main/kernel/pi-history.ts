@@ -39,6 +39,9 @@ export interface StoredRecord {
   message?: StoredMessage | null
   /** On a `thinking_level_change` entry: the level the conversation moved to. */
   thinkingLevel?: unknown
+  /** On a `model_change` entry: the provider and model the conversation moved to. */
+  provider?: unknown
+  modelId?: unknown
 }
 
 function blocksOf(content: unknown): Block[] {
@@ -84,6 +87,26 @@ export function storedLevel(records: readonly StoredRecord[]): ModelEffort | nul
     return typeof level === 'string' && (MODEL_EFFORTS as readonly string[]).includes(level)
       ? (level as ModelEffort)
       : null
+  }
+  return null
+}
+
+/**
+ * The model the conversation last recorded, as `provider/id`.
+ *
+ * Same reasoning as [storedLevel]: Pi writes a `model_change` entry whenever the model
+ * moves, so a conversation reopened with no process to ask can still name the model it
+ * will resume on instead of offering a choice it has already made.
+ */
+export function storedModel(records: readonly StoredRecord[]): string | null {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index]
+    if (record?.type !== 'model_change') continue
+    const id = record.modelId
+    if (typeof id !== 'string' || id.length === 0) return null
+    const provider =
+      typeof record.provider === 'string' && record.provider.length > 0 ? record.provider : null
+    return provider === null || id.includes('/') ? id : `${provider}/${id}`
   }
   return null
 }

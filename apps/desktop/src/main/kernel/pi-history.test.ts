@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { historyRows, storedLevel, textOf } from './pi-history.js'
+import { historyRows, storedLevel, storedModel, textOf } from './pi-history.js'
 
 /** One stored line, the way Pi writes it: `{type: 'message', message}`. */
 function line(message: Record<string, unknown>, type = 'message'): Record<string, unknown> {
@@ -47,6 +47,25 @@ describe('storedLevel', () => {
         { type: 'thinking_level_change', thinkingLevel: 'ludicrous' },
       ]),
     ).toBeNull()
+  })
+})
+
+describe('storedModel', () => {
+  it('names the model the conversation last ran', () => {
+    expect(
+      storedModel([
+        { type: 'model_change', provider: 'deepseek', modelId: 'deepseek-v4-pro' },
+        line({ role: 'user', content: [{ type: 'text', text: '你好' }] }),
+        { type: 'model_change', provider: 'deepseek', modelId: 'deepseek-flash' },
+      ]),
+    ).toBe('deepseek/deepseek-flash')
+  })
+
+  it('says nothing rather than guessing', () => {
+    expect(storedModel([])).toBeNull()
+    // A change with no model on it is not a model: an id invented here would show up
+    // in the picker as a model that does not exist.
+    expect(storedModel([{ type: 'model_change', provider: 'deepseek' }])).toBeNull()
   })
 })
 
