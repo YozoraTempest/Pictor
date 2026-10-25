@@ -82,6 +82,12 @@ composer draws a control only where the conversation's kernel says it exists: a
 CLI kernel gets no sandbox switch and no model picker, instead of a control that
 throws when pressed.
 
+The rail carries one destination per kernel (`app/kernel-scope.ts` maps a view id
+to its kernel). A kernel page lists only that kernel's conversations, filters the
+project rows to the ones that hold one, creates its conversations on that kernel,
+and does not draw the kernel picker — the page already answered that question.
+The home page spans every kernel and is the only place the choice is offered.
+
 The kernel is fixed when a conversation is created (`sessions.kernel_id`), so the
 picker opens a branch on the other kernel rather than rewriting one in place.
 Lifecycle calls carry no session id and stay on the default kernel.
