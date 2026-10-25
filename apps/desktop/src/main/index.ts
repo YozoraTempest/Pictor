@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -316,12 +317,25 @@ async function startWorkspace(): Promise<Workspace | null> {
   void guardBridge.start().catch((error: unknown) => {
     console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
   })
+  // A conversation's directory comes from the project it was filed under. The
+  // lookup happens per session because the runtime decides the sandbox root when
+  // it creates one; nothing here changes a conversation that already exists.
+  const resolveCwd = async (sessionId: string): Promise<string | null> => {
+    const sessions = await running.client.listSessions()
+    const session = sessions.find((entry) => entry.id === sessionId)
+    if (session === undefined || session.projectId === null) return null
+    const projects = await running.client.listProjects()
+    const path = projects.find((project) => project.id === session.projectId)?.path ?? null
+    return path !== null && existsSync(path) ? path : null
+  }
+
   const harness = new HarnessService({
     model,
     userData,
     readPermissionMode,
     guardEndpoint: () => guardBridge.endpoint,
     rules,
+    resolveCwd,
   })
   // The runtime reports durable session events; the renderer renders runs and
   // deltas. One translation keeps the transcript unchanged by the swap.
@@ -1063,7 +1077,7 @@ function registerIpc(workspace: Workspace): void {
     composeSkills(
       await workspace.harness.listSkills(sessionId),
       workspace.skills.view(),
-      workspace.harness.projectRoot,
+      await workspace.harness.projectRootFor(sessionId),
     )
 
   ipcMain.handle('pictor:harness.skills', async (_event, sessionId: unknown) => {

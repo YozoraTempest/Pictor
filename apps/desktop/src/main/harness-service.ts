@@ -110,6 +110,14 @@ export interface HarnessServiceOptions {
   readPermissionMode?: () => Promise<PermissionMode>
   /** Answers an escalation prompt without asking, when an allow rule covers the tool. */
   rules?: { allows: (tool: string) => boolean }
+  /**
+   * Working directory a conversation runs in, resolved from its project.
+   *
+   * The runtime takes a cwd per session, and the sandbox root follows it, so a
+   * conversation belongs to the project it was created under. Absent means no
+   * project owns it and the runtime's own start directory applies.
+   */
+  resolveCwd?: (sessionId: string) => Promise<string | null>
   /** Loopback bridge answering tool guards, when any guard is installed. */
   guardEndpoint?: () => { port: number; token: string } | null
 }
@@ -575,17 +583,20 @@ export class HarnessService {
    * so a conversation that exists only in Pictor is opened in the runtime first.
    */
   /**
-   * Nearest ancestor of the working directory that is a repository.
+   * Nearest repository ancestor of a conversation's directory.
    *
    * The runtime ranks a project's own skill roots above the user's, so telling a
    * project skill from a personal one means knowing where the project starts —
-   * which is a `.git` ancestor, not the working directory, because running in the
-   * home directory would otherwise make `~/.agents/skills` look like a project's.
+   * which is a `.git` ancestor, not the working directory itself, because running
+   * in the home directory would otherwise make `~/.agents/skills` look like a
+   * project's.
    */
-  get projectRoot(): string | null {
-    const cwd = this.#cwd
-    if (cwd === null) return null
-    let current = cwd
+  async projectRootFor(sessionId: string): Promise<string | null> {
+    const resolved = await this.#options.resolveCwd?.(sessionId).catch(() => null)
+    const start =
+      resolved !== null && resolved !== undefined && resolved.length > 0 ? resolved : this.#cwd
+    if (start === null) return null
+    let current = start
     for (;;) {
       if (existsSync(join(current, '.git'))) return current
       const parent = dirname(current)
@@ -961,8 +972,16 @@ export class HarnessService {
 
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
+    // A conversation's directory is fixed when the runtime creates it: the
+    // sandbox root is decided there too, so it must be the project's own path
+    // rather than whatever directory the process happened to start in.
+    const resolved = await this.#options.resolveCwd?.(pictorId).catch(() => null)
+    const cwd =
+      resolved !== null && resolved !== undefined && resolved.length > 0
+        ? resolved
+        : (this.#cwd ?? homedir())
     const created = await remote.call<SessionCreateValue>('session/create', {
-      request: { cwd: this.#cwd ?? homedir(), sessionId: pictorId },
+      request: { cwd, sessionId: pictorId },
     })
     this.#sessions.set(pictorId, created.sessionId)
     this.#persistSessions()

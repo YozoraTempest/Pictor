@@ -273,17 +273,6 @@ export function RuntimePage(): React.JSX.Element {
           </span>
         }
       />
-
-      <SettingRow
-        stacked
-        title="工作目录"
-        description="取自当前选中的项目；没有项目时用主目录。"
-        control={
-          <span className="block max-w-[22rem] truncate font-mono text-2xs text-faint">
-            {project?.path ?? '主目录'}
-          </span>
-        }
-      />
     </Section>
   )
 }
