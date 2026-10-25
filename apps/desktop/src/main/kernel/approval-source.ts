@@ -15,6 +15,14 @@ export interface KernelApprovalSource {
   approvalMode(sessionId: string): ApprovalMode
   /** Sets it; a held call is not re-decided, the next one follows the new mode. */
   setApprovalMode(sessionId: string, mode: ApprovalMode): void
+  /** Tools this conversation may run without being asked again. */
+  grantedTools(sessionId: string): string[]
+  /** Whether one tool is already allowed for the rest of the conversation. */
+  isGranted(sessionId: string, tool: string): boolean
+  /** Remembers one answer as "not this tool again in this conversation". */
+  grantTool(sessionId: string, tool: string): void
+  /** Forgets every allow in the conversation. */
+  revokeGrants(sessionId: string): void
 }
 
 /** Whether a driver hands its approval decisions to the app. */
@@ -23,6 +31,10 @@ export function isApprovalSource(
 ): driver is KernelDriver & KernelApprovalSource {
   const candidate = driver as Partial<KernelApprovalSource>
   return (
-    typeof candidate.approvalMode === 'function' && typeof candidate.setApprovalMode === 'function'
+    typeof candidate.approvalMode === 'function' &&
+    typeof candidate.setApprovalMode === 'function' &&
+    typeof candidate.grantedTools === 'function' &&
+    typeof candidate.grantTool === 'function' &&
+    typeof candidate.revokeGrants === 'function'
   )
 }

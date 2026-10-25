@@ -147,17 +147,29 @@ export type ToolAskSource = { source: 'rule'; rule: ToolRule } | { source: 'mode
  * the exception to it — a rule that names a tool is more specific than a mode that
  * names a whole class of tools.
  *
+ * `granted` is the person having answered this tool once in this conversation with
+ * "allow it from now on". It silences the mode like an allow rule does, and it loses
+ * to an `ask` rule for the same reason: a rule about a specific call is narrower than
+ * a session that got tired of clicking.
+ *
  * `mutating` is the kernel's own judgement of the call (Pi derives it from the tool's
  * annotations), not a list of tool names Pictor keeps: a new or plugin tool is
  * covered by the same rule without teaching this function about it.
  */
 export function askVerdict(
   rules: readonly ToolRule[],
-  context: { tool: string; args: unknown; mutating: boolean; mode: ApprovalMode },
+  context: {
+    tool: string
+    args: unknown
+    mutating: boolean
+    mode: ApprovalMode
+    granted: boolean
+  },
 ): ToolAskSource | null {
   const rule = matchAskRule(rules, context)
   if (rule !== null) return { source: 'rule', rule }
   if (allowsTool(rules, context.tool)) return null
+  if (context.granted) return null
   if (context.mode === 'mutating' && context.mutating) return { source: 'mode' }
   return null
 }

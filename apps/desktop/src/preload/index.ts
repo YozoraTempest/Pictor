@@ -82,6 +82,9 @@ const bridge: PictorBridge = {
   kernelApproval: (sessionId) => invoke('pictor:kernel.approval', sessionId),
   selectKernelApproval: (sessionId, mode) =>
     invoke('pictor:kernel.selectApproval', sessionId, mode),
+  kernelGrants: (sessionId) => invoke('pictor:kernel.grants', sessionId),
+  grantKernelTool: (sessionId, tool) => invoke('pictor:kernel.grantTool', sessionId, tool),
+  revokeKernelGrants: (sessionId) => invoke('pictor:kernel.revokeGrants', sessionId),
   listToolRules: () => invoke('pictor:rules.list'),
   saveToolRules: (rules) => invoke('pictor:rules.save', rules),
   listSkills: (sessionId) => invoke('pictor:harness.skills', sessionId),

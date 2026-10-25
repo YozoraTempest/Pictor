@@ -616,6 +616,29 @@ describe('PiRpcDriver', () => {
     await reopened.stop()
   })
 
+  it('stops asking about a tool the conversation already allowed', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    expect(driver.isGranted('s1', 'bash')).toBe(false)
+    driver.grantTool('s1', 'bash')
+    expect(driver.isGranted('s1', 'bash')).toBe(true)
+    // The allow is the conversation's, so another one still asks.
+    expect(driver.isGranted('s2', 'bash')).toBe(false)
+    expect(driver.grantedTools('s1')).toEqual(['bash'])
+    await driver.stop()
+
+    // Clicking it once should not have to be repeated after a restart.
+    const reopened = driverFor(fake)
+    await reopened.start(fake.userData)
+    expect(reopened.isGranted('s1', 'bash')).toBe(true)
+
+    // And it is revocable, which is what keeps it from being a one-way door.
+    reopened.revokeGrants('s1')
+    expect(reopened.grantedTools('s1')).toEqual([])
+    await reopened.stop()
+  })
+
   it('says so instead of pretending when Pi cannot answer', async () => {
     const driver = new PiRpcDriver({
       userData: mkdtempSync(join(tmpdir(), 'pictor-pi-none-')),

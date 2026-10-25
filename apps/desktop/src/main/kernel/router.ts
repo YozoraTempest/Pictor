@@ -225,6 +225,33 @@ export class KernelRouter implements KernelDriver {
     driver.setApprovalMode(sessionId, mode)
   }
 
+  /** Tools this conversation no longer asks about. */
+  async kernelGrants(sessionId: string): Promise<string[]> {
+    const driver = await this.#for(sessionId)
+    if (!isApprovalSource(driver)) {
+      throw new Error(`这个会话的内核「${driver.id}」自己决定何时问人`)
+    }
+    return driver.grantedTools(sessionId)
+  }
+
+  async grantKernelTool(sessionId: string, tool: string): Promise<string[]> {
+    const driver = await this.#for(sessionId)
+    if (!isApprovalSource(driver)) {
+      throw new Error(`这个会话的内核「${driver.id}」自己决定何时问人`)
+    }
+    driver.grantTool(sessionId, tool)
+    return driver.grantedTools(sessionId)
+  }
+
+  async revokeKernelGrants(sessionId: string): Promise<string[]> {
+    const driver = await this.#for(sessionId)
+    if (!isApprovalSource(driver)) {
+      throw new Error(`这个会话的内核「${driver.id}」自己决定何时问人`)
+    }
+    driver.revokeGrants(sessionId)
+    return driver.grantedTools(sessionId)
+  }
+
   async listSkills(sessionId: string): Promise<CatalogSkill[]> {
     return (await this.#for(sessionId)).listSkills(sessionId)
   }

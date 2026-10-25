@@ -66,6 +66,7 @@ export class RuleBook {
     args: unknown
     mutating: boolean
     mode: ApprovalMode
+    granted: boolean
   }): ToolAskSource | null {
     return askVerdict(this.#rules, context)
   }
@@ -79,6 +80,40 @@ export function describeRule(rule: ToolRule): string {
 
 /** How much of the arguments the approval card shows. */
 const PREVIEW_LIMIT = 240
+
+/** The argument that says what a known tool would do. */
+const CALL_FIELDS: Record<string, readonly string[]> = {
+  bash: ['command'],
+  pwsh: ['command'],
+  write: ['file_path', 'path'],
+  edit: ['file_path', 'path'],
+  read: ['file_path', 'path'],
+  glob: ['pattern'],
+  grep: ['pattern'],
+  web_fetch: ['url'],
+  web_search: ['query'],
+}
+
+/**
+ * What the call would do, in one line.
+ *
+ * Approving `bash` without seeing the command is approving a name, not an action, so
+ * the card leads with the argument that matters for a known tool. An unknown tool has
+ * no such field, and guessing one would hide what it is about to do, so its arguments
+ * are shown as they arrived.
+ */
+export function describeCall(tool: string, args: unknown): string | null {
+  if (typeof args === 'object' && args !== null) {
+    const record = args as Record<string, unknown>
+    for (const field of CALL_FIELDS[tool] ?? []) {
+      const value = record[field]
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.length <= PREVIEW_LIMIT ? value : `${value.slice(0, PREVIEW_LIMIT)}…`
+      }
+    }
+  }
+  return argumentPreview(args)
+}
 
 /**
  * A short, honest look at what the call would do.
@@ -101,11 +136,11 @@ export function argumentPreview(args: unknown): string | null {
 }
 
 /** What the approval card says about one held call. */
-export function describeAsk(source: ToolAskSource, args: unknown): string {
+export function describeAsk(source: ToolAskSource, tool: string, args: unknown): string {
   const why =
     source.source === 'rule'
       ? `工具规则「${describeRule(source.rule)}」要求这次调用先问你`
       : '这个会话设置为「改动型工具先问我」'
-  const preview = argumentPreview(args)
-  return preview === null ? why : `${why}\n${preview}`
+  const call = describeCall(tool, args)
+  return call === null ? why : `${why}\n${call}`
 }

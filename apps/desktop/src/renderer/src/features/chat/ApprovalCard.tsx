@@ -43,6 +43,29 @@ export function ApprovalCard({
     }
   }
 
+  /**
+   * Allows this call and every later one of the same tool in this conversation.
+   *
+   * Only offered when the request names its conversation: dsh's approvals carry no
+   * session, so there would be nothing to scope the answer to. The allow is the
+   * session's, not a rule — it says nothing about other conversations.
+   */
+  async function allowHere(): Promise<void> {
+    if (request.sessionId === undefined || request.tool === null) return
+    setSending(true)
+    setError(null)
+    try {
+      await window.pictor.grantKernelTool(request.sessionId, request.tool)
+      await window.pictor.answerApproval(request.eventId, true)
+      useApprovalStore.getState().clear()
+    } catch (reason) {
+      setSending(false)
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
+  const canAllowHere = request.sessionId !== undefined && request.tool !== null
+
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-accent/40 bg-accent/5 px-3 py-2">
       <div className="flex items-center gap-2">
@@ -67,6 +90,11 @@ export function ApprovalCard({
         <Button variant="primary" size="sm" disabled={sending} onClick={() => void answer(true)}>
           允许一次
         </Button>
+        {canAllowHere && (
+          <Button variant="ghost" size="sm" disabled={sending} onClick={() => void allowHere()}>
+            本会话都允许 {request.tool}
+          </Button>
+        )}
         <Button variant="secondary" size="sm" disabled={sending} onClick={() => void answer(false)}>
           拒绝
         </Button>

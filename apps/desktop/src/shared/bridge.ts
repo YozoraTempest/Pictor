@@ -284,6 +284,12 @@ export interface PictorBridge {
   kernelApproval(sessionId: string): Promise<ApprovalMode>
   /** Sets that mode for the conversation; the next call follows it. */
   selectKernelApproval(sessionId: string, mode: ApprovalMode): Promise<void>
+  /** Tools this conversation no longer asks about. */
+  kernelGrants(sessionId: string): Promise<string[]>
+  /** Answers a held call with "not this tool again in this conversation". */
+  grantKernelTool(sessionId: string, tool: string): Promise<string[]>
+  /** Forgets every such answer in the conversation. */
+  revokeKernelGrants(sessionId: string): Promise<string[]>
   /** Per-tool rules: a deny refuses a call, an allow answers its escalation. */
   listToolRules(): Promise<ToolRule[]>
   saveToolRules(rules: ToolRule[]): Promise<ToolRule[]>

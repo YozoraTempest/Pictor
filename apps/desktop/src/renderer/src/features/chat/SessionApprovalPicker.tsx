@@ -53,6 +53,8 @@ export function SessionApprovalPicker(): React.JSX.Element | null {
   const sessionId = useChatStore((state) => state.current.sessionId)
   const canSwitch = useKernelCapabilities(sessionId.length === 0 ? null : sessionId).approval
   const [mode, setMode] = useState<ApprovalMode | null>(null)
+  /** Tools this conversation already answers "yes" for, so they can be taken back. */
+  const [grants, setGrants] = useState<string[]>([])
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +82,21 @@ export function SessionApprovalPicker(): React.JSX.Element | null {
       alive = false
     }
   }, [sessionId])
+
+  // Read on open as well: the approval card can add an allow between two openings.
+  useEffect(() => {
+    if (!open || sessionId.length === 0) return
+    let alive = true
+    void window.pictor
+      .kernelGrants(sessionId)
+      .then((next) => {
+        if (alive) setGrants(next)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [open, sessionId])
 
   const close = useCallback((): void => {
     setOpen(false)
@@ -222,6 +239,28 @@ export function SessionApprovalPicker(): React.JSX.Element | null {
                 </button>
               )
             })}
+
+            {grants.length > 0 && (
+              <div className="mt-1 flex items-center gap-2 border-t border-border px-2 pt-1.5">
+                <span className="min-w-0 flex-1 truncate text-2xs text-faint">
+                  本会话已允许：{grants.join('、')}
+                </span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-sm px-1 py-0.5 text-2xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+                  onClick={() => {
+                    void window.pictor
+                      .revokeKernelGrants(sessionId)
+                      .then(setGrants)
+                      .catch((reason: unknown) => {
+                        setError(reason instanceof Error ? reason.message : String(reason))
+                      })
+                  }}
+                >
+                  撤销
+                </button>
+              </div>
+            )}
 
             <p className="px-2 pt-1 pb-1 text-2xs leading-relaxed text-faint">
               Pi 按账号自己的权限运行，这个开关决定什么时候停一下问你，不限制它能做什么。

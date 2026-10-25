@@ -326,10 +326,13 @@ async function startWorkspace(): Promise<Workspace | null> {
       args: context.args,
       mutating: context.mutating,
       mode,
+      // A tool the person already allowed in this conversation stops asking — unless
+      // a rule of theirs names this call, which the policy decides.
+      granted: context.session !== null && pi.isGranted(context.session, context.tool),
     })
     return verdict === null
       ? null
-      : { tool: context.tool, reason: describeAsk(verdict, context.args) }
+      : { tool: context.tool, reason: describeAsk(verdict, context.tool, context.args) }
   }
 
   // Guards are closures in this process, so the runtime asks them over a loopback
@@ -405,12 +408,18 @@ async function startWorkspace(): Promise<Workspace | null> {
         eventId?: unknown
         tool?: unknown
         reason?: unknown
+        sessionId?: unknown
       }
       if (typeof params.eventId === 'string') {
         const request: ApprovalRequest = {
           eventId: params.eventId,
           tool: typeof params.tool === 'string' ? params.tool : null,
           reason: typeof params.reason === 'string' ? params.reason : null,
+          // A kernel that names the conversation lets the card stay in it, and lets
+          // the answer be scoped to it. dsh's prompts carry no session, so it stays out.
+          ...(typeof params.sessionId === 'string' && params.sessionId.length > 0
+            ? { sessionId: params.sessionId }
+            : {}),
         }
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) win.webContents.send('pictor:harness.approval', request)
@@ -1229,6 +1238,30 @@ function registerIpc(workspace: Workspace): void {
       throw new Error('sessionId must be a non-empty string')
     }
     return workspace.harness.kernelApproval(sessionId)
+  })
+
+  ipcMain.handle('pictor:kernel.grants', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelGrants(sessionId)
+  })
+
+  ipcMain.handle('pictor:kernel.grantTool', async (_event, sessionId: unknown, tool: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof tool !== 'string' || tool.length === 0) {
+      throw new Error('tool must be a non-empty string')
+    }
+    return workspace.harness.grantKernelTool(sessionId, tool)
+  })
+
+  ipcMain.handle('pictor:kernel.revokeGrants', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.revokeKernelGrants(sessionId)
   })
 
   ipcMain.handle(

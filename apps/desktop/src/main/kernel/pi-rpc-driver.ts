@@ -156,6 +156,8 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   #approvalDefault: ApprovalMode = 'never'
   /** Dialogs Pi is holding open, by the id it minted: event id → Pictor session. */
   readonly #approvals = new Map<string, string>()
+  /** Pictor session id → tools this conversation no longer asks about; persisted. */
+  readonly #grants = new Map<string, Set<string>>()
   /** Pi's catalogue, read once per app run: it changes when Pi does. */
   #catalogue: KernelModel[] | null = null
   #sessionsLoaded = false
@@ -175,6 +177,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     this.#loadModels()
     this.#loadEfforts()
     this.#loadApproval()
+    this.#loadGrants()
     return this.status()
   }
 
@@ -431,6 +434,37 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     this.#approval.set(sessionId, mode)
     this.#approvalDefault = mode
     this.#persistApproval()
+  }
+
+  /** Tools this conversation may run without being asked again. */
+  grantedTools(sessionId: string): string[] {
+    return [...(this.#grants.get(sessionId) ?? [])]
+  }
+
+  /** Whether one tool is already allowed for the rest of this conversation. */
+  isGranted(sessionId: string, tool: string): boolean {
+    return this.#grants.get(sessionId)?.has(tool) === true
+  }
+
+  /**
+   * Remembers one answer as "not this tool again in this conversation".
+   *
+   * It is a session-wide allow, not a rule: it says nothing about other conversations
+   * and does not survive the conversation being abandoned, which is what makes it
+   * cheap enough to click when a turn asks three times in a row.
+   */
+  grantTool(sessionId: string, tool: string): void {
+    const known = this.#grants.get(sessionId) ?? new Set<string>()
+    if (known.has(tool)) return
+    known.add(tool)
+    this.#grants.set(sessionId, known)
+    this.#persistGrants()
+  }
+
+  /** Forgets every allow in one conversation. */
+  revokeGrants(sessionId: string): void {
+    if (!this.#grants.delete(sessionId)) return
+    this.#persistGrants()
   }
 
   adopt(sessionId: string, kernelSessionId: string): void {
@@ -1209,6 +1243,36 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       )
     } catch {
       // A read-only profile only costs the choice, never the turn.
+    }
+  }
+
+  #grantsFile(): string {
+    return join(this.#options.userData, 'pi-grants.json')
+  }
+
+  #loadGrants(): void {
+    try {
+      const parsed = JSON.parse(readFileSync(this.#grantsFile(), 'utf8')) as Record<string, unknown>
+      for (const [pictor, tools] of Object.entries(parsed)) {
+        if (!Array.isArray(tools)) continue
+        const known = tools.filter((tool): tool is string => typeof tool === 'string')
+        if (known.length > 0) this.#grants.set(pictor, new Set(known))
+      }
+    } catch {
+      // No allow recorded yet: every conversation starts by asking.
+    }
+  }
+
+  #persistGrants(): void {
+    try {
+      mkdirSync(this.#options.userData, { recursive: true })
+      writeFileSync(
+        this.#grantsFile(),
+        `${JSON.stringify(Object.fromEntries([...this.#grants].map(([id, tools]) => [id, [...tools]])), null, 2)}\n`,
+        'utf8',
+      )
+    } catch {
+      // A read-only profile only costs the answer, never the turn.
     }
   }
 

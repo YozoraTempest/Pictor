@@ -105,7 +105,7 @@ describe('matchAskRule', () => {
 })
 
 describe('askVerdict', () => {
-  const quiet = { mode: 'never' as const }
+  const quiet = { mode: 'never' as const, granted: false }
 
   it('asks when a rule names the call', () => {
     const verdict = askVerdict([rule({ effect: 'ask', tool: 'write' })], {
@@ -120,12 +120,36 @@ describe('askVerdict', () => {
 
   it('asks for a mutating call while the session says so', () => {
     expect(
-      askVerdict([], { tool: 'bash', args: {}, mutating: true, mode: 'mutating' })?.source,
+      askVerdict([], { tool: 'bash', args: {}, mutating: true, mode: 'mutating', granted: false })
+        ?.source,
     ).toBe('mode')
     // A read-only call is not worth a prompt even then: the mode asks about what can
     // change something, not about every call.
-    expect(askVerdict([], { tool: 'read', args: {}, mutating: false, mode: 'mutating' })).toBeNull()
-    expect(askVerdict([], { tool: 'bash', args: {}, mutating: true, mode: 'never' })).toBeNull()
+    expect(
+      askVerdict([], { tool: 'read', args: {}, mutating: false, mode: 'mutating', granted: false }),
+    ).toBeNull()
+    expect(
+      askVerdict([], { tool: 'bash', args: {}, mutating: true, mode: 'never', granted: false }),
+    ).toBeNull()
+  })
+
+  it('stops asking for a tool this conversation already allowed', () => {
+    // The person answered this tool once with "allow it from now on": a session-wide
+    // answer, which outranks the session-wide mode.
+    expect(
+      askVerdict([], { tool: 'bash', args: {}, mutating: true, mode: 'mutating', granted: true }),
+    ).toBeNull()
+    // A rule about this call still wins: it is narrower than a session that got tired
+    // of clicking, and it was written on purpose.
+    expect(
+      askVerdict([rule({ effect: 'ask', tool: 'bash', pattern: 'rm *' })], {
+        tool: 'bash',
+        args: { command: 'rm -rf build' },
+        mutating: true,
+        mode: 'mutating',
+        granted: true,
+      })?.source,
+    ).toBe('rule')
   })
 
   it('lets an allow rule answer the mode, and never an ask rule', () => {
@@ -134,7 +158,13 @@ describe('askVerdict', () => {
     // An allow is the person saying "don't ask me about this tool", which is more
     // specific than the mode.
     expect(
-      askVerdict([allow], { tool: 'bash', args: {}, mutating: true, mode: 'mutating' }),
+      askVerdict([allow], {
+        tool: 'bash',
+        args: {},
+        mutating: true,
+        mode: 'mutating',
+        granted: false,
+      }),
     ).toBeNull()
     // Two rows about the same tool: the stricter one wins.
     expect(
@@ -143,6 +173,7 @@ describe('askVerdict', () => {
         args: {},
         mutating: true,
         mode: 'mutating',
+        granted: false,
       })?.source,
     ).toBe('rule')
   })
