@@ -13,6 +13,15 @@ interface ApprovalState {
   pending: ApprovalRequest | null
   show: (request: ApprovalRequest) => void
   clear: () => void
+  /**
+   * Drops a request that a conversation no longer needs answered.
+   *
+   * A kernel that names the conversation can end a run with its dialog cancelled on
+   * the other side; the card must go with it rather than sit there looking unanswered.
+   * A request with no conversation (dsh) is left alone: nothing here can tell whether
+   * an unrelated turn finishing means its answer is moot.
+   */
+  clearOf: (sessionId: string) => void
 }
 
 export const useApprovalStore = create<ApprovalState>()((set) => ({
@@ -22,5 +31,10 @@ export const useApprovalStore = create<ApprovalState>()((set) => ({
   },
   clear: () => {
     set({ pending: null })
+  },
+  clearOf: (sessionId) => {
+    set((state) =>
+      state.pending !== null && state.pending.sessionId === sessionId ? { pending: null } : state,
+    )
   },
 }))

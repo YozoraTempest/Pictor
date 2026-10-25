@@ -27,7 +27,7 @@ function driver(id: string, options: { models?: boolean } = {}): KernelDriver & 
   return {
     id,
     seen,
-    capabilities: { permission: true, model: true, skills: true, fork: true },
+    capabilities: { permission: true, approval: true, model: true, skills: true, fork: true },
     // A driver that answers for its own models; the picker follows this.
     ...(options.models === true
       ? {
@@ -122,7 +122,7 @@ describe('KernelRouter', () => {
       lookup: { kernelOf: () => Promise.resolve(null) },
     })
 
-    const everything = { permission: true, model: true, skills: true, fork: true }
+    const everything = { permission: true, approval: true, model: true, skills: true, fork: true }
 
     expect(kernels.list()).toEqual([
       {
@@ -164,6 +164,13 @@ describe('KernelRouter', () => {
 
     await expect(kernels.kernelModels('s1')).rejects.toThrow(/不提供自己的模型列表/)
     await expect(kernels.selectKernelModel('s1', 'x')).rejects.toThrow(/不提供自己的模型列表/)
+  })
+
+  it('refuses an approval mode aimed at a kernel that decides for itself', async () => {
+    const kernels = router({ s1: 'dsh' }, [driver('dsh')])
+
+    await expect(kernels.kernelApproval('s1')).rejects.toThrow(/自己决定何时问人/)
+    await expect(kernels.selectKernelApproval('s1', 'mutating')).rejects.toThrow(/自己决定何时问人/)
   })
 
   it('settles an approval on whichever kernel is holding it', async () => {

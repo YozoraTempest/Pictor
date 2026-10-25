@@ -30,7 +30,16 @@ export function App(): React.JSX.Element {
     })
   }, [refresh, setError])
 
-  useEffect(() => window.pictor.onChatEvent(useChatStore.getState().handleEvent), [])
+  useEffect(
+    () =>
+      window.pictor.onChatEvent((event) => {
+        useChatStore.getState().handleEvent(event)
+        // A conversation that ends cannot still be waiting on a person: the kernel
+        // cancels the dialog, and the card has to go with it.
+        if (event.type === 'run.finished') useApprovalStore.getState().clearOf(event.sessionId)
+      }),
+    [],
+  )
 
   // The runtime names a conversation after its first prompt; the sidebar should
   // show that name without waiting for the next manual refresh.

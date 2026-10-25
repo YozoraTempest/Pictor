@@ -49,9 +49,19 @@ function bridge(answer: unknown): Promise<{ port: number; asked: unknown[] }> {
   })
 }
 
-/** Loads the generated extension the way Pi does, and captures its handler. */
-async function loadExtension(endpoint: { port: number; token: string } | null): Promise<{
+/**
+ * Loads the generated extension the way Pi does, and captures its handler.
+ *
+ * `confirm` is what Pi's own dialog would answer, and `annotations` are the tool's
+ * hints: both are inputs the extension reads, so a test that stubs them is testing
+ * the same code path a real turn takes.
+ */
+async function loadExtension(
+  endpoint: { port: number; token: string } | null,
+  options: { annotations?: Record<string, unknown>; confirm?: boolean } = {},
+): Promise<{
   call: (event: { toolName: string; input: unknown }) => Promise<unknown>
+  confirms: { title: string; message: string }[]
 }> {
   const dir = mkdtempSync(join(tmpdir(), 'pictor-pi-guard-'))
   dirs.push(dir)
@@ -60,19 +70,31 @@ async function loadExtension(endpoint: { port: number; token: string } | null): 
     default: (pi: unknown) => void
   }
 
-  let handler: ((event: unknown) => Promise<unknown>) | null = null
+  let handler: ((event: unknown, ctx: unknown) => Promise<unknown>) | null = null
   const api = {
-    on: (name: string, fn: (event: unknown) => Promise<unknown>) => {
+    on: (name: string, fn: (event: unknown, ctx: unknown) => Promise<unknown>) => {
       if (name === 'tool_call') handler = fn
       return () => undefined
     },
+    getAllTools: () => [{ name: 'bash', annotations: options.annotations ?? {} }],
   }
   module.default(api)
 
+  const confirms: { title: string; message: string }[] = []
+  const ctx = {
+    ui: {
+      confirm: async (title: string, message: string) => {
+        confirms.push({ title, message })
+        return options.confirm ?? false
+      },
+    },
+  }
+
   return {
+    confirms,
     call: async (event) => {
       if (handler === null) throw new Error('the extension registered no tool_call handler')
-      return handler(event)
+      return handler(event, ctx)
     },
   }
 }
@@ -86,9 +108,21 @@ describe('guardExtensionSource', () => {
       block: true,
       reason: '被工具规则拦截：bash(rm *)',
     })
-    // The bridge needs the tool and its arguments to decide at all, and the token to
-    // know this request came from a child Pictor started.
-    expect(port.asked).toEqual([{ token: 'secret', tool: 'bash', args: { command: 'rm -rf /' } }])
+    // The bridge needs the tool and its arguments to decide at all, the token to know
+    // this request came from a child Pictor started, and `hold` to know whether an
+    // answer of "ask a person" could be carried out by this caller.
+    expect(port.asked).toEqual([
+      {
+        token: 'secret',
+        tool: 'bash',
+        args: { command: 'rm -rf /' },
+        hold: true,
+        // No annotations here, so the extension reports it as able to change
+        // something — the cautious reading of a tool nobody described.
+        mutating: true,
+        session: null,
+      },
+    ])
   })
 
   it('lets an allowed call through untouched', async () => {
@@ -96,6 +130,57 @@ describe('guardExtensionSource', () => {
     const extension = await loadExtension({ port: port.port, token: 'secret' })
 
     expect(await extension.call({ toolName: 'read', input: { path: 'a.txt' } })).toBeUndefined()
+  })
+
+  it('holds the call in Pi’s own dialog when Pictor says to ask', async () => {
+    const port = await bridge({
+      block: false,
+      ask: { tool: 'bash', reason: '工具规则「bash(rm *)」要求这次调用先问你' },
+    })
+    const extension = await loadExtension({ port: port.port, token: 'secret' }, { confirm: true })
+
+    expect(await extension.call({ toolName: 'bash', input: { command: 'rm -rf build' } })).toBe(
+      undefined,
+    )
+    // Pictor's words, not the extension's: one place decides what the person reads.
+    expect(extension.confirms).toEqual([
+      { title: 'bash', message: '工具规则「bash(rm *)」要求这次调用先问你' },
+    ])
+  })
+
+  it('blocks the call when the person declines', async () => {
+    const port = await bridge({ block: false, ask: { tool: 'bash', reason: '先问你一句' } })
+    const extension = await loadExtension({ port: port.port, token: 'secret' }, { confirm: false })
+
+    expect(await extension.call({ toolName: 'bash', input: {} })).toMatchObject({
+      block: true,
+      reason: expect.stringContaining('拒绝'),
+    })
+  })
+
+  it('reports a tool that declares itself read-only as unable to change anything', async () => {
+    const port = await bridge({ block: false })
+    const extension = await loadExtension(
+      { port: port.port, token: 'secret' },
+      { annotations: { readOnlyHint: true } },
+    )
+
+    await extension.call({ toolName: 'bash', input: {} })
+    expect(port.asked[0]).toMatchObject({ mutating: false })
+  })
+
+  it('names the conversation it is asking for', async () => {
+    // The app decides per conversation, so the child has to say which one it is.
+    process.env['PICTOR_SESSION'] = 'session-1'
+    try {
+      const port = await bridge({ block: false })
+      const extension = await loadExtension({ port: port.port, token: 'secret' })
+
+      await extension.call({ toolName: 'read', input: {} })
+      expect(port.asked[0]).toMatchObject({ session: 'session-1' })
+    } finally {
+      delete process.env['PICTOR_SESSION']
+    }
   })
 
   it('fails closed when Pictor cannot be reached', async () => {

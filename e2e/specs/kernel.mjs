@@ -64,6 +64,9 @@ export default {
     const declared = await page.evaluate(() => window.pictor.listKernels())
     assert.deepEqual(declared.find((kernel) => kernel.id === 'pi')?.capabilities, {
       permission: false,
+      // No sandbox, but an extension can hold a call — so when to ask is Pictor's
+      // decision here, which is the one thing this flag promises.
+      approval: true,
       // Pi brings its own model catalogue and branches its own conversations, so
       // these two it can honour.
       model: true,
@@ -72,6 +75,8 @@ export default {
     })
     assert.deepEqual(declared.find((kernel) => kernel.id === 'dsh')?.capabilities, {
       permission: true,
+      // dsh's own policy decides when it asks; a second switch would be a lie.
+      approval: false,
       model: true,
       skills: true,
       fork: true,
@@ -85,6 +90,10 @@ export default {
       0,
       'a kernel without a sandbox offers no sandbox picker',
     )
+
+    // What it offers instead sits in the same slot: a switch for when its calls
+    // wait for a person, which is the only lever a kernel without a sandbox has.
+    await page.locator('[aria-label^="会话审批："]').waitFor({ timeout: 20_000 })
 
     // The model picker follows the same rule, with one more distinction: a kernel
     // that keeps its own catalogue gets its own control, and Pictor's list — which
@@ -101,6 +110,8 @@ export default {
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().click({ timeout: 15_000 })
     await page.locator('[aria-label="内核：DeepSeek Harness"]').waitFor({ timeout: 20_000 })
     await page.locator('[aria-label^="会话权限："]').waitFor({ timeout: 20_000 })
+    // The approval switch belongs to the kernel that cannot decide for itself.
+    assert.equal(await page.locator('[aria-label^="会话审批："]').count(), 0)
     // dsh runs Pictor's models, so the kernel control is gone and Pictor's is back.
     assert.equal(await page.locator('[aria-label="选择内核模型"]').count(), 0)
 

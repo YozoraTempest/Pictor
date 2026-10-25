@@ -11,18 +11,45 @@ import { SettingRow } from './SettingRow.js'
 /** Tools worth offering as a hint; the field stays free text for the rest. */
 const KNOWN_TOOLS = ['bash', 'write', 'edit', 'read', 'web_fetch', 'web_search', 'subagent']
 
+/** The three verdicts, in the order the policy ranks them when two overlap. */
+const EFFECTS: {
+  id: ToolRuleEffect
+  label: string
+  badge: 'danger' | 'accent' | 'neutral'
+  selected: string
+}[] = [
+  { id: 'deny', label: '拒绝', badge: 'danger', selected: 'bg-danger/15 text-danger' },
+  { id: 'ask', label: '询问', badge: 'accent', selected: 'bg-accent/15 text-accent' },
+  { id: 'allow', label: '允许', badge: 'neutral', selected: 'bg-surface-hover text-text' },
+]
+
 function describe(rule: ToolRule): string {
   const scope = rule.tool === '*' ? '所有工具' : rule.tool
   return rule.pattern.length === 0 ? scope : `${scope}(${rule.pattern})`
 }
 
 /**
- * Per-tool policy: what the agent may never do, and what it need not ask about.
+ * What one rule does, in the rule's own terms.
  *
- * The two halves are not symmetric, and the page says so. A deny sees the real
- * arguments and refuses the call, so its pattern is exact. An allow cannot: the
- * runtime's escalation prompt carries only the tool name, so an allow answers
- * that prompt for the whole tool and ignores its pattern.
+ * The halves are not symmetric, and the page says so. Denying and asking both see
+ * the real arguments, so their patterns are exact. Allowing cannot: dsh's escalation
+ * prompt carries only the tool name, so an allow answers that prompt for the whole
+ * tool. And asking only means something where the kernel can pause a call — Pi can,
+ * dsh decides for itself — which the copy names rather than implying.
+ */
+function meaningOf(rule: ToolRule): string {
+  if (rule.effect === 'deny') return '匹配到这次调用的参数就拒绝，不会执行'
+  if (rule.effect === 'ask') return '匹配到就先暂停，等你批准；在能暂停调用的内核（Pi）上生效'
+  return '该工具的升权确认自动同意；参数不参与匹配'
+}
+
+/**
+ * Per-tool policy: what the agent may never do, what must wait for a person, and
+ * what it need not ask about.
+ *
+ * Two rows about the same tool are not ambiguous: the stricter one wins — deny, then
+ * ask, then allow — so a reader can add an exception without having to delete what it
+ * excepts.
  */
 export function ToolRulesSection(): React.JSX.Element {
   const [rules, setRules] = useState<ToolRule[] | null>(null)
@@ -74,50 +101,51 @@ export function ToolRulesSection(): React.JSX.Element {
     setPattern('')
   }
 
+  const count = (wanted: ToolRuleEffect): number =>
+    (rules ?? []).filter((rule) => rule.effect === wanted).length
+
   return (
     <Section
       title="工具规则"
-      description="按工具限制 agent 能做什么。拒绝会直接拦下这次调用；允许只用于替你回答该工具的升权确认。"
+      description="按工具限制 agent 能做什么。拒绝直接拦下这次调用；询问在有对应能力的内核上先暂停等你批准（Pi）；允许只用于替你回答该工具的升权确认。同一个工具的规则冲突时，拒绝优先于询问，询问优先于允许。"
       actions={
         <Badge tone="neutral">
-          {(rules ?? []).filter((rule) => rule.effect === 'deny').length} 拒绝 /{' '}
-          {(rules ?? []).filter((rule) => rule.effect === 'allow').length} 允许
+          {count('deny')} 拒绝 / {count('ask')} 询问 / {count('allow')} 允许
         </Badge>
       }
       padded={false}
     >
-      {(rules ?? []).map((rule) => (
-        <SettingRow
-          key={rule.id}
-          title={describe(rule)}
-          description={
-            rule.effect === 'deny'
-              ? '匹配到这次调用的参数就拒绝，不会执行'
-              : '该工具的升权确认自动同意；参数不参与匹配'
-          }
-          control={
-            <div className="flex items-center gap-2">
-              <Badge tone={rule.effect === 'deny' ? 'danger' : 'neutral'}>
-                {rule.effect === 'deny' ? '拒绝' : '允许'}
-              </Badge>
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label={`删除规则 ${describe(rule)}`}
-                disabled={busy}
-                onClick={() => void persist((rules ?? []).filter((entry) => entry.id !== rule.id))}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          }
-        />
-      ))}
+      {(rules ?? []).map((rule) => {
+        const known = EFFECTS.find((entry) => entry.id === rule.effect)
+        return (
+          <SettingRow
+            key={rule.id}
+            title={describe(rule)}
+            description={meaningOf(rule)}
+            control={
+              <div className="flex items-center gap-2">
+                <Badge tone={known?.badge ?? 'neutral'}>{known?.label ?? rule.effect}</Badge>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={`删除规则 ${describe(rule)}`}
+                  disabled={busy}
+                  onClick={() =>
+                    void persist((rules ?? []).filter((entry) => entry.id !== rule.id))
+                  }
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            }
+          />
+        )
+      })}
 
       {rules !== null && rules.length === 0 && (
         <SettingRow
           title="还没有规则"
-          description="例如拒绝 bash(npm publish*)：模型想发布包时会被直接拦下。"
+          description="例如拒绝 bash(npm publish*)：模型想发布包时会被直接拦下。或者询问 bash(rm *)：每次删除前先停下来问你。"
           control={null}
         />
       )}
@@ -129,22 +157,18 @@ export function ToolRulesSection(): React.JSX.Element {
         control={
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex overflow-hidden rounded-md border border-border">
-              {(['deny', 'allow'] as const).map((value) => (
+              {EFFECTS.map((entry) => (
                 <button
-                  key={value}
+                  key={entry.id}
                   type="button"
-                  aria-pressed={effect === value}
-                  onClick={() => setEffect(value)}
+                  aria-pressed={effect === entry.id}
+                  onClick={() => setEffect(entry.id)}
                   className={cn(
                     'px-2.5 py-1.5 text-2xs transition-colors duration-150',
-                    effect === value
-                      ? value === 'deny'
-                        ? 'bg-danger/15 text-danger'
-                        : 'bg-accent/15 text-accent'
-                      : 'text-muted hover:bg-surface-hover',
+                    effect === entry.id ? entry.selected : 'text-muted hover:bg-surface-hover',
                   )}
                 >
-                  {value === 'deny' ? '拒绝' : '允许'}
+                  {entry.label}
                 </button>
               ))}
             </div>

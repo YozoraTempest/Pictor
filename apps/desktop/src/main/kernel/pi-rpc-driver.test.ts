@@ -23,9 +23,17 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-/** A fake Pi: `input` decides what `get_state` claims the model accepts. */
+/**
+ * A fake Pi: `input` decides what `get_state` claims the model accepts, and `ask`
+ * makes a turn hold a tool call on a dialog instead of finishing by itself.
+ */
 function fakePi(
-  options: { input: string; reply?: string; settle?: 'immediately' | 'onAbort' } = {
+  options: {
+    input: string
+    reply?: string
+    settle?: 'immediately' | 'onAbort'
+    ask?: boolean
+  } = {
     input: 'text',
   },
 ): {
@@ -46,6 +54,7 @@ const log = ${JSON.stringify(log)}
 const reply = ${JSON.stringify(options.reply ?? '等于 2')}
 const input = ${JSON.stringify(options.input)}.split(',')
 const settle = ${JSON.stringify(options.settle ?? 'immediately')}
+const ask = ${JSON.stringify(options.ask === true)}
 let sessionId = 'pi-fake-1'
 let level = 'high'
 let modelId = 'fake-1'
@@ -143,10 +152,26 @@ function handle(command) {
     }
     send({ type: 'turn_end', message: { role: 'assistant', content: [{ type: 'text', text: reply }],
       usage: { input: 7, output: 3, totalTokens: 10 } } })
+    if (ask) {
+      // A held tool call: Pi asks the client and waits for the answer.
+      send({ type: 'extension_ui_request', id: 'dlg-1', method: 'confirm',
+        title: 'bash', message: '这个会话设置为「改动型工具先问我」' })
+      return
+    }
     if (settle === 'immediately') {
       send({ type: 'agent_end', messages: [] })
       send({ type: 'agent_settled', aborted: false })
     }
+    return
+  }
+  if (command.type === 'extension_ui_response') {
+    if (command.confirmed === true) {
+      send({ type: 'tool_execution_start', toolCallId: 'c9', toolName: 'bash', args: { command: 'ls' } })
+      send({ type: 'tool_execution_end', toolCallId: 'c9', isError: false,
+        result: { content: [{ type: 'text', text: 'a.txt' }] } })
+    }
+    send({ type: 'agent_end', messages: [] })
+    send({ type: 'agent_settled', aborted: command.confirmed !== true })
     return
   }
   if (command.type === 'abort') {
@@ -518,6 +543,77 @@ describe('PiRpcDriver', () => {
       .find((argv): argv is string[] => Array.isArray(argv) && argv.includes('--thinking'))
     expect(started).toEqual(expect.arrayContaining(['--thinking', 'max']))
     await driver.stop()
+  })
+
+  it('turns one of Pi’s dialogs into an approval and answers it', async () => {
+    const fake = fakePi({ input: 'text', ask: true })
+    const driver = driverFor(fake)
+    const approvals: Record<string, unknown>[] = []
+    let shown: () => void = () => undefined
+    const asked = new Promise<void>((resolve) => {
+      shown = resolve
+    })
+    driver.onNotification((notification: HarnessNotification) => {
+      if (notification.method !== 'approval.request') return
+      approvals.push(notification.params as Record<string, unknown>)
+      shown()
+    })
+
+    // The turn only closes once the dialog is answered, so the collected frames are
+    // also the proof that the answer reached Pi's side.
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+      await asked
+      // The card needs to know which conversation is blocked, and Pi's own dialog
+      // words are what it shows: Pictor does not re-describe the call.
+      expect(approvals).toEqual([
+        {
+          eventId: 'dlg-1',
+          agentId: null,
+          tool: 'bash',
+          reason: '这个会话设置为「改动型工具先问我」',
+          sessionId: 's1',
+        },
+      ])
+      await driver.answerApproval('dlg-1', true)
+    })
+
+    // Allowing resumed the call: the tool Pi was holding ran.
+    expect(typesOf(collected)).toEqual(expect.arrayContaining(['turn/end']))
+    expect(commands(fake).find((entry) => entry['type'] === 'extension_ui_response')).toMatchObject(
+      {
+        id: 'dlg-1',
+        confirmed: true,
+      },
+    )
+    await driver.stop()
+  })
+
+  it('refuses an approval it did not ask for', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    await expect(driver.answerApproval('别人的问句', true)).rejects.toThrow(/不属于 Pi 内核/)
+    await driver.stop()
+  })
+
+  it('starts the next conversation on the approval mode last chosen', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    // Nothing chosen yet: a conversation runs its calls without asking.
+    expect(driver.approvalMode('s1')).toBe('never')
+    driver.setApprovalMode('s1', 'mutating')
+    expect(driver.approvalMode('s1')).toBe('mutating')
+    // A conversation that never chose follows the last choice rather than resetting.
+    expect(driver.approvalMode('s2')).toBe('mutating')
+    await driver.stop()
+
+    // And the choice outlives the app, so reopening does not quietly stop asking.
+    const reopened = driverFor(fake)
+    await reopened.start(fake.userData)
+    expect(reopened.approvalMode('s1')).toBe('mutating')
+    await reopened.stop()
   })
 
   it('says so instead of pretending when Pi cannot answer', async () => {

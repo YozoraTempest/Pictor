@@ -20,15 +20,51 @@ export interface GuardEndpoint {
  * be serialised into the kernel's configuration. The kernel-side plugin therefore
  * asks this server one question per tool call and applies the answer.
  */
+/** What one call looks like when the app has to decide whether to hold it. */
+export interface GuardAsk {
+  /** Pictor conversation the call belongs to, when the kernel can name it. */
+  session: string | null
+  tool: string
+  args: unknown
+  /**
+   * The kernel's own judgement of the call, not a list of tool names Pictor keeps:
+   * Pi derives it from the tool's annotations, so a new or plugin tool is covered
+   * without teaching this process about it.
+   */
+  mutating: boolean
+}
+
+/** What to put in front of a person, when the call should wait for one. */
+export interface GuardAskPrompt {
+  tool: string
+  reason: string
+}
+
+/**
+ * Decides whether a call waits for a person.
+ *
+ * Only asked for a caller that says it can suspend the call (`hold`): the answer is
+ * a request to ask, not a verdict Pictor can enforce by itself.
+ */
+export type GuardAskDecider = (
+  context: GuardAsk,
+) => Promise<GuardAskPrompt | null> | GuardAskPrompt | null
+
 export class ToolGuardServer {
   readonly #guards: readonly ToolGuardContribution[]
   readonly #token: string
+  readonly #ask: GuardAskDecider | null
   #server: Server | null = null
   #endpoint: GuardEndpoint | null = null
 
-  constructor(guards: readonly ToolGuardContribution[], token: string) {
+  constructor(
+    guards: readonly ToolGuardContribution[],
+    token: string,
+    ask: GuardAskDecider | null = null,
+  ) {
     this.#guards = guards
     this.#token = token
+    this.#ask = ask
   }
 
   get endpoint(): GuardEndpoint | null {
@@ -103,11 +139,31 @@ export class ToolGuardServer {
     }
 
     const tool = typeof record['tool'] === 'string' ? record['tool'] : ''
-    const verdict = await evaluateToolGuards(this.#guards, { tool, args: record['args'] ?? null })
-    if (!verdict.blocked) {
-      reply({ block: false })
+    const args = record['args'] ?? null
+    const verdict = await evaluateToolGuards(this.#guards, { tool, args })
+    if (verdict.blocked) {
+      reply({ block: true, reason: verdict.reason ?? 'blocked by a tool guard' })
       return
     }
-    reply({ block: true, reason: verdict.reason ?? 'blocked by a tool guard' })
+
+    // A caller that can suspend the call (`hold`) may also be told to ask a person
+    // first. One that cannot — dsh's guard plugin — is only ever allowed or blocked,
+    // because a pause it cannot perform would read as consent.
+    if (record['hold'] === true && this.#ask !== null) {
+      const prompt = await this.#ask({
+        session: typeof record['session'] === 'string' ? record['session'] : null,
+        tool,
+        args,
+        // No hints from the kernel means "treat it as able to change something",
+        // which is the cautious reading and the one Pictor's docs describe.
+        mutating: record['mutating'] !== false,
+      })
+      if (prompt !== null) {
+        reply({ block: false, ask: prompt })
+        return
+      }
+    }
+
+    reply({ block: false })
   }
 }

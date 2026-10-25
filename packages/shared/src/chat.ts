@@ -72,6 +72,16 @@ export interface ChatImage {
 }
 
 /**
+ * When a kernel that cannot stop a call should ask first.
+ *
+ * `never` runs calls straight through; `mutating` holds anything that can change the
+ * workspace or reach outside it. A kernel that enforces its own sandbox decides this
+ * itself, so the mode only means something where Pictor owns the decision — it is
+ * therefore a kernel capability, not an app-wide setting.
+ */
+export type ApprovalMode = 'never' | 'mutating'
+
+/**
  * Where a conversation should be cut.
  *
  * `seq` is the durable event boundary dsh forks at; `id` is the kernel's own entry
@@ -182,6 +192,14 @@ export type ChatEvent =
  */
 export interface ApprovalRequest {
   eventId: string
+  /**
+   * Conversation the call belongs to, when the kernel can say.
+   *
+   * dsh's prompt carries no session binding, so its requests leave this out and the
+   * card follows whichever conversation is open. A kernel that asks per process can
+   * name the conversation, and then the card is shown only there.
+   */
+  sessionId?: string
   /** Tool that triggered it, when the runtime names one. */
   tool: string | null
   /** Why approval is needed, in the runtime's words. */

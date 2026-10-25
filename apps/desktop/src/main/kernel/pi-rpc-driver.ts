@@ -13,6 +13,7 @@ import { delimiter, dirname, join } from 'node:path'
 import type { HarnessNotification } from '@pictor/harness'
 import { MODEL_EFFORTS } from '@pictor/shared'
 import type {
+  ApprovalMode,
   CatalogSkill,
   ChatHistoryPage,
   ChatImage,
@@ -123,6 +124,9 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     model: true,
     skills: false,
     fork: true,
+    // Pi has no sandbox, but it does let an extension hold a call, so Pictor owns
+    // the decision of when to ask — which is what this control promises.
+    approval: true,
   }
 
   readonly #options: PiRpcDriverOptions
@@ -146,6 +150,12 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   readonly #models = new Map<string, string>()
   /** Pictor session id → chosen thinking level; persisted so a restart keeps it. */
   readonly #efforts = new Map<string, ModelEffort>()
+  /** Pictor session id → when its calls wait for a person; persisted. */
+  readonly #approval = new Map<string, ApprovalMode>()
+  /** The mode a conversation starts in: the last one a person chose. */
+  #approvalDefault: ApprovalMode = 'never'
+  /** Dialogs Pi is holding open, by the id it minted: event id → Pictor session. */
+  readonly #approvals = new Map<string, string>()
   /** Pi's catalogue, read once per app run: it changes when Pi does. */
   #catalogue: KernelModel[] | null = null
   #sessionsLoaded = false
@@ -164,6 +174,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     this.#loadSessions()
     this.#loadModels()
     this.#loadEfforts()
+    this.#loadApproval()
     return this.status()
   }
 
@@ -403,6 +414,25 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     this.#rememberEffort(sessionId, kid.effort)
   }
 
+  // ---- when to ask ---------------------------------------------------------
+
+  /** The mode this conversation's calls run under. */
+  approvalMode(sessionId: string): ApprovalMode {
+    return this.#approval.get(sessionId) ?? this.#approvalDefault
+  }
+
+  /**
+   * Sets it, and remembers the choice as where the next conversation starts.
+   *
+   * A held call is not re-decided here: the mode is read when a tool is about to
+   * run, so switching it mid-turn changes the next call, not the one on screen.
+   */
+  setApprovalMode(sessionId: string, mode: ApprovalMode): void {
+    this.#approval.set(sessionId, mode)
+    this.#approvalDefault = mode
+    this.#persistApproval()
+  }
+
   adopt(sessionId: string, kernelSessionId: string): void {
     this.#loadSessions()
     this.#sessions.set(sessionId, kernelSessionId)
@@ -535,8 +565,20 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     return []
   }
 
-  async answerApproval(): Promise<void> {
-    throw new Error('Pi 内核没有需要审批的工具调用')
+  /**
+   * Answers one of Pi's dialogs, which is what a held tool call is waiting for.
+   *
+   * Pi's extension asked `ctx.ui.confirm` and the client is the only thing that can
+   * settle it; an answer for an id this driver never minted belongs to another
+   * kernel, so it is refused rather than swallowed.
+   */
+  async answerApproval(eventId: string, allow: boolean): Promise<void> {
+    const sessionId = this.#approvals.get(eventId)
+    if (sessionId === undefined) throw new Error('这次审批不属于 Pi 内核')
+    this.#approvals.delete(eventId)
+    const kid = this.#kids.get(sessionId)
+    if (kid === undefined) throw new Error('这个会话的 pi 进程已经结束')
+    this.#respond(kid, { type: 'extension_ui_response', id: eventId, confirmed: allow })
   }
 
   async answerQuestions(): Promise<void> {
@@ -612,7 +654,9 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     const cwd = (await this.#options.resolveCwd(sessionId)) ?? this.#cwd ?? homedir()
     const proc = spawn(command, args, {
       cwd,
-      env: { ...process.env, ...this.#runtimeEnv() },
+      // The guard extension has to name the conversation when it asks whether a
+      // call may run: the answer depends on that conversation's own mode.
+      env: { ...process.env, ...this.#runtimeEnv(), PICTOR_SESSION: sessionId },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     const kid: Kid = {
@@ -691,6 +735,13 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
         continue
       }
 
+      // Pi's dialog subprotocol. An extension that asks a question blocks the tool
+      // call until a client answers, and this driver is the only client.
+      if (type === 'extension_ui_request') {
+        this.#ask(kid, record)
+        continue
+      }
+
       // Session events describe activity, not one request.
       const read = kid.translator?.push(record) ?? { frames: [] }
       if (read.sessionId !== undefined && this.#sessions.get(kid.sessionId) !== read.sessionId) {
@@ -701,6 +752,66 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
 
       if (type === 'agent_settled') {
         void this.#closeSettled(kid)
+      }
+    }
+  }
+
+  /**
+   * Turns one of Pi's dialogs into something the window can settle.
+   *
+   * Only `confirm` has a surface here: it is the shape a held tool call takes, and
+   * its title and message are what the card shows. The other dialog methods would
+   * need input boxes Pictor does not draw, so they are cancelled rather than left
+   * waiting — an unanswered dialog is a hung turn, not a missing nicety.
+   */
+  #ask(kid: Kid, record: Record<string, unknown>): void {
+    const id = typeof record['id'] === 'string' ? record['id'] : null
+    if (id === null) return
+
+    if (record['method'] !== 'confirm') {
+      this.#respond(kid, { type: 'extension_ui_response', id, cancelled: true })
+      return
+    }
+
+    const sessionId = this.#pictorIdOf(kid)
+    if (sessionId === null) return
+    this.#approvals.set(id, sessionId)
+    this.#emit({
+      method: 'approval.request',
+      params: {
+        eventId: id,
+        agentId: null,
+        tool: typeof record['title'] === 'string' ? record['title'] : null,
+        reason: typeof record['message'] === 'string' ? record['message'] : null,
+        // Pi keeps one process per conversation, so this conversation is the one
+        // the card belongs to.
+        sessionId,
+      },
+    })
+  }
+
+  /** The Pictor id of a running child, which its own `sessionId` stops being on fork. */
+  #pictorIdOf(kid: Kid): string | null {
+    for (const [sessionId, candidate] of this.#kids) {
+      if (candidate === kid) return sessionId
+    }
+    return null
+  }
+
+  /** One JSONL line to Pi's stdin. */
+  #respond(kid: Kid, payload: Record<string, unknown>): void {
+    if (kid.proc.exitCode !== null) return
+    kid.proc.stdin?.write(`${JSON.stringify(payload)}\n`)
+  }
+
+  /** Drops the dialogs of one conversation, telling Pi nobody will answer them. */
+  #cancelAsks(sessionId: string): void {
+    for (const [eventId, owner] of [...this.#approvals]) {
+      if (owner !== sessionId) continue
+      this.#approvals.delete(eventId)
+      const kid = this.#kids.get(sessionId)
+      if (kid !== undefined) {
+        this.#respond(kid, { type: 'extension_ui_response', id: eventId, cancelled: true })
       }
     }
   }
@@ -859,6 +970,9 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   ): void {
     if (kid.turn === null) return
     if (expected !== undefined && kid.turn !== expected) return
+    // A turn that ends with a call still held has nobody left to answer it.
+    const owner = this.#pictorIdOf(kid)
+    if (owner !== null) this.#cancelAsks(owner)
     const translator = kid.translator ?? new PiTranslator()
     if (outcome.reason === 'stopped') translator.cancel()
     const frames = translator.finish({
@@ -1061,6 +1175,43 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     }
   }
 
+  #approvalFile(): string {
+    return join(this.#options.userData, 'pi-approval.json')
+  }
+
+  #loadApproval(): void {
+    try {
+      const parsed = JSON.parse(readFileSync(this.#approvalFile(), 'utf8')) as {
+        default?: unknown
+        sessions?: Record<string, unknown>
+      }
+      this.#approvalDefault = asApprovalMode(parsed.default) ?? 'never'
+      for (const [pictor, mode] of Object.entries(parsed.sessions ?? {})) {
+        const known = asApprovalMode(mode)
+        if (known !== null) this.#approval.set(pictor, known)
+      }
+    } catch {
+      // No choice recorded yet: a conversation asks nothing until someone says so.
+    }
+  }
+
+  #persistApproval(): void {
+    try {
+      mkdirSync(this.#options.userData, { recursive: true })
+      writeFileSync(
+        this.#approvalFile(),
+        `${JSON.stringify(
+          { default: this.#approvalDefault, sessions: Object.fromEntries(this.#approval) },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      )
+    } catch {
+      // A read-only profile only costs the choice, never the turn.
+    }
+  }
+
   #effortsFile(): string {
     return join(this.#options.userData, 'pi-efforts.json')
   }
@@ -1178,6 +1329,11 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       // A read-only profile only costs a resumed conversation, never the turn.
     }
   }
+}
+
+/** One of the approval modes Pictor knows, or null for anything else. */
+function asApprovalMode(value: unknown): ApprovalMode | null {
+  return value === 'never' || value === 'mutating' ? value : null
 }
 
 /** One of the levels Pictor knows, or null for anything else. */

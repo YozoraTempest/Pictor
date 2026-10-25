@@ -14,7 +14,14 @@ import { Button } from '../../components/ui/index.js'
  * binding on the wire, which is why this sits beside the composer of whatever
  * conversation is open rather than inside a transcript row.
  */
-export function ApprovalCard({ request }: { request: ApprovalRequest }): React.JSX.Element {
+export function ApprovalCard({
+  request,
+  foreign = false,
+}: {
+  request: ApprovalRequest
+  /** True when the call belongs to a conversation other than the one on screen. */
+  foreign?: boolean
+}): React.JSX.Element {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -48,6 +55,10 @@ export function ApprovalCard({ request }: { request: ApprovalRequest }): React.J
 
       {request.reason !== null && (
         <p className="text-2xs leading-relaxed whitespace-pre-wrap text-muted">{request.reason}</p>
+      )}
+
+      {foreign && (
+        <p className="text-2xs text-faint">这个请求来自另一个会话，回答之后那边才会继续。</p>
       )}
 
       {error !== null && <p className="text-2xs text-danger">{error}</p>}

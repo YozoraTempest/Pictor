@@ -1,4 +1,5 @@
 import type {
+  ApprovalMode,
   ApprovalRequest,
   ChatAnswer,
   ChatImage,
@@ -96,6 +97,14 @@ export type PermissionMode = 'read-only' | 'workspace-write' | 'danger-full-acce
 export interface KernelCapabilities {
   /** A sandbox mode the kernel applies per conversation. */
   permission: boolean
+  /**
+   * The kernel lets Pictor decide when a call waits for a person.
+   *
+   * dsh answers this with its own sandbox and approval policy, so the switch is its
+   * own; a kernel without a sandbox can still hold a call, and this is the promise
+   * that the switch in the composer will mean something there.
+   */
+  approval: boolean
   /** The model chosen in Pictor reaches the kernel, effort included. */
   model: boolean
   /** The kernel exposes a skill catalog that a turn can load from. */
@@ -271,6 +280,10 @@ export interface PictorBridge {
   selectKernelModel(sessionId: string, id: string): Promise<void>
   /** Sets the conversation's thinking level, or clears it with null. */
   selectKernelEffort(sessionId: string, effort: ModelEffort | null): Promise<void>
+  /** When this conversation's calls wait for a person, where the kernel allows it. */
+  kernelApproval(sessionId: string): Promise<ApprovalMode>
+  /** Sets that mode for the conversation; the next call follows it. */
+  selectKernelApproval(sessionId: string, mode: ApprovalMode): Promise<void>
   /** Per-tool rules: a deny refuses a call, an allow answers its escalation. */
   listToolRules(): Promise<ToolRule[]>
   saveToolRules(rules: ToolRule[]): Promise<ToolRule[]>

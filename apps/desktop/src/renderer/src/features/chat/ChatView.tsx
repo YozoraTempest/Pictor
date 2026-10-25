@@ -323,7 +323,14 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
               jumpTo={jumpTo}
               footer={
                 <div className="flex flex-col gap-2">
-                  {approval !== null && <ApprovalCard request={approval} />}
+                  {approval !== null && (
+                    <ApprovalCard
+                      request={approval}
+                      foreign={
+                        approval.sessionId !== undefined && approval.sessionId !== selectedSessionId
+                      }
+                    />
+                  )}
                   {question !== null && <QuestionCard request={question} />}
                   {status}
                   {draft !== null && (

@@ -54,9 +54,9 @@ import type { KernelDriver } from './kernel/driver.js'
 import { PiRpcDriver } from './kernel/pi-rpc-driver.js'
 import { writeGuardExtension } from './pi-guard-extension.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
-import { ToolGuardServer } from './tool-guard-server.js'
+import { ToolGuardServer, type GuardAsk } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
-import { RuleBook, describeRule } from './rule-book.js'
+import { RuleBook, describeAsk, describeRule } from './rule-book.js'
 import { SkillLibrary } from './skill-library.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -314,11 +314,28 @@ async function startWorkspace(): Promise<Workspace | null> {
         : { decision: 'deny', reason: `被工具规则拦截：${describeRule(rule)}` }
     },
   }
+  // Holding a call for a person is a second question, asked only by a caller that
+  // can wait for the answer. The rules answer it, and so does the conversation's own
+  // mode — which lives on the kernel that cannot decide this for itself.
+  const askFor = (context: GuardAsk): { tool: string; reason: string } | null => {
+    // A call with no conversation to name cannot have a mode; the rules still apply,
+    // so it is asked as if the conversation never opted in.
+    const mode = context.session === null ? 'never' : pi.approvalMode(context.session)
+    const verdict = rules.askFor({
+      tool: context.tool,
+      args: context.args,
+      mutating: context.mutating,
+      mode,
+    })
+    return verdict === null
+      ? null
+      : { tool: context.tool, reason: describeAsk(verdict, context.args) }
+  }
 
   // Guards are closures in this process, so the runtime asks them over a loopback
   // socket instead of receiving them as configuration. The bridge is always up:
   // the rule guard is always present, and rules can be added while it runs.
-  const guardBridge = new ToolGuardServer([ruleGuard, ...toolGuards], randomUUID())
+  const guardBridge = new ToolGuardServer([ruleGuard, ...toolGuards], randomUUID(), askFor)
   void guardBridge.start().catch((error: unknown) => {
     console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
   })
@@ -1206,6 +1223,26 @@ function registerIpc(workspace: Workspace): void {
     }
     await workspace.harness.selectKernelModel(sessionId, id)
   })
+
+  ipcMain.handle('pictor:kernel.approval', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelApproval(sessionId)
+  })
+
+  ipcMain.handle(
+    'pictor:kernel.selectApproval',
+    async (_event, sessionId: unknown, mode: unknown) => {
+      if (typeof sessionId !== 'string' || sessionId.length === 0) {
+        throw new Error('sessionId must be a non-empty string')
+      }
+      if (mode !== 'never' && mode !== 'mutating') {
+        throw new Error(`不认识的审批模式：${String(mode)}`)
+      }
+      await workspace.harness.selectKernelApproval(sessionId, mode)
+    },
+  )
 
   ipcMain.handle(
     'pictor:kernel.selectEffort',

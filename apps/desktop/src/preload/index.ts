@@ -79,6 +79,9 @@ const bridge: PictorBridge = {
   selectKernelModel: (sessionId, id) => invoke('pictor:kernel.selectModel', sessionId, id),
   selectKernelEffort: (sessionId, effort) =>
     invoke('pictor:kernel.selectEffort', sessionId, effort),
+  kernelApproval: (sessionId) => invoke('pictor:kernel.approval', sessionId),
+  selectKernelApproval: (sessionId, mode) =>
+    invoke('pictor:kernel.selectApproval', sessionId, mode),
   listToolRules: () => invoke('pictor:rules.list'),
   saveToolRules: (rules) => invoke('pictor:rules.save', rules),
   listSkills: (sessionId) => invoke('pictor:harness.skills', sessionId),

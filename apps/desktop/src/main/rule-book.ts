@@ -1,5 +1,5 @@
-import type { ToolRule } from '@pictor/shared'
-import { allowsTool, matchDenyRule, parseToolRules } from '@pictor/shared'
+import type { ApprovalMode, ToolRule, ToolAskSource } from '@pictor/shared'
+import { allowsTool, askVerdict, matchDenyRule, parseToolRules } from '@pictor/shared'
 
 /** The part of the host core this needs: one settings key, read and written. */
 export interface RuleStore {
@@ -55,10 +55,57 @@ export class RuleBook {
   allows(tool: string): boolean {
     return allowsTool(this.#rules, tool)
   }
+
+  /**
+   * Why one call should wait for a person, if it should.
+   *
+   * A deny never reaches here: it is decided first and refuses the call outright.
+   */
+  askFor(context: {
+    tool: string
+    args: unknown
+    mutating: boolean
+    mode: ApprovalMode
+  }): ToolAskSource | null {
+    return askVerdict(this.#rules, context)
+  }
 }
 
 /** How a rule reads in a transcript row or an error. */
 export function describeRule(rule: ToolRule): string {
   const scope = rule.tool === '*' ? '所有工具' : rule.tool
   return rule.pattern.length === 0 ? scope : `${scope}(${rule.pattern})`
+}
+
+/** How much of the arguments the approval card shows. */
+const PREVIEW_LIMIT = 240
+
+/**
+ * A short, honest look at what the call would do.
+ *
+ * The card has to say more than the tool name — approving `bash` without seeing the
+ * command is approving a name, not an action. The raw arguments are shown as they
+ * arrived rather than reworded into a sentence, because a summary Pictor composed
+ * would be Pictor's claim about the call, not the call.
+ */
+export function argumentPreview(args: unknown): string | null {
+  if (args === null || args === undefined) return null
+  let text: string
+  try {
+    text = JSON.stringify(args) ?? ''
+  } catch {
+    return null
+  }
+  if (text.length === 0 || text === '{}') return null
+  return text.length <= PREVIEW_LIMIT ? text : `${text.slice(0, PREVIEW_LIMIT)}…`
+}
+
+/** What the approval card says about one held call. */
+export function describeAsk(source: ToolAskSource, args: unknown): string {
+  const why =
+    source.source === 'rule'
+      ? `工具规则「${describeRule(source.rule)}」要求这次调用先问你`
+      : '这个会话设置为「改动型工具先问我」'
+  const preview = argumentPreview(args)
+  return preview === null ? why : `${why}\n${preview}`
 }

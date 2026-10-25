@@ -12,6 +12,7 @@ import { ContextMeter } from './ContextMeter.js'
 import { KernelPicker } from './KernelPicker.js'
 import { KernelModelPicker } from './KernelModelPicker.js'
 import { ModelPicker } from './ModelPicker.js'
+import { SessionApprovalPicker } from './SessionApprovalPicker.js'
 import { SessionPermissionPicker } from './SessionPermissionPicker.js'
 import { matchSkills, slashTokenAt, type SlashToken } from './slash.js'
 
@@ -268,6 +269,7 @@ export function Composer({
             usage, model and the action stay together on the trailing edge. */}
         <div className="flex items-center gap-1 px-1 pt-1">
           <SessionPermissionPicker />
+          <SessionApprovalPicker />
           <div className="ml-auto flex min-w-0 items-center gap-1">
             {showKernelPicker && <KernelPicker />}
             <ContextMeter />

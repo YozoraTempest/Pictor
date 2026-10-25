@@ -1,5 +1,6 @@
 import type { HarnessNotification } from '@pictor/harness'
 import type {
+  ApprovalMode,
   CatalogSkill,
   ChatAnswer,
   ChatHistoryPage,
@@ -15,6 +16,7 @@ import type {
   KernelModelState,
   PermissionMode,
 } from '../../shared/bridge.js'
+import { isApprovalSource } from './approval-source.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
 import { isModelSource } from './model-source.js'
 
@@ -204,6 +206,23 @@ export class KernelRouter implements KernelDriver {
       throw new Error(`这个会话的内核「${driver.id}」不提供自己的思考档位`)
     }
     return driver.setEffort(sessionId, effort)
+  }
+
+  /** When this conversation's calls wait for a person, in the kernel's own terms. */
+  async kernelApproval(sessionId: string): Promise<ApprovalMode> {
+    const driver = await this.#for(sessionId)
+    if (!isApprovalSource(driver)) {
+      throw new Error(`这个会话的内核「${driver.id}」自己决定何时问人`)
+    }
+    return driver.approvalMode(sessionId)
+  }
+
+  async selectKernelApproval(sessionId: string, mode: ApprovalMode): Promise<void> {
+    const driver = await this.#for(sessionId)
+    if (!isApprovalSource(driver)) {
+      throw new Error(`这个会话的内核「${driver.id}」自己决定何时问人`)
+    }
+    driver.setApprovalMode(sessionId, mode)
   }
 
   async listSkills(sessionId: string): Promise<CatalogSkill[]> {

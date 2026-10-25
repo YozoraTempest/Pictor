@@ -167,6 +167,9 @@ export class DshDriver implements KernelDriver {
    */
   readonly capabilities: KernelCapabilities = {
     permission: true,
+    // The runtime's own policy decides when it asks; there is no second switch here
+    // to hand over, and a control for one would be a lie.
+    approval: false,
     model: true,
     skills: true,
     fork: true,
@@ -179,6 +182,14 @@ export class DshDriver implements KernelDriver {
   #eventClientId: string | null = null
   /** Questions a tool call is waiting on, by the event id the answer must quote. */
   readonly #questions = new Map<string, ChatQuestion[]>()
+  /**
+   * Approvals this driver is holding.
+   *
+   * Event ids are minted by one kernel, and answering one that belongs to another
+   * kernel would look like success to the runtime while leaving the real holder
+   * waiting forever. Tracking them is what makes an answer routable.
+   */
+  readonly #approvals = new Set<string>()
   /** Pictor session id → runtime session id; persisted so restarts reattach. */
   readonly #sessions = new Map<string, string>()
   /** Live mirror of each session log: the opening window plus every later event. */
@@ -383,6 +394,7 @@ export class DshDriver implements KernelDriver {
     this.#socket = null
     this.#kill()
     this.#turns.clear()
+    this.#approvals.clear()
     this.#pendingApply = false
     this.#bootedWith = null
     this.#status = { ...this.#status, state: 'stopped', serverInfo: null }
@@ -1142,6 +1154,7 @@ export class DshDriver implements KernelDriver {
             void this.#resolveEvent(frame.eventId, 'allowed-once').catch(() => undefined)
             return
           }
+          this.#approvals.add(frame.eventId)
           this.#emit({
             method: 'approval.request',
             params: {
@@ -1216,6 +1229,9 @@ export class DshDriver implements KernelDriver {
 
   /** Answer one pending approval; the runtime resumes the tool call on allow. */
   async answerApproval(eventId: string, allow: boolean): Promise<void> {
+    // An approval this driver never received belongs to another kernel, and the
+    // runtime would accept the write without settling anything.
+    if (!this.#approvals.delete(eventId)) throw new Error('这个审批不属于 dsh 内核')
     // The runtime's own vocabulary: an allow covers this call only.
     await this.#resolveEvent(eventId, allow ? 'allowed-once' : 'rejected')
   }

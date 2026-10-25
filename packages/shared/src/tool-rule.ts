@@ -1,17 +1,24 @@
+import type { ApprovalMode } from './chat.js'
+
 /**
  * Tool rules: the per-tool policy a person writes for their own machine.
  *
- * A rule names one agent tool and, for a deny, a glob over the argument that
- * matters for that tool — `bash` has a command, `write` a path, `web_fetch` a
+ * A rule names one agent tool and, for a deny or an ask, a glob over the argument
+ * that matters for that tool — `bash` has a command, `write` a path, `web_fetch` a
  * URL. Denying is exact: the guard sees the real arguments and refuses the call
  * before it runs.
  *
- * Allowing cannot be exact, because the runtime's approval request carries only
- * the tool name and a reason, never the arguments. An allow rule therefore means
- * "this tool's escalation prompt is answered for me", which is narrower than what
- * a deny can express; the settings page says so rather than implying otherwise.
+ * Allowing cannot be exact, because dsh's approval request carries only the tool
+ * name and a reason, never the arguments. An allow rule therefore means "this
+ * tool's escalation prompt is answered for me", which is narrower than what a deny
+ * can express; the settings page says so rather than implying otherwise.
+ *
+ * Asking is exact wherever the kernel hands over the arguments before running the
+ * call — Pi does — and it is how a person says "pause here" for a kernel that has no
+ * sandbox of its own. Two contradictory rows resolve by severity: deny, then ask,
+ * then allow.
  */
-export type ToolRuleEffect = 'allow' | 'deny'
+export type ToolRuleEffect = 'allow' | 'deny' | 'ask'
 
 export interface ToolRule {
   /** Stable id, so a row can be edited or removed without matching its text. */
@@ -92,22 +99,66 @@ function ruleAppliesTo(rule: ToolRule, tool: string): boolean {
 }
 
 /**
- * The deny rule that refuses one call, if any.
+ * The first rule of one effect that covers a call.
  *
- * The first match wins, so a reader's list reads like a policy: whichever rule
- * they put first is the reason they will see.
+ * The first match wins, so a reader's list reads like a policy: whichever rule they
+ * put first is the reason they will see.
  */
-export function matchDenyRule(
+function firstMatchingRule(
   rules: readonly ToolRule[],
+  effect: ToolRuleEffect,
   context: { tool: string; args: unknown },
 ): ToolRule | null {
   const subjects = ruleSubjects(context.tool, context.args)
   for (const rule of rules) {
-    if (rule.effect !== 'deny') continue
+    if (rule.effect !== effect) continue
     if (!ruleAppliesTo(rule, context.tool)) continue
     if (rule.pattern.length === 0) return rule
     if (subjects.some((subject) => matchesGlob(rule.pattern, subject))) return rule
   }
+  return null
+}
+
+/** The deny rule that refuses one call, if any. */
+export function matchDenyRule(
+  rules: readonly ToolRule[],
+  context: { tool: string; args: unknown },
+): ToolRule | null {
+  return firstMatchingRule(rules, 'deny', context)
+}
+
+/** The ask rule that holds one call for a person, if any. */
+export function matchAskRule(
+  rules: readonly ToolRule[],
+  context: { tool: string; args: unknown },
+): ToolRule | null {
+  return firstMatchingRule(rules, 'ask', context)
+}
+
+/** Why one call is being held: a rule the person wrote, or the session's mode. */
+export type ToolAskSource = { source: 'rule'; rule: ToolRule } | { source: 'mode' }
+
+/**
+ * Whether one call should wait for a person, and why.
+ *
+ * A deny is decided before this and never reaches here. An `ask` rule outranks an
+ * `allow` rule for the same tool: of two contradictory rows the stricter wins. The
+ * mode is the fallback for the tools the rules never mention, and an `allow` rule is
+ * the exception to it — a rule that names a tool is more specific than a mode that
+ * names a whole class of tools.
+ *
+ * `mutating` is the kernel's own judgement of the call (Pi derives it from the tool's
+ * annotations), not a list of tool names Pictor keeps: a new or plugin tool is
+ * covered by the same rule without teaching this function about it.
+ */
+export function askVerdict(
+  rules: readonly ToolRule[],
+  context: { tool: string; args: unknown; mutating: boolean; mode: ApprovalMode },
+): ToolAskSource | null {
+  const rule = matchAskRule(rules, context)
+  if (rule !== null) return { source: 'rule', rule }
+  if (allowsTool(rules, context.tool)) return null
+  if (context.mode === 'mutating' && context.mutating) return { source: 'mode' }
   return null
 }
 
@@ -136,7 +187,7 @@ export function parseToolRules(value: unknown): ToolRule[] {
     const tool = record['tool']
     const pattern = record['pattern']
     if (typeof id !== 'string' || id.length === 0 || seen.has(id)) return []
-    if (effect !== 'allow' && effect !== 'deny') return []
+    if (effect !== 'allow' && effect !== 'deny' && effect !== 'ask') return []
     if (typeof tool !== 'string' || !TOOL_PATTERN.test(tool)) return []
     if (typeof pattern !== 'string' || pattern.length > MAX_PATTERN || /[\r\n]/.test(pattern))
       return []

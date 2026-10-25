@@ -24,6 +24,7 @@ import { useWorkspaceStore } from '../../app/workspace-store.js'
  */
 const EVERYTHING: KernelCapabilities = {
   permission: true,
+  approval: true,
   model: true,
   skills: true,
   fork: true,

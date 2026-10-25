@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   allowsTool,
+  askVerdict,
+  matchAskRule,
   matchDenyRule,
   matchesGlob,
   parseToolRules,
@@ -85,6 +87,64 @@ describe('matchDenyRule', () => {
     ]
 
     expect(matchDenyRule(rules, { tool: 'bash', args: { command: 'rm -rf /' } })?.id).toBe('first')
+  })
+})
+
+describe('matchAskRule', () => {
+  it('holds the calls its glob covers', () => {
+    const rules = [rule({ effect: 'ask', tool: 'bash', pattern: 'rm *' })]
+
+    expect(matchAskRule(rules, { tool: 'bash', args: { command: 'rm -rf build' } })?.id).toBe('r1')
+    expect(matchAskRule(rules, { tool: 'bash', args: { command: 'ls' } })).toBeNull()
+    // A deny is not an ask: the two pause differently, and one must not stand in
+    // for the other.
+    expect(
+      matchAskRule([rule({ effect: 'deny', tool: 'bash' })], { tool: 'bash', args: {} }),
+    ).toBeNull()
+  })
+})
+
+describe('askVerdict', () => {
+  const quiet = { mode: 'never' as const }
+
+  it('asks when a rule names the call', () => {
+    const verdict = askVerdict([rule({ effect: 'ask', tool: 'write' })], {
+      tool: 'write',
+      args: { file_path: '/tmp/a' },
+      mutating: true,
+      ...quiet,
+    })
+
+    expect(verdict?.source).toBe('rule')
+  })
+
+  it('asks for a mutating call while the session says so', () => {
+    expect(
+      askVerdict([], { tool: 'bash', args: {}, mutating: true, mode: 'mutating' })?.source,
+    ).toBe('mode')
+    // A read-only call is not worth a prompt even then: the mode asks about what can
+    // change something, not about every call.
+    expect(askVerdict([], { tool: 'read', args: {}, mutating: false, mode: 'mutating' })).toBeNull()
+    expect(askVerdict([], { tool: 'bash', args: {}, mutating: true, mode: 'never' })).toBeNull()
+  })
+
+  it('lets an allow rule answer the mode, and never an ask rule', () => {
+    const allow = rule({ effect: 'allow', tool: 'bash' })
+
+    // An allow is the person saying "don't ask me about this tool", which is more
+    // specific than the mode.
+    expect(
+      askVerdict([allow], { tool: 'bash', args: {}, mutating: true, mode: 'mutating' }),
+    ).toBeNull()
+    // Two rows about the same tool: the stricter one wins.
+    expect(
+      askVerdict([allow, rule({ id: 'r2', effect: 'ask', tool: 'bash' })], {
+        tool: 'bash',
+        args: {},
+        mutating: true,
+        mode: 'mutating',
+      })?.source,
+    ).toBe('rule')
   })
 })
 

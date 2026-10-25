@@ -9,12 +9,25 @@ function kernel(id: string, overrides: Partial<KernelInfo['capabilities']> = {})
     label: id,
     default: id === 'dsh',
     available: true,
-    capabilities: { permission: true, model: true, skills: true, fork: true, ...overrides },
+    capabilities: {
+      permission: true,
+      approval: true,
+      model: true,
+      skills: true,
+      fork: true,
+      ...overrides,
+    },
     modelSource: 'pictor',
   }
 }
 
-const NO_SANDBOX = { permission: false, model: false, skills: false, fork: false }
+const NO_SANDBOX = {
+  permission: false,
+  approval: false,
+  model: false,
+  skills: false,
+  fork: false,
+}
 
 describe('capabilitiesOf', () => {
   it('answers with what the conversation’s own kernel declares', () => {
@@ -31,12 +44,19 @@ describe('capabilitiesOf', () => {
     // fails with a message that names the missing kernel.
     const everything = capabilitiesOf([kernel('dsh')], 'gone')
 
-    expect(everything).toEqual({ permission: true, model: true, skills: true, fork: true })
+    expect(everything).toEqual({
+      permission: true,
+      approval: true,
+      model: true,
+      skills: true,
+      fork: true,
+    })
   })
 
   it('assumes everything before the list has loaded', () => {
     expect(capabilitiesOf([], 'pi')).toEqual({
       permission: true,
+      approval: true,
       model: true,
       skills: true,
       fork: true,
