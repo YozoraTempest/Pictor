@@ -104,6 +104,13 @@ export default {
       // The composer reports what the turn used, from the provider's own usage
       // report rather than from counting characters.
       await page.getByLabel('上下文用量').waitFor({ timeout: 15_000 })
+      // The row keeps one glyph for it: a count beside the ring would compete
+      // with the model name next to it, and the numbers are a click away.
+      assert.equal(
+        (await page.getByLabel('上下文用量').innerText()).trim(),
+        '',
+        'the meter is the ring alone',
+      )
 
       // The meter opens a panel with the details: the counts the provider
       // reported, and the share of the window the model declared. The stub

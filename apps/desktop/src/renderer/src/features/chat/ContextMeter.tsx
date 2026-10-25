@@ -24,12 +24,6 @@ const RING: Record<UsageLevel, string> = {
   high: 'stroke-warn',
   full: 'stroke-danger',
 }
-/** The trigger stays quiet while there is room: it is a count, not a warning. */
-const TRIGGER: Record<UsageLevel, string> = {
-  ok: 'text-faint',
-  high: 'text-warn',
-  full: 'text-danger',
-}
 const TONE: Record<UsageLevel, string> = {
   ok: 'text-muted',
   high: 'text-warn',
@@ -137,6 +131,13 @@ export function ContextMeter(): React.JSX.Element | null {
 
   const percent = sharePercent(summary.share)
   const rows = usageRows(usage, summary)
+  // The trigger is the ring alone, so the count lives in the tooltip: a reader who
+  // wants the numbers clicks it, and one who only wants "is it filling up" reads
+  // the ring's colour.
+  const label =
+    summary.window === null
+      ? formatTokens(summary.used)
+      : `${formatTokens(summary.used)} / ${formatTokens(summary.window)}`
 
   return (
     <>
@@ -146,14 +147,14 @@ export function ContextMeter(): React.JSX.Element | null {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label="上下文用量"
+        title={label}
         onClick={() => {
           if (open) close()
           else setOpen(true)
         }}
         className={cn(
-          'flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-2xs transition-colors duration-150 hover:bg-surface-hover',
+          'grid size-6 shrink-0 place-items-center rounded-md transition-colors duration-150 hover:bg-surface-hover',
           open && 'bg-surface-hover',
-          TRIGGER[summary.level],
         )}
       >
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${String(SIZE)} ${String(SIZE)}`} aria-hidden>
@@ -179,11 +180,6 @@ export function ContextMeter(): React.JSX.Element | null {
             />
           )}
         </svg>
-        <span className="font-mono">
-          {summary.window === null
-            ? formatTokens(summary.used)
-            : `${formatTokens(summary.used)} / ${formatTokens(summary.window)}`}
-        </span>
       </button>
 
       {open &&
