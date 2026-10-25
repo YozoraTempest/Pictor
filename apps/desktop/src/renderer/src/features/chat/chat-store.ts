@@ -2,6 +2,8 @@ import { create } from 'zustand'
 
 import type { ChatEvent, ChatImage, ChatMessage, ModelEffort } from '@pictor/shared'
 
+import { lastUsageOf, type TurnUsage } from './context-usage.js'
+
 /** Phase of a running agent, shown next to its name. */
 export type ChatPhase = 'idle' | 'connecting' | 'thinking' | 'tool' | 'writing'
 
@@ -23,7 +25,7 @@ export interface ChatSlice {
   /** Set while the runtime re-runs a failed model step inside this turn. */
   retry: { attempt: number; maxAttempts: number; message: string } | null
   /** Tokens the last turn used, as the provider reported them. */
-  usage: { input: number | null; output: number | null; total: number | null } | null
+  usage: TurnUsage | null
 }
 
 interface ChatState {
@@ -204,6 +206,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
         patch(sessionId, () => ({
           path: result.path,
           messages: result.history.messages,
+          // Every row that reported its cost kept it, so a reloaded conversation still
+          // has the numbers its last turn spent instead of an empty ring.
+          usage: lastUsageOf(result.history.messages),
           offset: result.history.nextOffset,
           hasMore: result.history.hasMore,
           loading: false,

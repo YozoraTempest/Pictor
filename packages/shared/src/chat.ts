@@ -1,5 +1,12 @@
 export type ChatRole = 'user' | 'assistant' | 'tool'
 
+/** What one turn cost, in the provider's own count. `null` means it said nothing. */
+export interface ChatUsage {
+  input: number | null
+  output: number | null
+  total: number | null
+}
+
 export interface ChatMessage {
   /** Stable id derived from the JSONL entry index. */
   id: string
@@ -45,6 +52,13 @@ export interface ChatMessage {
   diff?: string
   /** Images the user attached to this message; base64, no data URL prefix. */
   images?: ChatImage[]
+  /**
+   * What the model reported for the request that produced this row.
+   *
+   * It rides on the row rather than beside the transcript so a reloaded conversation
+   * still knows what its last turn cost: the meter reads the newest one.
+   */
+  usage?: ChatUsage
 }
 
 /** One image the user pasted or dropped into the composer. */

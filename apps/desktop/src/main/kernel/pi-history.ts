@@ -1,4 +1,4 @@
-import { MODEL_EFFORTS, type ChatMessage, type ModelEffort } from '@pictor/shared'
+import { MODEL_EFFORTS, type ChatMessage, type ChatUsage, type ModelEffort } from '@pictor/shared'
 
 /**
  * Reading a Pi session file back into transcript rows.
@@ -26,6 +26,8 @@ interface Block {
 export interface StoredMessage {
   role?: unknown
   content?: unknown
+  /** Pi's own count for the request that produced this message. */
+  usage?: unknown
   toolCallId?: unknown
   toolName?: unknown
   isError?: unknown
@@ -60,6 +62,26 @@ export function textOf(content: unknown): string {
       block.type === 'text' && typeof block.text === 'string' ? [block.text] : [],
     )
     .join('')
+}
+
+/**
+ * Pi's count for one request, in the shape the meter reads.
+ *
+ * It reports `input`/`output`/`totalTokens`, and its `totalTokens` already includes
+ * what it read from cache, so the total is exactly the number the window is spent by.
+ */
+function usageOf(usage: unknown): ChatUsage | undefined {
+  if (typeof usage !== 'object' || usage === null) return undefined
+  const raw = usage as Record<string, unknown>
+  const count = (key: string): number | null => {
+    const value = raw[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
+  }
+  const input = count('input')
+  const output = count('output')
+  const total = count('totalTokens')
+  if (input === null && output === null && total === null) return undefined
+  return { input, output, total }
 }
 
 function thinkingOf(content: unknown): string {
@@ -140,14 +162,17 @@ export function historyRows(records: readonly StoredRecord[]): ChatMessage[] {
     }
 
     if (role === 'assistant') {
+      /** Rows this one message produced: the count belongs to the message, not a block. */
+      const produced: ChatMessage[] = []
+
       // Thinking first: it is what the model produced before the answer, and the
       // live transcript shows it in that order.
       const thinking = thinkingOf(message.content)
       if (thinking.length > 0) {
-        add({ role: 'assistant', kind: 'thinking', text: thinking, timestamp })
+        produced.push(add({ role: 'assistant', kind: 'thinking', text: thinking, timestamp }))
       }
       const text = textOf(message.content)
-      if (text.length > 0) add({ role: 'assistant', text, timestamp })
+      if (text.length > 0) produced.push(add({ role: 'assistant', text, timestamp }))
 
       for (const block of blocksOf(message.content)) {
         if (block.type !== 'toolCall') continue
@@ -160,8 +185,15 @@ export function historyRows(records: readonly StoredRecord[]): ChatMessage[] {
           input: block.arguments ?? null,
           ...(callId.length === 0 ? {} : { toolCallId: callId }),
         })
+        produced.push(row)
         if (callId.length > 0) calls.set(callId, row)
       }
+
+      // The newest row that has one is what the meter reads, so a message that only
+      // called tools still reports what its request cost.
+      const usage = usageOf(message.usage)
+      const anchor = produced.at(-1)
+      if (usage !== undefined && anchor !== undefined) anchor.usage = usage
       continue
     }
 

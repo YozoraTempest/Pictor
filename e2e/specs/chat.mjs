@@ -137,6 +137,15 @@ export default {
       await page.waitForSelector('header', { timeout: 30_000 })
       await page.getByRole('button', { name: title }).first().click({ timeout: 15_000 })
       await page.getByText(reply).first().waitFor({ timeout: 30_000 })
+
+      // The counts come back with the transcript rather than only from a live turn.
+      // A conversation reopened after a restart has to show what it spent, or the
+      // ring disappears until the reader happens to send the next message.
+      await page.getByLabel('上下文用量').click()
+      const restored = page.getByRole('dialog', { name: '上下文详情' })
+      await restored.waitFor({ timeout: 10_000 })
+      await restored.getByText('16', { exact: true }).waitFor({ timeout: 5_000 })
+      await page.keyboard.press('Escape')
     } finally {
       await model.close()
     }

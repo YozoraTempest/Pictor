@@ -17,6 +17,28 @@ const assistantMessage = (text: string) => ({
 })
 
 describe('projectHarnessEvents', () => {
+  it('keeps the count the runtime reported for the step', () => {
+    // dsh files its usage beside the message, on the event itself.
+    const messages = projectHarnessEvents([
+      userMessage('m1', 'ping'),
+      {
+        ...assistantMessage('pong'),
+        data: {
+          ...assistantMessage('pong').data,
+          usage: { inputTokens: 713, outputTokens: 2, totalTokens: 8779 },
+        },
+      },
+    ])
+
+    expect(messages.at(-1)?.usage).toEqual({ input: 713, output: 2, total: 8779 })
+  })
+
+  it('leaves the count off a step that did not report one', () => {
+    const messages = projectHarnessEvents([assistantMessage('pong')])
+
+    expect(messages[0]?.usage).toBeUndefined()
+  })
+
   it("keeps the user's own words and drops injected runtime context", () => {
     const messages = projectHarnessEvents([
       userMessage('m1', 'ping'),

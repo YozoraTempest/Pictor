@@ -160,6 +160,37 @@ describe('historyRows', () => {
     ])
   })
 
+  it('keeps what the request cost, on a row of that message', () => {
+    const rows = historyRows([
+      line({ role: 'user', content: [{ type: 'text', text: '你好' }] }),
+      line({
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: '想一想' },
+          { type: 'text', text: '你好' },
+        ],
+        usage: { input: 38, output: 28, totalTokens: 1986 },
+      }),
+    ])
+
+    expect(rows.at(-1)?.usage).toEqual({ input: 38, output: 28, total: 1986 })
+    expect(rows.at(-2)?.usage).toBeUndefined()
+  })
+
+  it('keeps the count even when the message only called tools', () => {
+    // The request that produced the calls is what the window was spent by, so the
+    // count does not depend on the model having said anything.
+    const rows = historyRows([
+      line({
+        role: 'assistant',
+        content: [{ type: 'toolCall', id: 'c1', name: 'bash', arguments: { command: 'ls' } }],
+        usage: { input: 7, output: 3, totalTokens: 10 },
+      }),
+    ])
+
+    expect(rows.map((row) => row.usage)).toEqual([{ input: 7, output: 3, total: 10 }])
+  })
+
   it('drops the bookkeeping lines and the empty messages', () => {
     const rows = historyRows([
       line({ role: 'system', content: '你是助手' }),

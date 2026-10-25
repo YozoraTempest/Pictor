@@ -1,4 +1,4 @@
-import type { ChatHistoryPage, ChatMessage } from '@pictor/shared'
+import type { ChatHistoryPage, ChatMessage, ChatUsage } from '@pictor/shared'
 
 interface SessionEvent {
   type?: string
@@ -21,6 +21,27 @@ function textOf(content: unknown): string {
 /** A row's own event sequence, when the wire carried one. */
 function seqOf(event: SessionEvent): { seq?: number } {
   return typeof event.seq === 'number' ? { seq: event.seq } : {}
+}
+
+/**
+ * The provider's count for one step, in the shape the meter reads.
+ *
+ * dsh reports it on the event beside the message (`usage.inputTokens` and friends),
+ * not inside it, and omits any half it did not count.
+ */
+function usageOf(data: Record<string, unknown>): ChatUsage | undefined {
+  const usage = data['usage']
+  if (typeof usage !== 'object' || usage === null) return undefined
+  const raw = usage as Record<string, unknown>
+  const count = (key: string): number | null => {
+    const value = raw[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
+  }
+  const input = count('inputTokens')
+  const output = count('outputTokens')
+  const total = count('totalTokens')
+  if (input === null && output === null && total === null) return undefined
+  return { input, output, total }
 }
 
 function messageContent(data: Record<string, unknown>): unknown {
@@ -61,7 +82,15 @@ export function projectHarnessEvents(events: readonly unknown[]): ChatMessage[] 
       case 'assistant/message': {
         const text = textOf(messageContent(data))
         if (text.length === 0) continue
-        messages.push({ id, role: 'assistant', text, timestamp, ...seqOf(event) })
+        const usage = usageOf(data)
+        messages.push({
+          id,
+          role: 'assistant',
+          text,
+          timestamp,
+          ...seqOf(event),
+          ...(usage === undefined ? {} : { usage }),
+        })
         break
       }
 

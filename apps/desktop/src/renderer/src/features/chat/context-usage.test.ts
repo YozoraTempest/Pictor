@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { sharePercent, usageRows, usageSummary, type TurnUsage } from './context-usage.js'
+import type { ChatMessage } from '@pictor/shared'
+
+import {
+  lastUsageOf,
+  sharePercent,
+  usageRows,
+  usageSummary,
+  type TurnUsage,
+} from './context-usage.js'
 
 function usage(overrides: Partial<TurnUsage>): TurnUsage {
   return { input: null, output: null, total: null, ...overrides }
@@ -95,5 +103,32 @@ describe('sharePercent', () => {
 
   it('has nothing to say without a window', () => {
     expect(sharePercent(null)).toBeNull()
+  })
+})
+
+describe('lastUsageOf', () => {
+  const row = (role: ChatMessage['role'], extra: Partial<ChatMessage> = {}): ChatMessage => ({
+    id: `${role}-${String(Object.keys(extra).length)}`,
+    role,
+    text: 'x',
+    timestamp: null,
+    ...extra,
+  })
+
+  it('takes the newest count the transcript carries', () => {
+    const messages = [
+      row('assistant', { usage: usage({ total: 10 }) }),
+      row('user'),
+      row('assistant', { usage: usage({ input: 5, output: 2, total: 7 }) }),
+    ]
+
+    expect(lastUsageOf(messages)?.total).toBe(7)
+  })
+
+  it('says nothing when no row reported one', () => {
+    // A conversation from before counts were kept, or one whose kernel never reports
+    // them: the meter has to show nothing rather than a made-up zero.
+    expect(lastUsageOf([row('user'), row('assistant')])).toBeNull()
+    expect(lastUsageOf([])).toBeNull()
   })
 })

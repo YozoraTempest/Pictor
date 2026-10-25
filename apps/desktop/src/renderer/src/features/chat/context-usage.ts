@@ -1,5 +1,7 @@
+import type { ChatMessage, ChatUsage } from '@pictor/shared'
+
 /** Token counts the provider reported for one turn. */
-export type TurnUsage = { input: number | null; output: number | null; total: number | null }
+export type TurnUsage = ChatUsage
 
 /** How much of the window is gone, in bands the UI can colour. */
 export type UsageLevel = 'ok' | 'high' | 'full'
@@ -45,6 +47,21 @@ export function usageSummary(
     remaining: Math.max(0, window - used),
     level: share >= 0.9 ? 'full' : share >= 0.7 ? 'high' : 'ok',
   }
+}
+
+/**
+ * The newest usage a transcript carries.
+ *
+ * A turn's count is attached to the row its request produced, so the last turn is the
+ * last row that has one. Reading it from the transcript is what lets a conversation
+ * reopened after a restart still show what it spent, instead of an empty ring.
+ */
+export function lastUsageOf(messages: readonly ChatMessage[]): TurnUsage | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const usage = messages[index]?.usage
+    if (usage !== undefined) return usage
+  }
+  return null
 }
 
 /** One line of the details panel: a label and the count it stands for. */
