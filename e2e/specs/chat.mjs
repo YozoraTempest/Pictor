@@ -49,6 +49,9 @@ export default {
                 // The level the model is designed to start at. Nothing in the spec
                 // touches the slider: picking the model has to be enough.
                 defaultEffort: 'high',
+                // A declared window is what lets the meter state a share; without
+                // one the panel would have to say the number is unknown.
+                contextWindow: 200_000,
               },
             ],
             apiKey: 'e2e-key',
@@ -101,6 +104,21 @@ export default {
       // The composer reports what the turn used, from the provider's own usage
       // report rather than from counting characters.
       await page.getByLabel('上下文用量').waitFor({ timeout: 15_000 })
+
+      // The meter opens a panel with the details: the counts the provider
+      // reported, and the share of the window the model declared. The stub
+      // reports 16 tokens against a 200k window, which must read as a sliver of
+      // the window rather than as nothing used.
+      await page.getByLabel('上下文用量').click()
+      const meter = page.getByRole('dialog', { name: '上下文详情' })
+      await meter.waitFor({ timeout: 10_000 })
+      await meter.getByText('合计').waitFor({ timeout: 5_000 })
+      await meter.getByText('16', { exact: true }).waitFor({ timeout: 5_000 })
+      await meter.getByText('<1%').waitFor({ timeout: 5_000 })
+
+      // Escape closes it, so the panel never keeps the keyboard hostage.
+      await page.keyboard.press('Escape')
+      await meter.waitFor({ state: 'detached', timeout: 5_000 })
 
       // The runtime names the conversation after its first turn, and Pictor adopts
       // that name over the placeholder it wrote at creation.

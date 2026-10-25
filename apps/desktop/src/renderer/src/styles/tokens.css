@@ -16,6 +16,8 @@
   --color-accent-strong: #9cc4ff;
   --color-danger: #ff6b6b;
   --color-success: #5fd68f;
+  /* Filling up but not yet wrong: a context window close to its limit. */
+  --color-warn: #f0a860;
   /* Reasoning levels read cool to warm, so a glance says how much thinking runs. */
   --color-effort-low: #7f93b0;
   --color-effort-mid: #6ea8fe;
