@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 
 import { cn } from '../../lib/cn.js'
 import { formatTokens } from '../../lib/format-time.js'
+import { useKernelModelSource } from '../kernels/capabilities.js'
 import { useChatStore } from './chat-store.js'
 import { sharePercent, usageRows, usageSummary, type UsageLevel } from './context-usage.js'
 
@@ -48,23 +49,34 @@ export function ContextMeter(): React.JSX.Element | null {
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
 
-  // The window belongs to the active model, which the settings page owns; a turn
-  // changes the counts, and opening the panel re-reads it because the settings
-  // page may have been edited in between.
+  const sessionId = useChatStore((state) => state.current.sessionId)
+  const modelSource = useKernelModelSource(sessionId.length === 0 ? null : sessionId)
+
+  // The window belongs to the model that ran the turn. A kernel that brings its own
+  // catalogue is the authority on its models, so ask it; the app's own list is the
+  // other answer. A turn changes the counts, and opening the panel re-reads it
+  // because either side may have changed in between.
   useEffect(() => {
     let alive = true
-    void window.pictor
-      .getModelSettings()
-      .then((settings) => {
-        if (!alive) return
-        const entry = settings.models.find((model) => model.id === settings.modelId)
-        setContextWindow(entry?.contextWindow ?? null)
+    const read =
+      modelSource === 'kernel' && sessionId.length > 0
+        ? window.pictor
+            .kernelModels(sessionId)
+            .then((state) => state.models.find((model) => model.id === state.activeId) ?? null)
+            .then((model) => model?.contextWindow ?? null)
+        : window.pictor.getModelSettings().then((settings) => {
+            const entry = settings.models.find((model) => model.id === settings.modelId)
+            return entry?.contextWindow ?? null
+          })
+    void read
+      .then((value) => {
+        if (alive) setContextWindow(value)
       })
       .catch(() => undefined)
     return () => {
       alive = false
     }
-  }, [usage, open])
+  }, [usage, open, modelSource, sessionId])
 
   // Opening a fresh conversation leaves nothing to show, so the panel closes with
   // the counts it described rather than reappearing over the next turn.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { historyRows, textOf } from './pi-history.js'
+import { historyRows, storedLevel, textOf } from './pi-history.js'
 
 /** One stored line, the way Pi writes it: `{type: 'message', message}`. */
 function line(message: Record<string, unknown>, type = 'message'): Record<string, unknown> {
@@ -22,6 +22,31 @@ describe('textOf', () => {
   it('takes a plain string as it is', () => {
     expect(textOf('就是一段话')).toBe('就是一段话')
     expect(textOf(undefined)).toBe('')
+  })
+})
+
+describe('storedLevel', () => {
+  it('takes the newest level the conversation recorded', () => {
+    expect(
+      storedLevel([
+        { type: 'thinking_level_change', thinkingLevel: 'low' },
+        line({ role: 'user', content: [{ type: 'text', text: '你好' }] }),
+        { type: 'thinking_level_change', thinkingLevel: 'max' },
+        line({ role: 'assistant', content: [{ type: 'text', text: '你好' }] }),
+      ]),
+    ).toBe('max')
+  })
+
+  it('says nothing rather than guessing', () => {
+    // No level recorded, and a newest change Pictor does not recognise: both are
+    // "unknown", which leaves the choice to Pi instead of naming a level it may not run.
+    expect(storedLevel([])).toBeNull()
+    expect(
+      storedLevel([
+        { type: 'thinking_level_change', thinkingLevel: 'low' },
+        { type: 'thinking_level_change', thinkingLevel: 'ludicrous' },
+      ]),
+    ).toBeNull()
   })
 })
 

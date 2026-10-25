@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@pictor/shared'
+import { MODEL_EFFORTS, type ChatMessage, type ModelEffort } from '@pictor/shared'
 
 /**
  * Reading a Pi session file back into transcript rows.
@@ -37,6 +37,8 @@ export interface StoredRecord {
   /** The session entry's own id: Pi's name for this point in the conversation. */
   id?: unknown
   message?: StoredMessage | null
+  /** On a `thinking_level_change` entry: the level the conversation moved to. */
+  thinkingLevel?: unknown
 }
 
 function blocksOf(content: unknown): Block[] {
@@ -63,6 +65,27 @@ function thinkingOf(content: unknown): string {
       block.type === 'thinking' && typeof block.thinking === 'string' ? [block.thinking] : [],
     )
     .join('')
+}
+
+/**
+ * The thinking level the conversation last recorded.
+ *
+ * Pi writes a `thinking_level_change` entry whenever the level moves — including the
+ * moves it makes itself, such as re-clamping a level when the model changes. Its last
+ * word is therefore the level a reopened conversation will run at, and the only honest
+ * answer for a conversation with no process to ask.
+ */
+export function storedLevel(records: readonly StoredRecord[]): ModelEffort | null {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index]
+    if (record?.type !== 'thinking_level_change') continue
+    const level = record.thinkingLevel
+    // The newest change is the current one: an older level would be a stale answer.
+    return typeof level === 'string' && (MODEL_EFFORTS as readonly string[]).includes(level)
+      ? (level as ModelEffort)
+      : null
+  }
+  return null
 }
 
 export function historyRows(records: readonly StoredRecord[]): ChatMessage[] {

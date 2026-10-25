@@ -114,12 +114,22 @@ export interface KernelModel {
   /** Whether this model accepts images. */
   images: boolean
   contextWindow: number | null
+  /**
+   * Levels this model accepts, weakest first, when the kernel declares them.
+   *
+   * `null` means the kernel said nothing, which is not the same as "none": the
+   * composer then offers no level control instead of an empty one.
+   */
+  efforts: ModelEffort[] | null
 }
 
-export interface KernelModelList {
+/** One conversation's model state, in the kernel's own words. */
+export interface KernelModelState {
   models: KernelModel[]
   /** The model this conversation is running, or null before it has run. */
   activeId: string | null
+  /** The thinking level in effect, or null when the kernel's own default applies. */
+  activeEffort: ModelEffort | null
 }
 
 /**
@@ -256,9 +266,11 @@ export interface PictorBridge {
   /** Every kernel this build can drive, for the picker. */
   listKernels(): Promise<KernelInfo[]>
   /** The models a kernel offers for one conversation. */
-  kernelModels(sessionId: string): Promise<KernelModelList>
+  kernelModels(sessionId: string): Promise<KernelModelState>
   /** Selects one for that conversation, without a restart. */
   selectKernelModel(sessionId: string, id: string): Promise<void>
+  /** Sets the conversation's thinking level, or clears it with null. */
+  selectKernelEffort(sessionId: string, effort: ModelEffort | null): Promise<void>
   /** Per-tool rules: a deny refuses a call, an allow answers its escalation. */
   listToolRules(): Promise<ToolRule[]>
   saveToolRules(rules: ToolRule[]): Promise<ToolRule[]>

@@ -47,6 +47,24 @@ const reply = ${JSON.stringify(options.reply ?? '等于 2')}
 const input = ${JSON.stringify(options.input)}.split(',')
 const settle = ${JSON.stringify(options.settle ?? 'immediately')}
 let sessionId = 'pi-fake-1'
+let level = 'high'
+let modelId = 'fake-1'
+const LEVELS = ['omit', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+const MODELS = {
+  'fake-1': { name: 'Fake Model', provider: 'fake', input: input, levels: ['low', 'high', 'max'] },
+  'vision-1': { name: 'Vision Model', provider: 'fake', input: ['text', 'image'], levels: [] },
+}
+const modelOf = (id) => {
+  const found = MODELS[id] ?? MODELS['fake-1']
+  return { id: id, name: found.name, provider: found.provider, input: found.input }
+}
+// Pi clamps to the levels the model maps, so a request it cannot honor comes back lower.
+const clampLevel = (requested) => {
+  const available = MODELS[modelId].levels
+  if (available.length === 0 || available.includes(requested)) return requested
+  const wanted = LEVELS.indexOf(requested)
+  return available.filter((entry) => LEVELS.indexOf(entry) <= wanted).at(-1) ?? available[0]
+}
 appendFileSync(log, JSON.stringify({ type: 'argv', argv: process.argv.slice(2) }) + NL)
 const send = (record) => process.stdout.write(JSON.stringify(record) + NL)
 let buffer = ''
@@ -67,8 +85,8 @@ process.stdin.on('data', (chunk) => {
 function handle(command) {
   if (command.type === 'get_state') {
     send({ id: command.id, type: 'response', command: 'get_state', success: true,
-      data: { model: { id: 'fake-1', name: 'Fake Model', provider: 'fake', input },
-        sessionId: sessionId, sessionFile: '/tmp/' + sessionId + '.jsonl' } })
+      data: { model: modelOf(modelId),
+        sessionId: sessionId, sessionFile: '/tmp/' + sessionId + '.jsonl', thinkingLevel: level } })
     return
   }
   if (command.type === 'get_entries') {
@@ -93,16 +111,20 @@ function handle(command) {
   if (command.type === 'get_available_models') {
     send({ id: command.id, type: 'response', command: 'get_available_models', success: true,
       data: { models: [
-        { id: 'fake-1', name: 'Fake Model', provider: 'fake', input: ['text'], contextWindow: 1000 },
+        { id: 'fake-1', name: 'Fake Model', provider: 'fake', input: ['text'], contextWindow: 1000,
+          thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', max: 'max' } },
         { id: 'vision-1', name: 'Vision Model', provider: 'fake', input: ['text', 'image'], contextWindow: 2000 },
       ] } })
     return
   }
   if (command.type === 'set_model') {
+    modelId = String(command.modelId)
+    level = clampLevel(level)
     send({ id: command.id, type: 'response', command: 'set_model', success: true, data: {} })
     return
   }
   if (command.type === 'set_thinking_level') {
+    level = clampLevel(String(command.level))
     send({ id: command.id, type: 'response', command: 'set_thinking_level', success: true, data: {} })
     return
   }
@@ -322,6 +344,9 @@ describe('PiRpcDriver', () => {
           provider: 'fake',
           images: false,
           contextWindow: 1000,
+          // Only the levels the provider actually maps are offered; the nulls buy
+          // nothing, and offering them would promise thinking that never happens.
+          efforts: ['low', 'high', 'max'],
         },
         {
           id: 'fake/vision-1',
@@ -329,9 +354,11 @@ describe('PiRpcDriver', () => {
           provider: 'fake',
           images: true,
           contextWindow: 2000,
+          efforts: null,
         },
       ],
       activeId: null,
+      activeEffort: null,
     })
 
     // Selecting on a live child is a command, not a restart.
@@ -437,6 +464,59 @@ describe('PiRpcDriver', () => {
       .map((command) => command['argv'])
       .find((argv): argv is string[] => Array.isArray(argv) && argv.includes('--extension'))
     expect(started).toEqual(expect.arrayContaining(['--extension', '/tmp/pictor-guard.mjs']))
+    await driver.stop()
+  })
+
+  it('sets the thinking level and reports the one Pi is running', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+    // Pi reports its own level; that is what the picker shows until someone changes it.
+    expect((await driver.models('s1')).activeEffort).toBe('high')
+
+    await driver.setEffort('s1', 'max')
+    expect(commands(fake).find((entry) => entry['type'] === 'set_thinking_level')).toMatchObject({
+      level: 'max',
+    })
+    expect((await driver.models('s1')).activeEffort).toBe('max')
+
+    // A level chosen before the conversation runs is remembered for its first turn.
+    await driver.setEffort('s2', 'low')
+    expect((await driver.models('s2')).activeEffort).toBe('low')
+    await driver.stop()
+  })
+
+  it('keeps the level Pi clamps to instead of the one that was asked for', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+    // The model maps low/high/max, so Pi answers a request for medium with a level it
+    // has; that answer is what the picker shows and what a restart comes back to.
+    await driver.setEffort('s1', 'medium')
+    expect((await driver.models('s1')).activeEffort).toBe('low')
+    await driver.stop()
+  })
+
+  it('starts a fresh conversation on its recorded level', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    await driver.setEffort('s1', 'max')
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+
+    const started = commands(fake)
+      .filter((command) => command['type'] === 'argv')
+      .map((command) => command['argv'])
+      .find((argv): argv is string[] => Array.isArray(argv) && argv.includes('--thinking'))
+    expect(started).toEqual(expect.arrayContaining(['--thinking', 'max']))
     await driver.stop()
   })
 

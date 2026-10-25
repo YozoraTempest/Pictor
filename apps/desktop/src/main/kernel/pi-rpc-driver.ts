@@ -11,6 +11,7 @@ import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 
 import type { HarnessNotification } from '@pictor/harness'
+import { MODEL_EFFORTS } from '@pictor/shared'
 import type {
   CatalogSkill,
   ChatHistoryPage,
@@ -23,13 +24,13 @@ import type {
   HarnessStatus,
   KernelCapabilities,
   KernelModel,
-  KernelModelList,
+  KernelModelState,
   PermissionMode,
 } from '../../shared/bridge.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
 import type { KernelModelSource } from './model-source.js'
 import { PiTranslator, type PiFrame } from './pi-events.js'
-import { historyRows, textOf, type StoredRecord } from './pi-history.js'
+import { historyRows, storedLevel, textOf, type StoredRecord } from './pi-history.js'
 
 /** How long one command may take before the caller gives up on Pi answering. */
 const REQUEST_TIMEOUT_MS = 30_000
@@ -78,6 +79,8 @@ interface Kid {
   model: { id: string; name: string; provider: string | null; input: string[]; key: string } | null
   /** Where Pi is writing this conversation, once it says so. */
   sessionFile: string | null
+  /** The thinking level Pi reports, once it says so. */
+  effort: ModelEffort | null
   /** Set once the child is known to answer commands. */
   ready: Promise<void> | null
 }
@@ -141,6 +144,8 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   readonly #sessions = new Map<string, string>()
   /** Pictor session id → chosen model key; persisted so a restart keeps it. */
   readonly #models = new Map<string, string>()
+  /** Pictor session id → chosen thinking level; persisted so a restart keeps it. */
+  readonly #efforts = new Map<string, ModelEffort>()
   /** Pi's catalogue, read once per app run: it changes when Pi does. */
   #catalogue: KernelModel[] | null = null
   #sessionsLoaded = false
@@ -158,6 +163,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     this.#cwd = cwd
     this.#loadSessions()
     this.#loadModels()
+    this.#loadEfforts()
     return this.status()
   }
 
@@ -330,11 +336,41 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
    * not start the conversation's process, and Pi's catalogue only changes when Pi
    * does, so one read serves the whole app run.
    */
-  async models(sessionId: string): Promise<KernelModelList> {
+  async models(sessionId: string): Promise<KernelModelState> {
     const models = await this.#catalogueOf()
     const live = this.#kids.get(sessionId)
     const running = live?.model?.key ?? null
-    return { models, activeId: this.#models.get(sessionId) ?? running }
+    // A conversation that is not running has no process to ask, so its own file is
+    // the last word on the level it will resume at.
+    const recorded =
+      this.#efforts.get(sessionId) ??
+      live?.effort ??
+      (live === undefined ? storedLevel(this.#records(sessionId)) : null)
+    return {
+      models,
+      activeId: this.#models.get(sessionId) ?? running,
+      activeEffort: recorded,
+    }
+  }
+
+  /**
+   * Sets the conversation's thinking level.
+   *
+   * A running child is told now; a conversation that has not started keeps the choice
+   * and is launched with `--thinking`, so it survives a restart either way. Pi clamps
+   * a level to the ones the current model maps, so what is stored is what Pi reports
+   * running afterwards, never the unheeded request. `null` forgets the choice.
+   */
+  async setEffort(sessionId: string, effort: ModelEffort | null): Promise<void> {
+    const kid = this.#kids.get(sessionId)
+    if (effort === null || kid === undefined || kid.proc.exitCode !== null) {
+      // Nothing to clamp against: the request is the choice until a turn runs.
+      this.#rememberEffort(sessionId, effort)
+      return
+    }
+    await this.#request(kid, { type: 'set_thinking_level', level: effort })
+    await this.#readState(kid)
+    this.#rememberEffort(sessionId, kid.effort)
   }
 
   /**
@@ -358,6 +394,10 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       ...(model.provider === null ? {} : { provider: model.provider }),
       modelId: model.id.split('/').at(-1) ?? model.id,
     })
+    // Pi re-applies the level on a switch and clamps it to what the new model maps, so
+    // the stored level follows the model rather than surviving as a stale request.
+    await this.#readState(kid)
+    this.#rememberEffort(sessionId, kid.effort)
   }
 
   adopt(sessionId: string, kernelSessionId: string): void {
@@ -582,6 +622,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       turn: null,
       model: null,
       sessionFile: null,
+      effort: null,
       ready: null,
     }
     this.#kids.set(sessionId, kid)
@@ -715,6 +756,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       model?: Record<string, unknown>
       sessionId?: unknown
       sessionFile?: unknown
+      thinkingLevel?: unknown
     } | null
 
     // Pi names its own session and where it writes it. Recording both means a
@@ -725,6 +767,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       this.#persistSessions()
     }
     if (typeof data?.sessionFile === 'string') kid.sessionFile = data.sessionFile
+    kid.effort = asEffort(data?.thinkingLevel) ?? kid.effort
 
     const model = data?.model
     if (model === undefined || typeof model !== 'object' || model === null) return kid.model
@@ -778,6 +821,9 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
         entries?: unknown
       } | null
       const entries = Array.isArray(data?.entries) ? data.entries : []
+      // Pi moves the level itself — it clamps on a model change — so the entries are
+      // also where the level it is actually running comes from.
+      kid.effort = storedLevel(entries as StoredRecord[]) ?? kid.effort
       for (let index = entries.length - 1; index >= 0; index -= 1) {
         const entry = entries[index] as {
           type?: unknown
@@ -879,6 +925,8 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     }
     const guard = this.#options.guardExtension?.() ?? null
     if (guard !== null) args.push('--extension', guard)
+    const level = sessionId === undefined ? undefined : this.#efforts.get(sessionId)
+    if (level !== undefined) args.push('--thinking', level)
     args.push(...extra)
 
     // A native binary runs on its own; a JavaScript entry point needs the runtime.
@@ -998,6 +1046,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
                 images: input.includes('image'),
                 contextWindow:
                   typeof window === 'number' && Number.isFinite(window) ? window : null,
+                efforts: effortsOf(model['thinkingLevelMap']),
               },
             ]
           })
@@ -1006,6 +1055,46 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       return models
     } finally {
       proc.kill('SIGTERM')
+    }
+  }
+
+  #effortsFile(): string {
+    return join(this.#options.userData, 'pi-efforts.json')
+  }
+
+  #loadEfforts(): void {
+    try {
+      const parsed = JSON.parse(readFileSync(this.#effortsFile(), 'utf8')) as Record<
+        string,
+        unknown
+      >
+      for (const [pictor, level] of Object.entries(parsed)) {
+        const effort = asEffort(level)
+        if (effort !== null) this.#efforts.set(pictor, effort)
+      }
+    } catch {
+      // No level recorded yet: Pi's own default applies.
+    }
+  }
+
+  /** Records the level Pi is running, so the picker and the next launch agree with it. */
+  #rememberEffort(sessionId: string, effort: ModelEffort | null): void {
+    if ((this.#efforts.get(sessionId) ?? null) === effort) return
+    if (effort === null) this.#efforts.delete(sessionId)
+    else this.#efforts.set(sessionId, effort)
+    this.#persistEfforts()
+  }
+
+  #persistEfforts(): void {
+    try {
+      mkdirSync(this.#options.userData, { recursive: true })
+      writeFileSync(
+        this.#effortsFile(),
+        `${JSON.stringify(Object.fromEntries(this.#efforts), null, 2)}\n`,
+        'utf8',
+      )
+    } catch {
+      // A read-only profile only costs the choice, never the turn.
     }
   }
 
@@ -1086,6 +1175,26 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       // A read-only profile only costs a resumed conversation, never the turn.
     }
   }
+}
+
+/** One of the levels Pictor knows, or null for anything else. */
+function asEffort(value: unknown): ModelEffort | null {
+  return typeof value === 'string' && (MODEL_EFFORTS as readonly string[]).includes(value)
+    ? (value as ModelEffort)
+    : null
+}
+
+/**
+ * The levels a model declares through Pi's `thinkingLevelMap`.
+ *
+ * Pi maps each level onto a provider's own, and `null` means that level buys nothing
+ * for this model: offering it would promise thinking the provider ignores.
+ */
+function effortsOf(map: unknown): ModelEffort[] | null {
+  if (typeof map !== 'object' || map === null) return null
+  const levels = map as Record<string, unknown>
+  const accepted = MODEL_EFFORTS.filter((level) => typeof levels[level] === 'string')
+  return accepted.length === 0 ? null : [...accepted]
 }
 
 /** How one model is named across messages and the picker: `provider/id`. */

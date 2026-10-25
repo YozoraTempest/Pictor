@@ -1,4 +1,6 @@
-import type { KernelModelList } from '../../shared/bridge.js'
+import type { ModelEffort } from '@pictor/shared'
+
+import type { KernelModelState } from '../../shared/bridge.js'
 import type { KernelDriver } from './driver.js'
 
 /**
@@ -12,9 +14,11 @@ import type { KernelDriver } from './driver.js'
  */
 export interface KernelModelSource {
   /** The models this kernel offers for one conversation. */
-  models(sessionId: string): Promise<KernelModelList>
+  models(sessionId: string): Promise<KernelModelState>
   /** Switches the conversation to one of them, without a restart. */
   selectModel(sessionId: string, id: string): Promise<void>
+  /** Sets the thinking level, or clears it so the kernel's default applies. */
+  setEffort(sessionId: string, effort: ModelEffort | null): Promise<void>
 }
 
 /** Whether a driver answers for its own models. */

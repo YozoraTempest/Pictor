@@ -12,7 +12,7 @@ import type {
   HarnessStatus,
   KernelCapabilities,
   KernelInfo,
-  KernelModelList,
+  KernelModelState,
   PermissionMode,
 } from '../../shared/bridge.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
@@ -182,7 +182,7 @@ export class KernelRouter implements KernelDriver {
   }
 
   /** The models the conversation's kernel offers, in its own words. */
-  async kernelModels(sessionId: string): Promise<KernelModelList> {
+  async kernelModels(sessionId: string): Promise<KernelModelState> {
     const driver = await this.#for(sessionId)
     if (!isModelSource(driver)) {
       throw new Error(`这个会话的内核「${driver.id}」不提供自己的模型列表`)
@@ -196,6 +196,14 @@ export class KernelRouter implements KernelDriver {
       throw new Error(`这个会话的内核「${driver.id}」不提供自己的模型列表`)
     }
     return driver.selectModel(sessionId, id)
+  }
+
+  async selectKernelEffort(sessionId: string, effort: ModelEffort | null): Promise<void> {
+    const driver = await this.#for(sessionId)
+    if (!isModelSource(driver)) {
+      throw new Error(`这个会话的内核「${driver.id}」不提供自己的思考档位`)
+    }
+    return driver.setEffort(sessionId, effort)
   }
 
   async listSkills(sessionId: string): Promise<CatalogSkill[]> {

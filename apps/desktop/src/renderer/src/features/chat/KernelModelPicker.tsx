@@ -2,8 +2,12 @@ import { Check, ChevronDown, ImageIcon, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import type { KernelModel, KernelModelList } from '../../../../shared/bridge.js'
+import type { KernelModel, KernelModelState } from '../../../../shared/bridge.js'
+import type { ModelEffort } from '@pictor/shared'
+
 import { cn } from '../../lib/cn.js'
+import { EffortSlider } from './EffortSlider.js'
+import { effortLabel, effortTone } from './effort.js'
 import { useKernelModelSource } from '../kernels/capabilities.js'
 import { useChatStore } from './chat-store.js'
 
@@ -27,7 +31,7 @@ const PANEL_WIDTH = 240
 export function KernelModelPicker(): React.JSX.Element | null {
   const sessionId = useChatStore((state) => state.current.sessionId)
   const source = useKernelModelSource(sessionId.length === 0 ? null : sessionId)
-  const [list, setList] = useState<KernelModelList | null>(null)
+  const [list, setList] = useState<KernelModelState | null>(null)
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<{ left: number; bottom: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -43,12 +47,12 @@ export function KernelModelPicker(): React.JSX.Element | null {
     let alive = true
     void window.pictor
       .kernelModels(sessionId)
-      .then((next) => {
+      .then((next: KernelModelState) => {
         if (alive) setList(next)
       })
       .catch((reason: unknown) => {
         if (!alive) return
-        setList({ models: [], activeId: null })
+        setList({ models: [], activeId: null, activeEffort: null })
         setError(reason instanceof Error ? reason.message : String(reason))
       })
     return () => {
@@ -103,6 +107,17 @@ export function KernelModelPicker(): React.JSX.Element | null {
   if (source !== 'kernel' || list === null) return null
 
   const active = list.models.find((model) => model.id === list.activeId) ?? null
+  const levels = active?.efforts ?? []
+
+  async function setEffort(level: ModelEffort | null): Promise<void> {
+    setError(null)
+    try {
+      await window.pictor.selectKernelEffort(sessionId, level)
+      setList(await window.pictor.kernelModels(sessionId))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
 
   async function choose(model: KernelModel): Promise<void> {
     close()
@@ -129,6 +144,7 @@ export function KernelModelPicker(): React.JSX.Element | null {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={active === null ? '选择内核模型' : `内核模型：${active.label}`}
+        title={active === null ? undefined : `${active.label} · ${effortLabel(list.activeEffort)}`}
         onClick={() => {
           if (open) close()
           else setOpen(true)
@@ -140,6 +156,11 @@ export function KernelModelPicker(): React.JSX.Element | null {
       >
         <Sparkles className="size-3 shrink-0 text-faint" aria-hidden />
         <span className="max-w-40 truncate">{active?.label ?? '选择模型'}</span>
+        {levels.length > 0 && (
+          <span className={cn('shrink-0', effortTone(list.activeEffort))}>
+            {effortLabel(list.activeEffort)}
+          </span>
+        )}
         <ChevronDown
           className={cn('size-3 shrink-0 text-faint transition-transform', open && 'rotate-180')}
           aria-hidden
@@ -160,6 +181,21 @@ export function KernelModelPicker(): React.JSX.Element | null {
             }}
             className="fixed z-50 flex max-h-96 flex-col overflow-y-auto rounded-xl border border-border bg-surface-raised p-1 shadow-popover"
           >
+            {levels.length > 0 && (
+              <div className="px-2 pt-1 pb-2">
+                <div className="flex items-center justify-between pb-1 text-2xs text-faint">
+                  <span>推理强度</span>
+                  <span className={effortTone(list.activeEffort)}>
+                    {effortLabel(list.activeEffort)}
+                  </span>
+                </div>
+                <EffortSlider
+                  levels={levels}
+                  value={list.activeEffort}
+                  onChange={(level) => void setEffort(level)}
+                />
+              </div>
+            )}
             {list.models.length === 0 ? (
               <p className="px-2 py-2 text-2xs leading-relaxed text-faint">
                 {error ?? '这个内核没有可选的模型。'}

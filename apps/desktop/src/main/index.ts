@@ -1207,6 +1207,18 @@ function registerIpc(workspace: Workspace): void {
     await workspace.harness.selectKernelModel(sessionId, id)
   })
 
+  ipcMain.handle(
+    'pictor:kernel.selectEffort',
+    async (_event, sessionId: unknown, effort: unknown) => {
+      if (typeof sessionId !== 'string' || sessionId.length === 0) {
+        throw new Error('sessionId must be a non-empty string')
+      }
+      // `null` clears the level and leaves the kernel's own default in place.
+      const level = effort === null || effort === undefined ? null : parseEffort(effort)
+      await workspace.harness.selectKernelEffort(sessionId, level)
+    },
+  )
+
   ipcMain.handle('pictor:rules.list', async (): Promise<ToolRule[]> => workspace.rules.rules)
 
   ipcMain.handle('pictor:rules.save', async (_event, value: unknown): Promise<ToolRule[]> => {
