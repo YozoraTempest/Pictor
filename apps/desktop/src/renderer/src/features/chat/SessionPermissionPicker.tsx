@@ -52,8 +52,6 @@ const MENU_WIDTH = 240
 export function SessionPermissionPicker(): React.JSX.Element | null {
   const sessionId = useChatStore((state) => state.current.sessionId)
   const [current, setCurrent] = useState<PermissionMode | null>(null)
-  /** True when the session has no recorded mode and the default is standing in. */
-  const [assumed, setAssumed] = useState(false)
   const [open, setOpen] = useState(false)
   const [confirm, setConfirm] = useState<PermissionMode | null>(null)
   const [busy, setBusy] = useState(false)
@@ -73,16 +71,14 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
       .then(async (mode) => {
         if (!alive) return
         if (mode !== null) {
-          setAssumed(false)
           setCurrent(mode)
           return
         }
         // A conversation that predates the permission service has no recorded
-        // value. Showing the default is more useful than hiding the control —
-        // as long as the menu says the value is the default, not this session's.
+        // value; the default is the closest true answer, and switching it once
+        // gives the conversation a value of its own.
         const status = await window.pictor.harnessStatus().catch(() => null)
         if (!alive) return
-        setAssumed(true)
         setCurrent(status?.permissionMode ?? null)
       })
       .catch(() => {
@@ -156,7 +152,6 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
     setError(null)
     try {
       const next = await window.pictor.setSessionPermission(sessionId, mode)
-      setAssumed(false)
       setCurrent(next)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -224,11 +219,6 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
             }}
             className="fixed z-50 flex flex-col rounded-xl border border-border bg-surface-raised p-1 shadow-popover"
           >
-            <p className="px-2 pt-1 pb-0.5 text-2xs text-faint">
-              {assumed
-                ? '这个会话没有记录权限，先按默认显示；选择后只对它生效'
-                : '只对当前会话生效'}
-            </p>
             {MODES.map((mode) => {
               const ModeIcon = mode.icon
               const selected = mode.id === current
