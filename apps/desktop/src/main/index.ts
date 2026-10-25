@@ -1071,6 +1071,27 @@ function registerIpc(workspace: Workspace): void {
     },
   )
 
+  ipcMain.handle('pictor:harness.sessionPermission', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0)
+      throw new Error('sessionId is required')
+    const current = await workspace.harness.sessionPermission(sessionId)
+    return isPermissionMode(current) ? current : null
+  })
+
+  ipcMain.handle(
+    'pictor:harness.setSessionPermission',
+    async (_event, sessionId: unknown, mode: unknown) => {
+      if (typeof sessionId !== 'string' || sessionId.length === 0)
+        throw new Error('sessionId is required')
+      if (!isPermissionMode(mode)) throw new Error('unknown permission mode')
+      await workspace.harness.setSessionPermission(sessionId, mode)
+      // The command answers without the new value, so the state is read back:
+      // a runtime that ignored the switch must not leave the composer claiming it.
+      const current = await workspace.harness.sessionPermission(sessionId)
+      return isPermissionMode(current) ? current : null
+    },
+  )
+
   // A skill's instructions live in a file the runtime discovered; showing it in
   // the file manager is the shortest path from "what is this skill" to the text.
   ipcMain.handle('pictor:shell.showItem', async (_event, path: unknown) => {

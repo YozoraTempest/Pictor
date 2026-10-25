@@ -178,8 +178,12 @@ export interface PictorBridge {
   harnessStop(): Promise<HarnessStatus>
   /** Install the pinned runtime into the profile; resolves when npm exits. */
   installHarness(): Promise<HarnessStatus>
-  /** Persisted sandbox mode; the runtime picks it up on its next start. */
+  /** Default sandbox mode for conversations created later; applied live. */
   setHarnessPermissionMode(mode: PermissionMode): Promise<HarnessStatus>
+  /** Sandbox mode the conversation behind `sessionId` is running under. */
+  getSessionPermission(sessionId: string): Promise<PermissionMode | null>
+  /** Switches one conversation's sandbox mode, without a restart. */
+  setSessionPermission(sessionId: string, mode: PermissionMode): Promise<PermissionMode | null>
   /** Skills the conversation behind `sessionId` can see, for `/` and settings. */
   listSkills(sessionId: string): Promise<SkillEntry[]>
   /** Switches one skill on or off and answers with the new list. */

@@ -10,6 +10,7 @@ import { cn } from '../../lib/cn.js'
 import { useChatStore } from './chat-store.js'
 import { ContextMeter } from './ContextMeter.js'
 import { ModelPicker } from './ModelPicker.js'
+import { SessionPermissionPicker } from './SessionPermissionPicker.js'
 import { matchSkills, slashTokenAt, type SlashToken } from './slash.js'
 
 /** Refuses anything the runtime could not accept, before the user commits it. */
@@ -257,6 +258,7 @@ export function Composer({
             reminder, and the rest of the row is information. */}
         <div className="flex items-center px-1 pt-1">
           <div className="ml-auto flex min-w-0 items-center gap-1">
+            <SessionPermissionPicker />
             <ContextMeter />
             <ModelPicker onChanged={onModelChanged} />
             {running ? (

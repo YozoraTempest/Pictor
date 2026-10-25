@@ -70,6 +70,9 @@ const bridge: PictorBridge = {
   harnessStop: () => invoke('pictor:harness.stop'),
   installHarness: () => invoke('pictor:harness.install'),
   setHarnessPermissionMode: (mode) => invoke('pictor:harness.setPermissionMode', mode),
+  getSessionPermission: (sessionId) => invoke('pictor:harness.sessionPermission', sessionId),
+  setSessionPermission: (sessionId, mode) =>
+    invoke('pictor:harness.setSessionPermission', sessionId, mode),
   listSkills: (sessionId) => invoke('pictor:harness.skills', sessionId),
   setSkillEnabled: (sessionId, name, enabled) =>
     invoke('pictor:harness.skillEnabled', sessionId, name, enabled),

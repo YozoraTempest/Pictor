@@ -395,6 +395,44 @@ export class HarnessService {
    * which is what the fingerprint decides.
    */
   /**
+   * The sandbox mode this conversation is running under.
+   *
+   * The runtime folds it from the preset the session was opened with and any
+   * later switch, so it is the session's own value — not the default Pictor
+   * stores for sessions that do not exist yet.
+   */
+  async sessionPermission(sessionId: string): Promise<string | null> {
+    const remote = this.#remote
+    if (remote === null) return null
+    const harnessId = await this.#sessionFor(sessionId)
+    const projections = await remote.call<{
+      values?: { permissions?: { currentValue?: unknown } }
+    }>('session/projections', { request: { sessionId: harnessId } })
+    const current = projections.values?.permissions?.currentValue
+    return typeof current === 'string' && current.length > 0 ? current : null
+  }
+
+  /**
+   * Switches one conversation's sandbox mode.
+   *
+   * The runtime's own `/permission` command is the only per-session switch it
+   * exposes, and it runs as a command rather than a prompt: nothing is sent to
+   * the model, and the turn in flight is untouched. A runtime that does not
+   * offer the command leaves the value unchanged, which is why the caller reads
+   * the value back instead of trusting this call.
+   */
+  async setSessionPermission(sessionId: string, mode: PermissionMode): Promise<void> {
+    const remote = this.#remote
+    if (remote === null) throw new Error('agent 运行时尚未启动')
+    const harnessId = await this.#sessionFor(sessionId)
+    await remote.call('commands/execute', {
+      agentId: harnessId,
+      line: `/permission ${mode}`,
+      submittedAttachments: [],
+    })
+  }
+
+  /**
    * Applies the permission default to a running runtime.
    *
    * `permission/defaultPreset` is a live namespace setting: the runtime re-applies
