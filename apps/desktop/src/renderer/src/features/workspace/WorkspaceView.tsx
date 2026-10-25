@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   RIGHT_DEFAULT,
@@ -59,6 +59,29 @@ export function WorkspaceView({ kernelId = null }: WorkspaceViewProps): React.JS
   const kernels = useWorkspaceStore((state) => state.kernels)
   const kernel = kernelId === null ? null : (kernels.find((entry) => entry.id === kernelId) ?? null)
   const unavailable = kernel !== null && !kernel.available
+
+  const sessions = useWorkspaceStore((state) => state.sessions)
+  const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
+  const selectSession = useWorkspaceStore((state) => state.selectSession)
+
+  /**
+   * A kernel page opens a conversation of its own kernel.
+   *
+   * Selection survives a view switch, so walking onto the Pi page from a dsh
+   * conversation would leave that transcript — and its sandbox and model controls —
+   * under a page that says Pi. Opening the newest conversation of the page's own
+   * kernel is what keeps the page true. Nothing is opened while a draft is being
+   * written: that conversation has no kernel yet.
+   */
+  useEffect(() => {
+    if (kernelId === null || selectedSessionId === null) return
+    const selected = sessions.find((session) => session.id === selectedSessionId)
+    if (selected !== undefined && selected.kernelId === kernelId) return
+    const next = sessions
+      .filter((session) => session.kernelId === kernelId && !session.archived)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    selectSession(next?.id ?? null)
+  }, [kernelId, selectedSessionId, sessions, selectSession])
 
   const sidebarVisible = leftPanelOpen || peeking
 

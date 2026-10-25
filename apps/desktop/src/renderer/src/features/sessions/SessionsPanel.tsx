@@ -335,6 +335,17 @@ export function SessionsPanel({ kernelId = null }: SessionsPanelProps): React.JS
     }
   }
 
+  /**
+   * What the list draws.
+   *
+   * A kernel page hides sections that hold nothing of that kernel. An empty
+   * heading reads as "this failed to load" rather than "nothing is filed here",
+   * and the section is still there on the home page — with every conversation in
+   * it — so nothing becomes unreachable. Reordering keeps using `nodes`: hiding a
+   * section must not shift the positions the drag math is based on.
+   */
+  const visibleNodes = kernelId === null ? nodes : nodes.filter((node) => node.children.length > 0)
+
   /** Sections the user can reorder; 已归档 is pinned to the bottom. */
   const movableSections = nodes.filter((node) => node.kind !== 'archived')
   const movableIndex = (node: SectionNode): number =>
@@ -599,7 +610,7 @@ export function SessionsPanel({ kernelId = null }: SessionsPanelProps): React.JS
             的会话。点上方的「新聊天」或者在下方描述任务，第一条消息会建立它。
           </p>
         )}
-        {nodes.map((node) => {
+        {visibleNodes.map((node) => {
           const isCollapsed = collapsed[node.id] === true
           const Chevron = isCollapsed ? ChevronRight : ChevronDown
           const isEditing = editing !== null && editing.id === node.sectionId

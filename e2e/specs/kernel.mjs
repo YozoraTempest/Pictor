@@ -106,6 +106,13 @@ export default {
       0,
       'the Pi page does not list a dsh conversation',
     )
+    // The open conversation is a Pi one too: selection survives a view switch, and
+    // a dsh transcript under a page that says Pi would keep its sandbox control.
+    assert.equal(
+      await page.locator('[aria-label^="会话权限："]').count(),
+      0,
+      'the Pi page does not keep a dsh conversation open',
+    )
     // The page has already answered "which kernel", so it offers no picker.
     assert.equal(
       await page.locator('[aria-label^="内核："]').count(),
@@ -120,6 +127,31 @@ export default {
       0,
       'the DSH page does not list a Pi conversation',
     )
+
+    // A heading with nothing under it reads as a failed load, so a kernel page only
+    // draws the sections that hold something of that kernel. 置顶 is the clean case:
+    // one pinned dsh conversation gives the section a body on the DSH page and none
+    // on the Pi page.
+    //
+    // Section titles are read from their own nodes: every tooltip in the app lives
+    // in the body with `opacity-0`, so a text search would match those instead.
+    const headings = () => page.locator('span.uppercase').allTextContents()
+
+    await page.evaluate((id) => window.pictor.setSessionPinned(id, true), created.id)
+    await page.reload()
+    await page.waitForSelector('header', { timeout: 30_000 })
+
+    await rail.getByRole('button', { name: 'PI', exact: true }).click()
+    await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
+    assert.ok(
+      !(await headings()).includes('置顶'),
+      'a section with nothing of this kernel in it is not drawn',
+    )
+
+    await rail.getByRole('button', { name: 'DSH', exact: true }).click()
+    await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
+    assert.ok((await headings()).includes('置顶'), 'the same section is there where it has a body')
+    await page.evaluate((id) => window.pictor.setSessionPinned(id, false), created.id)
 
     // Home spans both, and is the only page that offers the choice.
     await rail.getByRole('button', { name: '首页' }).click()
