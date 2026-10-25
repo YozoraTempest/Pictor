@@ -63,9 +63,12 @@ export default {
         'the rule refused the call before it ran',
       )
 
+      // A fresh conversation, so the stub plans its tool call again and the second
+      // answer cannot be confused with the one already on screen.
+      await page.getByRole('button', { name: '新聊天' }).click()
+
       // Removing the rule has to take effect for the next call, not the next boot.
       await page.evaluate(() => window.pictor.saveToolRules([]))
-      await page.keyboard.press('Control+n')
       const second = page.getByLabel('消息输入')
       await second.waitFor({ timeout: 20_000 })
       await second.fill('再执行一下')
