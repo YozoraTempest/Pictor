@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { delimiter, isAbsolute, join } from 'node:path'
 
 import type { HarnessNotification } from '@pictor/harness'
 import type { CatalogSkill, ChatHistoryPage, ChatImage, ModelEffort } from '@pictor/shared'
@@ -28,6 +28,12 @@ interface PiMessage {
   role?: unknown
   content?: unknown
   usage?: unknown
+}
+
+/** The tail of a child's stderr, as a clause to append to a failure reason. */
+function explain(stderr: string): string {
+  const tail = stderr.trim().split('\n').slice(-2).join(' ')
+  return tail.length === 0 ? '' : `：${tail}`
 }
 
 /**
@@ -69,7 +75,9 @@ export class PiCliDriver implements KernelDriver {
 
   constructor(options: PiCliDriverOptions) {
     this.#options = options
-    this.#binary = options.binary ?? 'pi'
+    // `PICTOR_PI_BIN` is the development counterpart of `PICTOR_DSH_BIN`: a pin
+    // for one checkout, or a wrapper that can be inspected.
+    this.#binary = options.binary ?? process.env['PICTOR_PI_BIN'] ?? 'pi'
   }
 
   // ---- lifecycle -----------------------------------------------------------
@@ -394,6 +402,8 @@ export class PiCliDriver implements KernelDriver {
     let stderr = ''
     let failure: string | null = null
     let answer = ''
+    /** Whether the turn produced anything at all: text, thinking, or a tool. */
+    let produced = false
     const collect = (): void => {
       for (;;) {
         const newline = buffer.indexOf('\n')
@@ -426,11 +436,16 @@ export class PiCliDriver implements KernelDriver {
             const kind = typeof inner['type'] === 'string' ? inner['type'] : ''
             const delta = typeof inner['delta'] === 'string' ? inner['delta'] : ''
             if (delta.length === 0) break
-            if (kind === 'text_delta') chunk({ type: 'text-delta', text: delta })
-            else if (kind === 'thinking_delta') chunk({ type: 'reasoning-delta', text: delta })
+            if (kind !== 'text_delta' && kind !== 'thinking_delta') break
+            produced = true
+            chunk({
+              type: kind === 'text_delta' ? 'text-delta' : 'reasoning-delta',
+              text: delta,
+            })
             break
           }
           case 'tool_execution_start': {
+            produced = true
             durable('tool/call', {
               name: typeof record['toolName'] === 'string' ? record['toolName'] : 'tool',
               callId: typeof record['toolCallId'] === 'string' ? record['toolCallId'] : '',
@@ -454,6 +469,7 @@ export class PiCliDriver implements KernelDriver {
             // The final text of the step, as a fallback for a run whose deltas
             // were lost: the window drops it when it already streamed the answer.
             answer = textOf(message.content)
+            if (answer.length > 0) produced = true
             const usage = (message.usage ?? {}) as Record<string, unknown>
             const count = (key: string): number | null => {
               const value = usage[key]
@@ -511,7 +527,14 @@ export class PiCliDriver implements KernelDriver {
     this.#running.delete(sessionId)
     const cancelled = this.#cancelling.delete(sessionId)
     if (failure === null && !cancelled && code !== 0) {
-      failure = `pi 退出码 ${String(code)}${stderr.length === 0 ? '' : `：${stderr.trim().split('\n').slice(-2).join(' ')}`}`
+      failure = `pi 退出码 ${String(code)}${explain(stderr)}`
+    }
+    // An exit code of 0 that produced nothing is still a failure: a turn that
+    // simply closes would leave an empty answer with no reason why. Pi writes
+    // nothing to stdout when its model step produced no content at all, so the
+    // reason, if any, is on stderr.
+    if (failure === null && !cancelled && !produced) {
+      failure = `pi 没有返回任何内容，退出码 0${explain(stderr)}`
     }
 
     // A run that streamed nothing would otherwise close with an empty bubble;
@@ -545,6 +568,8 @@ export class PiCliDriver implements KernelDriver {
 
   /** Whether the executable resolves; checked per call so an install shows up. */
   #available(): boolean {
+    // A configured binary names a path, not a name to look up on PATH.
+    if (isAbsolute(this.#binary)) return existsSync(this.#binary)
     const path = process.env['PATH'] ?? ''
     return path
       .split(delimiter)
