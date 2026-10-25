@@ -58,7 +58,14 @@ describe('HarnessChatBridge', () => {
         }),
       ),
     ).toEqual([
-      { type: 'tool.started', sessionId: 's1', runId: 't2', tool: 'read', input: { path: 'a.ts' } },
+      {
+        type: 'tool.started',
+        sessionId: 's1',
+        runId: 't2',
+        tool: 'read',
+        input: { path: 'a.ts' },
+        callId: 'call-1',
+      },
     ])
 
     expect(
@@ -73,7 +80,15 @@ describe('HarnessChatBridge', () => {
           },
         }),
       ),
-    ).toMatchObject([{ type: 'tool.finished', tool: 'read', isError: false, output: 'file body' }])
+    ).toMatchObject([
+      {
+        type: 'tool.finished',
+        tool: 'read',
+        isError: false,
+        output: 'file body',
+        callId: 'call-1',
+      },
+    ])
   })
 
   it('closes the run on turn/end and forgets its id', () => {
@@ -272,6 +287,52 @@ describe('follow stream', () => {
         ...extra,
       })
 
+    it('shows a call while its arguments are still streaming', () => {
+      const bridge = new HarnessChatBridge()
+      bridge.map(sessionEvent('turn/start', { turn: 1 }))
+
+      const chunk = (argsDelta: string, name?: string) =>
+        follow({
+          type: 'assistant-stream',
+          frame: {
+            type: 'chunk',
+            attemptId: 'a',
+            revision: 1,
+            index: 0,
+            time: 0,
+            chunk: {
+              type: 'tool-call-delta',
+              index: 0,
+              id: 'c9',
+              ...(name ? { name } : {}),
+              argumentsDelta: argsDelta,
+            },
+          },
+        })
+
+      // The name only arrives on the first delta; later ones carry arguments only,
+      // so the row has to remember what the call is.
+      expect(bridge.map(chunk('{"path"', 'read'))).toEqual([
+        {
+          type: 'tool.pending',
+          sessionId: 's1',
+          runId: 't1',
+          callId: 'c9',
+          tool: 'read',
+          argumentsText: '{"path"',
+        },
+      ])
+      expect(bridge.map(chunk(': "a.md"}'))).toEqual([
+        {
+          type: 'tool.pending',
+          sessionId: 's1',
+          runId: 't1',
+          callId: 'c9',
+          tool: 'read',
+          argumentsText: '{"path": "a.md"}',
+        },
+      ])
+    })
     it('reports a call with its arguments parsed', () => {
       const bridge = new HarnessChatBridge()
       bridge.map(sessionEvent('turn/start', { turn: 1 }))
@@ -283,6 +344,7 @@ describe('follow stream', () => {
           runId: 't1',
           tool: 'read',
           input: { file_path: 'a.md' },
+          callId: 'c1',
         },
       ])
     })
@@ -300,6 +362,7 @@ describe('follow stream', () => {
           tool: 'read',
           output: 'file body',
           isError: false,
+          callId: 'c1',
         },
       ])
     })

@@ -15,6 +15,12 @@ export interface ChatMessage {
    */
   seq?: number
   toolName?: string
+  /** Runtime identity of the call, so a streamed row and its result can meet. */
+  toolCallId?: string
+  /** True while the model is still writing the call's arguments. */
+  pending?: boolean
+  /** Arguments as far as they have arrived; parsed `input` follows on start. */
+  argumentsText?: string
   isError?: boolean
   /** True when a tool guard denied the call; the text holds the reason. */
   blocked?: boolean
@@ -64,7 +70,29 @@ export type ChatEvent =
       output: number | null
       total: number | null
     }
-  | { type: 'tool.started'; sessionId: string; runId: string; tool: string; input: unknown }
+  /**
+   * A tool call the model is still writing.
+   *
+   * The call is not executable yet — the arguments are incomplete — but showing it
+   * now is the difference between a turn that looks stalled and one that is working.
+   */
+  | {
+      type: 'tool.pending'
+      sessionId: string
+      runId: string
+      callId: string
+      tool: string
+      /** Arguments as far as they have streamed; not valid JSON until it finishes. */
+      argumentsText: string
+    }
+  | {
+      type: 'tool.started'
+      sessionId: string
+      runId: string
+      tool: string
+      input: unknown
+      callId?: string
+    }
   | {
       type: 'tool.finished'
       sessionId: string
@@ -74,6 +102,7 @@ export type ChatEvent =
       isError: boolean
       /** Unified diff the tool reported, when it made one. */
       diff?: string
+      callId?: string
     }
   | {
       type: 'tool.blocked'

@@ -10,7 +10,12 @@ import assert from 'node:assert/strict'
 export default {
   name: 'search palette',
   async run(page) {
-    // The button order is the whole point of placing it here.
+    // The panel toggle reads 展开 or 收起 depending on whether an earlier spec left
+    // the right panel open, so collapse it first: the button order is what this
+    // check is about, not the panel's state.
+    const collapse = page.locator('header button[aria-label="收起右侧面板"]')
+    if ((await collapse.count()) > 0) await collapse.first().click()
+
     const toolbar = await page.$$eval('header button[aria-label]', (nodes) =>
       nodes.map((node) => node.getAttribute('aria-label')),
     )
@@ -27,9 +32,12 @@ export default {
     await assert.doesNotReject(() => input.fill('zzz-没有这个会话'))
     await dialog.getByText('没有匹配的会话').waitFor({ timeout: 5_000 })
 
+    // The rows come from whatever this profile already holds; a spec run on its own
+    // starts with none, and the listing check is only meaningful when there is one.
     await input.fill('')
     const rows = dialog.locator('li')
-    await rows.first().waitFor({ timeout: 5_000 })
+    await page.waitForTimeout(300)
+    if ((await rows.count()) > 0) await rows.first().waitFor({ timeout: 5_000 })
 
     await page.keyboard.press('Escape')
     await dialog.waitFor({ state: 'detached', timeout: 5_000 })

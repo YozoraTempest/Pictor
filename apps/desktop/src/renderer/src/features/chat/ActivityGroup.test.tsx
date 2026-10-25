@@ -136,3 +136,34 @@ describe('tool icons', () => {
     expect(row.querySelectorAll('svg')).toHaveLength(2)
   })
 })
+
+describe('long tool output', () => {
+  const long = (id: string, lines: number) =>
+    msg({
+      id,
+      role: 'tool',
+      toolName: 'bash',
+      text: Array.from({ length: lines }, (_, index) => `line ${String(index + 1)}`).join('\n'),
+    })
+
+  it('folds a long body and opens it on demand', async () => {
+    render(<ActivityGroup messages={[long('x1', 60)]} running={false} />)
+
+    // Opening the row reveals its body; the body is what gets folded.
+    await userEvent.click(screen.getByRole('button', { name: /^运行/ }))
+    expect(screen.queryByText(/line 60\b/)).toBeNull()
+    const more = screen.getByRole('button', { name: /显示全部（还有 36 行）/ })
+
+    await userEvent.click(more)
+    expect(screen.getByText(/line 60\b/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
+  })
+
+  it('shows a short body whole, with no fold to click', async () => {
+    render(<ActivityGroup messages={[long('x1', 3)]} running={false} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /^运行/ }))
+    expect(screen.getByText(/line 3\b/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /显示全部/ })).toBeNull()
+  })
+})

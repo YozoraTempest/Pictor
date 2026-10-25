@@ -89,6 +89,16 @@ function findPendingToolRow(messages: readonly ChatMessage[], tool: string): num
   return -1
 }
 
+/**
+ * Row showing one streamed call, by the runtime's call id.
+ *
+ * A call is identified by that id, not by its tool: two `read` calls can be in
+ * flight at once, and matching on the name would let one overwrite the other.
+ */
+function indexOfCall(messages: readonly ChatMessage[], callId: string): number {
+  return messages.findIndex((message) => message.toolCallId === callId)
+}
+
 /** Index of the newest row for `tool`, whatever its state, or -1. */
 function findLastToolRow(messages: readonly ChatMessage[], tool: string): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -394,29 +404,75 @@ export const useChatStore = create<ChatState>()((set, get) => {
         return
       }
 
-      if (event.type === 'tool.started') {
-        patch(sessionId, (state) => ({
-          phase: 'tool',
-          currentTool: event.tool,
-          messages: [
-            ...state.messages,
-            {
-              id: `tool-${event.runId}-${String(state.messages.length)}`,
-              role: 'tool',
-              text: '',
-              timestamp: Date.now(),
-              toolName: event.tool,
-              input: event.input,
-            },
-          ],
-        }))
+      if (event.type === 'tool.pending') {
+        // The call is still being written: show it now, and rewrite the same row as
+        // more arguments arrive instead of appending a row per token.
+        patch(sessionId, (state) => {
+          const messages = [...state.messages]
+          const at = indexOfCall(messages, event.callId)
+          const row: ChatMessage = {
+            id: `tool-${event.callId}`,
+            role: 'tool',
+            text: '',
+            timestamp: Date.now(),
+            toolName: event.tool,
+            toolCallId: event.callId,
+            pending: true,
+            argumentsText: event.argumentsText,
+          }
+          if (at >= 0) messages[at] = { ...row, timestamp: messages[at]?.timestamp ?? null }
+          else messages.push(row)
+          return { phase: 'tool', currentTool: event.tool, messages }
+        })
         return
       }
 
+      if (event.type === 'tool.started') {
+        patch(sessionId, (state) => {
+          const messages = [...state.messages]
+          const at = event.callId === undefined ? -1 : indexOfCall(messages, event.callId)
+          if (at >= 0) {
+            // The streamed row and the real call are the same call: complete it in
+            // place rather than leaving a stub above the real result.
+            const existing = messages[at]
+            if (existing !== undefined) {
+              messages[at] = {
+                id: `tool-${event.runId}-${String(at)}`,
+                role: 'tool',
+                text: '',
+                timestamp: existing.timestamp,
+                toolName: event.tool,
+                input: event.input,
+                ...(event.callId === undefined ? {} : { toolCallId: event.callId }),
+              }
+            }
+            return { phase: 'tool', currentTool: event.tool, messages }
+          }
+
+          return {
+            phase: 'tool',
+            currentTool: event.tool,
+            messages: [
+              ...messages,
+              {
+                id: `tool-${event.runId}-${String(messages.length)}`,
+                role: 'tool',
+                text: '',
+                timestamp: Date.now(),
+                toolName: event.tool,
+                input: event.input,
+                ...(event.callId === undefined ? {} : { toolCallId: event.callId }),
+              },
+            ],
+          }
+        })
+        return
+      }
       if (event.type === 'tool.finished') {
         patch(sessionId, (state) => {
           const messages = [...state.messages]
-          const pending = findPendingToolRow(messages, event.tool)
+          const byCall = event.callId === undefined ? -1 : indexOfCall(messages, event.callId)
+          const pending = byCall >= 0 ? byCall : findPendingToolRow(messages, event.tool)
 
           if (pending >= 0) {
             const existing = messages[pending]
@@ -425,7 +481,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
                 ...existing,
                 text: event.output.slice(0, 4000),
                 isError: event.isError,
+                pending: false,
                 ...(event.diff === undefined ? {} : { diff: event.diff }),
+                ...(event.callId === undefined ? {} : { toolCallId: event.callId }),
               }
             }
             return { messages }
@@ -446,6 +504,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
                 timestamp: Date.now(),
                 toolName: event.tool,
                 isError: event.isError,
+                ...(event.callId === undefined ? {} : { toolCallId: event.callId }),
               },
             ],
           }

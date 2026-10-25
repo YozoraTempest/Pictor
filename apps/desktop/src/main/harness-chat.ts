@@ -66,6 +66,8 @@ export class HarnessChatBridge {
   readonly #streamed = new Set<string>()
   /** Tool name per `<session>:<callId>`; a result carries only the call id. */
   readonly #calls = new Map<string, string>()
+  /** Arguments streamed so far per `<session>:<callId>`, until the call lands. */
+  readonly #partials = new Map<string, string>()
 
   /** Map one notification to renderer events; unknown notifications map to none. */
   map(notification: HarnessNotification): ChatEvent[] {
@@ -164,6 +166,29 @@ export class HarnessChatBridge {
       if (input === null && output === null && total === null) return []
       return [{ type: 'run.usage', sessionId, runId, input, output, total }]
     }
+    if (chunk.type === 'tool-call-delta') {
+      // The model writes a call's arguments token by token. Showing the row now,
+      // with the arguments as far as they got, is what keeps a slow tool call from
+      // looking like a stalled turn; the durable `tool/call` completes it.
+      const callId = typeof chunk.id === 'string' ? chunk.id : ''
+      if (callId.length === 0) return []
+      const key = `${sessionId}:${callId}`
+      const tool = typeof chunk.name === 'string' ? chunk.name : ''
+      if (tool.length > 0) this.#calls.set(key, tool)
+      const delta = typeof chunk.argumentsDelta === 'string' ? chunk.argumentsDelta : ''
+      const partial = `${this.#partials.get(key) ?? ''}${delta}`
+      this.#partials.set(key, partial)
+      return [
+        {
+          type: 'tool.pending',
+          sessionId,
+          runId,
+          callId,
+          tool: this.#calls.get(key) ?? 'tool',
+          argumentsText: partial,
+        },
+      ]
+    }
     if (chunk.type !== 'text-delta') return []
     if (typeof chunk.text !== 'string' || chunk.text.length === 0) return []
 
@@ -207,7 +232,11 @@ export class HarnessChatBridge {
       case 'tool/call': {
         const tool = String(data['name'] ?? 'tool')
         const callId = typeof data['callId'] === 'string' ? data['callId'] : ''
-        if (callId.length > 0) this.#calls.set(`${sessionId}:${callId}`, tool)
+        if (callId.length > 0) {
+          this.#calls.set(`${sessionId}:${callId}`, tool)
+          // The call is now complete, so the streamed copy is no longer needed.
+          this.#partials.delete(`${sessionId}:${callId}`)
+        }
         return [
           {
             type: 'tool.started',
@@ -215,6 +244,7 @@ export class HarnessChatBridge {
             runId: this.#runId(sessionId),
             tool,
             input: parseArguments(data['arguments']),
+            ...(callId.length === 0 ? {} : { callId }),
           },
         ]
       }
@@ -239,6 +269,7 @@ export class HarnessChatBridge {
             tool,
             output: textOf({ content: message.content }),
             isError: message.isError === true || data['error'] !== undefined,
+            ...(callId.length === 0 ? {} : { callId }),
           },
         ]
       }

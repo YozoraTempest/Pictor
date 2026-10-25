@@ -10,8 +10,6 @@ import { ThinkingBlock } from './ThinkingBlock.js'
 import { presentTool } from './tool-presenters.js'
 import { groupActivityItems, type ActivityItem } from './turns.js'
 
-const BODY_LIMIT = 4000
-
 /**
  * Everything the agent did between two answers: its reasoning interleaved with
  * the tool calls it made.
@@ -291,9 +289,7 @@ function ToolCallRow({
                   {section.format === 'diff' ? (
                     <DiffBlock body={section.body} />
                   ) : (
-                    <pre className="selectable max-h-48 overflow-auto rounded-md bg-bg px-2 py-1.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-muted">
-                      {clipBody(section.body)}
-                    </pre>
+                    <ToolBody body={section.body} />
                   )}
                 </div>
               ))}
@@ -336,6 +332,45 @@ function DiffBlock({ body }: { body: string }): React.JSX.Element {
   )
 }
 
-function clipBody(body: string): string {
-  return body.length > BODY_LIMIT ? `${body.slice(0, BODY_LIMIT)}…` : body
+/** Fold threshold: enough lines to see the shape of an output, not all of it. */
+const FOLD_LINES = 24
+/** Hard cap on what an expanded body renders, so one huge tool cannot stall the DOM. */
+const HARD_LIMIT = 40_000
+
+/**
+ * One tool body, folded when it is long.
+ *
+ * A `grep` over a large tree or a `read` of a big file produces thousands of lines;
+ * showing all of them turns the transcript into a wall the reader has to scroll
+ * past. The row shows the first lines and says how many more there are, and the
+ * rest is one click away — still bounded, because an unbounded `<pre>` would cost
+ * more to paint than the answer it belongs to.
+ */
+function ToolBody({ body }: { body: string }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const lines = body.split('\n')
+  const folded = lines.length > FOLD_LINES
+  const shown = !folded || expanded ? body : lines.slice(0, FOLD_LINES).join('\n')
+  const clipped = shown.length > HARD_LIMIT
+
+  return (
+    <div className="flex flex-col gap-1">
+      <pre className="selectable max-h-48 overflow-auto rounded-md bg-bg px-2 py-1.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-muted">
+        {clipped ? `${shown.slice(0, HARD_LIMIT)}…` : shown}
+      </pre>
+      {(folded || clipped) && (
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          className="self-start rounded-sm px-1 text-2xs text-faint transition-colors duration-150 hover:text-muted"
+        >
+          {expanded
+            ? '收起'
+            : clipped && !folded
+              ? `显示全部（${String(shown.length)} 字符）`
+              : `显示全部（还有 ${String(lines.length - FOLD_LINES)} 行）`}
+        </button>
+      )}
+    </div>
+  )
 }

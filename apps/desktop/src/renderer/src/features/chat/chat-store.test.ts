@@ -65,6 +65,66 @@ describe('chat-store handleEvent', () => {
     ).toEqual(['先看看', '目录里有 a'])
   })
 
+  it('completes a streamed tool row in place when the call lands', () => {
+    const { handleEvent } = useChatStore.getState()
+
+    handleEvent({ type: 'run.started', sessionId: 's1', runId: 'run-1' })
+    handleEvent({
+      type: 'tool.pending',
+      sessionId: 's1',
+      runId: 'run-1',
+      callId: 'c1',
+      tool: 'read',
+      argumentsText: '{"path": "a.md"}',
+    })
+    handleEvent({
+      type: 'tool.started',
+      sessionId: 's1',
+      runId: 'run-1',
+      tool: 'read',
+      input: { path: 'a.md' },
+      callId: 'c1',
+    })
+    handleEvent({
+      type: 'tool.finished',
+      sessionId: 's1',
+      runId: 'run-1',
+      tool: 'read',
+      output: 'file body',
+      isError: false,
+      callId: 'c1',
+    })
+
+    const messages = useChatStore.getState().current.messages
+    // One call, one row: the streamed stub must not survive beside the real call.
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: 'tool',
+      toolName: 'read',
+      input: { path: 'a.md' },
+      text: 'file body',
+      pending: false,
+    })
+  })
+
+  it('keeps two calls of the same tool apart while they stream', () => {
+    const { handleEvent } = useChatStore.getState()
+    handleEvent({ type: 'run.started', sessionId: 's1', runId: 'run-1' })
+    for (const callId of ['a', 'b']) {
+      handleEvent({
+        type: 'tool.pending',
+        sessionId: 's1',
+        runId: 'run-1',
+        callId,
+        tool: 'read',
+        argumentsText: `{"path": "${callId}.md"}`,
+      })
+    }
+
+    const rows = useChatStore.getState().current.messages
+    expect(rows.map((row) => row.toolCallId)).toEqual(['a', 'b'])
+  })
+
   it('closes a tool row that never reported a result when the run ends', () => {
     const { handleEvent } = useChatStore.getState()
 

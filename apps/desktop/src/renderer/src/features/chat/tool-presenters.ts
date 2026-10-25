@@ -86,11 +86,21 @@ export function decorateToolPresentation(
 /** Presentation for a tool call; unknown tools fall back to args + output. */
 export function presentTool(message: ChatMessage): ToolPresentation {
   const tool = message.toolName ?? 'tool'
+  if (message.pending === true) {
+    // The arguments are still arriving, so there is nothing parsed to describe:
+    // the raw tail is the honest summary, and it shows the call is alive.
+    const partial = (message.argumentsText ?? '').replace(/\s+/g, ' ').trim()
+    return {
+      label: toolLabel(tool),
+      target: partial.length === 0 ? '准备中…' : clip(partial, 48),
+      icon: Terminal,
+      sections: [],
+    }
+  }
   const presenter = presenters.get(tool)
   if (presenter !== undefined) return presenter(message)
   return fallbackPresentation(message, tool)
 }
-
 /** Display name for a tool, used where only the name is known (status line). */
 export function toolLabel(tool: string): string {
   const presenter = presenters.get(tool)
