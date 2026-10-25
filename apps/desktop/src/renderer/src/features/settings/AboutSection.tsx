@@ -1,4 +1,9 @@
+import { FolderOpen } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+import type { HarnessStatus } from '../../../../shared/bridge.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
+import { Button } from '../../components/ui/index.js'
 import { Section } from './Section.js'
 
 export function AboutSection(): React.JSX.Element {
@@ -6,6 +11,16 @@ export function AboutSection(): React.JSX.Element {
   const report = useWorkspaceStore((state) => state.report)
   const projects = useWorkspaceStore((state) => state.projects)
   const sessions = useWorkspaceStore((state) => state.sessions)
+  const [runtime, setRuntime] = useState<HarnessStatus | null>(null)
+
+  // Where the kernel keeps its profiles and session logs: a diagnostic, so it
+  // lives here rather than on the page that manages the process.
+  useEffect(() => {
+    void window.pictor
+      .harnessStatus()
+      .then(setRuntime)
+      .catch(() => undefined)
+  }, [])
 
   const rows: Array<[string, string]> = [
     ['版本', info?.version ?? '—'],
@@ -33,6 +48,23 @@ export function AboutSection(): React.JSX.Element {
             {info?.database ?? '—'}
           </dd>
         </div>
+
+        {runtime !== null && (
+          <div className="flex flex-col gap-1">
+            <dt className="flex items-center justify-between gap-3 text-xs text-faint">
+              内核目录
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void window.pictor.showInFolder(runtime.home)}
+              >
+                <FolderOpen className="size-3.5" />
+                打开
+              </Button>
+            </dt>
+            <dd className="selectable break-all font-mono text-2xs text-muted">{runtime.home}</dd>
+          </div>
+        )}
       </dl>
     </Section>
   )
