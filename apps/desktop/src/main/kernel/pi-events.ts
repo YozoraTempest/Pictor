@@ -179,6 +179,8 @@ export class PiTranslator {
     stderr: string
     /** Why the turn failed, when the caller already knows (a refused command, a crash). */
     failure?: string | null
+    /** The stored question's entry id, when the kernel reported one. */
+    forkId?: string
   }): PiFrame[] {
     const frames: PiFrame[] = []
     let failure = input.failure ?? this.#failure
@@ -206,6 +208,7 @@ export class PiTranslator {
       kind: 'event',
       type: 'turn/end',
       data: {
+        ...(input.forkId === undefined ? {} : { forkId: input.forkId }),
         reason: this.#cancelled
           ? { kind: 'aborted' }
           : failure === null

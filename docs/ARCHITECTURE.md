@@ -77,9 +77,10 @@ rpc` speaks JSONL commands on stdin and streams the same events over stdout,
   (`ELECTRON_RUN_AS_NODE`), not on whatever `node` PATH offers: Pi needs Node 22.19
   or newer and a desktop app cannot assume the machine has it. Images travel as
   content parts, and a model that cannot see them is refused by name before the
-  turn is spent. It still has no tool approvals, no mid-turn questions, no
-  per-session sandbox and no message-level fork; it throws for each instead of
-  faking them. Its transcript is read back from Pi's own session file
+  turn is spent. It branches conversations at a user message's entry id, and it
+  answers for its own model catalogue (`KernelModelSource`). It still has no tool
+  approvals, no mid-turn questions and no per-session sandbox; it throws for each
+  instead of faking them. Its transcript is read back from Pi's own session file
   (`kernel/pi-history.ts`), because Pictor keeps none.
 
 Each driver also declares what it can do (`KernelCapabilities`: sandbox, model,

@@ -3,6 +3,7 @@ import type {
   ChatAnswer,
   ChatImage,
   ChatQuestionRequest,
+  ForkPoint,
   CcSwitchProviderSummary,
   ProviderInput,
   ProviderList,
@@ -305,7 +306,14 @@ export interface PictorBridge {
    * `atSeq` is an inclusive event boundary — one message's `seq` — and omitting
    * it copies the latest completed turn.
    */
-  forkSession(sessionId: string, atSeq?: number): Promise<string>
+  /**
+   * Branches a conversation at one of its messages.
+   *
+   * The point is whatever the row carries — a durable event boundary for dsh, an
+   * entry id for a kernel that forks by message — and the kernel takes what it can
+   * address.
+   */
+  forkSession(sessionId: string, at?: ForkPoint): Promise<string>
   chatHistory(path: string, limit: number, offset: number): Promise<ChatHistoryPage>
   onChatEvent(listener: (event: ChatEvent) => void): () => void
   /** One line of the runtime install command, for the page that started it. */

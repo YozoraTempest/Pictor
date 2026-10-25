@@ -1,4 +1,6 @@
 import { GitBranch, Sparkles } from 'lucide-react'
+
+import type { ForkPoint } from '@pictor/shared'
 import { useEffect, useState } from 'react'
 
 import { IconButton } from '../../components/ui/index.js'
@@ -15,7 +17,7 @@ export interface TurnBlockProps {
   phase: AgentPhase
   currentTool: string | null
   /** Branch the conversation at one message, keeping it; absent when unsupported. */
-  onFork?: (seq: number) => void
+  onFork?: (point: ForkPoint) => void
 }
 
 /**
@@ -38,8 +40,8 @@ export function TurnBlock({
     <section id={turn.id} className="flex scroll-mt-4 flex-col gap-3">
       {turn.user !== null && (
         <div className="group flex items-center justify-end gap-1">
-          {onFork !== undefined && turn.beforeSeq !== null && (
-            <ForkButton seq={turn.beforeSeq} label="在这一问之前分叉" onFork={onFork} />
+          {onFork !== undefined && turn.before !== null && (
+            <ForkButton point={turn.before} label="在这一问之前分叉" onFork={onFork} />
           )}
           <div className="flex max-w-2xl flex-col items-end gap-1">
             <div className="selectable flex flex-col gap-2 rounded-lg rounded-br-sm border border-border bg-surface-raised px-3.5 py-2 text-sm whitespace-pre-wrap">
@@ -85,9 +87,9 @@ export function TurnBlock({
             return (
               <div key={part.id} className="group/part selectable text-sm leading-relaxed">
                 <Markdown text={part.text} />
-                {onFork !== undefined && part.seq !== undefined && (
+                {onFork !== undefined && part.fork !== undefined && (
                   <div className="mt-1 flex justify-end">
-                    <ForkButton seq={part.seq} label="从这条回答分叉" onFork={onFork} />
+                    <ForkButton point={part.fork} label="从这条回答分叉" onFork={onFork} />
                   </div>
                 )}
               </div>
@@ -108,21 +110,22 @@ export function TurnBlock({
  * button is rendered by the parent rather than always.
  */
 function ForkButton({
-  seq,
+  point,
   label,
   onFork,
 }: {
-  seq: number
+  /** Where the conversation is cut: an event boundary or a kernel entry id. */
+  point: ForkPoint
   /** Two rows in one turn can both fork, so each says which one it branches. */
   label: string
-  onFork: (seq: number) => void
+  onFork: (point: ForkPoint) => void
 }): React.JSX.Element {
   return (
     <span className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within/part:opacity-100">
       <IconButton
         label={label}
         className="size-6 text-faint hover:text-text"
-        onClick={() => onFork(seq)}
+        onClick={() => onFork(point)}
       >
         <GitBranch className="size-3" />
       </IconButton>

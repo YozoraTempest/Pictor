@@ -14,6 +14,14 @@ export interface ChatMessage {
    * the row is not a place to branch from.
    */
   seq?: number
+  /**
+   * The kernel's own name for the fork point this row starts at.
+   *
+   * A kernel that branches by entry id (`pi` forks from a user message's entry)
+   * cannot be addressed with `seq`, so the id travels with the row instead. Absent
+   * means this row is not a fork point for that kernel.
+   */
+  forkId?: string
   toolName?: string
   /** Runtime identity of the call, so a streamed row and its result can meet. */
   toolCallId?: string
@@ -49,6 +57,19 @@ export interface ChatImage {
   name?: string
 }
 
+/**
+ * Where a conversation should be cut.
+ *
+ * `seq` is the durable event boundary dsh forks at; `id` is the kernel's own entry
+ * id for a kernel that forks by message. A caller sends what its rows carry and the
+ * kernel takes what it can address.
+ */
+export interface ForkPoint {
+  seq?: number
+  id?: string
+}
+
+/** A conversation's history, newest page last. */
 export interface ChatHistoryPage {
   messages: ChatMessage[]
   /** Offset to pass to the next history call to load older messages. */
@@ -119,6 +140,13 @@ export type ChatEvent =
       message?: string
       /** Sequence of `turn/end`: the boundary a fork after this turn keeps. */
       seq?: number
+      /**
+       * The kernel's fork point for the question this turn answered.
+       *
+       * A kernel that branches by entry id only learns it once the turn is stored,
+       * so it arrives here rather than with `run.started`.
+       */
+      forkId?: string
     }
   | {
       /** The runtime is re-running a failed model step inside the same turn. */

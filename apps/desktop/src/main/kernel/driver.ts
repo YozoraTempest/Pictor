@@ -4,6 +4,7 @@ import type {
   ChatAnswer,
   ChatHistoryPage,
   ChatImage,
+  ForkPoint,
   ModelEffort,
 } from '@pictor/shared'
 
@@ -63,7 +64,13 @@ export interface KernelDriver {
   /** Stops the turn a conversation is running. */
   cancel(sessionId: string): Promise<void>
   /** Branches a conversation; resolves with the new Pictor session id. */
-  fork(sessionId: string, atSeq?: number): Promise<string>
+  /**
+   * Branches a conversation; resolves with the new kernel session id.
+   *
+   * The point is whatever the caller's rows carry: a durable event boundary for a
+   * kernel that forks by sequence, an entry id for one that forks by message.
+   */
+  fork(sessionId: string, at?: ForkPoint): Promise<string>
   /** Records that an existing kernel session belongs to a Pictor conversation. */
   adopt(sessionId: string, kernelSessionId: string): void
 

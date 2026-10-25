@@ -11,7 +11,13 @@ import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 
 import type { HarnessNotification } from '@pictor/harness'
-import type { CatalogSkill, ChatHistoryPage, ChatImage, ModelEffort } from '@pictor/shared'
+import type {
+  CatalogSkill,
+  ChatHistoryPage,
+  ChatImage,
+  ForkPoint,
+  ModelEffort,
+} from '@pictor/shared'
 
 import type {
   HarnessStatus,
@@ -99,20 +105,29 @@ interface RpcResponse {
 export class PiRpcDriver implements KernelDriver, KernelModelSource {
   readonly id = 'pi'
   /**
-   * Pi answers for its own models, so its picker reads Pi's catalogue; it still
-   * decides the sandbox, the skill catalog and the fork boundaries itself.
+   * Pi answers for its own models and branches its own conversations; it still
+   * decides the sandbox and the skill catalog itself.
    */
   readonly capabilities: KernelCapabilities = {
     permission: false,
     model: true,
     skills: false,
-    fork: false,
+    fork: true,
   }
 
   readonly #options: PiRpcDriverOptions
   readonly #listeners = new Set<(notification: HarnessNotification) => void>()
   /** One child per conversation, started on first use. */
   readonly #kids = new Map<string, Kid>()
+  /**
+   * Children whose conversation has not been adopted yet.
+   *
+   * A fork leaves the child running the *branch*, while the Pictor session for that
+   * branch does not exist until the caller creates it. Holding it here by the
+   * kernel's own id lets {@link adopt} hand it over instead of throwing away a live
+   * session that already has the right history.
+   */
+  readonly #orphans = new Map<string, Kid>()
   /** Turn counter per conversation; the run id the window keys its stream on. */
   readonly #turns = new Map<string, number>()
   /** Pictor session id → Pi session id; persisted so a restart can resume. */
@@ -140,8 +155,9 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   }
 
   async stop(): Promise<HarnessStatus> {
-    const kids = [...this.#kids.values()]
+    const kids = [...this.#kids.values(), ...this.#orphans.values()]
     this.#kids.clear()
+    this.#orphans.clear()
     for (const kid of kids) this.#closeTurn(kid, { reason: 'stopped' })
     await Promise.all(kids.map((kid) => this.#shutdown(kid)))
     return this.status()
@@ -248,9 +264,54 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     await this.#request(kid, { type: 'abort' }).catch(() => undefined)
   }
 
-  /** Pi can fork, but not yet through Pictor's message rows — see the class doc. */
-  async fork(): Promise<string> {
-    throw new Error('Pi 内核还不能在会话中分叉')
+  /**
+   * Branches the conversation at one of its user messages.
+   *
+   * Pi forks by entry id, so the point comes from a row's `forkId`; without one it
+   * takes the newest forkable question, which is what "branch from here" means when
+   * no message was picked. The fork happens inside the conversation's own process,
+   * which then *is* the new branch — so this closes that process: the original
+   * conversation keeps its file and starts a fresh one next time, and the branch is
+   * adopted under its own id.
+   */
+  async fork(sessionId: string, at?: ForkPoint): Promise<string> {
+    const kid = await this.#ensure(sessionId)
+
+    let entryId = at?.id ?? null
+    if (entryId === null) {
+      if (at?.seq !== undefined) {
+        throw new Error('这个内核按消息分叉，不认事件序号')
+      }
+      const data = (await this.#request(kid, { type: 'get_fork_messages' })) as {
+        messages?: unknown
+      } | null
+      const list = Array.isArray(data?.messages) ? data.messages : []
+      const last = list.at(-1) as Record<string, unknown> | undefined
+      entryId = typeof last?.['entryId'] === 'string' ? last['entryId'] : null
+      if (entryId === null) throw new Error('这个会话还没有可以分叉的消息')
+    }
+
+    const answer = (await this.#request(kid, { type: 'fork', entryId })) as {
+      cancelled?: unknown
+    } | null
+    if (answer?.cancelled === true) throw new Error('pi 取消了这次分叉')
+
+    // The child is now running the branch: read its identity, then let it go so the
+    // original conversation can start its own process from its untouched file.
+    const state = (await this.#request(kid, { type: 'get_state' })) as {
+      sessionId?: unknown
+    } | null
+    const forked = typeof state?.sessionId === 'string' ? state.sessionId : null
+    if (forked === null) throw new Error('pi 分叉后没有给出新会话的 id')
+
+    // The child now runs the branch. Keep it (the caller adopts it in a moment) and
+    // let the original conversation start a fresh process from its untouched file.
+    this.#kids.delete(sessionId)
+    kid.sessionId = forked
+    kid.turn = null
+    kid.translator = null
+    this.#orphans.set(forked, kid)
+    return forked
   }
 
   // ---- models, in Pi's own words --------------------------------------------
@@ -296,6 +357,14 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     this.#loadSessions()
     this.#sessions.set(sessionId, kernelSessionId)
     this.#persistSessions()
+
+    // A fork left its child running the branch; this is where that branch gets its
+    // Pictor identity, so the live process becomes its child instead of a stranger.
+    const orphan = this.#orphans.get(kernelSessionId)
+    if (orphan === undefined) return
+    this.#orphans.delete(kernelSessionId)
+    orphan.sessionId = sessionId
+    this.#kids.set(sessionId, orphan)
   }
 
   // ---- history -------------------------------------------------------------
@@ -580,7 +649,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       for (const frame of read.frames) this.#emitFrame(kid.sessionId, frame)
 
       if (type === 'agent_settled') {
-        this.#closeTurn(kid, { reason: 'settled' })
+        void this.#closeSettled(kid)
       }
     }
   }
@@ -689,6 +758,37 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   }
 
   /**
+   * Closes a finished turn, with the fork point Pi just stored.
+   *
+   * Pi forks at a user message's entry id, and that entry exists only once the turn
+   * is written. Reading it here is one cheap round trip, and the only way the
+   * question a reader just asked can be branched from without reopening.
+   */
+  async #closeSettled(kid: Kid): Promise<void> {
+    let forkId: string | undefined
+    try {
+      const data = (await this.#request(kid, { type: 'get_entries' })) as {
+        entries?: unknown
+      } | null
+      const entries = Array.isArray(data?.entries) ? data.entries : []
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index] as {
+          type?: unknown
+          id?: unknown
+          message?: { role?: unknown }
+        }
+        if (entry?.type !== 'message' || typeof entry.id !== 'string') continue
+        if (entry.message?.role !== 'user') continue
+        forkId = entry.id
+        break
+      }
+    } catch {
+      // A turn still closes without it; only the branch buttons lose a point.
+    }
+    this.#closeTurn(kid, { reason: 'settled' }, undefined, forkId)
+  }
+
+  /**
    * Closes the open turn, if there is one.
    *
    * Every path that ends a run comes through here — settled, aborted, the child
@@ -699,6 +799,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     kid: Kid,
     outcome: { reason: 'settled' } | { reason: 'stopped' } | { reason: 'error'; message: string },
     expected?: number,
+    forkId?: string,
   ): void {
     if (kid.turn === null) return
     if (expected !== undefined && kid.turn !== expected) return
@@ -708,6 +809,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       exitCode: 0,
       stderr: '',
       ...(outcome.reason === 'error' ? { failure: outcome.message } : {}),
+      ...(forkId === undefined ? {} : { forkId }),
     })
     kid.turn = null
     kid.translator = null

@@ -1,7 +1,7 @@
 import { AlertTriangle, MessageSquarePlus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatImage } from '@pictor/shared'
+import type { ChatImage, ForkPoint } from '@pictor/shared'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
@@ -312,8 +312,8 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
               onLoadOlder={() => void loadOlder()}
               {...(canFork
                 ? {
-                    onFork: (seq: number) => {
-                      if (selectedSessionId !== null) void forkSession(selectedSessionId, seq)
+                    onFork: (point: ForkPoint) => {
+                      if (selectedSessionId !== null) void forkSession(selectedSessionId, point)
                     },
                   }
                 : {})}

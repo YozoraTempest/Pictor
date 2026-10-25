@@ -34,17 +34,33 @@ describe('buildTurns', () => {
     ])
 
     expect(turns[0]?.user?.seq).toBe(4)
-    expect(turns[0]?.parts[0]).toMatchObject({ kind: 'text', text: '答', seq: 7 })
+    expect(turns[0]?.parts[0]).toMatchObject({ kind: 'text', text: '答', fork: { seq: 7 } })
     expect(turns[0]?.endSeq).toBe(7)
     // Nothing precedes the first turn, so only the second one can branch before it.
-    expect(turns[0]?.beforeSeq).toBeNull()
+    expect(turns[0]?.before).toBeNull()
     expect(
       buildTurns([
         msg({ id: 'u1', role: 'user', text: '问一', seq: 4 }),
         msg({ id: 'a1', role: 'assistant', text: '答一', seq: 7 }),
         msg({ id: 'u2', role: 'user', text: '问二', seq: 9 }),
-      ])[1]?.beforeSeq,
-    ).toBe(7)
+      ])[1]?.before,
+    ).toEqual({ seq: 7 })
+  })
+
+  it('branches at the question itself when the kernel forks by entry id', () => {
+    // Pi cuts at a user message, so the row's own id is the point — not the
+    // boundary the previous turn happened to end on.
+    const turns = buildTurns([
+      msg({ id: 'u1', role: 'user', text: '第一问', forkId: 'entry-1' }),
+      msg({ id: 'a1', role: 'assistant', text: '第一答' }),
+      msg({ id: 'u2', role: 'user', text: '第二问', forkId: 'entry-2' }),
+    ])
+
+    // The first question of a page inherits nothing, so it is not a fork point.
+    expect(turns[0]?.before).toBeNull()
+    expect(turns[1]?.before).toEqual({ id: 'entry-2' })
+    // An answer is not a fork point for that kernel: it has no entry id of its own.
+    expect(turns[0]?.parts[0]).toEqual({ kind: 'text', id: 'text-a1', text: '第一答' })
   })
 
   it('keeps reasoning inside the activity group and out of the answer', () => {

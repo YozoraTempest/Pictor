@@ -116,6 +116,16 @@ function findLastToolRow(messages: readonly ChatMessage[], tool: string): number
  * is the one that boundary belongs to; without this the menu could never branch
  * from something the user just typed.
  */
+/** The newest question that still has no kernel fork point attached. */
+function lastUnforkedUserRow(messages: readonly ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'user' && message.forkId === undefined) return index
+  }
+
+  return -1
+}
+
 function lastUnsequencedUserRow(messages: readonly ChatMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
@@ -561,6 +571,12 @@ export const useChatStore = create<ChatState>()((set, get) => {
         const answer = lastAnswerRow(messages)
         if (event.seq !== undefined && answer >= 0) {
           messages[answer] = { ...messages[answer]!, seq: event.seq }
+        }
+        // A kernel that forks by message names the question's entry id once the turn
+        // is stored; without it the question could not be re-asked from here.
+        const question = lastUnforkedUserRow(messages)
+        if (event.forkId !== undefined && question >= 0) {
+          messages[question] = { ...messages[question]!, forkId: event.forkId }
         }
         return {
           running: false,

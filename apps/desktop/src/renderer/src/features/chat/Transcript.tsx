@@ -1,6 +1,8 @@
 import { ArrowDown, Loader2, MessagesSquare } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
+import type { ForkPoint } from '@pictor/shared'
+
 import { Button, EmptyState } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import type { AgentPhase } from '../../lib/format-time.js'
@@ -16,7 +18,7 @@ export interface TranscriptProps {
   loading: boolean
   onLoadOlder: () => void
   /** Branch the conversation at one message; threaded down to each row. */
-  onFork?: (seq: number) => void
+  onFork?: (point: ForkPoint) => void
   /** Width of the conversation panel; the scroller spans the whole column. */
   panelWidth: number
   /** Exposed so the resizer can sit exactly on the panel's edge. */

@@ -27,6 +27,7 @@ import {
   type ChatAnswer,
   type ChatImage,
   type ChatQuestion,
+  type ForkPoint,
   type ChatQuestionRequest,
   type JsonValue,
   type ModelEffort,
@@ -614,6 +615,24 @@ function parseImages(value: unknown): ChatImage[] {
 }
 
 /** The reasoning level the composer asked for, or `null` when it asked for none. */
+/** A fork point from the renderer, or nothing when it named no message. */
+function parseForkPoint(value: unknown): ForkPoint | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'object') throw new Error('分叉点必须是一个对象')
+  const point = value as { seq?: unknown; id?: unknown }
+  if (point.seq !== undefined && typeof point.seq !== 'number') {
+    throw new Error('分叉点 seq 必须是数字')
+  }
+  if (point.id !== undefined && (typeof point.id !== 'string' || point.id.length === 0)) {
+    throw new Error('分叉点 id 必须是非空字符串')
+  }
+  if (point.seq === undefined && point.id === undefined) return undefined
+  return {
+    ...(point.seq === undefined ? {} : { seq: point.seq }),
+    ...(point.id === undefined ? {} : { id: point.id }),
+  }
+}
+
 function parseEffort(value: unknown): ModelEffort | null {
   if (value === undefined || value === null) return null
   const level = MODEL_EFFORTS.find((entry) => entry === value)
@@ -1029,22 +1048,26 @@ function registerIpc(workspace: Workspace): void {
    * The runtime owns the copy, so the new conversation is created here and then
    * pointed at the runtime's child id; opening it reads the inherited history.
    */
-  ipcMain.handle('pictor:session.fork', async (_event, sessionId: unknown, atSeq: unknown) => {
+  ipcMain.handle('pictor:session.fork', async (_event, sessionId: unknown, at: unknown) => {
     if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
-    if (atSeq !== undefined && typeof atSeq !== 'number') throw new Error('atSeq must be a number')
+    // The point is whatever the caller's rows carry: an event sequence for dsh, an
+    // entry id for a kernel that branches by message. Both are optional.
+    const point = parseForkPoint(at)
     if (workspace.harness.status().state !== 'ready') throw new Error('先启动 agent 运行时')
 
     const sessions = await workspace.client.listSessions()
     const source = sessions.find((entry) => entry.id === sessionId)
     if (source === undefined) throw new Error('session not found')
 
-    const child = await workspace.harness.fork(sessionId, atSeq)
+    const child = await workspace.harness.fork(sessionId, point)
     // The parent is recorded here, not in the runtime: only Pictor knows which
     // conversations belong to the same family.
     const created = await workspace.client.createSession(
       source.projectId,
       `${source.title} · 分支`,
       source.id,
+      // A branch keeps the kernel that produced the history it inherits.
+      source.kernelId,
     )
     workspace.harness.adopt(created.id, child)
     return created.id

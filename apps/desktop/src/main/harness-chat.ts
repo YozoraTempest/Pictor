@@ -304,6 +304,9 @@ export class HarnessChatBridge {
             : typeof reason?.error?.message === 'string'
               ? reason.error.message
               : undefined
+        // A kernel that forks by message reports the question's entry id here: it
+        // only exists once the turn is stored, so it cannot arrive with the start.
+        const forkId = typeof data['forkId'] === 'string' ? data['forkId'] : undefined
         return [
           {
             type: 'run.finished',
@@ -313,6 +316,7 @@ export class HarnessChatBridge {
             ...(detail === undefined ? {} : { message: detail }),
             // `turn/end` closes the turn: a fork after this answer keeps it.
             ...(typeof event.seq === 'number' ? { seq: event.seq } : {}),
+            ...(forkId === undefined ? {} : { forkId }),
           },
         ]
       }

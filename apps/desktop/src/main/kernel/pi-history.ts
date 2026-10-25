@@ -34,6 +34,8 @@ export interface StoredMessage {
 
 export interface StoredRecord {
   type?: unknown
+  /** The session entry's own id: Pi's name for this point in the conversation. */
+  id?: unknown
   message?: StoredMessage | null
 }
 
@@ -63,15 +65,6 @@ function thinkingOf(content: unknown): string {
     .join('')
 }
 
-/** Every message line, in the order Pi wrote them. */
-export function storedMessages(records: readonly StoredRecord[]): StoredMessage[] {
-  return records.flatMap((record): StoredMessage[] =>
-    record.type === 'message' && typeof record.message === 'object' && record.message !== null
-      ? [record.message]
-      : [],
-  )
-}
-
 export function historyRows(records: readonly StoredRecord[]): ChatMessage[] {
   const rows: ChatMessage[] = []
   /** Rows waiting for the output of the call that opened them. */
@@ -82,13 +75,21 @@ export function historyRows(records: readonly StoredRecord[]): ChatMessage[] {
     return message
   }
 
-  for (const message of storedMessages(records)) {
+  for (const record of records) {
+    if (record.type !== 'message' || typeof record.message !== 'object') continue
+    const message = record.message
+    if (message === null) continue
     const role = message.role
     const timestamp = typeof message.timestamp === 'number' ? message.timestamp : null
+    // Pi forks from a user message's entry id, so the question row is the one that
+    // carries a fork point. Answers and tool rows are not forkable on their own.
+    const forkId = typeof record.id === 'string' && role === 'user' ? record.id : undefined
 
     if (role === 'user') {
       const text = textOf(message.content)
-      if (text.length > 0) add({ role: 'user', text, timestamp })
+      if (text.length > 0) {
+        add({ role: 'user', text, timestamp, ...(forkId === undefined ? {} : { forkId }) })
+      }
       continue
     }
 

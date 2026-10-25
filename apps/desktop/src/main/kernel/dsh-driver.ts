@@ -27,6 +27,7 @@ import {
   type ChatHistoryPage,
   type ChatImage,
   type ChatQuestion,
+  type ForkPoint,
   type ModelEffort,
   type ModelSettings,
 } from '@pictor/shared'
@@ -1187,16 +1188,22 @@ export class DshDriver implements KernelDriver {
    * runtime id; mapping it to a Pictor conversation is the caller's job because
    * only this process knows which ids belong together.
    */
-  async fork(pictorSessionId: string, atSeq?: number): Promise<string> {
+  async fork(pictorSessionId: string, at?: ForkPoint): Promise<string> {
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
     const harnessId = this.#sessions.get(pictorSessionId)
     if (harnessId === undefined) throw new Error('这个会话在运行时里还没有记录，无法分叉')
+    if (at?.id !== undefined) {
+      // The runtime branches by event boundary; a row that only carries a kernel
+      // entry id belongs to another kernel, so this is a caller mistake worth naming
+      // rather than a fork somewhere near where the user pointed.
+      throw new Error('这个内核按事件序号分叉，不认消息 id')
+    }
 
     const created = await remote.call<SessionForkValue>('session/fork', {
       // The boundary is inclusive: omitting it copies the latest completed turn,
       // which is what "branch from here" means when no message was picked.
-      request: { sessionId: harnessId, ...(atSeq === undefined ? {} : { atSeq }) },
+      request: { sessionId: harnessId, ...(at?.seq === undefined ? {} : { atSeq: at.seq }) },
     })
     return created.sessionId
   }

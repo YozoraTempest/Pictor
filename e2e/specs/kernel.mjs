@@ -64,10 +64,11 @@ export default {
     const declared = await page.evaluate(() => window.pictor.listKernels())
     assert.deepEqual(declared.find((kernel) => kernel.id === 'pi')?.capabilities, {
       permission: false,
-      // Pi brings its own model catalogue, so this one it can honour.
+      // Pi brings its own model catalogue and branches its own conversations, so
+      // these two it can honour.
       model: true,
       skills: false,
-      fork: false,
+      fork: true,
     })
     assert.deepEqual(declared.find((kernel) => kernel.id === 'dsh')?.capabilities, {
       permission: true,

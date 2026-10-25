@@ -46,6 +46,7 @@ const log = ${JSON.stringify(log)}
 const reply = ${JSON.stringify(options.reply ?? '等于 2')}
 const input = ${JSON.stringify(options.input)}.split(',')
 const settle = ${JSON.stringify(options.settle ?? 'immediately')}
+let sessionId = 'pi-fake-1'
 appendFileSync(log, JSON.stringify({ type: 'argv', argv: process.argv.slice(2) }) + NL)
 const send = (record) => process.stdout.write(JSON.stringify(record) + NL)
 let buffer = ''
@@ -66,7 +67,27 @@ process.stdin.on('data', (chunk) => {
 function handle(command) {
   if (command.type === 'get_state') {
     send({ id: command.id, type: 'response', command: 'get_state', success: true,
-      data: { model: { id: 'fake-1', name: 'Fake Model', provider: 'fake', input } } })
+      data: { model: { id: 'fake-1', name: 'Fake Model', provider: 'fake', input },
+        sessionId: sessionId, sessionFile: '/tmp/' + sessionId + '.jsonl' } })
+    return
+  }
+  if (command.type === 'get_entries') {
+    send({ id: command.id, type: 'response', command: 'get_entries', success: true,
+      data: { entries: [
+        { type: 'message', id: 'entry-1', message: { role: 'user', content: [{ type: 'text', text: '你好' }] } },
+        { type: 'message', id: 'entry-2', message: { role: 'assistant', content: [{ type: 'text', text: reply }] } },
+      ], leafId: 'entry-2' } })
+    return
+  }
+  if (command.type === 'get_fork_messages') {
+    send({ id: command.id, type: 'response', command: 'get_fork_messages', success: true,
+      data: { messages: [{ entryId: 'entry-1', text: '你好' }] } })
+    return
+  }
+  if (command.type === 'fork') {
+    sessionId = 'pi-forked'
+    send({ id: command.id, type: 'response', command: 'fork', success: true,
+      data: { text: '你好', cancelled: false } })
     return
   }
   if (command.type === 'get_available_models') {
@@ -208,7 +229,12 @@ describe('PiRpcDriver', () => {
       'turn/end',
     ])
     expect(collected.frames[0]?.data).toEqual({ turn: 1 })
-    expect(collected.frames.at(-1)?.data).toEqual({ reason: { kind: 'completed' } })
+    // The closing frame also names the question Pi stored, so the row that asked it
+    // can be branched from.
+    expect(collected.frames.at(-1)?.data).toEqual({
+      reason: { kind: 'completed' },
+      forkId: 'entry-1',
+    })
 
     // The child is started with the session directory, so Pi stores the transcript
     // where Pictor reads it back from.
@@ -249,7 +275,7 @@ describe('PiRpcDriver', () => {
     })
 
     expect(commands(fake).map((command) => command['type'])).toContain('abort')
-    expect(collected.frames.at(-1)?.data).toEqual({ reason: { kind: 'aborted' } })
+    expect(collected.frames.at(-1)?.data).toMatchObject({ reason: { kind: 'aborted' } })
     await driver.stop()
   })
 
@@ -339,6 +365,57 @@ describe('PiRpcDriver', () => {
       .find((argv): argv is string[] => Array.isArray(argv) && argv.includes('--provider'))
     expect(started).toEqual(expect.arrayContaining(['--provider', 'fake', '--model', 'vision-1']))
     await driver.stop()
+  })
+
+  it("forks at a question and hands back the branch's own session", async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+
+    const forked = await driver.fork('s1', { id: 'entry-1' })
+    expect(forked).toBe('pi-forked')
+    const command = commands(fake).find((entry) => entry['type'] === 'fork')
+    expect(command?.['entryId']).toBe('entry-1')
+
+    // The child became the branch, so it is kept rather than restarted: adopting the
+    // branch gives it the live process, and its history is the fork's own.
+    expect(commands(fake).map((entry) => entry['type'])).not.toContain('shutdown')
+    driver.adopt('s2', 'pi-forked')
+    expect(
+      (await driver.historyPage('s2', 50, 0)).messages.map((row) => [row.role, row.text]),
+    ).toEqual([
+      ['user', '你好'],
+      ['assistant', '等于 2'],
+    ])
+    await driver.stop()
+  })
+
+  it('takes the newest question when no message was picked', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+    await driver.fork('s1')
+
+    expect(commands(fake).find((entry) => entry['type'] === 'fork')?.['entryId']).toBe('entry-1')
+  })
+
+  it('names the question it just stored, so a fresh turn can be branched from', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+
+    const end = collected.frames.at(-1)
+    expect(end?.type).toBe('turn/end')
+    expect(end?.data).toMatchObject({ forkId: 'entry-1' })
   })
 
   it('says so instead of pretending when Pi cannot answer', async () => {

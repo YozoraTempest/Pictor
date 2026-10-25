@@ -8,7 +8,7 @@ import {
   sortKey,
 } from './settings-schema.js'
 
-import type { PluginRecord, Project, Section, Session } from '@pictor/shared'
+import type { ForkPoint, PluginRecord, Project, Section, Session } from '@pictor/shared'
 
 import type { AppInfo, KernelInfo, PanelDescriptor, PluginReport } from '../../../shared/bridge.js'
 import { applyToolViews } from '../features/chat/tool-views.js'
@@ -84,7 +84,7 @@ interface WorkspaceState {
    */
   branchToKernel: (kernelId: string, label: string) => Promise<Session | null>
   /** Branches a conversation and selects the copy. */
-  forkSession: (sessionId: string, atSeq?: number) => Promise<void>
+  forkSession: (sessionId: string, at?: ForkPoint) => Promise<void>
   startDraft: (input: { sectionId: string | null; projectId?: string | null }) => void
   clearDraft: () => void
   deleteSession: (id: string) => Promise<void>
@@ -305,9 +305,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     return created
   },
 
-  async forkSession(sessionId, atSeq) {
+  async forkSession(sessionId, at) {
     await guard(set, async () => {
-      const created = await window.pictor.forkSession(sessionId, atSeq)
+      const created = await window.pictor.forkSession(sessionId, at)
       set({ selectedSessionId: created })
       await get().refresh()
     })

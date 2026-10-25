@@ -4,6 +4,7 @@ import type {
   ChatAnswer,
   ChatHistoryPage,
   ChatImage,
+  ForkPoint,
   ModelEffort,
 } from '@pictor/shared'
 
@@ -152,8 +153,8 @@ export class KernelRouter implements KernelDriver {
     return (await this.#for(sessionId)).cancel(sessionId)
   }
 
-  async fork(sessionId: string, atSeq?: number): Promise<string> {
-    return (await this.#for(sessionId)).fork(sessionId, atSeq)
+  async fork(sessionId: string, at?: ForkPoint): Promise<string> {
+    return (await this.#for(sessionId)).fork(sessionId, at)
   }
 
   async adopt(sessionId: string, kernelSessionId: string): Promise<void> {
