@@ -76,6 +76,12 @@ Two kernels ship:
   forking; it throws for each instead of faking them. Its transcript is read back
   from Pi's own session file (`kernel/pi-history.ts`), because Pictor keeps none.
 
+Each driver also declares what it can do (`KernelCapabilities`: sandbox, model,
+skills, fork), and that declaration reaches the renderer with `kernels.list`. The
+composer draws a control only where the conversation's kernel says it exists: a
+CLI kernel gets no sandbox switch and no model picker, instead of a control that
+throws when pressed.
+
 The kernel is fixed when a conversation is created (`sessions.kernel_id`), so the
 picker opens a branch on the other kernel rather than rewriting one in place.
 Lifecycle calls carry no session id and stay on the default kernel.
