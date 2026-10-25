@@ -355,6 +355,13 @@ export class HarnessService {
         modelId: settings.modelId,
         apiKey,
       })
+      // The runtime's preset table has its own default, which need not be the mode
+      // this process was started with. Align it once, so a conversation opened
+      // later reports the sandbox the runtime is actually enforcing. A failure is
+      // not fatal: the environment variable already governs this process.
+      await this.applyPermission(permissionMode).catch((error: unknown) => {
+        console.warn(`[harness] 权限默认值未能同步：${String(error)}`)
+      })
       return this.status()
     } catch (error) {
       this.#kill()
