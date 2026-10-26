@@ -59,6 +59,20 @@ declare module '@deepseek-ai/cordis' {
 /** A kernel plugin: a cordis plugin that provides exactly one `kernel.<id>`. */
 export type KernelPlugin = Plugin<void>
 
+/**
+ * A kernel compiled into the app.
+ *
+ * `id` is carried beside the plugin because the plugin itself only announces its id
+ * once it is mounted — and a kernel a person turned off must never be mounted at all,
+ * even briefly.
+ */
+export interface BuiltinKernel {
+  id: string
+  /** Shown in the picker and the plugin page, mounted or not. */
+  label: string
+  plugin: KernelPlugin
+}
+
 /** What asking the host to mount one plugin produced. */
 export interface KernelMountResult {
   /** True when a `kernel.<id>` service appeared. */
@@ -81,8 +95,10 @@ export interface KernelPluginFailure {
 
 export interface KernelHostOptions {
   services: KernelHostServices
-  /** Kernels compiled into the app, in mount order; the first one is the default. */
-  builtins: readonly KernelPlugin[]
+  /** Kernels compiled into the app, in mount order. */
+  builtins: readonly BuiltinKernel[]
+  /** Built-in kernel ids a person turned off; they are not mounted. */
+  disabled?: readonly string[]
   /**
    * Directories scanned for installed plugins, highest priority first.
    *
@@ -121,6 +137,15 @@ export interface KernelHost {
   plugins(): KernelPluginReport[]
   /** Mount one installed plugin's kernel half without restarting the app. */
   mountInstalled(name: string): Promise<KernelMountResult>
+  /** The kernels compiled into the app, and whether each is mounted right now. */
+  builtins(): Array<{ id: string; label: string; mounted: boolean }>
+  /**
+   * Mount one built-in kernel that a person turned back on.
+   *
+   * The other half of {@link unmount}: a built-in is not installed anywhere, so it
+   * can only be switched, and switching is mounting and unmounting it live.
+   */
+  mountBuiltin(id: string): Promise<KernelMountResult>
   /** Unmount a kernel by id; its conversations then report it as missing. */
   unmount(id: string): Promise<void>
   dispose(): Promise<void>
@@ -264,9 +289,13 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
     return last === null ? `${failureName} 没有提供内核服务` : null
   }
 
-  for (const [index, plugin] of options.builtins.entries()) {
-    // The successful ones are all `builtin`; a failure names which built-in it was.
-    await mount(plugin, 'builtin', `builtin:${String(index)}`)
+  const builtinById = new Map(options.builtins.map((entry) => [entry.id, entry]))
+  const disabled = new Set(options.disabled ?? [])
+  for (const entry of options.builtins) {
+    // A built-in that is turned off is simply not mounted: no service, no kernel,
+    // and the picker will not offer it.
+    if (disabled.has(entry.id)) continue
+    await mount(entry.plugin, 'builtin', `builtin:${entry.id}`)
   }
 
   for (const found of discoverKernels(options.directories)) {
@@ -300,6 +329,19 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
         })
       }
       return reports
+    },
+    builtins(): Array<{ id: string; label: string; mounted: boolean }> {
+      return [...builtinById.values()].map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+        mounted: drivers.has(entry.id),
+      }))
+    },
+    async mountBuiltin(id: string): Promise<KernelMountResult> {
+      const entry = builtinById.get(id)
+      if (entry === undefined) return { mounted: false, failure: `没有内置内核 ${id}` }
+      const failure = await mount(entry.plugin, 'builtin', `builtin:${id}`)
+      return { mounted: failure === null, failure }
     },
     async mountInstalled(name: string): Promise<KernelMountResult> {
       const found = discoverKernel(options.directories, name, { required: false })

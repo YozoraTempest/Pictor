@@ -31,6 +31,14 @@ export interface KernelLookup {
 export interface KernelRouterOptions {
   /** Every kernel this build can drive, by id. The first one is the default. */
   drivers: ReadonlyMap<string, KernelDriver>
+  /**
+   * Which kernel new conversations start on.
+   *
+   * A person's choice, not a build fact: the default used to be "whichever loaded
+   * first", which made the built-in kernel impossible to replace. A name that is not
+   * among `drivers` is ignored -- the kernel may simply not be installed here.
+   */
+  defaultKernel?: string | null
   /** Which kernel a conversation belongs to; falls back to the default. */
   lookup: KernelLookup
 }
@@ -50,28 +58,74 @@ export interface KernelRouterOptions {
  */
 export class KernelRouter implements KernelDriver {
   readonly #options: KernelRouterOptions
-  readonly #fallback: KernelDriver
+  /**
+   * The kernel everything without a conversation goes to.
+   *
+   * Null when this machine has no kernel at all, which is a real state: a person may
+   * have turned off the built-in one before installing another. The app still opens,
+   * and every call that needs a kernel says so instead of pretending.
+   */
+  #fallback: KernelDriver | null
 
   constructor(options: KernelRouterOptions) {
-    const first = options.drivers.values().next()
-    if (first.done === true) throw new Error('至少需要一个内核')
     this.#options = options
-    this.#fallback = first.value
+    this.#fallback = pickDefault(options.drivers, options.defaultKernel ?? null)
+  }
+
+  /**
+   * Points new conversations at another kernel.
+   *
+   * Only the default changes: conversations already created keep the kernel that ran
+   * them, which is why this is not a "switch" but a choice of where the next one
+   * starts.
+   */
+  /**
+   * Points new conversations at another kernel.
+   *
+   * Only the default changes: conversations already created keep the kernel that ran
+   * them, which is why this is not a "switch" but a choice of where the next one
+   * starts. An unknown id changes nothing.
+   */
+  setDefault(id: string): boolean {
+    const chosen = this.#options.drivers.get(id)
+    if (chosen === undefined) return false
+    this.#fallback = chosen
+    return true
+  }
+
+  /**
+   * Re-picks the default after a kernel was mounted or unmounted.
+   *
+   * Turning off the kernel new conversations started on would otherwise leave the
+   * router pointing at a driver that no longer has a service — every call would fail
+   * with "this kernel is missing" even though another one is right there.
+   */
+  refreshDefault(): void {
+    if (this.#fallback !== null && this.#options.drivers.has(this.#fallback.id)) return
+    this.#fallback = this.#options.drivers.values().next().value ?? null
+  }
+
+  /** The default kernel, or the reason there is nothing to answer with. */
+  #require(): KernelDriver {
+    if (this.#fallback === null) {
+      throw new Error('这台机器上没有可用的内核；先到「设置 › 通用 › 插件」装一个')
+    }
+    return this.#fallback
   }
 
   /** The kernel everything without a session id goes to. */
   get id(): string {
-    return this.#fallback.id
+    return this.#fallback?.id ?? ''
   }
 
   /** Lifecycle, name and capabilities are all the default kernel's. */
   get label(): string {
-    return this.#fallback.label
+    return this.#fallback?.label ?? '没有内核'
   }
 
   /** Lifecycle is the default kernel's, so its capabilities are the router's. */
   get capabilities(): KernelCapabilities {
-    return this.#fallback.capabilities
+    return this.#fallback?.capabilities ?? NO_CAPABILITIES
   }
 
   /**
@@ -90,7 +144,7 @@ export class KernelRouter implements KernelDriver {
     return [...this.#options.drivers.entries()].map(([id, driver]) => ({
       id,
       label: driver.label,
-      default: id === this.#fallback.id,
+      default: id === this.#fallback?.id,
       available: driver.status().binary !== null,
       // What this kernel can actually do travels with it: the window hides the
       // controls a kernel cannot answer instead of letting them fail on use.
@@ -102,7 +156,7 @@ export class KernelRouter implements KernelDriver {
 
   async #for(sessionId: string): Promise<KernelDriver> {
     const wanted = await this.#options.lookup.kernelOf(sessionId)
-    if (wanted === null) return this.#fallback
+    if (wanted === null) return this.#require()
     const driver = this.#options.drivers.get(wanted)
     if (driver === undefined) {
       throw new Error(`这个会话使用的内核「${wanted}」不在当前版本里，无法继续`)
@@ -113,14 +167,15 @@ export class KernelRouter implements KernelDriver {
   // ---- lifecycle: no session id, so the default kernel owns it --------------
 
   start(cwd: string): Promise<HarnessStatus> {
-    return this.#fallback.start(cwd)
+    return this.#require().start(cwd)
   }
 
   stop(): Promise<HarnessStatus> {
-    return this.#fallback.stop()
+    return this.#require().stop()
   }
 
   status(): HarnessStatus {
+    if (this.#fallback === null) return noKernelStatus()
     return this.#fallback.status()
   }
 
@@ -139,23 +194,23 @@ export class KernelRouter implements KernelDriver {
   }
 
   install(): Promise<HarnessStatus> {
-    return this.#fallback.install()
+    return this.#require().install()
   }
 
   setPermissionMode(mode: PermissionMode): void {
-    this.#fallback.setPermissionMode(mode)
+    this.#require().setPermissionMode(mode)
   }
 
   applyPermission(mode: PermissionMode): Promise<void> {
-    return this.#fallback.applyPermission(mode)
+    return this.#require().applyPermission(mode)
   }
 
   applySettings(): Promise<void> {
-    return this.#fallback.applySettings()
+    return this.#require().applySettings()
   }
 
   probe(prompt: string, cwd: string): Promise<AgentProbeResult> {
-    return this.#fallback.probe(prompt, cwd)
+    return this.#require().probe(prompt, cwd)
   }
 
   /** Notifications from every kernel go to the same listener. */
@@ -318,4 +373,48 @@ export class KernelRouter implements KernelDriver {
     }
     throw new Error(`没有内核接受这次${label}：${failures.join(' / ')}`)
   }
+}
+
+/** What every capability looks like when there is no kernel to ask. */
+const NO_CAPABILITIES: KernelCapabilities = {
+  permission: false,
+  approval: false,
+  model: false,
+  skills: false,
+  fork: false,
+}
+
+/** The status of a machine with no kernel: nothing runs, and nothing is broken. */
+function noKernelStatus(): HarnessStatus {
+  return {
+    state: 'stopped',
+    binary: null,
+    version: null,
+    expectedVersion: null,
+    home: '',
+    provider: null,
+    model: null,
+    serverInfo: null,
+    permissionMode: 'workspace-write',
+    error: null,
+  }
+}
+
+/**
+ * Which kernel new conversations start on.
+ *
+ * The chosen one when it is present, otherwise the first that loaded. A name that is
+ * not installed is ignored rather than turned into an error: the person's choice may
+ * name a kernel they uninstalled, and refusing to start over that would be worse than
+ * starting on another.
+ */
+function pickDefault(
+  drivers: ReadonlyMap<string, KernelDriver>,
+  wanted: string | null,
+): KernelDriver | null {
+  if (wanted !== null) {
+    const chosen = drivers.get(wanted)
+    if (chosen !== undefined) return chosen
+  }
+  return drivers.values().next().value ?? null
 }

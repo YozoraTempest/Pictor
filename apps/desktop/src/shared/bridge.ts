@@ -201,6 +201,18 @@ export interface PluginOverview {
   failure: string | null
 }
 
+/** A kernel compiled into the app; it can be turned off, never removed. */
+export interface BuiltinKernelInfo {
+  id: string
+  label: string
+  /** False when a person turned it off; it is not mounted then. */
+  enabled: boolean
+  /** Where new conversations start. */
+  default: boolean
+  /** Host services it declared, when it is mounted. */
+  services: string[]
+}
+
 /** What an install or removal did, in one line the page can show. */
 export interface KernelChangeResult {
   ok: boolean
@@ -339,6 +351,12 @@ export interface PictorBridge {
   listKernelPlugins(): Promise<KernelPluginInfo[]>
   /** Every installed plugin, with what it contributes and what it can reach. */
   listPluginOverview(): Promise<PluginOverview[]>
+  /** The kernels compiled into the app, mounted or turned off. */
+  listBuiltinKernels(): Promise<BuiltinKernelInfo[]>
+  /** Turns a built-in kernel off or on; resolves with the new state. */
+  setBuiltinKernelEnabled(id: string, enabled: boolean): Promise<boolean>
+  /** Chooses where new conversations start; false when that kernel is not present. */
+  setDefaultKernel(id: string): Promise<boolean>
   /** Ask for a directory; null when the person cancelled. */
   chooseKernelFolder(): Promise<string | null>
   /** Install a directory as a kernel. */

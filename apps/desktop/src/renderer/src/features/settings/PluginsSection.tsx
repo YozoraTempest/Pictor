@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { PluginOverview } from '../../../../shared/bridge.js'
+import type { BuiltinKernelInfo, PluginOverview } from '../../../../shared/bridge.js'
 import { Button } from '../../components/ui/Button.js'
 import { Dialog } from '../../components/ui/Dialog.js'
 import { Input } from '../../components/ui/Input.js'
@@ -49,6 +49,7 @@ type Pending =
  */
 export function PluginsSection(): React.JSX.Element {
   const [overview, setOverview] = useState<PluginOverview[] | null>(null)
+  const [builtins, setBuiltins] = useState<BuiltinKernelInfo[]>([])
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -57,7 +58,12 @@ export function PluginsSection(): React.JSX.Element {
 
   const load = useCallback(async (): Promise<void> => {
     try {
-      setOverview(await window.pictor.listPluginOverview())
+      const [plugins, kernels] = await Promise.all([
+        window.pictor.listPluginOverview(),
+        window.pictor.listBuiltinKernels(),
+      ])
+      setOverview(plugins)
+      setBuiltins(kernels)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
@@ -79,6 +85,36 @@ export function PluginsSection(): React.JSX.Element {
     setError(null)
     try {
       await window.pictor.setPluginEnabled(plugin.id, enabled)
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Switches a built-in kernel on or off; it is mounted or unmounted, not removed. */
+  async function toggleBuiltin(kernel: BuiltinKernelInfo, enabled: boolean): Promise<void> {
+    setBusy(true)
+    setError(null)
+    try {
+      await window.pictor.setBuiltinKernelEnabled(kernel.id, enabled)
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Points new conversations at another kernel; open ones keep theirs. */
+  async function makeDefault(kernel: BuiltinKernelInfo): Promise<void> {
+    setBusy(true)
+    setError(null)
+    try {
+      if (await window.pictor.setDefaultKernel(kernel.id)) {
+        setNotice(`新会话将从「${kernel.label}」开始`)
+      }
       await load()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -218,6 +254,52 @@ export function PluginsSection(): React.JSX.Element {
             </li>
           ))}
         </ul>
+      )}
+
+      {builtins.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-2xs font-semibold tracking-wider text-faint uppercase">随应用编译</h3>
+          <ul className="flex flex-col gap-2" aria-label="内置内核">
+            {builtins.map((kernel) => (
+              <li key={kernel.id} className="rounded-md border border-border px-3 py-2.5">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="text-xs text-text">{kernel.label}</span>
+                  <span className="font-mono text-2xs text-faint">{kernel.id}</span>
+                  {kernel.default && <span className="text-2xs text-accent">新会话默认</span>}
+                  <span className="ml-auto flex items-center gap-2">
+                    {!kernel.default && kernel.enabled && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="rounded-sm px-1.5 py-0.5 text-2xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+                        onClick={() => void makeDefault(kernel)}
+                      >
+                        设为默认
+                      </button>
+                    )}
+                    <Switch
+                      label={`切换内核 ${kernel.label}`}
+                      checked={kernel.enabled}
+                      onChange={(next) => void toggleBuiltin(kernel, next)}
+                    />
+                  </span>
+                </div>
+
+                <p className="mt-1 text-2xs text-faint">
+                  随应用编译，不可卸载；关掉就不再用它跑会话
+                </p>
+
+                {kernel.enabled && (
+                  <p className="mt-1 text-2xs leading-relaxed text-muted">
+                    {kernel.services.length === 0
+                      ? '不读取任何宿主服务'
+                      : `内核 ${kernel.id} · 可以读取：${kernel.services.map(serviceLabel).join('、')}`}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {broken.length > 0 && (

@@ -44,6 +44,7 @@ import {
 
 import type {
   AppInfo,
+  BuiltinKernelInfo,
   PluginOverview,
   HarnessStatus,
   HostSnapshot,
@@ -367,6 +368,13 @@ async function startWorkspace(): Promise<Workspace | null> {
   // conversation into one that simply has not chosen yet.
   if (!piOwnConfig) forgetForeignPiModels(userData)
   const piKernel = createPiKernel({ ownConfig: piOwnConfig })
+
+  // Which kernels this machine runs. Both are a person's choice, kept in settings so
+  // "the built-in kernel is the default" stops being a fact of the build.
+  const kernelSettings = await running.client.listSettings()
+  const disabledBuiltins = readStringList(kernelSettings[BuiltinKernelsKey])
+  const preferredKernel =
+    typeof kernelSettings[DefaultKernelKey] === 'string' ? kernelSettings[DefaultKernelKey] : null
   // One installer for both halves: a plugin may contribute panels, a kernel, or both,
   // and installing it should not be two decisions.
   const installer = new PluginInstaller({
@@ -460,13 +468,18 @@ async function startWorkspace(): Promise<Workspace | null> {
       workspace: resolveCwd,
       userData,
     },
-    builtins: [dshKernel, piKernel.plugin],
+    builtins: [
+      { id: 'dsh', label: 'DeepSeek Harness', plugin: dshKernel },
+      { id: 'pi', label: 'Pi', plugin: piKernel.plugin },
+    ],
+    disabled: disabledBuiltins,
     directories: [join(userData, 'plugins')],
   })
   const pi = piKernel.driver()
   if (pi === null) throw new Error('Pi 内核没有挂载')
   const harness: KernelRouter = new KernelRouter({
     drivers: kernels.drivers,
+    defaultKernel: preferredKernel,
     lookup: {
       kernelOf: async (sessionId) => {
         const session = (await running.client.listSessions()).find(
@@ -832,6 +845,18 @@ function parseAnswers(value: unknown): ChatAnswer[] {
 /** Where the "Pi keeps its own config" switch is stored. */
 const OWN_CONFIG_KEY = 'pi.ownConfig'
 
+/** Built-in kernel ids a person turned off. */
+const BuiltinKernelsKey = 'kernel.disabled'
+
+/** Which kernel new conversations start on; absent means the first that loaded. */
+const DefaultKernelKey = 'kernel.default'
+
+/** A settings value that should be a list of names; anything else is nothing. */
+function readStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((entry): entry is string => typeof entry === 'string')
+}
+
 /** Forgets remembered models that only Pi's own configuration could offer. */
 function forgetForeignPiModels(userData: string): void {
   const dropped = prunePiModelsFile(userData)
@@ -935,12 +960,18 @@ function registerIpc(workspace: Workspace): void {
       if (parent !== null && (typeof parent !== 'string' || parent.length === 0)) {
         throw new Error('parentId must be a non-empty string')
       }
+      // No kernel named means "the default one", and which that is belongs to the
+      // settings, not to a constant baked into the metadata store.
+      if (kernel === null && workspace.harness.id === '') {
+        throw new Error('这台机器上没有可用的内核；先到「设置 › 通用 › 插件」装一个')
+      }
+
       // The kernel is fixed at creation: a conversation's history belongs to the
       // one that produced it, so switching later is a branch, not an edit.
       return workspace.appHost.commands.execute('session.create', {
         projectId,
         title,
-        ...(kernel === null ? {} : { kernelId: kernel }),
+        kernelId: kernel ?? workspace.harness.id,
         ...(parent === null ? {} : { parentId: parent }),
       })
     },
@@ -1455,6 +1486,7 @@ function registerIpc(workspace: Workspace): void {
       // Unmount first: the conversations it ran would otherwise talk to a kernel whose
       // files are gone.
       await workspace.kernels.unmount(id)
+      workspace.harness.refreshDefault()
       const root = workspace.installer.rootOf(report.source)
       if (root !== null) {
         for (const plugin of discoverPlugins([root]).plugins) {
@@ -1476,6 +1508,64 @@ function registerIpc(workspace: Workspace): void {
    * Recomputed on every call rather than cached: installing or removing a plugin
    * changes the answer, and a snapshot taken at launch would keep showing the old one.
    */
+  /** The kernels compiled into the app, mounted or turned off. */
+  ipcMain.handle('pictor:kernels.builtins', async (): Promise<BuiltinKernelInfo[]> => {
+    const reports = workspace.kernels.plugins()
+    const defaultId = workspace.harness.id
+    return workspace.kernels.builtins().map((entry) => {
+      const mounted = reports.find((report) => report.id === entry.id)
+      return {
+        id: entry.id,
+        label: entry.label,
+        enabled: entry.mounted,
+        default: entry.id === defaultId,
+        services: mounted === undefined ? [] : [...mounted.services],
+      }
+    })
+  })
+
+  /**
+   * Turns a built-in kernel off or on, live.
+   *
+   * Turning it off unmounts it, so it leaves the picker at once; turning it on mounts
+   * it again. The setting is what makes the choice survive a restart.
+   */
+  ipcMain.handle(
+    'pictor:kernels.setBuiltinEnabled',
+    async (_event, id: unknown, enabled: unknown): Promise<boolean> => {
+      if (typeof id !== 'string' || typeof enabled !== 'boolean') {
+        throw new Error('id and enabled are required')
+      }
+      const current = readStringList((await workspace.client.listSettings())[BuiltinKernelsKey])
+      const next = enabled
+        ? current.filter((entry) => entry !== id)
+        : [...new Set([...current, id])]
+      await workspace.client.putSetting(BuiltinKernelsKey, next)
+
+      if (enabled) {
+        const result = await workspace.kernels.mountBuiltin(id)
+        const mounted = workspace.harness.list().some((kernel) => kernel.id === id)
+        if (!mounted && result.failure !== null) {
+          console.warn(`[kernel] ${id} 没能启动：${result.failure}`)
+        }
+      } else {
+        await workspace.kernels.unmount(id)
+      }
+      // The default may have just been turned off, or a newly mounted one may be the
+      // only kernel left.
+      workspace.harness.refreshDefault()
+      return enabled
+    },
+  )
+
+  /** Chooses where new conversations start; conversations keep the kernel they ran on. */
+  ipcMain.handle('pictor:kernels.setDefault', async (_event, id: unknown): Promise<boolean> => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    if (!workspace.harness.setDefault(id)) return false
+    await workspace.client.putSetting(DefaultKernelKey, id)
+    return true
+  })
+
   ipcMain.handle('pictor:plugins.overview', async (): Promise<PluginOverview[]> => {
     const records = await workspace.client.listPlugins()
     // The workspace already holds expanded plugin directories, not parents.
