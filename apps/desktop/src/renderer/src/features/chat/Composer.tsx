@@ -5,8 +5,11 @@ import { createPortal } from 'react-dom'
 
 import type { CatalogSkill, ChatImage } from '@pictor/shared'
 
+import type { KernelCommand } from '../../../../shared/bridge.js'
+
 import { Button } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
+import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { useChatStore } from './chat-store.js'
 import { ContextMeter } from './ContextMeter.js'
 import { KernelPicker } from './KernelPicker.js'
@@ -14,7 +17,13 @@ import { KernelModelPicker } from './KernelModelPicker.js'
 import { ModelPicker } from './ModelPicker.js'
 import { SessionApprovalPicker } from './SessionApprovalPicker.js'
 import { SessionPermissionPicker } from './SessionPermissionPicker.js'
-import { matchSkills, slashTokenAt, type SlashToken } from './slash.js'
+import {
+  commandLineOf,
+  slashEntries,
+  slashTokenAt,
+  type SlashEntry,
+  type SlashToken,
+} from './slash.js'
 
 /** Refuses anything the runtime could not accept, before the user commits it. */
 const ACCEPTED = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
@@ -59,6 +68,9 @@ export function Composer({
   const [value, setValue] = useState('')
   const [images, setImages] = useState<ChatImage[]>([])
   const [skills, setSkills] = useState<CatalogSkill[] | null>(null)
+  // The kernel's own commands, listed beside the skills: both are typed with `/`, and
+  // one of them runs on the kernel instead of being sent to the model.
+  const [commands, setCommands] = useState<KernelCommand[] | null>(null)
   const [slash, setSlash] = useState<SlashToken | null>(null)
   const [active, setActive] = useState(0)
   const [anchor, setAnchor] = useState<{ left: number; bottom: number; width: number } | null>(null)
@@ -86,31 +98,45 @@ export function Composer({
   // The catalog belongs to the conversation, so it is read when a `/` starts a
   // token rather than on mount: most drafts never ask for a skill.
   useEffect(() => {
-    if (slash === null || skills !== null || sessionId.length === 0) return
+    if (slash === null || sessionId.length === 0) return
     let alive = true
-    void window.pictor
-      .listSkills(sessionId)
-      .then((next) => {
-        if (alive) setSkills(next)
-      })
-      .catch(() => {
-        // A runtime that cannot answer leaves the menu closed; the draft is still
-        // sendable, and the runtime ignores an unknown `/name`.
-        if (alive) setSkills([])
-      })
+    // Two sources, one menu: a kernel that offers no commands contributes nothing,
+    // and a runtime that cannot list skills still shows its commands.
+    if (skills === null) {
+      void window.pictor
+        .listSkills(sessionId)
+        .then((next) => {
+          if (alive) setSkills(next)
+        })
+        .catch(() => {
+          // A runtime that cannot answer leaves that half of the menu empty; the draft
+          // is still sendable, and the runtime ignores an unknown `/name`.
+          if (alive) setSkills([])
+        })
+    }
+    if (commands === null) {
+      void window.pictor
+        .kernelCommands(sessionId)
+        .then((next) => {
+          if (alive) setCommands(next)
+        })
+        .catch(() => {
+          if (alive) setCommands([])
+        })
+    }
     return () => {
       alive = false
     }
-  }, [slash, skills, sessionId])
+  }, [slash, skills, commands, sessionId])
 
   const matches = useMemo(
-    () => (slash === null ? [] : matchSkills(skills ?? [], slash.query)),
-    [slash, skills],
+    () => (slash === null ? [] : slashEntries(commands ?? [], skills ?? [], slash.query)),
+    [slash, commands, skills],
   )
 
   useEffect(() => {
     setActive(0)
-  }, [slash?.query, skills])
+  }, [slash?.query, skills, commands])
 
   // Above the textarea, so the menu never covers the words being typed under it.
   useEffect(() => {
@@ -143,10 +169,13 @@ export function Composer({
     }
   }, [slash])
 
-  function choose(skill: CatalogSkill): void {
+  function choose(entry: SlashEntry): void {
     if (slash === null) return
-    const next = `${value.slice(0, slash.start)}/${skill.name} ${value.slice(slash.end)}`
-    const caret = slash.start + skill.name.length + 2
+    // A command that takes no words gets no trailing space, so it can be sent the
+    // moment it is picked; the others leave room for their input.
+    const tail = entry.kind === 'command' && entry.input === undefined ? '' : ' '
+    const next = `${value.slice(0, slash.start)}/${entry.name}${tail}${value.slice(slash.end)}`
+    const caret = slash.start + entry.name.length + 1 + tail.length
     setValue(next)
     setSlash(null)
     // The menu closes on the same tick; the caret has to be placed after the
@@ -162,6 +191,27 @@ export function Composer({
   function submit(): void {
     const prompt = value.trim()
     if ((prompt.length === 0 && images.length === 0) || disabled || running) return
+
+    // A line that names one of the kernel's commands belongs to the kernel: sending it
+    // as a prompt would hand the model the words someone meant for `/compact`.
+    const line = commandLineOf(prompt, commands ?? [])
+    if (line !== null && sessionId.length > 0) {
+      setValue('')
+      setImages([])
+      setSlash(null)
+      void window.pictor
+        .runKernelCommand(sessionId, line)
+        .then((said) => {
+          if (said !== null) useWorkspaceStore.getState().setNotice(said)
+        })
+        .catch((reason: unknown) => {
+          useWorkspaceStore
+            .getState()
+            .setError(reason instanceof Error ? reason.message : String(reason))
+        })
+      return
+    }
+
     const attached = images
     setValue('')
     setImages([])
@@ -243,10 +293,10 @@ export function Composer({
                 return
               }
               if (event.key === 'Enter' || event.key === 'Tab') {
-                const skill = matches[active]
-                if (skill !== undefined) {
+                const entry = matches[active]
+                if (entry !== undefined) {
                   event.preventDefault()
-                  choose(skill)
+                  choose(entry)
                   return
                 }
               }
@@ -313,21 +363,28 @@ export function Composer({
             }}
             className="fixed z-50 flex max-h-64 flex-col overflow-y-auto rounded-lg border border-border bg-surface-raised p-1 shadow-popover"
           >
-            {matches.map((skill, index) => (
+            {matches.map((entry, index) => (
               <button
-                key={skill.name}
+                key={`${entry.kind}:${entry.name}`}
                 type="button"
                 role="option"
                 aria-selected={index === active}
                 onMouseEnter={() => setActive(index)}
-                onClick={() => choose(skill)}
+                onClick={() => choose(entry)}
                 className={cn(
                   'flex flex-col gap-0.5 rounded-sm px-2 py-1.5 text-left transition-colors duration-150',
                   index === active ? 'bg-surface-hover' : 'bg-transparent',
                 )}
               >
-                <span className="font-mono text-xs text-text">/{skill.name}</span>
-                <span className="line-clamp-1 text-2xs text-faint">{skill.description}</span>
+                <span className="flex items-center gap-1.5 font-mono text-xs text-text">
+                  /{entry.name}
+                  {/* Which half this row came from: a command runs on the kernel, a
+                      skill is instructions the model reads. */}
+                  <span className="rounded-sm bg-surface-hover px-1 text-2xs text-faint">
+                    {entry.kind === 'command' ? '命令' : '技能'}
+                  </span>
+                </span>
+                <span className="line-clamp-1 text-2xs text-faint">{entry.description}</span>
               </button>
             ))}
           </div>,

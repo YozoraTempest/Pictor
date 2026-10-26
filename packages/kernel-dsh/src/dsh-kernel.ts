@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 
 import { DshDriver } from './dsh-driver.js'
 import { hostService, provideKernel, type KernelPlugin } from '@pictor/kernel-sdk'
+import { parseMcpServers } from '@pictor/shared'
 
 /**
  * dsh, mounted the way any other kernel is.
@@ -20,6 +21,7 @@ export const dshKernel: KernelPlugin = {
     'pictor.permission',
     'pictor.workspace',
     'pictor.userdata',
+    'pictor.settings',
   ],
   apply(ctx: Context): void {
     const driver = new DshDriver({
@@ -29,6 +31,9 @@ export const dshKernel: KernelPlugin = {
       readPermissionMode: hostService(ctx, 'pictor.permission'),
       resolveCwd: hostService(ctx, 'pictor.workspace'),
       userData: hostService(ctx, 'pictor.userdata'),
+      // Read on every boot rather than captured: the profile patch is the mount
+      // point, so a new server arrives with the next runtime.
+      mcp: () => parseMcpServers(hostService(ctx, 'pictor.settings').read('mcp.servers')),
     })
     provideKernel(ctx, driver)
   },

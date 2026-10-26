@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 
-import { piProvidersOf, type PiProviderSpec } from '@pictor/shared'
+import { parseMcpServers, piProvidersOf, type PiProviderSpec } from '@pictor/shared'
 
 import type { KernelModelService } from '@pictor/kernel-sdk'
 import { writeGuardExtension } from './pi-guard-extension.js'
@@ -57,6 +57,8 @@ export function createPiKernel(): KernelPlugin {
           // per launch, and a missing one makes the extension block rather than allow.
           guardExtension: () => writeGuardExtension(userData, hostService(ctx, 'pictor.guard')()),
           ownConfig: () => ownConfig,
+          // Pi reads `mcp.json` per spawn; the driver writes it from this list.
+          mcpServers: () => parseMcpServers(settings.read('mcp.servers')),
         }),
       )
     },

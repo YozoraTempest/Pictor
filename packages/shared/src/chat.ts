@@ -1,4 +1,20 @@
-export type ChatRole = 'user' | 'assistant' | 'tool'
+/**
+ * Who wrote one row.
+ *
+ * `notice` is not a conversation turn: it is something the runtime did to the
+ * transcript itself — compacting the context, for one — and it is drawn as a divider
+ * rather than as a bubble, because nobody said it.
+ */
+export type ChatRole = 'user' | 'assistant' | 'tool' | 'notice'
+
+/** Something that happened to the transcript, rather than in it. */
+export interface ChatNotice {
+  kind: 'compaction'
+  /** Tokens the runtime removed, when it reported a count. */
+  savedTokens: number | null
+  /** The summary that replaced them; empty when the kernel did not send one. */
+  summary: string
+}
 
 /** What one turn cost, in the provider's own count. `null` means it said nothing. */
 export interface ChatUsage {
@@ -59,6 +75,8 @@ export interface ChatMessage {
    * still knows what its last turn cost: the meter reads the newest one.
    */
   usage?: ChatUsage
+  /** Present on a `notice` row: what the runtime did to this transcript. */
+  notice?: ChatNotice
 }
 
 /** One image the user pasted or dropped into the composer. */
@@ -180,6 +198,23 @@ export type ChatEvent =
       attempt: number
       maxAttempts: number
       message: string
+    }
+  /**
+   * The runtime replaced part of the context with a summary.
+   *
+   * Sent when it happens — during a turn or from `/compact` — because the transcript
+   * would otherwise appear to lose history without explanation. `runId` is absent for
+   * a compaction nobody asked for inside a turn.
+   */
+  | {
+      type: 'run.compacted'
+      sessionId: string
+      runId?: string
+      /** Tokens the kernel said it removed; null when it reported no count. */
+      savedTokens: number | null
+      summary: string | null
+      /** Why it compacted: the kernel's own word (`threshold`, `manual`, …). */
+      reason: string | null
     }
 
 /**

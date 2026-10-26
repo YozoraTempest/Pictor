@@ -1,5 +1,7 @@
 import type { CatalogSkill } from '@pictor/shared'
 
+import type { KernelCommand } from '../../../../shared/bridge.js'
+
 /** A `/` token being typed, and the span it occupies in the draft. */
 export interface SlashToken {
   start: number
@@ -47,4 +49,55 @@ export function matchSkills(skills: readonly CatalogSkill[], query: string): Cat
         skill.description.toLowerCase().includes(needle),
     )
     .slice(0, SLASH_MENU_LIMIT)
+}
+
+/** One row of the `/` menu: a kernel command or a skill. */
+export type SlashEntry =
+  | { kind: 'command'; name: string; description: string; input?: string }
+  | { kind: 'skill'; name: string; description: string }
+
+/**
+ * The menu for one query.
+ *
+ * Commands come first: they are the kernel's own levers, and a reader typing `/c` for
+ * `compact` should not have to look past a skill that happens to share the prefix. A
+ * command the kernel offered is always listed, because sending it as a prompt instead
+ * would reach the model with words it was never meant to read.
+ */
+export function slashEntries(
+  commands: readonly KernelCommand[],
+  skills: readonly CatalogSkill[],
+  query: string,
+): SlashEntry[] {
+  const needle = query.trim().toLowerCase()
+  const matched = (name: string, description: string): boolean =>
+    needle.length === 0 ||
+    name.toLowerCase().includes(needle) ||
+    description.toLowerCase().includes(needle)
+
+  const fromCommands: SlashEntry[] = commands
+    .filter((command) => matched(command.name, command.description))
+    .map((command) => ({
+      kind: 'command',
+      name: command.name,
+      description: command.description,
+      ...(command.input === undefined ? {} : { input: command.input }),
+    }))
+
+  const fromSkills: SlashEntry[] = matchSkills(skills, query).map((skill) => ({
+    kind: 'skill',
+    name: skill.name,
+    description: skill.description,
+  }))
+
+  return [...fromCommands, ...fromSkills].slice(0, SLASH_MENU_LIMIT)
+}
+
+/** The command a draft is asking to run, or null when it is ordinary text. */
+export function commandLineOf(draft: string, commands: readonly KernelCommand[]): string | null {
+  const trimmed = draft.trim()
+  const match = /^\/([a-z0-9-]+)(?:\s+[\s\S]*)?$/i.exec(trimmed)
+  if (match === null) return null
+  const name = match[1]?.toLowerCase() ?? ''
+  return commands.some((command) => command.name.toLowerCase() === name) ? trimmed : null
 }

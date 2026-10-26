@@ -25,7 +25,14 @@ function kernel(id: string, label = id): KernelInfo {
     label,
     default: false,
     available: true,
-    capabilities: { permission: false, approval: false, model: false, skills: false, fork: false },
+    capabilities: {
+      permission: false,
+      approval: false,
+      model: false,
+      skills: false,
+      fork: false,
+      commands: false,
+    },
     modelSource: null,
   }
 }

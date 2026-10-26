@@ -32,7 +32,14 @@ function driver(
     id,
     label: id,
     seen,
-    capabilities: { permission: true, approval: true, model: true, skills: true, fork: true },
+    capabilities: {
+      permission: true,
+      approval: true,
+      model: true,
+      skills: true,
+      fork: true,
+      commands: false,
+    },
     // A driver that answers for its own models; the picker follows this.
     ...(options.models === true
       ? {
@@ -143,7 +150,14 @@ describe('KernelRouter', () => {
       lookup: { kernelOf: () => Promise.resolve(null) },
     })
 
-    const everything = { permission: true, approval: true, model: true, skills: true, fork: true }
+    const everything = {
+      permission: true,
+      approval: true,
+      model: true,
+      skills: true,
+      fork: true,
+      commands: false,
+    }
 
     expect(kernels.list()).toEqual([
       {

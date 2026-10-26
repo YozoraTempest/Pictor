@@ -162,3 +162,60 @@ describe('PiTranslator', () => {
     expect(JSON.stringify(events(frames).at(-1)?.data)).toContain('正在重试')
   })
 })
+
+describe('PiTranslator compaction', () => {
+  it('says how much a compaction saved, in the frame dsh uses', () => {
+    // One vocabulary for both kernels: the transcript should not tell a reader which
+    // one compacted it.
+    const frames = run([
+      {
+        type: 'compaction_end',
+        reason: 'threshold',
+        result: {
+          summary: '前面问过颜色',
+          tokensBefore: 60_000,
+          estimatedTokensAfter: 12_000,
+        },
+        aborted: false,
+        willRetry: false,
+      },
+    ])
+
+    const [frame] = events(frames)
+    expect(frame?.type).toBe('compaction/summary')
+    expect(frame?.data).toMatchObject({
+      summary: '前面问过颜色',
+      shadowedTokenCount: 48_000,
+    })
+  })
+
+  it('keeps the row honest when Pi reports no count', () => {
+    const frames = run([
+      {
+        type: 'compaction_end',
+        reason: 'threshold',
+        result: { summary: '没有数字' },
+        aborted: false,
+        willRetry: false,
+      },
+    ])
+
+    const [frame] = events(frames)
+    expect(frame?.data).not.toHaveProperty('shadowedTokenCount')
+  })
+
+  it('draws nothing for an attempt that failed or will be retried', () => {
+    const frames = run([
+      { type: 'compaction_end', reason: 'threshold', result: null, aborted: true },
+      {
+        type: 'compaction_end',
+        reason: 'threshold',
+        result: { summary: '半截' },
+        aborted: false,
+        willRetry: true,
+      },
+    ])
+
+    expect(events(frames).filter((event) => event.type === 'compaction/summary')).toEqual([])
+  })
+})

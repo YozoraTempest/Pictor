@@ -35,10 +35,12 @@ export {
   type KernelSettingsSource,
 } from './settings-source.js'
 export { isApprovalSource, type KernelApprovalSource } from './approval-source.js'
+export { isCommandSource, type KernelCommandSource } from './command-source.js'
 export { resolveNodeBinary, resolveNpmCli } from './node-runtime.js'
 export type {
   HarnessStatus,
   KernelCapabilities,
+  KernelCommand,
   KernelInfo,
   KernelModel,
   KernelModelSource,

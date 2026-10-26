@@ -248,8 +248,20 @@ Selecting a session opens its transcript and a composer:
 - **Waiting for an answer** is a label on the sidebar row: a conversation whose kernel
   is holding a tool call or a question says so from anywhere in the app, and the card
   offers to jump to it.
-- **Skills** are offered per conversation from the slash menu; the catalog is the
-  kernel's, plus whatever plugins contribute.
+- **Skills and commands** share the slash menu, and it says which is which. A skill is
+  text the kernel injects into the turn (the catalog is the kernel's, plus whatever
+  plugins contribute); a command is the kernel's own lever, sent as `/name …` instead
+  of as a prompt — `compact` on both kernels, plus whatever dsh reports. A line that
+  names one of them never reaches the model as prose.
+- **Compaction is visible**: when a kernel replaces older context with a summary, the
+  transcript gets a divider saying 上下文已压缩 together with the saving it reported, and
+  the summary behind 查看摘要. It survives a reload, because each kernel's own history
+  reader emits the same row.
+- **MCP servers** (**设置 › 通用 › 智能体 › MCP**) are one list for every kernel: stdio
+  (a command and its arguments) or HTTP (an endpoint and its headers). dsh mounts each
+  one from its profile patch, so an edit restarts the runtime; Pi gets the same list
+  written into its `mcp.json` before it starts. Their tools appear as
+  `mcp__<server>__<tool>`.
 
 ## Permissions and rules
 
@@ -259,7 +271,7 @@ Three things decide whether a tool call runs:
   a live setting (**设置 › DSH › 默认权限**), and the composer's switch changes it for
   one conversation. Only kernels with a sandbox offer it; **完全访问** asks for
   confirmation because it also stops the per-call prompt.
-- **Tool rules** (**设置 › 通用 › 工具规则**) — per tool: allow, ask, or deny. A deny or
+- **Tool rules** (**设置 › 通用 › 偏好 › 权限**) — per tool: allow, ask, or deny. A deny or
   ask rule can also match on the call's arguments (globs); allow matches by tool name
   only, because allowing every call of a tool is the one promise that is safe to make.
   Conflicts resolve deny > ask > allow.
@@ -307,7 +319,7 @@ Override discovery for tests with `PICTOR_CCSWITCH_DB` (database path),
 Settings is three columns: one owner per row of icons, then the owner's pages, then the
 page itself.
 
-- **通用** — 偏好 (常规, 权限), 智能体 (模型, 技能), 插件.
+- **通用** — 偏好 (常规, 权限), 智能体 (模型, 技能, MCP), 插件.
 - **DSH** — 运行时 (status, version, install, start/stop).
 - **Pi** — 运行时 (status, binary, isolation switch, session data).
 - **关于** — version, data directory, licence.

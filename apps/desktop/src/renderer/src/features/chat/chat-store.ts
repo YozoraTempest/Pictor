@@ -565,6 +565,29 @@ export const useChatStore = create<ChatState>()((set, get) => {
         return
       }
 
+      if (event.type === 'run.compacted') {
+        // The runtime replaced older turns with a summary. The row says so, at the
+        // point in the transcript where it happened, and it survives a reload because
+        // each kernel's history reader emits the same row.
+        patch(sessionId, (state) => ({
+          messages: [
+            ...state.messages,
+            {
+              id: `notice-${String(state.messages.length)}-${String(Date.now())}`,
+              role: 'notice',
+              text: '',
+              timestamp: Date.now(),
+              notice: {
+                kind: 'compaction',
+                savedTokens: event.savedTokens,
+                summary: event.summary ?? '',
+              },
+            },
+          ],
+        }))
+        return
+      }
+
       // The run is over: any tool row still waiting for a result would spin
       // forever, so close it with an explicit outcome.
       patch(sessionId, (state) => {

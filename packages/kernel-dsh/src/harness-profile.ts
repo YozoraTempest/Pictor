@@ -1,4 +1,4 @@
-import type { ModelEntry, ModelProtocol } from '@pictor/shared'
+import type { McpServerSpec, ModelEntry, ModelProtocol } from '@pictor/shared'
 import { acceptedEfforts } from '@pictor/shared'
 
 import { GUARD_PLUGIN_NAME } from './harness-guard-plugin.js'
@@ -25,6 +25,9 @@ export const PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-a
  */
 const DISABLED_ENTRIES = ['llm-deepseek', 'llm-deepseek-account']
 
+/** The runtime's MCP client: one instance per configured server. */
+const MCP_CLIENT_PLUGIN = '@deepseek-ai/dsh-mcp-client'
+
 export interface ProfileSettingsInput {
   protocol: ModelProtocol
   baseUrl: string
@@ -32,6 +35,8 @@ export interface ProfileSettingsInput {
   models: readonly ModelEntry[]
   /** Loopback bridge the guard plugin dials; absent when no guard is installed. */
   guard?: { port: number; token: string }
+  /** Servers to mount; already filtered to the enabled ones. */
+  mcp?: readonly McpServerSpec[]
 }
 
 /** The model list the route declares, with a single-entry fallback. */
@@ -100,6 +105,37 @@ export function buildProfilePatch(input: ProfileSettingsInput): string {
     { id: 'llm-pi-ai', config: { providers: { [ROUTE]: route } } },
     { id: 'agent-default-model', config: { provider: ROUTE, model: input.modelId } },
   ]
+
+  for (const server of input.mcp ?? []) {
+    // One plugin instance per server, exactly as dsh documents: the MCP client is a
+    // namespace plugin and each instance owns one connection and one tool namespace.
+    patch.push({
+      insert: [
+        {
+          id: `mcp-${server.name}`,
+          name: MCP_CLIENT_PLUGIN,
+          config:
+            server.transport === 'http'
+              ? {
+                  transport: 'streamable-http',
+                  serverName: server.name,
+                  url: server.url,
+                  headers: server.headers,
+                }
+              : {
+                  transport: 'stdio',
+                  serverName: server.name,
+                  command: server.command,
+                  args: server.args,
+                  env: server.env,
+                  // A server that will not start must not take the runtime with it:
+                  // the rest of the harness still works without it.
+                  failOnStartupError: false,
+                },
+        },
+      ],
+    })
+  }
 
   if (input.guard !== undefined) {
     // A user-layer patch can only amend entries the bundle stack already declared,

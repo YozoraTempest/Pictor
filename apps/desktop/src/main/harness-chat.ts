@@ -275,6 +275,29 @@ export class HarnessChatBridge {
         ]
       }
 
+      /**
+       * The runtime replaced older turns with a summary.
+       *
+       * `compaction/prune` is deliberately not surfaced: the tool-result pruner fires
+       * per oversized tool output, and a divider for each would bury the transcript.
+       * This one is the whole-conversation compaction, which is worth a row.
+       */
+      case 'compaction/summary': {
+        const saved = data['shadowedTokenCount']
+        const summary = data['summary']
+        return [
+          {
+            type: 'run.compacted',
+            sessionId,
+            savedTokens: typeof saved === 'number' && Number.isFinite(saved) ? saved : null,
+            summary: typeof summary === 'string' && summary.length > 0 ? summary : null,
+            // dsh does not name a reason on the event; the command or the threshold
+            // decided it, and the row does not have to guess which.
+            reason: null,
+          },
+        ]
+      }
+
       case 'llm/retry': {
         // The runtime re-runs a failed model step inside this turn; saying so is
         // better than leaving the turn looking stalled until it recovers or gives up.

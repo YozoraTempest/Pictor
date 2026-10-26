@@ -138,6 +138,49 @@ describe('chat-store handleEvent', () => {
     expect(useChatStore.getState().current.running).toBe(false)
   })
 
+  it('appends the row a compaction deserves, at the point it happened', () => {
+    const { handleEvent } = useChatStore.getState()
+
+    handleEvent({ type: 'run.started', sessionId: 's1', runId: 'run-1' })
+    handleEvent({ type: 'message.delta', sessionId: 's1', runId: 'run-1', text: '答完这句' })
+    handleEvent({
+      type: 'run.compacted',
+      sessionId: 's1',
+      runId: 'run-1',
+      savedTokens: 4200,
+      summary: '前几轮的结论',
+      reason: 'threshold',
+    })
+
+    const messages = useChatStore.getState().current.messages
+    // The answer stays the answer: a divider is not allowed to swallow or split it.
+    expect(messages.map((message) => message.role)).toEqual(['assistant', 'notice'])
+    expect(messages[1]?.notice).toEqual({
+      kind: 'compaction',
+      savedTokens: 4200,
+      summary: '前几轮的结论',
+    })
+  })
+
+  it('draws the divider with no count when the runtime did not report one', () => {
+    const { handleEvent } = useChatStore.getState()
+
+    handleEvent({
+      type: 'run.compacted',
+      sessionId: 's1',
+      runId: 'run-1',
+      savedTokens: null,
+      summary: null,
+      reason: null,
+    })
+
+    expect(useChatStore.getState().current.messages[0]?.notice).toEqual({
+      kind: 'compaction',
+      savedTokens: null,
+      summary: '',
+    })
+  })
+
   it('ignores events that belong to another session', () => {
     const { handleEvent } = useChatStore.getState()
 

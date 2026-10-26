@@ -65,10 +65,12 @@ export default {
       await input.fill('/')
 
       // The menu lists what the conversation can actually load — the runtime's
-      // catalog, not a list Pictor keeps on its own.
+      // catalog, not a list Pictor keeps on its own. Kernel commands share the menu
+      // and come first, so a query narrows to the skill being tested.
       const menu = page.getByRole('listbox', { name: '选择技能' })
       await menu.waitFor({ timeout: 15_000 })
       await menu.getByText('/e2e-skill').waitFor({ timeout: 10_000 })
+      await input.fill('/e2e')
 
       // Enter completes the name; it must not send a draft holding just `/`.
       await input.press('Enter')

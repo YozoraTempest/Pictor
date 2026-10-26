@@ -19,6 +19,7 @@ import type {
   ChatHistoryPage,
   ChatImage,
   ForkPoint,
+  McpServerSpec,
   ModelEffort,
 } from '@pictor/shared'
 
@@ -32,10 +33,10 @@ import type {
 import type { PiProviderSpec } from '@pictor/shared'
 
 import type { AgentProbeResult, KernelDriver } from '@pictor/kernel-sdk'
-import type { KernelSetting } from '@pictor/kernel-sdk'
+import type { KernelCommand, KernelSetting } from '@pictor/kernel-sdk'
 import type { KernelModelCatalogue } from '@pictor/kernel-sdk'
 import { PiTranslator, type PiFrame } from './pi-events.js'
-import { ensurePiHome } from './pi-home.js'
+import { ensurePiHome, writePiMcpJson } from './pi-home.js'
 import { historyRows, storedLevel, storedModel, textOf, type StoredRecord } from './pi-history.js'
 
 /** How long one command may take before the caller gives up on Pi answering. */
@@ -83,6 +84,13 @@ export interface PiRpcDriverOptions {
    * than restarting the app.
    */
   ownConfig?: () => boolean
+  /**
+   * MCP servers configured in Pictor.
+   *
+   * Pi reads `mcp.json` when it starts, and a conversation starts a child of its own —
+   * so the list is written once per spawn, which is also when an edit takes effect.
+   */
+  mcpServers?: () => readonly McpServerSpec[]
   /**
    * Records the choice above: updates the flag, persists it, and does whatever else
    * leaving the isolated directory means. The driver only waits for it.
@@ -172,6 +180,9 @@ export class PiRpcDriver implements KernelDriver, KernelModelCatalogue {
     // Pi has no sandbox, but it does let an extension hold a call, so Pictor owns
     // the decision of when to ask — which is what this control promises.
     approval: true,
+    // Pi's RPC surface offers exactly one command — `compact` — and the menu says so
+    // rather than pretending the terminal's `/tree` and `/mcp` are reachable.
+    commands: true,
   }
 
   readonly #options: PiRpcDriverOptions
@@ -330,6 +341,50 @@ export class PiRpcDriver implements KernelDriver, KernelModelCatalogue {
       this.#closeTurn(kid, { reason: 'error', message: describe(error) }, turn)
       throw error
     }
+  }
+
+  /**
+   * Pi's one command.
+   *
+   * The terminal has more (`/tree`, `/mcp`, `/reload`), but none of them exist in RPC
+   * mode: listing them here would offer lines this kernel cannot execute. `compact`
+   * does exist — it shortens the context the next turn carries — so it is the whole
+   * list.
+   */
+  async commands(sessionId: string): Promise<KernelCommand[]> {
+    await this.#ensure(sessionId)
+    return [
+      {
+        name: 'compact',
+        description: '压缩上下文，之后接着说话',
+        input: '可选的关注点',
+      },
+    ]
+  }
+
+  /** Runs `/compact`, with any words after it as instructions for the summary. */
+  async runCommand(sessionId: string, line: string): Promise<string | null> {
+    const parsed = /^\s*\/([a-z0-9-]+)\s*([\s\S]*)$/i.exec(line)
+    if (parsed === null || parsed[1]?.toLowerCase() !== 'compact') {
+      throw new Error(`pi 不认识这条命令：${line.trim()}`)
+    }
+    const kid = await this.#ensure(sessionId)
+    if (kid.turn !== null) throw new Error('上一轮还没有结束，等它跑完再压缩')
+
+    const instructions = parsed[2]?.trim() ?? ''
+    const result = (await this.#request(kid, {
+      type: 'compact',
+      ...(instructions.length === 0 ? {} : { customInstructions: instructions }),
+    })) as { result?: { tokensBefore?: unknown; estimatedTokensAfter?: unknown } | null }
+
+    // The row in the transcript comes from `compaction_end`, which Pi emits on the
+    // stream; this sentence is only what the person is told in the banner.
+    const before = result.result?.tokensBefore
+    const after = result.result?.estimatedTokensAfter
+    if (typeof before === 'number' && typeof after === 'number') {
+      return `已压缩：${String(Math.round((before - after) / 1000))}k tokens`
+    }
+    return '已压缩上下文'
   }
 
   async cancel(sessionId: string): Promise<void> {
@@ -1275,7 +1330,13 @@ export class PiRpcDriver implements KernelDriver, KernelModelCatalogue {
     // configuration serve both kernels instead of two copies drifting apart. The
     // switch to use Pi's own directory exists because that is also the only way to
     // keep Pi's extensions, and it is off by default for exactly this reason.
-    if (this.#options.ownConfig?.() !== true) env['PI_CODING_AGENT_DIR'] = this.#home
+    if (this.#options.ownConfig?.() !== true) {
+      env['PI_CODING_AGENT_DIR'] = this.#home
+      // Pi's own configuration directory is where Pictor's list is rendered into;
+      // with isolation off, `~/.pi/agent/mcp.json` is the person's file and is left
+      // exactly as they wrote it.
+      writePiMcpJson(this.#home, this.#options.mcpServers?.() ?? [])
+    }
     return env
   }
 

@@ -33,6 +33,8 @@ export interface KernelCapabilities {
   skills: boolean
   /** The kernel can branch a conversation at a message boundary. */
   fork: boolean
+  /** The kernel has slash commands of its own that Pictor can list and run. */
+  commands: boolean
 }
 
 /** One model a kernel can run, in that kernel's own words. */
@@ -99,4 +101,25 @@ export interface HarnessStatus {
   /** Sandbox mode the runtime is (or will be) booted with. */
   permissionMode: PermissionMode
   error: string | null
+}
+
+/**
+ * One command a kernel can run without sending anything to the model.
+ *
+ * A slash command is the kernel's own business: `/compact` shortens the context,
+ * `/permission` changes the sandbox. Pictor shows what the kernel offers and hands the
+ * complete line back, because only the kernel knows what its commands mean.
+ */
+export interface KernelCommand {
+  /** The name without its leading slash, as the kernel spells it. */
+  name: string
+  /** One line for the menu; the kernel wrote it. */
+  description: string
+  /**
+   * Placeholder for free-form words after the name, when the command takes any.
+   *
+   * Absent means the command takes no arguments, which is how a menu knows not to
+   * promise a text field that the command would ignore.
+   */
+  input?: string
 }

@@ -47,7 +47,7 @@ describe('settings pages', () => {
     )
     expect(groups).toEqual([
       ['偏好', ['常规', '权限']],
-      ['智能体', ['模型', '技能']],
+      ['智能体', ['模型', '技能', 'MCP']],
     ])
 
     // A category of one page is a heading and a row, not a heading, a group, and a row.

@@ -3,6 +3,7 @@ import {
   BookOpen,
   Cpu,
   Info,
+  Server,
   Settings2,
   ShieldCheck,
   Terminal,
@@ -14,6 +15,7 @@ import { AboutSection } from './AboutSection.js'
 import { AgentModelPage } from './AgentModelPage.js'
 import { DefaultPermissionSection } from './DefaultPermissionSection.js'
 import { GeneralSection } from './GeneralSection.js'
+import { McpSection } from './McpSection.js'
 import { PluginsSection } from './PluginsSection.js'
 import { RuntimePage } from './RuntimePage.js'
 import { SkillsSection } from './SkillsSection.js'
@@ -123,7 +125,7 @@ const PAGES = [
     description: '面板、工具守卫、技能，以及插件带来的内核',
     keywords: '插件 plugin 拓展 面板 内核 kernel cordis 安装 卸载 启停 权限',
     category: CATEGORIES.general,
-    order: 4,
+    order: 5,
     render: () => <PluginsSection />,
   },
   {
@@ -136,6 +138,17 @@ const PAGES = [
     group: '智能体',
     order: 3,
     render: () => <SkillsSection />,
+  },
+  {
+    id: 'mcp',
+    label: 'MCP',
+    icon: Server,
+    description: '外部的工具服务器：数据库、浏览器、内部接口',
+    keywords: 'mcp model context protocol 服务器 server stdio http 工具 外部 接口 数据库',
+    category: CATEGORIES.general,
+    group: '智能体',
+    order: 4,
+    render: () => <McpSection />,
   },
   {
     id: 'dsh-runtime',

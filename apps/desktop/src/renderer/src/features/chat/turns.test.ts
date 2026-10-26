@@ -122,6 +122,26 @@ describe('buildTurns', () => {
     expect(turns).toHaveLength(1)
     expect(turns[0]).toMatchObject({ user: null, prompt: '', answer: '只有回答' })
   })
+  it('keeps a compaction divider out of the answer, at the point it happened', () => {
+    const turns = buildTurns([
+      msg({ id: 'u1', role: 'user', text: '问', timestamp: 100 }),
+      msg({ id: 'a1', role: 'assistant', text: '答', timestamp: 200 }),
+      msg({
+        id: 'k1',
+        role: 'notice',
+        timestamp: 300,
+        notice: { kind: 'compaction', savedTokens: 4200, summary: '前情' },
+      }),
+    ])
+
+    // The divider is its own part: an answer must stay what the model wrote.
+    expect(turns[0]?.answer).toBe('答')
+    expect(turns[0]?.parts.map((part) => part.kind)).toEqual(['text', 'notice'])
+    expect(turns[0]?.parts[1]).toMatchObject({
+      timestamp: 300,
+      notice: { kind: 'compaction', savedTokens: 4200 },
+    })
+  })
 })
 
 describe('groupActivityItems', () => {

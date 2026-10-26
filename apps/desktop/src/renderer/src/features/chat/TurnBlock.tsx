@@ -4,9 +4,11 @@ import type { ForkPoint } from '@pictor/shared'
 import { useEffect, useState } from 'react'
 
 import { IconButton } from '../../components/ui/index.js'
+import { cn } from '../../lib/cn.js'
 import { formatClock, formatDuration, phaseLabel, type AgentPhase } from '../../lib/format-time.js'
 import { Markdown } from './Markdown.js'
 import { ActivityGroup } from './ActivityGroup.js'
+import { NoticeRow } from './NoticeRow.js'
 import { toolLabel } from './tool-presenters.js'
 import type { Turn } from './turns.js'
 
@@ -35,6 +37,11 @@ export function TurnBlock({
 }: TurnBlockProps): React.JSX.Element {
   const startedAt = turn.startedAt ?? turn.finishedAt
   const finishedAt = live ? null : turn.finishedAt
+  // A notice is not a turn: it stands on its own, so an idle compaction draws no
+  // agent header over it.
+  const notices = turn.parts.filter((part) => part.kind === 'notice')
+  const spoken = turn.parts.filter((part) => part.kind !== 'notice')
+  const answered = turn.user !== null || spoken.length > 0
 
   return (
     <section id={turn.id} className="flex scroll-mt-4 flex-col gap-3">
@@ -64,7 +71,11 @@ export function TurnBlock({
         </div>
       )}
 
-      <div className="group flex gap-3">
+      {notices.map((part) => (
+        <NoticeRow key={part.id} notice={part.notice} />
+      ))}
+
+      <div className={cn('group flex gap-3', !answered && 'hidden')}>
         <div className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-accent/15 text-accent">
           <Sparkles className="size-3.5" />
         </div>
@@ -80,7 +91,7 @@ export function TurnBlock({
             <Duration startedAt={startedAt} finishedAt={finishedAt} live={live} />
           </div>
 
-          {turn.parts.map((part) => {
+          {spoken.map((part) => {
             if (part.kind === 'activity') {
               return <ActivityGroup key={part.id} messages={part.messages} running={live} />
             }

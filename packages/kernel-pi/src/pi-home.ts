@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { PI_PROVIDER_PREFIX } from '@pictor/shared'
+import { PI_PROVIDER_PREFIX, type McpServerSpec } from '@pictor/shared'
 
 /**
  * The configuration directory Pi runs on inside Pictor.
@@ -88,4 +88,43 @@ export function forgetForeignPiModels(userData: string): void {
   if (dropped > 0) {
     console.warn(`[pi] 忘记了 ${String(dropped)} 个只存在于 Pi 自己配置里的模型选择`)
   }
+}
+
+/**
+ * Pi's MCP servers, written where Pi reads them.
+ *
+ * Pi loads `mcp.json` from its own configuration directory, which inside Pictor is
+ * `<profile>/pi-home`. Pictor keeps one list for every kernel, so the list is rendered
+ * into Pi's format at spawn time: that is also the moment Pi reads it, and a
+ * conversation that starts after an edit gets the servers the page shows.
+ *
+ * Pi's own configuration is its own business: when a person turned isolation off, this
+ * writes nothing and `~/.pi/agent/mcp.json` stays exactly as they left it.
+ */
+export function writePiMcpJson(home: string, servers: readonly McpServerSpec[]): void {
+  const file = join(home, 'mcp.json')
+  const enabled = servers.filter((server) => server.enabled)
+  if (enabled.length === 0) {
+    // An empty file would be a list of zero servers either way; removing it keeps a
+    // stale entry from an earlier version of Pictor out of Pi's configuration.
+    rmSync(file, { force: true })
+    return
+  }
+
+  const mcpServers: Record<string, unknown> = {}
+  for (const server of enabled) {
+    mcpServers[server.name] =
+      server.transport === 'http'
+        ? {
+            url: server.url,
+            ...(Object.keys(server.headers).length === 0 ? {} : { headers: server.headers }),
+          }
+        : {
+            command: server.command,
+            ...(server.args.length === 0 ? {} : { args: server.args }),
+            ...(Object.keys(server.env).length === 0 ? {} : { env: server.env }),
+          }
+  }
+  mkdirSync(home, { recursive: true })
+  writeFileSync(file, `${JSON.stringify({ mcpServers }, null, 2)}\n`, 'utf8')
 }

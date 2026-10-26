@@ -15,6 +15,7 @@ function kernel(id: string, overrides: Partial<KernelInfo['capabilities']> = {})
       model: true,
       skills: true,
       fork: true,
+      commands: true,
       ...overrides,
     },
     modelSource: 'pictor',
@@ -27,6 +28,7 @@ const NO_SANDBOX = {
   model: false,
   skills: false,
   fork: false,
+  commands: false,
 }
 
 describe('capabilitiesOf', () => {
@@ -50,6 +52,7 @@ describe('capabilitiesOf', () => {
       model: true,
       skills: true,
       fork: true,
+      commands: true,
     })
   })
 
@@ -60,6 +63,7 @@ describe('capabilitiesOf', () => {
       model: true,
       skills: true,
       fork: true,
+      commands: true,
     })
   })
 

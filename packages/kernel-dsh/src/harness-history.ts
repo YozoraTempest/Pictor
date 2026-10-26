@@ -79,6 +79,31 @@ export function projectHarnessEvents(events: readonly unknown[]): ChatMessage[] 
         break
       }
 
+      /**
+       * A compaction is durable, so the row has to be too.
+       *
+       * The checkpoint message the runtime appends in its place is skipped above: it
+       * is filed under a source this project only shows for `user`, and drawing the
+       * summary as if the person had typed it would be a lie about who said what.
+       */
+      case 'compaction/summary': {
+        const saved = data['shadowedTokenCount']
+        const summary = data['summary']
+        messages.push({
+          id: `compaction-${String(data['compactionId'] ?? id)}`,
+          role: 'notice',
+          text: '',
+          timestamp,
+          ...seqOf(event),
+          notice: {
+            kind: 'compaction',
+            savedTokens: typeof saved === 'number' && Number.isFinite(saved) ? saved : null,
+            summary: typeof summary === 'string' ? summary : '',
+          },
+        })
+        break
+      }
+
       case 'assistant/message': {
         const text = textOf(messageContent(data))
         if (text.length === 0) continue

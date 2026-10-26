@@ -3,14 +3,17 @@
 // and this module passes them through.
 import type {
   HarnessStatus,
+  KernelCommand,
   KernelInfo,
   KernelModelState,
   PermissionMode,
 } from '@pictor/kernel-sdk/types'
+import type { McpServerSpec } from '@pictor/shared'
 
 export type {
   HarnessStatus,
   KernelCapabilities,
+  KernelCommand,
   KernelInfo,
   KernelModel,
   KernelModelSource,
@@ -310,6 +313,24 @@ export interface PictorBridge {
   removeKernel(id: string): Promise<KernelChangeResult>
   /** Every kernel's status, by kernel id — one entry per kernel this build drives. */
   kernelStatuses(): Promise<Record<string, HarnessStatus>>
+  /** MCP servers every kernel may use; the list is Pictor's, not a kernel's. */
+  mcpServers(): Promise<McpServerSpec[]>
+  /**
+   * Replaces the list.
+   *
+   * dsh mounts a server from its profile patch, so a change there needs a restart —
+   * which the main process performs. Pi reads `mcp.json` per conversation, so its half
+   * takes effect on the next turn.
+   */
+  saveMcpServers(servers: McpServerSpec[]): Promise<McpServerSpec[]>
+  /**
+   * The slash commands this conversation's kernel offers.
+   *
+   * Empty when the kernel has none, which the composer reads as "no command menu".
+   */
+  kernelCommands(sessionId: string): Promise<KernelCommand[]>
+  /** Runs one complete slash line; resolves with what the kernel said, if anything. */
+  runKernelCommand(sessionId: string, line: string): Promise<string | null>
   /** The models a kernel offers for one conversation. */
   kernelModels(sessionId: string): Promise<KernelModelState>
   /** Selects one for that conversation, without a restart. */

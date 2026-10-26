@@ -86,6 +86,47 @@ describe('projectHarnessEvents', () => {
     expect(messages.filter((message) => message.role === 'tool')).toHaveLength(1)
   })
 
+  it('files a compaction as its own row, with what it saved', () => {
+    const messages = projectHarnessEvents([
+      userMessage('m1', 'ping'),
+      assistantMessage('pong'),
+      {
+        type: 'compaction/summary',
+        seq: 5,
+        time: 6000,
+        data: {
+          compactionId: 'k1',
+          summary: '前面聊过 ping',
+          shadowedRange: [1, 2],
+          shadowedTokenCount: 4200,
+        },
+      },
+    ])
+
+    // A summary is durable, so a reopened conversation still says where it lost detail.
+    expect(messages.at(-1)).toMatchObject({
+      role: 'notice',
+      seq: 5,
+      notice: { kind: 'compaction', savedTokens: 4200, summary: '前面聊过 ping' },
+    })
+  })
+
+  it('draws no row for a pruned tool result', () => {
+    // Every large tool output is pruned on its own; a divider per one would bury the
+    // conversation under them.
+    const messages = projectHarnessEvents([
+      userMessage('m1', 'ping'),
+      {
+        type: 'compaction/prune',
+        seq: 6,
+        time: 7000,
+        data: { shadowedRange: [3, 3], shadowedSeqs: [3], shadowedTokenCount: 900 },
+      },
+    ])
+
+    expect(messages.map((message) => message.role)).toEqual(['user'])
+  })
+
   it('does not repeat a user message that the inbox also logged', () => {
     const message = userMessage('m1', 'ping')
     const messages = projectHarnessEvents([message, { ...message, seq: 9 }])

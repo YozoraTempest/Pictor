@@ -43,7 +43,14 @@ export function apply(ctx) {
   ctx.provide('kernel.fake', {
     id: 'fake',
     label: '回声（示例）',
-    capabilities: { permission: false, approval: false, model: false, skills: false, fork: false },
+    capabilities: {
+      permission: false,
+      approval: false,
+      model: false,
+      skills: false,
+      fork: false,
+      commands: false,
+    },
 
     async start() {
       state = 'ready'

@@ -8,6 +8,7 @@
  */
 export type {
   HarnessStatus,
+  KernelCommand,
   KernelCapabilities,
   KernelInfo,
   KernelModel,

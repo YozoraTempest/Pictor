@@ -29,9 +29,12 @@ import {
   type ChatQuestion,
   type ForkPoint,
   type ModelEffort,
+  type McpServerSpec,
   type ModelSettings,
+  enabledMcpServers,
 } from '@pictor/shared'
 
+import { commandTextOf, parseCommands } from './harness-commands.js'
 import { loadHarnessHistory } from './harness-history.js'
 import { DEFAULT_PERMISSION_MODE, isPermissionMode } from '@pictor/shared'
 import { sessionTitleOf } from '@pictor/harness'
@@ -44,7 +47,12 @@ import {
 import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
 import { pinnedVersionOf } from '@pictor/shared'
 import type { HarnessStatus, KernelCapabilities, PermissionMode } from '@pictor/kernel-sdk/types'
-import type { AgentProbeResult, KernelDriver, KernelModelService } from '@pictor/kernel-sdk'
+import type {
+  AgentProbeResult,
+  KernelCommand,
+  KernelDriver,
+  KernelModelService,
+} from '@pictor/kernel-sdk'
 import { resolveNodeBinary, resolveNpmCli } from '@pictor/kernel-sdk'
 
 /**
@@ -63,9 +71,11 @@ function bootFingerprint(input: {
   protocol: string
   modelId: string
   apiKey: string | null
+  /** Server list, as the patch will render it: changing it needs a new boot. */
+  mcp?: string
 }): string {
   const key = input.apiKey === null ? '-' : createHash('sha256').update(input.apiKey).digest('hex')
-  return [input.baseUrl, input.protocol, input.modelId, key].join('|')
+  return [input.baseUrl, input.protocol, input.modelId, key, input.mcp ?? ''].join('|')
 }
 
 export interface DshDriverOptions {
@@ -74,6 +84,13 @@ export interface DshDriverOptions {
   model: KernelModelService
   /** `app.getPath('userData')`; the runtime gets its own directory inside it. */
   userData: string
+  /**
+   * MCP servers to mount, as configured in Pictor.
+   *
+   * Read on every boot: the list is part of the profile patch, so adding a server is a
+   * restart, and the fingerprint below is what notices the change.
+   */
+  mcp?: () => readonly McpServerSpec[]
   /** Overrides discovery, for a bundled runtime or a development checkout. */
   binary?: string
   /** Sandbox mode read from settings; the runtime takes it as an env var. */
@@ -169,6 +186,9 @@ export class DshDriver implements KernelDriver {
     model: true,
     skills: true,
     fork: true,
+    // The runtime's command service answers `commands/list` and `commands/execute`
+    // over the same remote wire `/permission` already uses.
+    commands: true,
   }
   readonly #options: DshDriverOptions
   readonly #listeners = new Set<(notification: HarnessNotification) => void>()
@@ -357,6 +377,7 @@ export class DshDriver implements KernelDriver {
         protocol: settings.protocol,
         modelId: settings.modelId,
         apiKey,
+        mcp: JSON.stringify(enabledMcpServers(this.#options.mcp?.() ?? [])),
       })
       // The runtime's preset table has its own default, which need not be the mode
       // this process was started with. Align it once, so a conversation opened
@@ -491,6 +512,7 @@ export class DshDriver implements KernelDriver {
       protocol: settings.protocol,
       modelId: settings.modelId,
       apiKey: await this.#options.model.activeApiKey(),
+      mcp: JSON.stringify(enabledMcpServers(this.#options.mcp?.() ?? [])),
     })
   }
 
@@ -607,6 +629,41 @@ export class DshDriver implements KernelDriver {
       request: { sessionId: harnessId },
     })
     return parseSkills(value)
+  }
+
+  /**
+   * The slash commands the runtime offers this conversation.
+   *
+   * `commands/list` answers with the effective descriptors for one agent — what the
+   * runtime will actually accept, after its own scoping — so Pictor never keeps a list
+   * of command names that could drift from the build it is driving.
+   */
+  async commands(sessionId: string): Promise<KernelCommand[]> {
+    const remote = this.#remote
+    if (remote === null) throw new Error('agent 运行时尚未启动')
+    const harnessId = await this.#sessionFor(sessionId)
+    const listed = await remote.call<unknown>('commands/list', { agentId: harnessId })
+    return parseCommands(listed)
+  }
+
+  /**
+   * Runs one complete slash line.
+   *
+   * A command is not a prompt: the runtime parses the line itself and executes it
+   * without sending anything to the model, which is why the answer is its own text and
+   * not a turn. A refusal comes back as the result's message rather than a throw, so
+   * the window can show what the runtime said.
+   */
+  async runCommand(sessionId: string, line: string): Promise<string | null> {
+    const remote = this.#remote
+    if (remote === null) throw new Error('agent 运行时尚未启动')
+    const harnessId = await this.#sessionFor(sessionId)
+    const executed = await remote.call<unknown>('commands/execute', {
+      agentId: harnessId,
+      line,
+      submittedAttachments: [],
+    })
+    return commandTextOf(executed)
   }
 
   /** Stop the turn the runtime is running for one session. */
@@ -1339,6 +1396,7 @@ export class DshDriver implements KernelDriver {
         baseUrl: settings.baseUrl,
         modelId: settings.modelId,
         models: settings.models,
+        mcp: enabledMcpServers(this.#options.mcp?.() ?? []),
         ...(guard === null ? {} : { guard }),
       }),
       'utf8',

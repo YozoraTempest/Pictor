@@ -1,10 +1,12 @@
-import type { ChatMessage, ForkPoint } from '@pictor/shared'
+import type { ChatMessage, ChatNotice, ForkPoint } from '@pictor/shared'
 
 /** One visual segment inside an agent turn. */
 export type TurnPart =
   /** Reasoning and tool calls, in the order they happened. */
   | { kind: 'activity'; id: string; messages: ChatMessage[] }
   | { kind: 'text'; id: string; text: string; fork?: ForkPoint }
+  /** Something the runtime did to the transcript; drawn as a divider. */
+  | { kind: 'notice'; id: string; notice: ChatNotice; timestamp: number | null }
 
 export interface Turn {
   id: string
@@ -96,6 +98,18 @@ function beforePointOf(
 
 function appendPart(turn: Turn, message: ChatMessage): void {
   if (typeof message.seq === 'number') turn.endSeq = message.seq
+
+  // A notice is not something anybody said, so it never merges into an answer and
+  // never counts as one: the turn's text stays what the model wrote.
+  if (message.notice !== undefined) {
+    turn.parts.push({
+      kind: 'notice',
+      id: `notice-${message.id}`,
+      notice: message.notice,
+      timestamp: message.timestamp,
+    })
+    return
+  }
 
   // Reasoning belongs to the work the agent did, not to a block of its own: it
   // joins the same list as the tool calls, so one group holds the whole trail

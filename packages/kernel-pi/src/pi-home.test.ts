@@ -4,8 +4,15 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { ensurePiHome, piHomeDir, prunePiModels, prunePiModelsFile } from './pi-home.js'
+import { type McpServerSpec } from '@pictor/shared'
 
+import {
+  ensurePiHome,
+  piHomeDir,
+  prunePiModels,
+  prunePiModelsFile,
+  writePiMcpJson,
+} from './pi-home.js'
 const dirs: string[] = []
 
 afterEach(() => {
@@ -65,3 +72,57 @@ describe('prunePiModelsFile', () => {
     expect(prunePiModelsFile(profile())).toBe(0)
   })
 })
+
+describe('writePiMcpJson', () => {
+  it('renders one list into the shape Pi reads', () => {
+    const home = piHomeDir(profile())
+
+    writePiMcpJson(home, [
+      { ...spec('files'), args: ['-y', 'server-filesystem'], env: { ROOTS: '/work' } },
+      { ...spec('docs'), transport: 'http', url: 'https://example.com/mcp', headers: { A: 'b' } },
+      // Switched off on the page: Pi must not start it either.
+      { ...spec('off'), enabled: false },
+    ])
+
+    expect(JSON.parse(readFileSync(join(home, 'mcp.json'), 'utf8'))).toEqual({
+      mcpServers: {
+        files: { command: 'node', args: ['-y', 'server-filesystem'], env: { ROOTS: '/work' } },
+        docs: { url: 'https://example.com/mcp', headers: { A: 'b' } },
+      },
+    })
+  })
+
+  it('leaves out what Pi would fill in itself', () => {
+    const home = piHomeDir(profile())
+
+    writePiMcpJson(home, [spec('bare')])
+
+    expect(JSON.parse(readFileSync(join(home, 'mcp.json'), 'utf8'))).toEqual({
+      mcpServers: { bare: { command: 'node' } },
+    })
+  })
+
+  it('removes a stale file once every server is gone', () => {
+    const home = piHomeDir(profile())
+    writePiMcpJson(home, [spec('files')])
+
+    // A file left behind would keep a server running that the page no longer lists.
+    writePiMcpJson(home, [{ ...spec('files'), enabled: false }])
+
+    expect(() => readFileSync(join(home, 'mcp.json'), 'utf8')).toThrow()
+  })
+})
+
+/** One stdio server, with only the fields a test cares about. */
+function spec(name: string): McpServerSpec {
+  return {
+    name,
+    transport: 'stdio',
+    command: 'node',
+    args: [],
+    env: {},
+    url: '',
+    headers: {},
+    enabled: true,
+  }
+}

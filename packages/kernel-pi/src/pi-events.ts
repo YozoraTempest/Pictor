@@ -156,6 +156,38 @@ export class PiTranslator {
       }
     }
 
+    if (type === 'compaction_end') {
+      // Pi reports a compaction in its own words; the frame is the one dsh uses, so a
+      // reader of the transcript never learns which kernel compacted it. A failed or
+      // aborted attempt carries no result, and an attempt that will be retried is not
+      // worth a row yet.
+      const result = (record['result'] ?? null) as {
+        summary?: unknown
+        tokensBefore?: unknown
+        estimatedTokensAfter?: unknown
+      } | null
+      if (result === null || record['aborted'] === true || record['willRetry'] === true) {
+        return { frames: [] }
+      }
+      const before = typeof result.tokensBefore === 'number' ? result.tokensBefore : null
+      const after =
+        typeof result.estimatedTokensAfter === 'number' ? result.estimatedTokensAfter : null
+      const saved = before !== null && after !== null ? Math.max(0, before - after) : null
+      return {
+        frames: [
+          {
+            kind: 'event',
+            type: 'compaction/summary',
+            data: {
+              compactionId: `pi-${String(Date.now())}`,
+              summary: typeof result.summary === 'string' ? result.summary : '',
+              ...(saved === null ? {} : { shadowedTokenCount: saved }),
+            },
+          },
+        ],
+      }
+    }
+
     if (type === 'agent_end') {
       // Pi retries by itself; saying so beats a turn that looks stalled until it
       // recovers or gives up.

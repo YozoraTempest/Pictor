@@ -201,4 +201,25 @@ describe('historyRows', () => {
 
     expect(rows.map((row) => row.text)).toEqual(['真正的提问'])
   })
+  it('keeps a compaction as a row of its own, without inventing a saving', () => {
+    // Pi's entry records what the context held before, not after; claiming a saving
+    // would be inventing the second number.
+    const rows = historyRows([
+      {
+        type: 'compaction',
+        summary: '前面聊过颜色',
+        firstKeptEntryId: 'e9',
+        tokensBefore: 60_000,
+        timestamp: 1700000000000,
+      },
+      line({ role: 'user', content: [{ type: 'text', text: '接着来' }] }),
+    ])
+
+    expect(rows[0]).toMatchObject({
+      role: 'notice',
+      timestamp: 1700000000000,
+      notice: { kind: 'compaction', savedTokens: null, summary: '前面聊过颜色' },
+    })
+    expect(rows.map((row) => row.role)).toEqual(['notice', 'user'])
+  })
 })

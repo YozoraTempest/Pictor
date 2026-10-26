@@ -137,6 +137,7 @@ const CAPABILITY_METHODS: Readonly<
   model: [],
   skills: ['listSkills'],
   fork: ['fork'],
+  commands: ['commands', 'runCommand'],
 }
 
 /** Methods every kernel has, whatever it declares. */

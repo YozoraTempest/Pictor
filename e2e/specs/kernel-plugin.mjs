@@ -31,6 +31,7 @@ export default {
       model: false,
       skills: false,
       fork: false,
+      commands: false,
     })
 
     const created = await page.evaluate(() =>

@@ -62,7 +62,7 @@ isolated per plugin and surfaced in the plugin report.
 A conversation is executed by a kernel, never by Pictor itself. `KernelDriver`
 (`packages/kernel-sdk/src/driver.ts`) is the whole contract the rest of the
 main process may assume: lifecycle, one turn, history, events, settings,
-diagnosis. `KernelRouter` (`kernel/router.ts`) sends each call to the kernel that
+diagnosis. `KernelRouter` (`apps/desktop/src/main/kernel/router.ts`) sends each call to the kernel that
 owns the conversation and **never falls back**: history sent to a kernel that
 never produced it would be a lie about where it came from.
 
@@ -128,7 +128,7 @@ Two kernels ship:
   section describes: a server process booted with a profile Pictor owns.
 - **Pi** (`packages/kernel-pi`) — an RPC child per conversation: `pi --mode
 rpc` speaks JSONL commands on stdin and streams the same events over stdout,
-  translated by `kernel/pi-events.ts` into the durable events and chunks the window
+  translated by `packages/kernel-pi/src/pi-events.ts` into the durable events and chunks the window
   already renders. The child runs on **this process's own runtime**
   (`ELECTRON_RUN_AS_NODE`), not on whatever `node` PATH offers: Pi needs Node 22.19
   or newer and a desktop app cannot assume the machine has it. Images travel as
@@ -136,7 +136,7 @@ rpc` speaks JSONL commands on stdin and streams the same events over stdout,
   turn is spent. It branches conversations at a user message's entry id, and it
   answers for its own model catalogue (`KernelModelSource`). Its tool calls go
   through the same guard chain as dsh's: Pictor writes a Pi extension
-  (`pi-guard-extension.ts`) that asks the loopback bridge about every call and
+  (`packages/kernel-pi/src/pi-guard-extension.ts`) that asks the loopback bridge about every call and
   blocks it when a rule or a plugin guard says so, failing closed when the bridge
   cannot be reached. It has no sandbox of its own, so _when_ a call waits for a
   person is Pictor's decision there (`KernelApprovalSource`): a per-conversation
@@ -154,7 +154,7 @@ rpc` speaks JSONL commands on stdin and streams the same events over stdout,
   they are neither drawn nor answered — Pi keeps no pending entry for them, and
   `custom` does not exist in RPC mode at all. What it still cannot express is a
   per-conversation sandbox; it declares none instead of faking one. Its
-  transcript is read back from Pi's own session file (`kernel/pi-history.ts`),
+  transcript is read back from Pi's own session file (`packages/kernel-pi/src/pi-history.ts`),
   because Pictor keeps none.
 
 Each driver also declares what it can do (`KernelCapabilities`: sandbox, approval,
@@ -192,6 +192,11 @@ the switch on the Pi runtime page — Pi then brings its own services, keys and
 extensions, which is the only way to keep using those, at the cost of two lists
 that differ again.
 
+The MCP list is rendered into that directory too (`pi-home/mcp.json`, written before
+each spawn), because Pi reads a file while dsh reads a patch: one list on the page,
+two translations, and neither kernel learns about the other's format. With isolation
+off, `~/.pi/agent/mcp.json` is the person's file and Pictor does not touch it.
+
 A kernel may also own a setting rather than only read one: Pi's "run on my own
 configuration" means nothing to dsh. It declares it as a `KernelSetting` — key,
 label, description, and a `hint` for what the current value means — the host
@@ -228,6 +233,36 @@ The kernel is fixed when a conversation is created (`sessions.kernel_id`), so th
 picker opens a branch on the other kernel rather than rewriting one in place.
 Lifecycle calls carry no session id and stay on the default kernel.
 
+### Commands and compaction
+
+A `/` menu holds two different things, and they are not interchangeable: a skill is
+text the runtime injects into a turn, while a command is a lever only the kernel can
+pull. `KernelCommandSource` (`packages/kernel-sdk/src/command-source.ts`) is the
+second of them — `commands(sessionId)` lists what the conversation's kernel offers,
+`runCommand(sessionId, line)` hands the whole line back. The kernel parses its own
+arguments, because nothing here knows that `goal` takes a sentence and `compact` does
+not. The composer lists commands before skills and sends a line as a turn only when
+no command matches (`commandLineOf`), so `/compact` cannot reach a model as prose.
+
+- **dsh** answers from the runtime's own service: `commands/list` and
+  `commands/execute` over the same remote wire `/permission` already uses
+  (`packages/kernel-dsh/src/harness-commands.ts`). The menu draws what it is given —
+  `compact`, `export`, `feedback`, `goal`, `permission`, `plan` today — rather than a
+  list kept here, so a runtime that adds one needs no release here.
+- **Pi** offers exactly one, `compact`, and the rest of its terminal's slashes are not
+  reachable over RPC; the menu says so by not listing them.
+
+Both declare `commands: true`, and a kernel that declares it with no methods behind it
+is refused at mount time.
+
+A compaction is shown, not suffered. Replacing older context emits `run.compacted`,
+and each kernel's history reader emits the same row on reload, so a reopened
+conversation still says where its detail went. The row is a divider — never merged
+into an answer — carrying the saving the kernel reported (`shadowedTokenCount` on dsh,
+`tokensBefore - estimatedTokensAfter` on Pi) and the summary behind "查看摘要". Only a
+summary draws one: dsh prunes each large tool result on its own, and a divider per
+prune would bury the conversation.
+
 ### Runtime (dsh)
 
 `packages/kernel-dsh/src/dsh-driver.ts` owns the runtime lifecycle, and
@@ -259,6 +294,12 @@ Lifecycle calls carry no session id and stay on the default kernel.
 - **Process failures.** A runtime that exits marks the status `error` with the
   tail of its stderr; the settings page is the only place that starts and stops
   it.
+- **Tool servers.** Every enabled MCP server on the settings page becomes one
+  `@deepseek-ai/dsh-mcp-client` instance inserted into that patch — stdio carries
+  `command`/`args`/`env` with `failOnStartupError: false`, http carries the endpoint
+  and its headers. The list is part of the boot fingerprint, so an edit reboots the
+  runtime, and `applySettings()` waits for a running turn instead of cutting it. A
+  server that will not start costs its own tools, not the runtime.
 - **Stopping is not instant.** `stop()` only sends the signal; the process keeps
   its home — profile, session log, plugin directory — until it exits. `start()`
   therefore waits for the previous child (up to 4 s, after the 3 s SIGKILL
@@ -270,7 +311,7 @@ Lifecycle calls carry no session id and stay on the default kernel.
 The kernel is the only owner of a transcript; Pictor keeps no second copy, and the
 renderer does not care how a kernel speaks:
 
-- `apps/desktop/src/main/harness-history.ts` projects runtime events into
+- `packages/kernel-dsh/src/harness-history.ts` projects runtime events into
   transcript rows and paginates from the newest message backwards.
 - Every conversation belongs to the kernel recorded on it. `chat.open`,
   `chat.send`, `chat.stop` and `session.fork` ask `KernelRouter.statusOf(sessionId)`

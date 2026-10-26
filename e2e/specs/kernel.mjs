@@ -89,6 +89,9 @@ export default {
       model: true,
       skills: false,
       fork: true,
+      // Pi's RPC surface offers exactly one command, and the menu lists it rather
+      // than pretending the terminal's other slashes exist.
+      commands: true,
     })
     assert.deepEqual(declared.find((kernel) => kernel.id === 'dsh')?.capabilities, {
       permission: true,
@@ -97,6 +100,7 @@ export default {
       model: true,
       skills: true,
       fork: true,
+      commands: true,
     })
 
     // Pi decides its own sandbox, so its composer draws no switch. The row still

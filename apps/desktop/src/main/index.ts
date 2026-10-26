@@ -27,6 +27,7 @@ import {
   DEFAULT_PERMISSION_MODE,
   MODEL_EFFORTS,
   isPermissionMode,
+  parseMcpServers,
   type ApprovalMode,
   type ChatAnswer,
   type ChatImage,
@@ -39,6 +40,7 @@ import {
   type ModelProtocol,
   type PluginRecord,
   type Section,
+  type SettingsMap,
   type SkillEntry,
   type ToolRule,
   composeSkills,
@@ -169,6 +171,8 @@ interface Workspace {
   setKernelSetting: (key: string, value: boolean) => Promise<boolean>
   /** Writes one setting Pictor owns; kernels read the same snapshot afterwards. */
   writeSetting: (key: string, value: JsonValue) => Promise<void>
+  /** The snapshot those writes keep current, for settings only Pictor reads. */
+  settings: Readonly<SettingsMap>
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
@@ -625,6 +629,7 @@ async function startWorkspace(): Promise<Workspace | null> {
       return applied
     },
     writeSetting: settings.write,
+    settings: settings.values(),
     readPermissionMode,
     isDisposed: () => disposed,
     client: running.client,
@@ -1638,6 +1643,46 @@ function registerIpc(workspace: Workspace): void {
       throw new Error('sessionId must be a non-empty string')
     }
     return workspace.harness.kernelModels(sessionId)
+  })
+
+  /**
+   * MCP servers, as Pictor stores them.
+   *
+   * One list for every kernel: dsh mounts them from its profile patch, Pi gets them
+   * written into its own `mcp.json` at spawn. The page that edits this is not a
+   * kernel page, because the list is not a kernel's.
+   */
+  ipcMain.handle('pictor:mcp.list', async () => {
+    return parseMcpServers(workspace.settings['mcp.servers'])
+  })
+
+  ipcMain.handle('pictor:mcp.save', async (_event, servers: unknown) => {
+    const parsed = parseMcpServers(servers)
+    await workspace.writeSetting('mcp.servers', parsed as unknown as JsonValue)
+    // dsh mounts from the patch, so it has to reboot; `applySettings` skips the
+    // restart while a turn is streaming and re-runs it afterwards.
+    void workspace.harness.applySettings().catch((error: unknown) => {
+      console.warn('[mcp] 运行时没有重启', error instanceof Error ? error.message : error)
+    })
+    return parsed
+  })
+
+  /** Slash commands this conversation's kernel offers; empty when it has none. */
+  ipcMain.handle('pictor:kernel.commands', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelCommands(sessionId)
+  })
+
+  ipcMain.handle('pictor:kernel.runCommand', async (_event, sessionId: unknown, line: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof line !== 'string' || line.trim().length === 0) {
+      throw new Error('command line must be a non-empty string')
+    }
+    return workspace.harness.runKernelCommand(sessionId, line)
   })
 
   ipcMain.handle('pictor:kernel.selectModel', async (_event, sessionId: unknown, id: unknown) => {

@@ -36,6 +36,10 @@ export interface StoredMessage {
 
 export interface StoredRecord {
   type?: unknown
+  /** `compaction` entries: the summary that replaced the entries before it. */
+  summary?: unknown
+  /** Wall clock of the entry, for a row that is not a message. */
+  timestamp?: unknown
   /** The session entry's own id: Pi's name for this point in the conversation. */
   id?: unknown
   message?: StoredMessage | null
@@ -144,6 +148,26 @@ export function historyRows(records: readonly StoredRecord[]): ChatMessage[] {
   }
 
   for (const record of records) {
+    // Pi stores a compaction as its own entry, not as a message: the summary stands in
+    // for the entries before `firstKeptEntryId`. Without a row here, a reloaded
+    // compacted conversation would look like it had lost half its history.
+    if (record.type === 'compaction') {
+      const summary = typeof record.summary === 'string' ? record.summary : ''
+      add({
+        role: 'notice',
+        text: '',
+        timestamp: typeof record.timestamp === 'number' ? record.timestamp : null,
+        notice: {
+          kind: 'compaction',
+          // The entry records what the context held before, not what it holds after;
+          // claiming a saving would be inventing the second number.
+          savedTokens: null,
+          summary,
+        },
+      })
+      continue
+    }
+
     if (record.type !== 'message' || typeof record.message !== 'object') continue
     const message = record.message
     if (message === null) continue

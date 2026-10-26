@@ -16,7 +16,12 @@ import type {
   KernelModelState,
   PermissionMode,
 } from '../../shared/bridge.js'
-import { isApprovalSource, type KernelApprovalSource } from '@pictor/kernel-sdk'
+import {
+  isApprovalSource,
+  isCommandSource,
+  type KernelApprovalSource,
+  type KernelCommand,
+} from '@pictor/kernel-sdk'
 import type { AgentProbeResult, KernelDriver } from '@pictor/kernel-sdk'
 import { isCatalogueSource, isModelSource } from '@pictor/kernel-sdk'
 import { isSettingsSource } from '@pictor/kernel-sdk'
@@ -392,6 +397,27 @@ export class KernelRouter implements KernelDriver {
     return driver !== null && isApprovalSource(driver) ? driver : null
   }
 
+  /**
+   * The slash commands this conversation's kernel offers.
+   *
+   * Empty when the kernel has none — a kernel that runs whatever it was configured
+   * with has nothing to switch, and an empty menu is a truthful answer.
+   */
+  async kernelCommands(sessionId: string): Promise<KernelCommand[]> {
+    const driver = await this.#for(sessionId)
+    if (!isCommandSource(driver)) return []
+    return driver.commands(sessionId)
+  }
+
+  /** Runs one complete slash line on the kernel that owns the conversation. */
+  async runKernelCommand(sessionId: string, line: string): Promise<string | null> {
+    const driver = await this.#for(sessionId)
+    if (!isCommandSource(driver)) {
+      throw new Error(`这个会话的内核「${driver.id}」没有命令`)
+    }
+    return driver.runCommand(sessionId, line)
+  }
+
   /** Tools this conversation no longer asks about. */
   async kernelGrants(sessionId: string): Promise<string[]> {
     const driver = await this.#for(sessionId)
@@ -466,6 +492,7 @@ const NO_CAPABILITIES: KernelCapabilities = {
   model: false,
   skills: false,
   fork: false,
+  commands: false,
 }
 
 /** The status of a machine with no kernel: nothing runs, and nothing is broken. */

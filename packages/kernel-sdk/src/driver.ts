@@ -8,7 +8,7 @@ import type {
   ModelEffort,
 } from '@pictor/shared'
 
-import type { HarnessStatus, KernelCapabilities, PermissionMode } from './kinds.js'
+import type { HarnessStatus, KernelCapabilities, KernelCommand, PermissionMode } from './kinds.js'
 
 /**
  * One agent kernel, as the main process needs it.
@@ -104,6 +104,14 @@ export interface KernelDriver {
   projectRootFor(sessionId: string): Promise<string | null>
   /** The skills one conversation can see. */
   listSkills(sessionId: string): Promise<CatalogSkill[]>
+  /**
+   * Slash commands this kernel offers, and the way to run one.
+   *
+   * Optional because a kernel may have none; a kernel that declares
+   * `capabilities.commands` has to implement both, which the host checks at mount.
+   */
+  commands?(sessionId: string): Promise<KernelCommand[]>
+  runCommand?(sessionId: string, line: string): Promise<string | null>
 
   // ---- diagnosis -----------------------------------------------------------
   /** Runs one throwaway turn against the configured model. */
