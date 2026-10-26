@@ -106,7 +106,9 @@ without it — which is why installing one asks first.
 `pictor.settings` is what makes a kernel's own switch the kernel's business: it reads
 a snapshot of the profile's settings, and it writes back through the same store, so a
 plugin that declares a setting can remember it itself. The app that assembles the
-kernels never spells out those keys.
+kernels never spells out those keys. That snapshot is refreshed by every write the app
+makes (`kernel/settings-store.ts`), not only by the kernels' own, so a page that saves
+a value never leaves a kernel reporting the previous one.
 
 The container is deliberately **in the main process only**. The runtime stays a child
 process: cordis has no cross-process semantics, and the tool-guard bridge is only

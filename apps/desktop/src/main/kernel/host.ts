@@ -33,8 +33,8 @@ export interface GuardEndpoint {
  * Without this, a kernel's own switch would have to be persisted by whoever
  * assembles the app — which means the assembly has to know the key, and a second
  * kernel with a switch means a second special case in that file. Reads come from a
- * snapshot taken at startup and kept current by {@link KernelSettingsService.write},
- * so a kernel can answer for its own state synchronously.
+ * snapshot taken at startup and kept current by every write the app does, so a kernel
+ * can answer for its own state synchronously and never from a stale copy.
  */
 export interface KernelSettingsService {
   /** A stored value as last read or written; undefined when never set. */

@@ -1,7 +1,6 @@
 import { createServer, type Server, type Socket } from 'node:net'
 
 import { evaluateToolGuards, type ToolGuardContribution } from '@pictor/plugin-sdk'
-import type { PiProviderSpec } from '@pictor/shared'
 
 /**
  * Where the runtime's guard plugin reaches the app.
@@ -55,7 +54,14 @@ export class ToolGuardServer {
   readonly #guards: readonly ToolGuardContribution[]
   readonly #token: string
   readonly #ask: GuardAskDecider | null
-  readonly #providers: (() => Promise<PiProviderSpec[]>) | null
+  /**
+   * The services Pictor knows, for a kernel that registers them at runtime.
+   *
+   * `unknown` on purpose: the bridge forwards this array as JSON and never reads a
+   * field, so the shape belongs to whichever kernel asks for it — the extension on
+   * the other end of the socket — not to the bridge or to the file that assembles it.
+   */
+  readonly #providers: (() => Promise<readonly unknown[]>) | null
   #server: Server | null = null
   #endpoint: GuardEndpoint | null = null
 
@@ -63,7 +69,7 @@ export class ToolGuardServer {
     guards: readonly ToolGuardContribution[],
     token: string,
     ask: GuardAskDecider | null = null,
-    providers: (() => Promise<PiProviderSpec[]>) | null = null,
+    providers: (() => Promise<readonly unknown[]>) | null = null,
   ) {
     this.#guards = guards
     this.#token = token

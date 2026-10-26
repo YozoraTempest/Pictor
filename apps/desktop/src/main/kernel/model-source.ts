@@ -48,10 +48,12 @@ export function isCatalogueSource(
 
 /**
  * A kernel that asks Pictor to register its services into it.
+ * Pi's guard extension asks the loopback bridge for the services to run with, which is
+ * how one configuration serves two kernels without a key ever landing on disk. A
+ * kernel that is configured at boot — dsh — needs nothing here.
  *
- * The shape is Pi's: its guard extension asks the loopback bridge for the services to
- * run with, which is how one configuration serves two kernels without a key ever
- * landing on disk. A kernel that is configured at boot — dsh — needs nothing here.
+ * `T` is whatever that kernel's own extension understands; the bridge forwards it as
+ * JSON, so the app never has to name the shape.
  */
 export interface KernelProviderSource<T = unknown> {
   providers(): Promise<T[]>

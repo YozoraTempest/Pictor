@@ -144,7 +144,8 @@ Built-in and installed kernels take the same road: both arrive as a `KernelEntry
 built-in as its own package is a change of one closure. `pictor.settings` is how a
 kernel remembers a setting it declared — it reads the profile's settings and writes
 back through the same store, so the file that assembles the kernels never spells out
-their keys.
+their keys. Every write the app makes refreshes the same snapshot, so a page that
+saves a value never leaves a kernel showing the old one.
 
 The container lives in the **main process only**. The runtime stays a child process:
 cordis has no cross-process semantics, and the tool-guard bridge is only fail-closed

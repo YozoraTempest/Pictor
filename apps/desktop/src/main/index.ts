@@ -35,7 +35,6 @@ import {
   type JsonValue,
   type ModelEffort,
   type ModelProtocol,
-  type PiProviderSpec,
   type PluginRecord,
   type Section,
   type SkillEntry,
@@ -60,10 +59,10 @@ import { shouldAdoptTitle } from './harness-title.js'
 import { DEFAULT_PERMISSION_MODE, isPermissionMode } from './kernel/dsh-driver.js'
 import { dshKernel } from './kernel/dsh-kernel.js'
 import type { KernelDriver } from './kernel/driver.js'
-import { startKernelHost, type KernelHost, type KernelSettingsService } from './kernel/host.js'
+import { startKernelHost, type KernelHost } from './kernel/host.js'
 import { isProviderSource } from './kernel/model-source.js'
-import type { SettingsMap } from '@pictor/shared'
 import { resolveNodeBinary, resolveNpmCli } from './kernel/node-runtime.js'
+import { openSettings } from './kernel/settings-store.js'
 
 import { createPiKernel } from './kernel/pi-kernel.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
@@ -75,15 +74,16 @@ import { SkillLibrary } from './skill-library.js'
 /**
  * The services the mounted kernels want registered into them.
  *
- * Asked of whoever claims to need them rather than of a named kernel: this used to
- * read `piKernel.providers()`, which is exactly the coupling that made "swap the
- * kernel" a promise with an asterisk.
+ * Asked of whoever claims to need them rather than of a named kernel, and passed to the
+ * bridge as opaque JSON: the shape is the asking kernel's (Pi's extension), so neither
+ * this file nor the bridge spells it out. This used to read `piKernel.providers()`,
+ * which is exactly the coupling that made "swap the kernel" a promise with an asterisk.
  */
 async function providersFrom(
   drivers: ReadonlyMap<string, KernelDriver>,
-): Promise<PiProviderSpec[]> {
+): Promise<readonly unknown[]> {
   for (const driver of drivers.values()) {
-    if (isProviderSource<PiProviderSpec>(driver)) return driver.providers()
+    if (isProviderSource(driver)) return driver.providers()
   }
   return []
 }
@@ -167,6 +167,8 @@ interface Workspace {
   pluginDirectories: () => readonly string[]
   /** Writes one setting a kernel declared, and remembers it. */
   setKernelSetting: (key: string, value: boolean) => Promise<boolean>
+  /** Writes one setting Pictor owns; kernels read the same snapshot afterwards. */
+  writeSetting: (key: string, value: JsonValue) => Promise<void>
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
@@ -370,17 +372,12 @@ async function startWorkspace(): Promise<Workspace | null> {
   const rules = new RuleBook(running.client)
   await rules.load()
 
-  // One snapshot of the profile's settings, and the service kernels write theirs back
-  // through. Keeping it here rather than in each kernel is what lets a kernel ask
-  // "what did the person choose?" without this file knowing which key it means.
-  const stored: SettingsMap = { ...(await running.client.listSettings()) }
-  const settingsService: KernelSettingsService = {
-    read: (key) => stored[key],
-    write: async (key, value) => {
-      await running.client.putSetting(key, value)
-      stored[key] = value
-    },
-  }
+  // The profile's settings once, plus the one function every write goes through: a
+  // kernel reads the snapshot, and a page that saves anything keeps it current. That
+  // is what lets a kernel ask "what did the person choose?" without this file knowing
+  // which key it means, and without a stale answer after the page saves.
+  const settings = await openSettings(running.client)
+  const stored = settings.values()
 
   // Which kernels this machine runs. Both are a person's choice, kept in settings so
   // "the built-in kernel is the default" stops being a fact of the build.
@@ -486,7 +483,7 @@ async function startWorkspace(): Promise<Workspace | null> {
       permission: readPermissionMode,
       workspace: resolveCwd,
       userData,
-      settings: settingsService,
+      settings: settings.service,
     },
     builtins: [
       { id: 'dsh', label: 'DeepSeek Harness', entry: { load: async () => dshKernel } },
@@ -616,6 +613,7 @@ async function startWorkspace(): Promise<Workspace | null> {
       harness.invalidateCatalogues()
       return applied
     },
+    writeSetting: settings.write,
     readPermissionMode,
     isDisposed: () => disposed,
     client: running.client,
@@ -1079,7 +1077,7 @@ function registerIpc(workspace: Workspace): void {
     if (typeof key !== 'string' || key.trim().length === 0) {
       throw new Error('key must be a non-empty string')
     }
-    await workspace.client.putSetting(key, value as JsonValue)
+    await workspace.writeSetting(key, value as JsonValue)
   })
 
   ipcMain.handle('pictor:pickDirectory', async (): Promise<string | null> => {
@@ -1328,7 +1326,7 @@ function registerIpc(workspace: Workspace): void {
     'pictor:harness.setPermissionMode',
     async (_event, mode: unknown): Promise<HarnessStatus> => {
       if (!isPermissionMode(mode)) throw new Error('unknown permission mode')
-      await workspace.client.putSetting('harness.permissionMode', mode)
+      await workspace.writeSetting('harness.permissionMode', mode)
       workspace.harness.setPermissionMode(mode)
       // A live namespace setting, not a boot flag: asking the runtime to apply it
       // keeps the process (and every stream on it) alive.
@@ -1543,7 +1541,7 @@ function registerIpc(workspace: Workspace): void {
       const next = enabled
         ? current.filter((entry) => entry !== id)
         : [...new Set([...current, id])]
-      await workspace.client.putSetting(BuiltinKernelsKey, next)
+      await workspace.writeSetting(BuiltinKernelsKey, next)
 
       if (enabled) {
         const result = await workspace.kernels.mountBuiltin(id)
@@ -1565,7 +1563,7 @@ function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:kernels.setDefault', async (_event, id: unknown): Promise<boolean> => {
     if (typeof id !== 'string') throw new Error('id must be a string')
     if (!workspace.harness.setDefault(id)) return false
-    await workspace.client.putSetting(DefaultKernelKey, id)
+    await workspace.writeSetting(DefaultKernelKey, id)
     return true
   })
 
