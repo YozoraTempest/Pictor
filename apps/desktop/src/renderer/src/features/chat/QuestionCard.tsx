@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 
 import type { ChatAnswer, ChatQuestion, ChatQuestionRequest } from '@pictor/shared'
 
+import { openSession } from '../../app/open-session.js'
 import { useQuestionStore } from '../../app/question-store.js'
 import { Button } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
@@ -167,7 +168,20 @@ export function QuestionCard({
       </div>
 
       {foreign && (
-        <p className="text-2xs text-faint">这个提问来自另一个会话，回答之后那边才会继续。</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-2xs text-faint">这个提问来自另一个会话，回答之后那边才会继续。</p>
+          {request.sessionId !== undefined && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                openSession(request.sessionId ?? '')
+              }}
+            >
+              前往该会话
+            </Button>
+          )}
+        </div>
       )}
 
       {request.questions.map((question) => (

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { ApprovalRequest } from '@pictor/shared'
 
 import { useApprovalStore } from '../../app/approval-store.js'
+import { openSession } from '../../app/open-session.js'
 import { Button } from '../../components/ui/index.js'
 
 /**
@@ -81,7 +82,23 @@ export function ApprovalCard({
       )}
 
       {foreign && (
-        <p className="text-2xs text-faint">这个请求来自另一个会话，回答之后那边才会继续。</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-2xs text-faint">这个请求来自另一个会话，回答之后那边才会继续。</p>
+          {request.sessionId !== undefined && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // The card travels with the request, so opening the conversation is
+                // all it takes: there it is no longer foreign, and answering needs no
+                // further detour.
+                openSession(request.sessionId ?? '')
+              }}
+            >
+              前往该会话
+            </Button>
+          )}
+        </div>
       )}
 
       {error !== null && <p className="text-2xs text-danger">{error}</p>}
