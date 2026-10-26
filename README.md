@@ -121,15 +121,14 @@ of being faked.
 
 Every kernel is a **cordis plugin** that provides exactly one service named
 `kernel.<id>` (`kernel/host.ts`). The built-ins are `kernel/dsh-kernel.ts` and
-`kernel/pi-kernel.ts`; an installed one is either a directory under
-`<profile>/kernels/<name>` or a package in `<profile>/kernels/node_modules` named by
-`<profile>/kernels/kernels.json`. Both kinds are a `package.json` whose `main` exports
-a cordis plugin. `startKernelHost` mounts them in order, watches `internal/service`
-for what they publish, and hands the resulting map to `KernelRouter` — nothing
-enumerates plugins by hand.
+`kernel/pi-kernel.ts`; an installed one is a plugin under `<profile>/plugins` that
+points at it from `pictor.contributes` — either a copied directory or a package in
+its `node_modules`, named by `installed.json`. `startKernelHost` mounts them in
+order, watches `internal/service` for what they publish, and hands the resulting map
+to `KernelRouter` — nothing enumerates plugins by hand.
 
-The map is live: installing a kernel mounts it without a restart, and removing one
-takes it out of the picker at once. Installing and mounting are deliberately two
+The map is live: installing a plugin mounts its kernel without a restart, and
+removing one takes it out of the picker at once. Installing and mounting are deliberately two
 steps (`kernel/installer.ts` owns the disk, the host owns the mount), so a copy that
 succeeds and a mount that fails leaves a kernel on disk _with a reason_, which the
 settings page shows, instead of a rollback that hides what went wrong.

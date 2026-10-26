@@ -11,9 +11,6 @@ import { basename, join, resolve } from 'node:path'
  */
 export const INSTALLED_LIST = 'installed.json'
 
-/** The list's name before kernels and UI plugins shared one directory. */
-const LEGACY_LIST = 'kernels.json'
-
 export interface InstalledPlugin {
   /** Directory name for a folder, package name for a package. */
   name: string
@@ -174,18 +171,15 @@ export class PluginInstaller {
   }
 
   #packages(): string[] {
-    for (const file of [INSTALLED_LIST, LEGACY_LIST]) {
-      try {
-        const parsed = JSON.parse(readFileSync(join(this.#options.directory, file), 'utf8')) as {
-          packages?: unknown
-        }
-        if (!Array.isArray(parsed.packages)) continue
-        return parsed.packages.filter((entry): entry is string => typeof entry === 'string')
-      } catch {
-        continue
-      }
+    try {
+      const parsed = JSON.parse(
+        readFileSync(join(this.#options.directory, INSTALLED_LIST), 'utf8'),
+      ) as { packages?: unknown }
+      if (!Array.isArray(parsed.packages)) return []
+      return parsed.packages.filter((entry): entry is string => typeof entry === 'string')
+    } catch {
+      return []
     }
-    return []
   }
 
   #writePackages(packages: readonly string[]): void {

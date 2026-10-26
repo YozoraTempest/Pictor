@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -67,20 +67,6 @@ import { ToolGuardServer, type GuardAsk } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
 import { RuleBook, describeAsk, describeRule } from './rule-book.js'
 import { SkillLibrary } from './skill-library.js'
-
-/** Whether a directory is a kernel plugin from before the `pictor` field. */
-function hasLegacyKernelEntry(root: string): boolean {
-  try {
-    const parsed = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
-      main?: unknown
-      pictor?: unknown
-    }
-    if (parsed.pictor !== undefined) return false
-    return typeof parsed.main === 'string' && existsSync(join(root, parsed.main))
-  } catch {
-    return false
-  }
-}
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const appRoot = resolve(here, '../..')
@@ -396,12 +382,8 @@ async function startWorkspace(): Promise<Workspace | null> {
     validate: (root) => {
       const discovery = discoverPlugins([root])
       if (discovery.plugins.length > 0) return
-      // A kernel-only plugin from before the `pictor` field: an npm package whose
-      // `main` is the cordis plugin. The kernel host still reads those, so refusing
-      // them here would break what an earlier version installed.
-      if (hasLegacyKernelEntry(root)) return
       throw new Error(
-        discovery.failures[0]?.reason ?? '这不是一个插件：缺少 manifest.json 或 pictor 字段',
+        discovery.failures[0]?.reason ?? '这不是一个插件：package.json 里没有 pictor 字段',
       )
     },
   })
@@ -479,9 +461,7 @@ async function startWorkspace(): Promise<Workspace | null> {
       userData,
     },
     builtins: [dshKernel, piKernel.plugin],
-    // One root for everything now; the older `kernels/` stays readable so what an
-    // earlier version installed does not vanish.
-    directories: [join(userData, 'plugins'), join(userData, 'kernels')],
+    directories: [join(userData, 'plugins')],
   })
   const pi = piKernel.driver()
   if (pi === null) throw new Error('Pi 内核没有挂载')

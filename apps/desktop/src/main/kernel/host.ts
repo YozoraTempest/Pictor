@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { Context, type Fiber, type Plugin } from '@deepseek-ai/cordis'
+import { INSTALLED_LIST } from '@pictor/plugin-host'
 import { parseKernelContribution, parsePackageManifest } from '@pictor/plugin-sdk'
 
 import type { PermissionMode } from '../../shared/bridge.js'
@@ -325,8 +326,8 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
 
 type KernelEntry = { source: string; plugin: KernelPlugin } | { source: string; error: string }
 
-/** File naming the kernels installed as packages, rather than copied folders. */
-export const PACKAGE_LIST = 'kernels.json'
+/** File naming the plugins installed as packages, rather than copied folders. */
+const PACKAGE_LIST = INSTALLED_LIST
 
 /**
  * Installed kernels, found by directory and imported by path.
@@ -390,19 +391,15 @@ function discoverKernel(
 /**
  * Where a plugin's kernel entry is.
  *
- * The `pictor` field is the format now: `main` in a `package.json` is the UI entry,
- * and a kernel names its own module under `contributes`. A package without the field
- * predates it and used `main` for the kernel itself, which still works.
+ * `main` in a `package.json` is the UI entry; a kernel names its own module under
+ * `contributes`. A package that declares no `pictor` field is not a plugin at all.
  */
 function kernelEntryOf(root: string): string | null {
   const parsed = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as Record<
     string,
     unknown
   >
-
-  if (!('pictor' in parsed)) {
-    return typeof parsed.main === 'string' && parsed.main.length > 0 ? parsed.main : 'index.js'
-  }
+  if (!('pictor' in parsed)) return null
 
   const manifest = parsePackageManifest(parsed)
   for (const contribution of manifest.contributes ?? []) {

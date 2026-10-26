@@ -7,7 +7,6 @@ export {
 } from './kernel.js'
 export {
   ManifestError,
-  parseManifest,
   parsePackageManifest,
   type PluginContribution,
   type PluginContext,

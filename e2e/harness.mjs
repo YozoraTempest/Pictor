@@ -79,7 +79,7 @@ export async function launch() {
   // echo spec, and it keeps the "add a kernel = add a directory" promise tested.
   cpSync(
     join(APP_ROOT, '..', '..', 'plugins', 'fake-kernel'),
-    join(profile, 'kernels', 'fake-kernel'),
+    join(profile, 'plugins', 'fake-kernel'),
     {
       recursive: true,
     },

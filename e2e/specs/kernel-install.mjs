@@ -19,7 +19,17 @@ export default {
     mkdirSync(root, { recursive: true })
     writeFileSync(
       join(root, 'package.json'),
-      JSON.stringify({ name: 'probe-kernel', version: '0.0.0', type: 'module', main: 'index.js' }),
+      JSON.stringify({
+        name: 'probe-kernel',
+        version: '0.0.0',
+        type: 'module',
+        // A kernel-only plugin: no UI entry, so `main` lives in the contribution.
+        pictor: {
+          id: 'e2e.probe',
+          engines: { pictor: '>=0.0.0' },
+          contributes: [{ point: 'kernel', value: { main: 'index.js', label: '探针内核' } }],
+        },
+      }),
       'utf8',
     )
     writeFileSync(

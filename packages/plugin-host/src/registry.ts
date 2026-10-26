@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { parseManifest, parsePackageManifest, type PluginManifest } from '@pictor/plugin-sdk'
+import { parsePackageManifest, type PluginManifest } from '@pictor/plugin-sdk'
 
 export interface DiscoveredPlugin {
   id: string
@@ -24,12 +24,10 @@ export interface DiscoveryResult {
 /**
  * Reads every plugin root, in either format.
  *
- * A plugin is an npm package: `package.json` with a `pictor` field wins, because that
- * is what makes `npm install` the only install step. A plugin that predates the field
- * is still read from its standalone `manifest.json`, so nothing already on disk
- * disappears when the format moves on. When a `package.json` declares `pictor` and is
- * malformed, that is a failure — falling back to the old file would leave two sources
- * of truth for one plugin.
+ * A plugin is an npm package whose `package.json` declares `pictor`: that is what
+ * makes `npm install` the only install step, and it is why there is no second file
+ * that could disagree with `name` and `version`. A directory without the field is not
+ * a plugin — it is left alone rather than reported as broken.
  *
  * A broken plugin is reported and skipped; discovery never throws because one plugin
  * is malformed.
@@ -72,25 +70,15 @@ export function discoverPlugins(roots: string[]): DiscoveryResult {
 function readPlugin(
   root: string,
 ): { manifest: PluginManifest; manifestPath: string } | { reason: string } | null {
-  const packagePath = join(root, 'package.json')
-  if (existsSync(packagePath)) {
-    try {
-      const raw = JSON.parse(readFileSync(packagePath, 'utf8')) as unknown
-      // Only a package that opts in is a plugin; anything else in the root is left
-      // alone rather than reported as broken.
-      if (typeof raw === 'object' && raw !== null && 'pictor' in raw) {
-        return { manifest: parsePackageManifest(raw), manifestPath: packagePath }
-      }
-    } catch (error) {
-      return { reason: (error as Error).message }
-    }
-  }
-
-  const manifestPath = join(root, 'manifest.json')
+  const manifestPath = join(root, 'package.json')
   if (!existsSync(manifestPath)) return null
+
   try {
     const raw = JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown
-    return { manifest: parseManifest(raw), manifestPath }
+    // Only a package that opts in is a plugin; anything else in the root is left
+    // alone rather than reported as broken.
+    if (typeof raw !== 'object' || raw === null || !('pictor' in raw)) return null
+    return { manifest: parsePackageManifest(raw), manifestPath }
   } catch (error) {
     return { reason: (error as Error).message }
   }
@@ -99,9 +87,8 @@ function readPlugin(
 /**
  * Expands `<root>/*` into candidate plugin roots, skipping files.
  *
- * A candidate either carries the old `manifest.json` or a `package.json` that may
- * declare `pictor`; deciding which is a plugin is `discoverPlugins`' job, so this
- * stays a cheap directory listing.
+ * A candidate is any child directory carrying a `package.json`; whether it declares
+ * `pictor` is `discoverPlugins`' job, so this stays a cheap directory listing.
  */
 export function expandPluginRoots(parentDirectories: string[]): string[] {
   const roots: string[] = []
@@ -111,10 +98,7 @@ export function expandPluginRoots(parentDirectories: string[]): string[] {
 
     for (const entry of readdirSync(parent)) {
       const path = join(parent, entry)
-      if (
-        statSync(path).isDirectory() &&
-        (existsSync(join(path, 'manifest.json')) || existsSync(join(path, 'package.json')))
-      ) {
+      if (statSync(path).isDirectory() && existsSync(join(path, 'package.json'))) {
         roots.push(path)
       }
     }

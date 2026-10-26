@@ -70,12 +70,13 @@ never produced it would be a lie about where it came from.
 
 Every kernel is a **cordis plugin** that provides exactly one service named
 `kernel.<id>` (`apps/desktop/src/main/kernel/host.ts`). Adding a kernel is adding a
-plugin: the built-in ones are `kernel/dsh-kernel.ts` and `kernel/pi-kernel.ts`; an
-installed one is either a directory under `<profile>/kernels/<name>` or a package in
-`<profile>/kernels/node_modules` named by `<profile>/kernels/kernels.json`. Both
-kinds are a `package.json` whose `main` exports a cordis plugin. `startKernelHost`
-mounts them in order, watches `internal/service` for the services they publish, and
-hands the resulting map to `KernelRouter` — nothing enumerates plugins by hand.
+plugin: the built-in ones are `kernel/dsh-kernel.ts` and `kernel/pi-kernel.ts`, and an
+installed one is a package under `<profile>/plugins` — either a copied directory or a
+package in its `node_modules`, named by `installed.json`. A plugin points at its kernel
+from `pictor.contributes` (`{ point: 'kernel', value: { main } }`); `package.json`'s
+`main` is the UI entry and has nothing to do with the kernel. `startKernelHost` mounts
+them in order, watches `internal/service` for the services they publish, and hands the
+resulting map to `KernelRouter` — nothing enumerates plugins by hand.
 
 The map is **live**. `KernelHost.mountInstalled` starts one more plugin and
 `unmount` disposes its fiber, so installing a kernel does not need a restart and
@@ -84,8 +85,8 @@ purpose (`kernel/installer.ts` owns the disk, the host owns the mount): a copy t
 succeeds and a mount that fails is a kernel on disk with a reason attached, which the
 settings page shows, rather than a rollback that hides what went wrong.
 
-`kernels.json` exists because the package manager owns `node_modules` and drags in
-dependencies with it; only the names a person actually installed are kernels.
+`installed.json` exists because the package manager owns `node_modules` and drags in
+dependencies with it; only the names a person actually installed are plugins.
 
 What a plugin may reach is a service, and the `inject` list it declares is the
 sentence the settings page shows a person: `pictor.models`, `pictor.rules`,
@@ -314,8 +315,9 @@ only place a transcript is read from.
 ## Adding code
 
 - Headless feature: `packages/<feature>/src`, exported through its `index.ts`.
-- Plugin: `plugins/<name>` with `manifest.json`, `src/`, and an esbuild bundle in
-  `dist/`. The directory is optional; an empty install simply has no plugins.
+- Plugin: `plugins/<name>` with a `package.json` whose `pictor` field carries the
+  manifest, `src/`, and an esbuild bundle in `dist/`. The directory is optional; an
+  empty install simply has no plugins. See `plugins/README.md`.
 - Panel contribution: `contributes('panels', { id, title, command })` adds one
   entry to the side panel. Panels are data only — opening one runs a command, so
   plugins never ship renderer code. `tools` is reserved for the agent-facing

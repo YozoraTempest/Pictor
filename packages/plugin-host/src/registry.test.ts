@@ -4,31 +4,10 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { discoverPlugins } from './registry.js'
+import { discoverPlugins, expandPluginRoots } from './registry.js'
 
-function writePlugin(parent: string, id: string, manifest: Record<string, unknown> = {}): string {
-  const root = join(parent, id.replace(/\./g, '-'))
-  mkdirSync(root, { recursive: true })
-  writeFileSync(
-    join(root, 'manifest.json'),
-    JSON.stringify({
-      id,
-      name: id,
-      version: '0.0.0',
-      main: 'dist/index.js',
-      engines: { pictor: '^0.0.0' },
-      ...manifest,
-    }),
-  )
-  return root
-}
-
-/** A plugin in the npm-package format: `package.json` with a `pictor` field. */
-function writePackagePlugin(
-  parent: string,
-  id: string,
-  overrides: Record<string, unknown> = {},
-): string {
+/** A plugin directory: a `package.json` that declares `pictor`. */
+function writePlugin(parent: string, id: string, overrides: Record<string, unknown> = {}): string {
   const root = join(parent, id.replace(/\./g, '-'))
   mkdirSync(root, { recursive: true })
   writeFileSync(
@@ -45,107 +24,34 @@ function writePackagePlugin(
 }
 
 describe('discoverPlugins', () => {
-  it('reads valid manifests', () => {
-    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
-    const root = writePlugin(parent, 'pictor.hello')
-
-    const discovery = discoverPlugins([root])
-
-    expect(discovery.plugins.map((plugin) => plugin.id)).toEqual(['pictor.hello'])
-    expect(discovery.failures).toEqual([])
-  })
-
-  it('reports a malformed manifest without throwing', () => {
-    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
-    const second = writePlugin(parent, 'pictor.second')
-    const root = join(parent, 'broken')
-    mkdirSync(root, { recursive: true })
-    writeFileSync(join(root, 'manifest.json'), '{ not json')
-
-    const discovery = discoverPlugins([root, second])
-
-    expect(discovery.plugins).toHaveLength(1)
-    expect(discovery.failures).toHaveLength(1)
-    expect(discovery.failures[0]?.source).toBe(root)
-  })
-
-  it('rejects duplicate plugin ids', () => {
-    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
-    const first = writePlugin(parent, 'pictor.hello')
-    const second = join(parent, 'hello-copy')
-    mkdirSync(second, { recursive: true })
-    writeFileSync(
-      join(second, 'manifest.json'),
-      JSON.stringify({
-        id: 'pictor.hello',
-        name: 'copy',
-        version: '0.0.0',
-        main: 'dist/index.js',
-        engines: { pictor: '^0.0.0' },
-      }),
-    )
-
-    const discovery = discoverPlugins([first, second])
-
-    expect(discovery.plugins).toHaveLength(1)
-    expect(discovery.failures[0]?.reason).toMatch(/duplicate plugin id/)
-  })
-
-  it('ignores roots without a manifest', () => {
-    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
-
-    expect(discoverPlugins([parent]).plugins).toEqual([])
-  })
-})
-
-describe('discoverPlugins across both formats', () => {
   it('reads a plugin from its package.json', () => {
     const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
-    const root = writePackagePlugin(parent, 'acme.codex')
 
-    const discovery = discoverPlugins([root])
+    const discovery = discoverPlugins([writePlugin(parent, 'acme.codex')])
 
     expect(discovery.plugins.map((plugin) => plugin.id)).toEqual(['acme.codex'])
-    expect(discovery.plugins[0]?.manifestPath.endsWith('package.json')).toBe(true)
     expect(discovery.failures).toEqual([])
   })
 
-  it('still reads a plugin that predates the field', () => {
+  it('reports a malformed pictor field without throwing', () => {
     const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
-    const root = writePlugin(parent, 'pictor.legacy')
-
-    const discovery = discoverPlugins([root])
-
-    expect(discovery.plugins.map((plugin) => plugin.id)).toEqual(['pictor.legacy'])
-    expect(discovery.plugins[0]?.manifestPath.endsWith('manifest.json')).toBe(true)
-  })
-
-  it('prefers package.json when a root carries both', () => {
-    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
-    const root = writePackagePlugin(parent, 'acme.codex')
-    writeFileSync(
-      join(root, 'manifest.json'),
-      JSON.stringify({
-        id: 'acme.stale',
-        name: 'stale',
-        version: '0.0.0',
-        main: 'index.js',
-        engines: { pictor: '^0.0.0' },
-      }),
-    )
-
-    // One plugin, one truth: the older file does not get a second say.
-    expect(discoverPlugins([root]).plugins.map((plugin) => plugin.id)).toEqual(['acme.codex'])
-  })
-
-  it('reports a malformed pictor field instead of falling back', () => {
-    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
-    const root = writePackagePlugin(parent, 'acme.codex', { pictor: { id: 'acme.codex' } })
+    const root = writePlugin(parent, 'acme.codex', { pictor: { id: 'acme.codex' } })
 
     const discovery = discoverPlugins([root])
 
     expect(discovery.plugins).toEqual([])
     expect(discovery.failures[0]?.reason).toMatch(/engines/)
+  })
+
+  it('rejects duplicate plugin ids', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
+    const first = writePlugin(parent, 'acme.codex')
+    const second = writePlugin(mkdtempSync(join(tmpdir(), 'pictor-registry-')), 'acme.codex')
+
+    const discovery = discoverPlugins([first, second])
+
+    expect(discovery.plugins).toHaveLength(1)
+    expect(discovery.failures[0]?.reason).toMatch(/duplicate/)
   })
 
   it('leaves a package that never opted in alone', () => {
@@ -158,5 +64,20 @@ describe('discoverPlugins across both formats', () => {
 
     expect(discovery.plugins).toEqual([])
     expect(discovery.failures).toEqual([])
+  })
+})
+
+describe('expandPluginRoots', () => {
+  it('offers every directory that carries a package, and nothing else', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-roots-'))
+    const plugin = writePlugin(parent, 'acme.codex')
+    writeFileSync(join(parent, 'README.md'), 'not a directory')
+    mkdirSync(join(parent, 'empty'))
+
+    expect(expandPluginRoots([parent])).toEqual([plugin])
+  })
+
+  it('returns nothing for a directory that does not exist', () => {
+    expect(expandPluginRoots([join(tmpdir(), 'pictor-nothing-here-9999')])).toEqual([])
   })
 })

@@ -51,7 +51,8 @@ shows. `engines.pictor` is checked against the running app.
 
 `main` is the **UI** entry (`activate`). A kernel's entry is `main` inside the
 `kernel` contribution — they are two different files, and a plugin may provide
-either, both, or neither.
+either, both, or neither. A directory without a `pictor` field is not a plugin and is
+ignored, so a stray package in the plugins folder cannot be mounted by accident.
 
 ## What a kernel can reach
 

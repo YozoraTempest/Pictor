@@ -103,13 +103,6 @@ describe('PluginInstaller', () => {
     await expect(subject.installPackage('@example/notes')).rejects.toThrow(/npm/)
   })
 
-  it('reads the list left by the version that shared a directory with kernels', () => {
-    const { directory, subject } = installer()
-    writeFileSync(join(directory, 'kernels.json'), JSON.stringify({ packages: ['@example/old'] }))
-
-    expect(subject.packages()).toEqual(['@example/old'])
-  })
-
   it('writes the list under its own name', async () => {
     const { directory, subject } = installer({
       // A stand-in for npm: the installer's own job is the record, not the download.
