@@ -72,6 +72,28 @@ describe('PluginHost', () => {
     expect(host.contributions('commands')).toEqual([{ id: 'a.hello' }])
   })
 
+  it('numbers the contribution set, so a derived list knows when to look again', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-host-'))
+    const host = new PluginHost({
+      plugins: [],
+      pictorVersion: '1.0.0',
+      dataRoot: join(parent, 'data'),
+    })
+
+    const empty = host.revision()
+    await host.start([writePlugin(parent, 'a', goodPlugin('a'))])
+    const loaded = host.revision()
+    expect(loaded).toBeGreaterThan(empty)
+
+    // Asked twice with nothing happening in between: same answer, same number.
+    expect(host.revision()).toBe(loaded)
+
+    // Removing the plugin takes its contributions with it, and says so.
+    await host.remove('a')
+    expect(host.contributions('commands')).toEqual([])
+    expect(host.revision()).toBeGreaterThan(loaded)
+  })
+
   it('isolates a plugin that throws during activation', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'pictor-host-'))
     const host = new PluginHost({

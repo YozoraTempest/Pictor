@@ -50,6 +50,15 @@ export class PluginHost {
   readonly #failures: PluginFailure[] = []
   readonly #activated: string[] = []
   readonly #skipped: string[] = []
+  /**
+   * Bumped whenever what the host holds changes.
+   *
+   * Whoever derives something from the contributions — the panel list, the tool
+   * presenters, the guards — compares this number instead of re-reading on every call:
+   * installing a plugin at runtime has to change the answer, and doing that work once
+   * per change is cheaper than doing it per question.
+   */
+  #revision = 0
 
   constructor(options: PluginHostOptions) {
     this.#options = options
@@ -152,6 +161,10 @@ export class PluginHost {
 
     this.#active.length = 0
   }
+  /** Identifies the current set of contributions; equal numbers mean an equal answer. */
+  revision(): number {
+    return this.#revision
+  }
 
   contributions(point: string): unknown[] {
     return (this.#contributions.get(point) ?? []).map((entry) => entry.value)
@@ -211,12 +224,16 @@ export class PluginHost {
         const entry = { pluginId: plugin.id, value }
         values.push(entry)
         this.#contributions.set(point, values)
+        this.#revision += 1
 
         const dispose = (): void => {
           const current = this.#contributions.get(point)
           if (current === undefined) return
           const index = current.indexOf(entry)
-          if (index >= 0) current.splice(index, 1)
+          if (index >= 0) {
+            current.splice(index, 1)
+            this.#revision += 1
+          }
         }
         record.disposers.push(dispose)
         return dispose

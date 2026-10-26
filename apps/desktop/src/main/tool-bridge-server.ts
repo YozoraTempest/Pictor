@@ -61,9 +61,15 @@ export type GuardAskDecider = (
 ) => Promise<GuardAskPrompt | null> | GuardAskPrompt | null
 
 export class ToolBridgeServer {
-  readonly #guards: readonly ToolGuardContribution[]
-  /** What runs after a call, in contribution order. */
-  readonly #hooks: readonly ToolHookContribution[]
+  /**
+   * The guards to ask, read per call.
+   *
+   * A function rather than an array because guards are installed while the app runs: a
+   * policy that only starts applying after a restart is a policy nobody can rely on.
+   */
+  readonly #guards: () => readonly ToolGuardContribution[]
+  /** What runs after a call, in contribution order; read per call for the same reason. */
+  readonly #hooks: () => readonly ToolHookContribution[]
   readonly #token: string
   readonly #ask: GuardAskDecider | null
   /**
@@ -78,11 +84,11 @@ export class ToolBridgeServer {
   #endpoint: GuardEndpoint | null = null
 
   constructor(
-    guards: readonly ToolGuardContribution[],
+    guards: () => readonly ToolGuardContribution[],
     token: string,
     ask: GuardAskDecider | null = null,
     providers: (() => Promise<readonly unknown[]>) | null = null,
-    hooks: readonly ToolHookContribution[] = [],
+    hooks: () => readonly ToolHookContribution[] = () => [],
   ) {
     this.#guards = guards
     this.#hooks = hooks
@@ -179,7 +185,7 @@ export class ToolBridgeServer {
     // one and the kernel keeps the result it already has.
     if (record['kind'] === 'after') {
       const output = typeof record['output'] === 'string' ? record['output'] : ''
-      const outcome = await evaluateToolHooks(this.#hooks, {
+      const outcome = await evaluateToolHooks(this.#hooks(), {
         tool,
         args,
         session: typeof record['session'] === 'string' ? record['session'] : null,
@@ -193,7 +199,7 @@ export class ToolBridgeServer {
       })
       return
     }
-    const verdict = await evaluateToolGuards(this.#guards, { tool, args })
+    const verdict = await evaluateToolGuards(this.#guards(), { tool, args })
     if (verdict.blocked) {
       reply({ block: true, reason: verdict.reason ?? 'blocked by a tool guard' })
       return

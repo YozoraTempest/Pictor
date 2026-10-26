@@ -166,7 +166,15 @@ asks first.
 - **From npm** — the package name (`@acme/pictor-hello@1.2.3`). npm installs it into
   `<profile>/plugins/`, so it can depend on anything.
 
-Both mount immediately: the kernel half is started, the UI half activated. No restart.
+Both mount immediately, with no restart: the kernel half is started, the UI half
+activated, the skills it contributes written into the runtime's skill folder, and the
+panel list, tool presenters, guards and hooks recomputed from the new set. Switching a
+plugin **off** is the same act in reverse, and it is a setting, not a deletion —
+switching it back on mounts it again.
+
+One consequence worth knowing: a conversation whose kernel half you switched off reports
+that kernel as missing until you switch it back. That is the same answer an uninstall
+gives, and the honest one — the log is still there, the runtime is not.
 
 ## Local development
 

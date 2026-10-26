@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@pictor/application'
@@ -14,16 +14,10 @@ import {
   expandPluginRoots,
   resolveActivationOrder,
 } from '@pictor/plugin-host'
-import {
-  parsePanelContributions,
-  parseViewContributions,
-  parseSkillContributions,
-  parseToolGuardContributions,
-  parseToolHookContributions,
-  parseToolViewContributions,
-  type PanelContribution,
-  type ToolGuardContribution,
-  type ToolViewContribution,
+import type {
+  PanelContribution,
+  ToolGuardContribution,
+  ToolViewContribution,
 } from '@pictor/plugin-sdk'
 import {
   DEFAULT_PERMISSION_MODE,
@@ -70,7 +64,7 @@ import { resolveNodeBinary, resolveNpmCli } from '@pictor/kernel-sdk'
 import { openSettings } from './kernel/settings-store.js'
 
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
-import { PluginViews } from './plugin-views.js'
+import { PluginContributions } from './plugin-contributions.js'
 import { ToolBridgeServer, type GuardAsk } from './tool-bridge-server.js'
 import { ModelService } from './model-service.js'
 import { RuleBook, describeAsk, describeRule } from './rule-book.js'
@@ -168,7 +162,7 @@ interface Workspace {
   kernels: KernelHost
   /** Installs and removes plugins under the profile. */
   installer: PluginInstaller
-  /** Every plugin directory found at launch, bundled first. */
+  /** Every plugin directory on disk right now, bundled first; recomputed per call. */
   pluginDirectories: () => readonly string[]
   /** Writes one setting a kernel declared, and remembers it. */
   setKernelSetting: (key: string, value: boolean) => Promise<boolean>
@@ -178,12 +172,23 @@ interface Workspace {
   settings: Readonly<SettingsMap>
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
-  /** Panels contributed by plugins; built-in panels live in the renderer registry. */
-  panels: PanelContribution[]
-  /** The views those panels render, run on demand. */
-  pluginViews: PluginViews
-  /** Presentation for agent tools; the renderer applies them to its presenters. */
-  toolViews: ToolViewContribution[]
+  /**
+   * What plugins contribute, recomputed when the host changes.
+   *
+   * Panels, the views behind them, tool presenters, guards, hooks and skills all come
+   * from here: one projection, so installing a plugin changes every answer at once.
+   */
+  contributions: PluginContributions
+  /** Rewrites plugin skills after the plugin set changed. */
+  applyPluginSkills: () => void
+  /**
+   * Where plugins that ship with the app live, as opposed to installed ones.
+   *
+   * The settings page needs to tell the two apart: one is a directory next to the
+   * build, the other a directory the person put there, and "已安装：hello-panel" for
+   * something that came with the app is simply false.
+   */
+  bundledRoot: string
   /** Skills Pictor owns, and the switches that apply to skills it does not. */
   skills: SkillLibrary
   /** The person's tool rules; the guard and approval prompts read it live. */
@@ -296,56 +301,14 @@ async function startWorkspace(): Promise<Workspace | null> {
 
   await pluginHost.start(resolution.ordered)
 
-  // A panel is a frame around a view: it names the `views` contribution it renders, so a
-  // panel with no view behind it would be a row that opens nothing. Those are dropped
-  // here, with the reason, rather than drawn.
-  const parsedPanelViews = parseViewContributions(pluginHost.contributions('views'))
-  for (const failure of parsedPanelViews.failures) {
-    console.warn(`[plugin] view ignored: ${failure.reason}`)
-  }
-  const viewOwners = new Map<string, string>()
-  for (const { pluginId, value } of pluginHost.contributionsWithSource('views')) {
-    const id = (value as { id?: unknown } | null)?.id
-    if (typeof id === 'string') viewOwners.set(id, pluginId)
-  }
-  const pluginViews = new PluginViews(parsedPanelViews.views, {
+  // What plugins contribute is a projection of the host, not a snapshot of it: a plugin
+  // installed while the app runs has to change the answer, or "装完不用重启" would be
+  // true of its kernel half and false of everything else.
+  const contributions = new PluginContributions(pluginHost, {
     // A view's own scratch space, beside the plugin's other state.
     dataDirectory: (pluginId) => join(userData, 'plugin-data', pluginId),
-  }).withOwners(viewOwners)
-
-  const parsedPanels = parsePanelContributions(pluginHost.contributions('panels'))
-  for (const failure of parsedPanels.failures) {
-    console.warn(`[plugin] panel ignored: ${failure.reason}`)
-  }
-  const panels: PanelContribution[] = parsedPanels.panels.filter((panel) => {
-    if (pluginViews.has(panel.view)) return true
-    console.warn(`[plugin] panel ignored: 没有名为 ${panel.view} 的视图（${panel.id}）`)
-    return false
+    warn: (message) => console.warn(`[plugin] ${message}`),
   })
-
-  // Tool views are presentation data: a plugin names the label and icon for its
-  // tool. The renderer owns the components, so nothing here is executable.
-  const parsedViews = parseToolViewContributions(pluginHost.contributions('toolViews'))
-  for (const failure of parsedViews.failures) {
-    console.warn(`[plugin] tool view ignored: ${failure.reason}`)
-  }
-  const toolViews: ToolViewContribution[] = parsedViews.views
-
-  // Guards run in contribution order and fail closed. With no guard installed
-  // the interceptor stays null, so the default policy costs nothing.
-  const parsedGuards = parseToolGuardContributions(pluginHost.contributions('toolGuards'))
-  for (const failure of parsedGuards.failures) {
-    console.warn(`[plugin] tool guard ignored: ${failure.reason}`)
-  }
-  const toolGuards = parsedGuards.guards
-
-  // Hooks run after a call and fail open: they can shape what the model reads next, but
-  // they cannot grant or deny, so a broken hook costs its own contribution only.
-  const parsedHooks = parseToolHookContributions(pluginHost.contributions('toolHooks'))
-  for (const failure of parsedHooks.failures) {
-    console.warn(`[plugin] tool hook ignored: ${failure.reason}`)
-  }
-  const toolHooks = parsedHooks.hooks
 
   // Skills live in one root the runtime already scans; a plugin contributes data
   // and Pictor writes the file, so the plugin never touches the runtime's home.
@@ -356,19 +319,22 @@ async function startWorkspace(): Promise<Workspace | null> {
     logger: (message) => console.warn(`[skill] ${message}`),
   })
 
-  const pluginSkills = new Map<string, unknown[]>()
-  for (const { pluginId, value } of pluginHost.contributionsWithSource('skills')) {
-    const values = pluginSkills.get(pluginId) ?? []
-    values.push(value)
-    pluginSkills.set(pluginId, values)
-  }
-
-  for (const [pluginId, values] of pluginSkills) {
-    const parsed = parseSkillContributions(values)
-    for (const failure of parsed.failures) {
-      console.warn(`[plugin] skill ignored: ${failure.reason}`)
+  /**
+   * Writes every plugin's skills, and removes the files of one that stopped
+   * contributing.
+   *
+   * Called at launch and after every change to the plugin set: a skill is a file the
+   * runtime scans, so "installed" and "written" have to happen in that order, once per
+   * change, or a plugin installed a minute ago would announce skills that do not exist.
+   */
+  let appliedSkills = new Set<string>()
+  const applyPluginSkills = (): void => {
+    const wanted = contributions.current().skills
+    for (const [pluginId, list] of wanted) skills.syncPlugin(pluginId, [...list])
+    for (const pluginId of appliedSkills) {
+      if (!wanted.has(pluginId)) skills.clearPlugin(pluginId)
     }
-    skills.syncPlugin(pluginId, parsed.skills)
+    appliedSkills = new Set(wanted.keys())
   }
 
   // A plugin that is installed but not activated owns no files: whatever an
@@ -377,6 +343,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     if (pluginHost.report().activated.includes(plugin.id)) continue
     skills.clearPlugin(plugin.id)
   }
+  applyPluginSkills()
 
   console.info(`pictor host core ${info.version} (schema ${info.schemaVersion})`)
 
@@ -475,11 +442,13 @@ async function startWorkspace(): Promise<Workspace | null> {
   // being mounted or unmounted, and it is only asked when an extension wants services.
   let kernelHost: KernelHost | null = null
   const guardBridge = new ToolBridgeServer(
-    [ruleGuard, ...toolGuards],
+    // The person's own rules first, then whatever guards are installed right now —
+    // asked per call, so installing one does not need a restart to matter.
+    () => [ruleGuard, ...contributions.current().guards],
     randomUUID(),
     askFor,
     () => providersFrom(kernelHost?.drivers ?? new Map()),
-    toolHooks,
+    () => contributions.current().hooks,
   )
   void guardBridge.start().catch((error: unknown) => {
     console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
@@ -640,7 +609,10 @@ async function startWorkspace(): Promise<Workspace | null> {
     harness,
     kernels,
     installer,
-    pluginDirectories: () => candidateRoots,
+    // Recomputed, not remembered: a plugin installed while the app runs is a directory
+    // that did not exist when the app started, and every caller here — the settings page,
+    // the on/off switch — is asking precisely because the set may have changed.
+    pluginDirectories: () => expandPluginRoots([pluginRoot, join(userData, 'plugins')]),
     // The kernel that declared the key is the one that writes it, persistence
     // included; this only asks every catalogue to look again afterwards.
     setKernelSetting: async (key, value) => {
@@ -655,9 +627,9 @@ async function startWorkspace(): Promise<Workspace | null> {
     client: running.client,
     hostCore,
     database,
-    panels,
-    pluginViews,
-    toolViews,
+    contributions,
+    applyPluginSkills,
+    bundledRoot: pluginRoot,
     skills,
     rules,
     dispose: async () => {
@@ -780,6 +752,19 @@ function broadcastHarnessStatus(status: HarnessStatus): void {
  */
 const runtimeTitles = new Map<string, Set<string>>()
 
+/**
+ * Tells every window that the workspace answer changed.
+ *
+ * One event, not one per cause: the renderer's job is the same either way — ask again
+ * for the things it draws. A plugin installed, removed or switched off lands here
+ * because the panel list, the tool presenters and the kernels all move together.
+ */
+function announceWorkspaceChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('pictor:workspace.changed')
+  }
+}
+
 async function adoptSessionTitle(
   client: Workspace['client'],
   sessionId: string,
@@ -799,9 +784,7 @@ async function adoptSessionTitle(
 
     await client.renameSession(sessionId, title)
     known.add(title)
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send('pictor:workspace.changed')
-    }
+    announceWorkspaceChanged()
   } catch (error) {
     // A title is cosmetic: failing to store it must never surface as a chat error.
     console.warn('[session] 标题未能更新', error instanceof Error ? error.message : error)
@@ -1122,12 +1105,14 @@ function registerIpc(workspace: Workspace): void {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
+  // Both read the projection, not a snapshot: a panel installed a minute ago is a row
+  // now, and the reason it is not is the reason nobody could see it.
   ipcMain.handle('pictor:panels.list', async (): Promise<PanelContribution[]> => {
-    return workspace.panels
+    return [...workspace.contributions.current().panels]
   })
 
   ipcMain.handle('pictor:toolViews.list', async (): Promise<ToolViewContribution[]> => {
-    return workspace.toolViews
+    return [...workspace.contributions.current().toolViews]
   })
 
   /**
@@ -1143,19 +1128,56 @@ function registerIpc(workspace: Workspace): void {
     if (sessionId !== null && typeof sessionId !== 'string') {
       throw new Error('sessionId must be a string or null')
     }
-    return workspace.pluginViews.render(id, { sessionId })
+    return workspace.contributions.current().views.render(id, { sessionId })
   })
 
   ipcMain.handle('pictor:plugins.list', async (): Promise<PluginRecord[]> => {
     return workspace.client.listPlugins()
   })
 
-  ipcMain.handle('pictor:plugins.setEnabled', async (_event, id: unknown, enabled: unknown) => {
-    if (typeof id !== 'string' || typeof enabled !== 'boolean') {
-      throw new Error('id must be a string and enabled a boolean')
-    }
-    return workspace.client.setPluginEnabled(id, enabled)
-  })
+  /**
+   * Turns one plugin off or on, live.
+   *
+   * The switch used to write a record and leave the plugin running until the next
+   * launch, which made the row a promise the app did not keep. Now it does what it says:
+   * the UI half is unmounted or activated, the kernel half unmounted or mounted, the
+   * skills it owns written or removed — and every window is told to look again.
+   *
+   * Turning a plugin off is reversible, so it is not the destructive act removal is; a
+   * conversation whose kernel this was reports that kernel as missing, the same way it
+   * would after an uninstall.
+   */
+  ipcMain.handle(
+    'pictor:plugins.setEnabled',
+    async (_event, id: unknown, enabled: unknown): Promise<boolean> => {
+      if (typeof id !== 'string' || typeof enabled !== 'boolean') {
+        throw new Error('id must be a string and enabled a boolean')
+      }
+      await workspace.client.setPluginEnabled(id, enabled)
+
+      const found = discoverPlugins([...workspace.pluginDirectories()]).plugins.find(
+        (plugin) => plugin.id === id,
+      )
+      if (found === undefined) return enabled
+
+      if (enabled) {
+        await workspace.pluginHost.add(found)
+        await workspace.kernels.mountInstalled(basename(found.root))
+      } else {
+        await workspace.pluginHost.remove(id)
+        const name = basename(found.root)
+        const mounted = workspace.kernels
+          .plugins()
+          .find((kernel) => kernel.source === name && kernel.failure === null)
+        if (mounted !== undefined) await workspace.kernels.unmount(mounted.id)
+      }
+
+      workspace.applyPluginSkills()
+      workspace.harness.refreshDefault()
+      announceWorkspaceChanged()
+      return enabled
+    },
+  )
 
   ipcMain.handle('pictor:plugins.report', async (): Promise<PluginReport> => {
     return workspace.pluginHost.report()
@@ -1520,7 +1542,25 @@ function registerIpc(workspace: Workspace): void {
   ): Promise<KernelChangeResult> => {
     for (const plugin of plugins) {
       await workspace.pluginHost.add(plugin)
+      // The record is what the settings switch writes to. A plugin that arrived after
+      // launch has none yet, and "not found" is a bad answer to "turn this off" — but
+      // an existing record keeps its switch, so reinstalling never re-enables anything.
+      const existing = (await workspace.client.listPlugins()).find(
+        (entry) => entry.id === plugin.id,
+      )
+      if (existing === undefined) {
+        await workspace.client.upsertPlugin({
+          id: plugin.id,
+          version: plugin.manifest.version,
+          source: name,
+        })
+      }
     }
+
+    // The plugin set changed, so what it produces changed with it: skills on disk, and
+    // every list a window draws.
+    workspace.applyPluginSkills()
+    announceWorkspaceChanged()
 
     // The kernel host is the one that knows whether this directory holds a kernel: an
     // older plugin has no manifest to ask, and a UI-only plugin has no kernel to mount
@@ -1563,25 +1603,45 @@ function registerIpc(workspace: Workspace): void {
   ipcMain.handle(
     'pictor:kernels.remove',
     async (_event, id: unknown): Promise<KernelChangeResult> => {
-      if (typeof id !== 'string') throw new Error('id must be a string')
-      const report = workspace.kernels.plugins().find((entry) => entry.id === id)
-      if (report === undefined) throw new Error('没有这个内核')
-      if (report.source === 'builtin') throw new Error('内置内核不能卸载')
-      // Unmount first: the conversations it ran would otherwise talk to a kernel whose
-      // files are gone.
-      await workspace.kernels.unmount(id)
-      workspace.harness.refreshDefault()
-      const root = workspace.installer.rootOf(report.source)
-      if (root !== null) {
-        for (const plugin of discoverPlugins([root]).plugins) {
-          await workspace.pluginHost.remove(plugin.id)
-        }
+      if (typeof id !== 'string' || id.length === 0) {
+        return { ok: false, id: null, message: '需要一个插件名' }
       }
+
+      // A plugin is one installation, named by its directory under the profile — but a
+      // caller may also name the kernel it mounted, because that is the id a conversation
+      // holds. Both are accepted here; the directory is what gets removed either way.
+      const kernels = workspace.kernels.plugins()
+      const byKernel = kernels.find((entry) => entry.id === id)
+      if (byKernel !== undefined && byKernel.source === 'builtin') {
+        return { ok: false, id, message: '内置内核不能卸载' }
+      }
+      const name = byKernel?.source ?? id
+
+      const root = workspace.installer.rootOf(name)
+      if (root === null) return { ok: false, id, message: '没有这个插件' }
+
+      // Unmount first: the conversations it ran would otherwise talk to a kernel whose
+      // files are about to be gone.
+      for (const kernel of kernels.filter((entry) => entry.source === name)) {
+        await workspace.kernels.unmount(kernel.id)
+      }
+      workspace.harness.refreshDefault()
+
+      for (const plugin of discoverPlugins([root]).plugins) {
+        await workspace.pluginHost.remove(plugin.id)
+        // The record is what the switch and the row are drawn from; leaving it behind
+        // would list a plugin whose files are gone.
+        await workspace.client.removePlugin(plugin.id)
+      }
+      workspace.applyPluginSkills()
+      announceWorkspaceChanged()
+
       try {
-        await workspace.installer.remove(report.source)
+        await workspace.installer.remove(name)
       } catch (error) {
         return { ok: false, id, message: error instanceof Error ? error.message : String(error) }
       }
+      announceWorkspaceChanged()
       return { ok: true, id, message: '' }
     },
   )
@@ -1677,7 +1737,9 @@ function registerIpc(workspace: Workspace): void {
         id: plugin.id,
         label: plugin.manifest.name,
         version: plugin.manifest.version,
-        source: name === 'plugins' ? 'builtin' : name,
+        // A bundled plugin is a direct child of the app's own plugins directory; an
+        // installed one is a child of the profile's. One comparison, both platforms.
+        source: dirname(plugin.root) === workspace.bundledRoot ? 'builtin' : name,
         enabled: record?.enabled ?? true,
         contributions,
         kernels: mounted.map((kernel) => ({

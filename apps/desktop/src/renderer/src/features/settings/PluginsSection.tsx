@@ -10,9 +10,10 @@ import { Section } from './Section.js'
 
 /** Contribution points, in the words the page uses for them. */
 const POINT_LABEL: Record<string, string> = {
-  commands: '命令',
   panels: '面板',
+  views: '视图',
   toolGuards: '工具守卫',
+  toolHooks: '执行后钩子',
   toolViews: '工具展示',
   skills: '技能',
   kernel: '内核',
@@ -198,18 +199,16 @@ export function PluginsSection(): React.JSX.Element {
                 <span className="font-mono text-2xs text-faint">{plugin.id}</span>
                 <span className="ml-auto flex items-center gap-2">
                   <span className="text-2xs text-faint">v{plugin.version}</span>
-                  {plugin.source !== 'builtin' && (
-                    <Switch
-                      label={`切换插件 ${plugin.label}`}
-                      checked={plugin.enabled}
-                      onChange={(next) => void toggle(plugin, next)}
-                    />
-                  )}
+                  <Switch
+                    label={`切换插件 ${plugin.label}`}
+                    checked={plugin.enabled}
+                    onChange={(next) => void toggle(plugin, next)}
+                  />
                 </span>
               </div>
 
               <p className="mt-1 text-2xs text-faint">
-                {plugin.source === 'builtin' ? '随应用编译' : `已安装：${plugin.source}`}
+                {plugin.source === 'builtin' ? '随应用提供' : `已安装：${plugin.source}`}
               </p>
 
               {plugin.failure !== null && (

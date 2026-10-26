@@ -50,7 +50,15 @@ async function start(
   guards: ToolGuardContribution[] = [],
   hooks: ToolHookContribution[] = [],
 ): Promise<ToolBridgeServer> {
-  const server = new ToolBridgeServer(guards, 'secret', null, null, hooks)
+  // The bridge asks for the list per call, so these are snapshots handed to a provider:
+  // what the app does is hand it a projection that changes when a plugin is installed.
+  const server = new ToolBridgeServer(
+    () => guards,
+    'secret',
+    null,
+    null,
+    () => hooks,
+  )
   servers.push(server)
   await server.start()
   return server
@@ -70,6 +78,26 @@ describe('ToolBridgeServer', () => {
       block: true,
       reason: '不要 rm',
     })
+  })
+
+  it('asks the guard list again on every call, so a new guard guards at once', async () => {
+    // The bug this prevents: the bridge captured the list at launch, so a plugin
+    // installed a minute later held a policy that applied to nothing until a restart.
+    const guards: ToolGuardContribution[] = []
+    const server = await start(guards)
+
+    // Nothing installed yet: the bridge answers, and the answer is not a refusal.
+    expect((await ask(server, { tool: 'bash', args: { command: 'rm -rf /' } }))['block']).toBe(
+      false,
+    )
+
+    guards.push({
+      id: 'acme.no-rm',
+      tools: ['bash'],
+      decide: () => ({ decision: 'deny', reason: '不要 rm' }),
+    })
+
+    expect((await ask(server, { tool: 'bash', args: { command: 'rm -rf /' } }))['block']).toBe(true)
   })
 
   it('fails closed for a guard that throws', async () => {

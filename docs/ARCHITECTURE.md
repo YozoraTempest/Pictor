@@ -57,6 +57,16 @@ Plugin lifecycle: discovery -> manifest validation -> engine check -> dependency
 resolution -> topological order -> activation -> reverse disposal. Failures are
 isolated per plugin and surfaced in the plugin report.
 
+What a plugin contributes is a **projection** of the host, not a snapshot of it
+(`apps/desktop/src/main/plugin-contributions.ts`): panels, the views behind them, tool
+presenters, guards, hooks and skills are re-derived whenever `PluginHost.revision()`
+changes, and remembered in between. That is what makes installing, removing or switching
+off a plugin a live act. It used to be half true — the kernel half mounted immediately
+while every list was frozen at launch, so a panel appeared only after a restart and a
+guard installed at runtime guarded nothing. The settings switch had the same problem in
+reverse: it wrote a record and left the plugin running until the next launch, which made
+the row a promise the app did not keep.
+
 ### Plugin views
 
 A plugin never ships a component. A `views` contribution answers with a **description** —
