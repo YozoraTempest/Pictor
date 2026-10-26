@@ -104,6 +104,17 @@ of a control that throws when pressed. The approval switch follows the same rule
 dsh decides for itself when to ask, so it draws no such switch, and a kernel that
 hands the decision over draws one.
 
+Pictor also hands its own services to Pi. The same loopback bridge that answers the
+guard also answers "what can I run": the extension calls
+`pi.registerProvider(name, { baseUrl, apiKey, models })` for each configured
+provider, so one address, key and model list serves both kernels instead of being
+typed twice. Keys travel over that socket and are never written into the extension
+file, which lives on disk with the profile. What Pictor supplies is what it knows:
+`input` stays `text` unless the model declared otherwise, and `thinkingLevelMap` is
+left out entirely when the levels were never declared, so Pi keeps applying its own
+default rather than a map invented here. Editing a service invalidates Pi's cached
+catalogue, so the picker shows the new list without a restart.
+
 A kernel that brings its own models declares it (`KernelModelSource`), and
 `kernels.list` says whose list the picker should show: `pictor` for a kernel
 booted with Pictor's providers, `kernel` for one that answers for its own

@@ -49,6 +49,61 @@ function mutating(pi, name) {
   return true
 }
 
+/**
+ * Asks the app for the services Pictor knows and registers each one with Pi.
+ *
+ * One shared configuration: the address, key and model list a person typed in Pictor
+ * are the ones Pi uses, instead of a second copy in Pi's own config drifting away from
+ * this one. Keys arrive over the socket for the same reason they are not written here:
+ * this file lives on disk with the profile.
+ */
+async function loadProviders(pi) {
+  if (endpoint === null) return
+  const answer = await askRaw({ token: endpoint.token, kind: 'providers' })
+  const providers = Array.isArray(answer && answer.providers) ? answer.providers : []
+  for (const spec of providers) {
+    if (!spec || typeof spec.name !== 'string' || !Array.isArray(spec.models)) continue
+    try {
+      pi.registerProvider(spec.name, { apiKey: spec.apiKey, baseUrl: spec.baseUrl, models: spec.models })
+    } catch (error) {
+      // One bad service must not take the others down with it; Pi reports nothing, so
+      // the failure is left to the app's own diagnostics rather than swallowed silently
+      // into a half-registered list.
+      console.warn('pictor: 注册服务失败 ' + String(error))
+    }
+  }
+}
+
+/** A bare question on the same socket, with no tool attached. */
+function askRaw(payload) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port: endpoint.port })
+    let buffer = ''
+    let settled = false
+    const done = (value) => {
+      if (settled) return
+      settled = true
+      socket.destroy()
+      resolve(value)
+    }
+    socket.setTimeout(5000, () => done(null))
+    socket.on('error', () => done(null))
+    socket.on('connect', () => {
+      socket.write(JSON.stringify(payload) + String.fromCharCode(10))
+    })
+    socket.on('data', (chunk) => {
+      buffer += chunk
+      const end = buffer.indexOf(String.fromCharCode(10))
+      if (end === -1) return
+      try {
+        done(JSON.parse(buffer.slice(0, end)))
+      } catch {
+        done(null)
+      }
+    })
+  })
+}
+
 /** One question per tool call, answered by the app over loopback. */
 function ask(tool, args, changes) {
   return new Promise((resolve) => {
@@ -161,8 +216,11 @@ const askTool = {
   },
 }
 
-export default function pictorGuard(pi) {
+export default async function pictorGuard(pi) {
   pi.registerTool(askTool)
+  // Pi waits for asynchronous factories before startup continues, so the services are
+  // in place before the first model selection.
+  await loadProviders(pi)
 
   pi.on('tool_call', async (event, ctx) => {
     const tool = String(event.toolName || 'tool')

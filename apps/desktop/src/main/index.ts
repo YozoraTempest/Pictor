@@ -32,12 +32,14 @@ import {
   type JsonValue,
   type ModelEffort,
   type ModelProtocol,
+  type PiProviderSpec,
   type PluginRecord,
   type Section,
   type SkillEntry,
   type ToolRule,
   composeSkills,
   parseToolRules,
+  piProvidersOf,
 } from '@pictor/shared'
 
 import type {
@@ -108,6 +110,11 @@ interface Workspace {
   model: ModelService
   /** Routes each conversation to the kernel that owns it. */
   harness: KernelRouter
+  /**
+   * The Pi kernel, kept reachable because its catalogue is cached: editing a service
+   * has to invalidate it, and only the driver knows that.
+   */
+  pi: PiRpcDriver
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
@@ -338,7 +345,19 @@ async function startWorkspace(): Promise<Workspace | null> {
   // Guards are closures in this process, so the runtime asks them over a loopback
   // socket instead of receiving them as configuration. The bridge is always up:
   // the rule guard is always present, and rules can be added while it runs.
-  const guardBridge = new ToolGuardServer([ruleGuard, ...toolGuards], randomUUID(), askFor)
+  // What Pi needs to run the same services: one shared configuration instead of two
+  // copies. Keys are read here and travel over the loopback socket, never into the
+  // extension file on disk.
+  const piProviders = async (): Promise<PiProviderSpec[]> => {
+    const list = await model.providers()
+    return piProvidersOf(list.providers, (id) => model.apiKeyOf(id)).providers
+  }
+  const guardBridge = new ToolGuardServer(
+    [ruleGuard, ...toolGuards],
+    randomUUID(),
+    askFor,
+    piProviders,
+  )
   void guardBridge.start().catch((error: unknown) => {
     console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
   })
@@ -475,6 +494,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     pluginHost,
     model,
     harness,
+    pi,
     readPermissionMode,
     isDisposed: () => disposed,
     client: running.client,
@@ -1017,19 +1037,25 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:provider.save', async (_event, input: unknown) => {
     if (typeof input !== 'object' || input === null) throw new Error('invalid provider')
-    return applyToRuntime(
-      await workspace.model.saveProvider(input as Parameters<ModelService['saveProvider']>[0]),
+    const saved = await workspace.model.saveProvider(
+      input as Parameters<ModelService['saveProvider']>[0],
     )
+    workspace.pi.invalidateCatalogue()
+    return applyToRuntime(saved)
   })
 
   ipcMain.handle('pictor:provider.remove', async (_event, id: unknown) => {
     if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
-    return applyToRuntime(await workspace.model.removeProvider(id))
+    const left = await workspace.model.removeProvider(id)
+    workspace.pi.invalidateCatalogue()
+    return applyToRuntime(left)
   })
 
   ipcMain.handle('pictor:provider.activate', async (_event, id: unknown) => {
     if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
-    return applyToRuntime(await workspace.model.activateProvider(id))
+    const active = await workspace.model.activateProvider(id)
+    workspace.pi.invalidateCatalogue()
+    return applyToRuntime(active)
   })
 
   ipcMain.handle('pictor:model.ccswitch.scan', async () => {
@@ -1041,9 +1067,9 @@ function registerIpc(workspace: Workspace): void {
     async (_event, id: unknown, includeApiKey: unknown) => {
       if (typeof id !== 'string' || id.trim().length === 0)
         throw new Error('provider id is required')
-      return applyToRuntime(
-        await workspace.model.importCcSwitchProvider(id, includeApiKey === true),
-      )
+      const imported = await workspace.model.importCcSwitchProvider(id, includeApiKey === true)
+      workspace.pi.invalidateCatalogue()
+      return applyToRuntime(imported)
     },
   )
 

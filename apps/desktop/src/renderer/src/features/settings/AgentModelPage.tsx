@@ -1,6 +1,7 @@
 import { Download, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { piProviderPlan } from '@pictor/shared'
 import type { ProviderList, ProviderView } from '@pictor/shared'
 
 import { Badge, Button, Dialog, IconButton, Tooltip } from '../../components/ui/index.js'
@@ -135,6 +136,9 @@ export function AgentModelPage(): React.JSX.Element {
             const active = provider.id === list.activeId
             // Computed once per row; the row shows it in one place.
             const hints = capabilityHints(provider)
+            // The same service Pi will register, or why it cannot: the whole point of
+            // one configuration is that a person can see where it actually reaches.
+            const pi = piProviderPlan(provider)
 
             return (
               <div
@@ -169,6 +173,11 @@ export function AgentModelPage(): React.JSX.Element {
                     {hostOf(provider.baseUrl)} · {String(provider.models.length)} 个模型
                     {provider.modelId.length > 0 ? ` · ${provider.modelId}` : ''}
                     {hints.length > 0 ? ` · ${hints}` : ''}
+                  </span>
+                  <span className={cn('truncate text-2xs', pi.ok ? 'text-faint' : 'text-faint/70')}>
+                    {pi.ok
+                      ? `Pi 可用：${pi.name} · ${String(pi.models)} 个模型`
+                      : `Pi 用不了：${pi.reason}`}
                   </span>
                 </button>
 

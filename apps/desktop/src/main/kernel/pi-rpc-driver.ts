@@ -448,6 +448,16 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     this.#persistApproval()
   }
 
+  /**
+   * Forgets the catalogue so the next read asks Pi again.
+   *
+   * Pi's list now includes the services Pictor registers, so a new or edited service
+   * would otherwise stay invisible until the app restarts.
+   */
+  invalidateCatalogue(): void {
+    this.#catalogue = null
+  }
+
   /** Tools this conversation may run without being asked again. */
   grantedTools(sessionId: string): string[] {
     return [...(this.#grants.get(sessionId) ?? [])]

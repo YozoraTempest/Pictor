@@ -1,6 +1,7 @@
 import { createServer, type Server, type Socket } from 'node:net'
 
 import { evaluateToolGuards, type ToolGuardContribution } from '@pictor/plugin-sdk'
+import type { PiProviderSpec } from '@pictor/shared'
 
 /**
  * Where the runtime's guard plugin reaches the app.
@@ -54,6 +55,7 @@ export class ToolGuardServer {
   readonly #guards: readonly ToolGuardContribution[]
   readonly #token: string
   readonly #ask: GuardAskDecider | null
+  readonly #providers: (() => Promise<PiProviderSpec[]>) | null
   #server: Server | null = null
   #endpoint: GuardEndpoint | null = null
 
@@ -61,10 +63,12 @@ export class ToolGuardServer {
     guards: readonly ToolGuardContribution[],
     token: string,
     ask: GuardAskDecider | null = null,
+    providers: (() => Promise<PiProviderSpec[]>) | null = null,
   ) {
     this.#guards = guards
     this.#token = token
     this.#ask = ask
+    this.#providers = providers
   }
 
   get endpoint(): GuardEndpoint | null {
@@ -135,6 +139,15 @@ export class ToolGuardServer {
     const record = (request ?? {}) as Record<string, unknown>
     if (record['token'] !== this.#token) {
       reply({ block: true, reason: '工具守卫桥接拒绝了未认证的请求' })
+      return
+    }
+
+    // One other question rides this socket: the services Pictor knows, for Pi to
+    // register. Keys are handed over here rather than written into the extension file,
+    // which lives on disk with the profile.
+    if (record['kind'] === 'providers') {
+      const providers = this.#providers === null ? [] : await this.#providers()
+      reply({ providers })
       return
     }
 

@@ -23,9 +23,18 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-/** A bridge that answers every call with one fixed verdict. */
-function bridge(answer: unknown): Promise<{ port: number; asked: Record<string, unknown>[] }> {
+/** A bridge that answers every guard question with one fixed verdict. */
+function bridge(
+  answer: unknown,
+  extra: { providers?: unknown } = {},
+): Promise<{
+  port: number
+  asked: Record<string, unknown>[]
+  providersAsked: Record<string, unknown>[]
+}> {
   const asked: Record<string, unknown>[] = []
+  // The service-list question is a different one; it does not count as a guard call.
+  const providersAsked: Record<string, unknown>[] = []
   const server = createServer((socket) => {
     let buffer = ''
     socket.setEncoding('utf8')
@@ -33,8 +42,14 @@ function bridge(answer: unknown): Promise<{ port: number; asked: Record<string, 
       buffer += chunk
       const end = buffer.indexOf('\n')
       if (end === -1) return
-      asked.push(JSON.parse(buffer.slice(0, end)))
-      socket.end(`${JSON.stringify(answer)}\n`)
+      const request = JSON.parse(buffer.slice(0, end)) as Record<string, unknown>
+      if (request['kind'] === 'providers') providersAsked.push(request)
+      else asked.push(request)
+      // The extension asks two different questions on this socket; the guard verdict
+      // answers only the tool-call one.
+      const payload =
+        request['kind'] === 'providers' ? { providers: extra.providers ?? [] } : answer
+      socket.end(`${JSON.stringify(payload)}\n`)
     })
   })
   servers.push(server)
@@ -44,6 +59,7 @@ function bridge(answer: unknown): Promise<{ port: number; asked: Record<string, 
       resolve({
         port: typeof address === 'object' && address !== null ? address.port : 0,
         asked,
+        providersAsked,
       })
     })
   })
@@ -71,6 +87,7 @@ async function loadExtension(
   typings: { title: string }[]
   edits: { title: string; draft: string }[]
   tools: Record<string, unknown>[]
+  registered: { name: string; config: unknown }[]
 }> {
   const dir = mkdtempSync(join(tmpdir(), 'pictor-pi-guard-'))
   dirs.push(dir)
@@ -81,6 +98,7 @@ async function loadExtension(
 
   let handler: ((event: unknown, ctx: unknown) => Promise<unknown>) | null = null
   const tools: Record<string, unknown>[] = []
+  const registered: { name: string; config: unknown }[] = []
   const api = {
     on: (name: string, fn: (event: unknown, ctx: unknown) => Promise<unknown>) => {
       if (name === 'tool_call') handler = fn
@@ -89,9 +107,13 @@ async function loadExtension(
     registerTool: (tool: Record<string, unknown>) => {
       tools.push(tool)
     },
+    registerProvider: (name: string, config: unknown) => {
+      registered.push({ name, config })
+    },
     getAllTools: () => [...tools, { name: 'bash', annotations: options.annotations ?? {} }],
   }
-  module.default(api)
+  // The factory is async now: Pi awaits it before startup continues.
+  await (module.default as (pi: unknown) => Promise<void> | void)(api)
 
   const confirms: { title: string; message: string }[] = []
   const asks: { title: string; options: string[] }[] = []
@@ -124,6 +146,7 @@ async function loadExtension(
     typings,
     edits,
     tools,
+    registered,
     call: async (event) => {
       if (handler === null) throw new Error('the extension registered no tool_call handler')
       return handler(event, ctx)
@@ -229,6 +252,47 @@ describe('guardExtensionSource', () => {
     } finally {
       delete process.env['PICTOR_SESSION']
     }
+  })
+
+  it('registers Pictor’s services with Pi, so one configuration serves both kernels', async () => {
+    const port = await bridge(
+      { block: false },
+      {
+        providers: [
+          {
+            name: 'pictor-deepseek',
+            apiKey: 'sk-live',
+            baseUrl: 'https://api.deepseek.com',
+            models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat', api: 'openai-completions' }],
+          },
+        ],
+      },
+    )
+    const extension = await loadExtension({ port: port.port, token: 'secret' })
+
+    // Pi gets the key over the socket: the extension file itself holds none.
+    expect(extension.registered).toEqual([
+      {
+        name: 'pictor-deepseek',
+        config: {
+          apiKey: 'sk-live',
+          baseUrl: 'https://api.deepseek.com',
+          models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat', api: 'openai-completions' }],
+        },
+      },
+    ])
+    expect(extension.tools.map((tool) => tool['name'])).toEqual(['ask_user_question'])
+  })
+
+  it('still guards tool calls when the service list cannot be read', async () => {
+    // Nothing listening: registration fails silently, but the guard must not become a
+    // hole. A tool call is still refused rather than allowed.
+    const extension = await loadExtension({ port: 1, token: 'secret' })
+
+    expect(extension.registered).toEqual([])
+    expect(await extension.call({ toolName: 'bash', input: {} })).toMatchObject({
+      block: true,
+    })
   })
 
   it('registers the asking tool the model uses, and passes options to Pi', async () => {

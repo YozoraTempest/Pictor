@@ -105,6 +105,11 @@ export class ModelService {
     return activateProvider(this.#store, this.#authPath, id)
   }
 
+  /** Key stored for one provider, or null when it has none. */
+  apiKeyOf(providerId: string): string | null {
+    return readApiKey(this.#authPath, providerId)
+  }
+
   /** Key of the provider the runtime would use, if any. */
   async activeApiKey(): Promise<string | null> {
     const settings = await this.settings()
