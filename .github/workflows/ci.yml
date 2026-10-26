@@ -23,13 +23,13 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -49,13 +49,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -71,7 +71,7 @@ jobs:
       # A conversation needs the runtime, which the app would otherwise install
       # into a profile (about 900 MB). The cache is keyed by the pinned version,
       # so a bump reinstalls once and every later run restores in seconds.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/pictor-dsh
           key: dsh-${{ runner.os }}-${{ env.DSH_PACKAGE }}
@@ -96,13 +96,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
