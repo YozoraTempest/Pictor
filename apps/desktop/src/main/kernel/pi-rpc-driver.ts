@@ -32,6 +32,7 @@ import type {
 import type { AgentProbeResult, KernelDriver } from './driver.js'
 import type { KernelModelSource } from './model-source.js'
 import { PiTranslator, type PiFrame } from './pi-events.js'
+import { ensurePiHome } from './pi-home.js'
 import { historyRows, storedLevel, storedModel, textOf, type StoredRecord } from './pi-history.js'
 
 /** How long one command may take before the caller gives up on Pi answering. */
@@ -142,6 +143,8 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   }
 
   readonly #options: PiRpcDriverOptions
+  /** Pi's configuration directory inside this profile; see `#runtimeEnv`. */
+  readonly #home: string
   readonly #listeners = new Set<(notification: HarnessNotification) => void>()
   /** One child per conversation, started on first use. */
   readonly #kids = new Map<string, Kid>()
@@ -178,6 +181,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
 
   constructor(options: PiRpcDriverOptions) {
     this.#options = options
+    this.#home = ensurePiHome(options.userData)
   }
 
   // ---- lifecycle -----------------------------------------------------------
@@ -1182,9 +1186,15 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   }
 
   #runtimeEnv(): Record<string, string> {
-    // `ELECTRON_RUN_AS_NODE` turns the app's own binary into a plain Node, so Pi
-    // runs on the Node this app was built against.
-    return { ELECTRON_RUN_AS_NODE: '1' }
+    return {
+      // `ELECTRON_RUN_AS_NODE` turns the app's own binary into a plain Node, so Pi
+      // runs on the Node this app was built against.
+      ELECTRON_RUN_AS_NODE: '1',
+      // Pi's own config directory, not the user's: inside Pictor the only services it
+      // has are the ones Pictor registers, which is what makes one configuration
+      // serve both kernels instead of two copies drifting apart.
+      PI_CODING_AGENT_DIR: this.#home,
+    }
   }
 
   #runtime(): string {

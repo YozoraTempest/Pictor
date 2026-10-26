@@ -53,6 +53,7 @@ import { HarnessChatBridge } from './harness-chat.js'
 import { shouldAdoptTitle } from './harness-title.js'
 import { DEFAULT_PERMISSION_MODE, DshDriver, isPermissionMode } from './kernel/dsh-driver.js'
 import type { KernelDriver } from './kernel/driver.js'
+import { prunePiModelsFile } from './kernel/pi-home.js'
 import { PiRpcDriver } from './kernel/pi-rpc-driver.js'
 import { writeGuardExtension } from './pi-guard-extension.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
@@ -350,7 +351,11 @@ async function startWorkspace(): Promise<Workspace | null> {
   // extension file on disk.
   const piProviders = async (): Promise<PiProviderSpec[]> => {
     const list = await model.providers()
-    return piProvidersOf(list.providers, (id) => model.apiKeyOf(id)).providers
+    const settings = await model.settings()
+    return piProvidersOf(list.providers, (id) => model.apiKeyOf(id), {
+      providerId: list.activeId,
+      modelId: settings.modelId,
+    }).providers
   }
   const guardBridge = new ToolGuardServer(
     [ruleGuard, ...toolGuards],
@@ -387,6 +392,13 @@ async function startWorkspace(): Promise<Workspace | null> {
   // Pi runs over its RPC protocol: one child per conversation, started on first
   // use, driven by JSONL commands. Each conversation keeps the kernel it was
   // opened on.
+  // A conversation that remembers one of Pi's own models would fail at startup now
+  // that Pictor's Pi only has Pictor's services; forgetting those choices at boot
+  // turns a broken conversation into one that simply has not chosen yet.
+  const prunedPiModels = prunePiModelsFile(userData)
+  if (prunedPiModels > 0) {
+    console.warn(`[pi] 忘记了 ${String(prunedPiModels)} 个不再存在的模型选择`)
+  }
   const pi = new PiRpcDriver({
     userData,
     resolveCwd,

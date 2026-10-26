@@ -22,6 +22,18 @@ const STATE_TONE: Record<HarnessStatus['state'], 'success' | 'neutral' | 'danger
   error: 'danger',
 }
 
+/**
+ * Pi's configuration directory inside the profile.
+ *
+ * The status reports the session directory (`<profile>/pi-sessions`); the config one
+ * is its sibling, which is where `PI_CODING_AGENT_DIR` points the child.
+ */
+function piConfigDirOf(status: HarnessStatus | undefined): string {
+  const home = status?.home
+  if (home === undefined || home.length === 0) return '—'
+  return `${home.replace(/[/\\][^/\\]+$/u, '')}/pi-home`
+}
+
 /** Where this kernel comes from, for the one row that says how to get it. */
 const PI_INSTALL = 'npm i -g @earendil-works/pi-coding-agent'
 
@@ -262,6 +274,15 @@ export function RuntimePage({ kernel }: RuntimePageProps): React.JSX.Element {
             control={
               <span className="font-mono text-2xs text-muted">
                 {statuses?.['pi']?.version ?? '未安装'}
+              </span>
+            }
+          />
+          <SettingRow
+            title="配置目录"
+            description="Pictor 里的 Pi 用自己的配置目录，只加载 Pictor 配置的服务；~/.pi/agent 下的服务与扩展不参与。"
+            control={
+              <span className="block max-w-72 truncate font-mono text-2xs text-muted">
+                {piConfigDirOf(statuses?.['pi'])}
               </span>
             }
           />

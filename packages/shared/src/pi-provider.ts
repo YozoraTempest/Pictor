@@ -16,6 +16,15 @@ import {
  * same services to its conversations.
  */
 
+/**
+ * Every service Pictor registers with Pi starts with this.
+ *
+ * Inside Pictor, Pi runs on its own configuration directory, so the only providers it
+ * has are the ones registered here — which makes this prefix the way to tell a model
+ * Pictor can still offer from one that belonged to Pi's own config and is gone.
+ */
+export const PI_PROVIDER_PREFIX = 'pictor-'
+
 /** What Pi calls the wire protocol a model speaks. The names happen to match. */
 const PROTOCOLS: Record<ModelProtocol, string | null> = {
   'openai-completions': 'openai-completions',
@@ -70,7 +79,7 @@ export function piProviderName(provider: Pick<ModelProvider, 'id' | 'name'>): st
     .toLowerCase()
     .replace(/[^a-z0-9]+/gu, '-')
     .replace(/^-+|-+$/gu, '')
-  return `pictor-${slug.length > 0 ? slug : provider.id.replace(/[^a-z0-9]+/gu, '').slice(0, 8)}`
+  return `${PI_PROVIDER_PREFIX}${slug.length > 0 ? slug : provider.id.replace(/[^a-z0-9]+/gu, '').slice(0, 8)}`
 }
 
 /**
@@ -138,12 +147,29 @@ function piModelSpecOf(
 export function piProvidersOf(
   providers: readonly ProviderView[],
   keyOf: (providerId: string) => string | null,
+  /**
+   * The service and model Pictor itself is using.
+   *
+   * Pi starts on the first model it knows when nobody has chosen one, so the order
+   * here decides what a fresh conversation runs on. Putting Pictor's active model
+   * first makes that default the same one dsh uses, instead of whichever service
+   * happened to be registered first.
+   */
+  active?: { providerId: string | null; modelId: string } | null,
 ): { providers: PiProviderSpec[]; skipped: PiProviderSkip[] } {
   const specs: PiProviderSpec[] = []
   const skipped: PiProviderSkip[] = []
   const taken = new Set<string>()
 
-  for (const provider of providers) {
+  const ordered =
+    active?.providerId == null
+      ? [...providers]
+      : [
+          ...providers.filter((provider) => provider.id === active.providerId),
+          ...providers.filter((provider) => provider.id !== active.providerId),
+        ]
+
+  for (const provider of ordered) {
     const plan = piProviderPlan(provider)
     if (!plan.ok) {
       skipped.push({ providerId: provider.id, name: provider.name, reason: plan.reason })
@@ -162,12 +188,14 @@ export function piProvidersOf(
     for (let suffix = 2; taken.has(name); suffix += 1) name = `${plan.name}-${String(suffix)}`
     taken.add(name)
 
-    specs.push({
-      name,
-      apiKey,
-      baseUrl: provider.baseUrl,
-      models: provider.models.map((model) => piModelSpecOf(provider, model)),
-    })
+    const models = provider.models.map((model) => piModelSpecOf(provider, model))
+    if (active?.providerId === provider.id) {
+      // Within the active service, the model in use goes first for the same reason.
+      const index = models.findIndex((model) => model.id === active.modelId)
+      if (index > 0) models.unshift(...models.splice(index, 1))
+    }
+
+    specs.push({ name, apiKey, baseUrl: provider.baseUrl, models })
   }
 
   return { providers: specs, skipped }

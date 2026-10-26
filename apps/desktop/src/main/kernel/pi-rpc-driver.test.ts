@@ -76,7 +76,8 @@ const clampLevel = (requested) => {
   const wanted = LEVELS.indexOf(requested)
   return available.filter((entry) => LEVELS.indexOf(entry) <= wanted).at(-1) ?? available[0]
 }
-appendFileSync(log, JSON.stringify({ type: 'argv', argv: process.argv.slice(2) }) + NL)
+appendFileSync(log, JSON.stringify({ type: 'argv', argv: process.argv.slice(2),
+  home: process.env.PI_CODING_AGENT_DIR ?? null }) + NL)
 const send = (record) => process.stdout.write(JSON.stringify(record) + NL)
 let buffer = ''
 process.stdin.setEncoding('utf8')
@@ -497,6 +498,21 @@ describe('PiRpcDriver', () => {
     const end = collected.frames.at(-1)
     expect(end?.type).toBe('turn/end')
     expect(end?.data).toMatchObject({ forkId: 'entry-1' })
+  })
+
+  it('runs Pi on Pictor’s own configuration directory', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake)
+
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+
+    // Not `~/.pi/agent`: inside Pictor the only services are the ones Pictor registers,
+    // which is what keeps one configuration instead of two that drift apart.
+    const started = commands(fake).find((entry) => entry['type'] === 'argv')
+    expect(String(started?.['home'])).toBe(join(fake.userData, 'pi-home'))
+    await driver.stop()
   })
 
   it('starts the child with the guard extension when one is available', async () => {

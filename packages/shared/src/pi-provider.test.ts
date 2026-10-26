@@ -129,6 +129,29 @@ describe('piProvidersOf', () => {
     expect(skipped).toEqual([{ providerId: 'p1', name: 'DeepSeek', reason: '还没有密钥' }])
   })
 
+  it('puts the service and model Pictor is using first, so a fresh Pi run starts there', () => {
+    // Pi starts on the first model it knows; that default should be the same model dsh
+    // uses, not whichever service was registered first.
+    const first = provider({ id: 'a', name: 'First' })
+    const second = provider({
+      id: 'b',
+      name: 'Second',
+      modelId: 'm2',
+      models: [
+        { ...first.models[0]!, id: 'm1' },
+        { ...first.models[0]!, id: 'm2' },
+      ],
+    })
+
+    const { providers } = piProvidersOf([first, second], () => 'k', {
+      providerId: 'b',
+      modelId: 'm2',
+    })
+
+    expect(providers.map((spec) => spec.name)).toEqual(['pictor-second', 'pictor-first'])
+    expect(providers[0]?.models.map((model) => model.id)).toEqual(['m2', 'm1'])
+  })
+
   it('keeps two same-named services apart instead of letting one replace the other', () => {
     const { providers } = piProvidersOf(
       [provider({ id: 'a' }), provider({ id: 'b' })],
