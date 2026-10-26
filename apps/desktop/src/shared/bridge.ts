@@ -201,6 +201,18 @@ export interface PluginOverview {
   failure: string | null
 }
 
+/** A setting one kernel declares, in the shape the page draws. */
+export interface KernelSettingInfo {
+  /** Which kernel owns it. */
+  kernel: string
+  key: string
+  label: string
+  description: string
+  /** What the current value means, in one line. */
+  hint: string
+  value: boolean
+}
+
 /** A kernel compiled into the app; it can be turned off, never removed. */
 export interface BuiltinKernelInfo {
   id: string
@@ -351,6 +363,10 @@ export interface PictorBridge {
   listKernelPlugins(): Promise<KernelPluginInfo[]>
   /** Every installed plugin, with what it contributes and what it can reach. */
   listPluginOverview(): Promise<PluginOverview[]>
+  /** Settings the mounted kernels declare; each names the kernel that owns it. */
+  kernelSettings(): Promise<KernelSettingInfo[]>
+  /** Writes one declared setting; false when no mounted kernel owns that key. */
+  setKernelSetting(key: string, value: boolean): Promise<boolean>
   /** The kernels compiled into the app, mounted or turned off. */
   listBuiltinKernels(): Promise<BuiltinKernelInfo[]>
   /** Turns a built-in kernel off or on; resolves with the new state. */
@@ -367,16 +383,6 @@ export interface PictorBridge {
   removeKernel(id: string): Promise<KernelChangeResult>
   /** Every kernel's status, by kernel id — one entry per kernel this build drives. */
   kernelStatuses(): Promise<Record<string, HarnessStatus>>
-  /**
-   * Whether Pi runs on its own configuration (`~/.pi/agent`) instead of Pictor's.
-   *
-   * Off by default: Pictor's Pi only sees the services Pictor registers, which is what
-   * keeps one configuration. On, Pi brings its own services, keys and extensions — the
-   * two lists then differ again, and a conversation may resume on a model Pictor does
-   * not know.
-   */
-  piOwnConfig(): Promise<boolean>
-  setPiOwnConfig(value: boolean): Promise<boolean>
   /** The models a kernel offers for one conversation. */
   kernelModels(sessionId: string): Promise<KernelModelState>
   /** Selects one for that conversation, without a restart. */

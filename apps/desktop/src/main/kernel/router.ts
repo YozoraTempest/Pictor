@@ -18,7 +18,8 @@ import type {
 } from '../../shared/bridge.js'
 import { isApprovalSource } from './approval-source.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
-import { isModelSource } from './model-source.js'
+import { isCatalogueSource, isModelSource } from './model-source.js'
+import { isSettingsSource } from './settings-source.js'
 
 export type { KernelInfo }
 
@@ -111,6 +112,56 @@ export class KernelRouter implements KernelDriver {
       throw new Error('这台机器上没有可用的内核；先到「设置 › 通用 › 插件」装一个')
     }
     return this.#fallback
+  }
+
+  /**
+   * Settings the mounted kernels declare, in a shape the window can draw.
+   *
+   * The page renders what it is handed: a kernel with a knob of its own describes it,
+   * and no other file needs to know that kernel exists.
+   */
+  settings(): Array<{
+    kernel: string
+    key: string
+    label: string
+    description: string
+    hint: string
+    value: boolean
+  }> {
+    const found: ReturnType<KernelRouter['settings']> = []
+    for (const [id, driver] of this.#options.drivers) {
+      if (!isSettingsSource(driver)) continue
+      for (const setting of driver.settings()) {
+        found.push({
+          kernel: id,
+          key: setting.key,
+          label: setting.label,
+          description: setting.description,
+          hint: setting.hint(),
+          value: setting.read(),
+        })
+      }
+    }
+    return found
+  }
+
+  /** Writes one declared setting; false when no mounted kernel owns that key. */
+  setKernelSetting(key: string, value: boolean): boolean {
+    for (const driver of this.#options.drivers.values()) {
+      if (!isSettingsSource(driver)) continue
+      const setting = driver.settings().find((entry) => entry.key === key)
+      if (setting === undefined) continue
+      setting.write(value)
+      return true
+    }
+    return false
+  }
+
+  /** Tells every kernel that keeps a catalogue to forget it. */
+  invalidateCatalogues(): void {
+    for (const driver of this.#options.drivers.values()) {
+      if (isCatalogueSource(driver)) driver.invalidateCatalogue()
+    }
   }
 
   /** The kernel everything without a session id goes to. */

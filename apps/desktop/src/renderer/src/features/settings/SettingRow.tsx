@@ -15,6 +15,7 @@ export function SettingRow({
   id,
   title,
   description,
+  note,
   control,
   stacked = false,
   disabled = false,
@@ -22,6 +23,13 @@ export function SettingRow({
 }: {
   /** Stable id, so a search result can jump to this row. */
   id?: string
+  /**
+   * One line about what the current value means — a path, a resolved name.
+   *
+   * Kept out of the control column on purpose: a directory is the whole point of
+   * such a line, and truncating it there would hide it.
+   */
+  note?: string
   title: string
   description?: string
   control: ReactNode
@@ -44,6 +52,9 @@ export function SettingRow({
       <div className="min-w-0 flex-1">
         <p className="text-xs text-text">{title}</p>
         {description !== undefined && <p className="mt-0.5 text-2xs text-faint">{description}</p>}
+        {note !== undefined && (
+          <p className="mt-1 break-all font-mono text-2xs text-faint">{note}</p>
+        )}
         {disabled && disabledReason !== undefined && (
           <p className="mt-0.5 text-2xs text-faint">{disabledReason}</p>
         )}

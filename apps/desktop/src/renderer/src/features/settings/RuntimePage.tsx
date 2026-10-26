@@ -1,7 +1,7 @@
 import { Download, Play, RefreshCw, Square } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
-import type { HarnessStatus } from '../../../../shared/bridge.js'
+import type { HarnessStatus, KernelSettingInfo } from '../../../../shared/bridge.js'
 import { versionStateOf } from '../../../../main/runtime-version.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, Spinner, Switch } from '../../components/ui/index.js'
@@ -20,18 +20,6 @@ const STATE_TONE: Record<HarnessStatus['state'], 'success' | 'neutral' | 'danger
   starting: 'neutral',
   ready: 'success',
   error: 'danger',
-}
-
-/**
- * Pi's configuration directory inside the profile.
- *
- * The status reports the session directory (`<profile>/pi-sessions`); the config one
- * is its sibling, which is where `PI_CODING_AGENT_DIR` points the child.
- */
-function piConfigDirOf(status: HarnessStatus | undefined): string {
-  const home = status?.home
-  if (home === undefined || home.length === 0) return '—'
-  return `${home.replace(/[/\\][^/\\]+$/u, '')}/pi-home`
 }
 
 /** Where this kernel comes from, for the one row that says how to get it. */
@@ -68,14 +56,16 @@ export function RuntimePage({ kernel }: RuntimePageProps): React.JSX.Element {
   // The install runs npm for minutes; its own last line is the only honest sign of
   // life the page can show while the button spins.
   const [installLine, setInstallLine] = useState<string | null>(null)
-  /** Whether Pi keeps its own configuration; `null` until it has answered. */
-  const [ownConfig, setOwnConfig] = useState<boolean | null>(null)
+  // Settings this kernel declares; the page does not know what they mean.
+  const [kernelSettings, setKernelSettings] = useState<KernelSettingInfo[]>([])
 
   const read = useCallback(async (): Promise<void> => {
     setError(null)
     try {
       setStatuses(await window.pictor.kernelStatuses())
-      if (kernel === 'pi') setOwnConfig(await window.pictor.piOwnConfig())
+      setKernelSettings(
+        (await window.pictor.kernelSettings()).filter((setting) => setting.kernel === kernel),
+      )
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
@@ -218,11 +208,8 @@ export function RuntimePage({ kernel }: RuntimePageProps): React.JSX.Element {
           <SettingRow
             title="会话数据"
             description="这个内核的会话记录与运行时资料放在这里。"
-            control={
-              <span className="block max-w-72 truncate font-mono text-2xs text-muted">
-                {dsh?.home ?? '—'}
-              </span>
-            }
+            note={dsh?.home ?? '—'}
+            control={null}
           />
         </Section>
       )}
@@ -280,61 +267,54 @@ export function RuntimePage({ kernel }: RuntimePageProps): React.JSX.Element {
               </span>
             }
           />
-          <SettingRow
-            title="使用我自己的 Pi 配置"
-            description={
-              ownConfig === true
-                ? 'Pi 读 ~/.pi/agent：它自己的服务、密钥与扩展都在，但也因此和 Pictor 的列表不同。'
-                : '关着时 Pi 用自己的配置目录，只加载 Pictor 配置的服务；~/.pi/agent 下的服务与扩展不参与。'
-            }
-            control={
-              <Switch
-                label="使用我自己的 Pi 配置"
-                checked={ownConfig === true}
-                disabled={ownConfig === null || busy !== null}
-                onChange={(next) => {
-                  setOwnConfig(next)
-                  void window.pictor
-                    .setPiOwnConfig(next)
-                    .then((saved) => {
-                      setOwnConfig(saved)
-                      // The model list changes with the switch, so both the statuses
-                      // and the catalogue behind them have to be read again.
-                      return read()
-                    })
-                    .catch((reason: unknown) => {
-                      setError(reason instanceof Error ? reason.message : String(reason))
-                    })
-                }}
-              />
-            }
-          />
-          <SettingRow
-            title="配置目录"
-            description="Pi 实际读取的目录。"
-            control={
-              <span className="block max-w-72 truncate font-mono text-2xs text-muted">
-                {ownConfig === true ? '~/.pi/agent' : piConfigDirOf(statuses?.['pi'])}
-              </span>
-            }
-          />
+          {kernelSettings.map((setting) => (
+            <SettingRow
+              key={setting.key}
+              title={setting.label}
+              description={setting.description}
+              // The kernel says what the value currently means, in its own words:
+              // the page shows the line it was handed, whole.
+              note={setting.hint}
+              control={
+                <Switch
+                  label={setting.label}
+                  checked={setting.value}
+                  disabled={busy !== null}
+                  onChange={(next) => {
+                    setKernelSettings((current) =>
+                      current.map((entry) =>
+                        entry.key === setting.key ? { ...entry, value: next } : entry,
+                      ),
+                    )
+                    void window.pictor
+                      .setKernelSetting(setting.key, next)
+                      .then((applied) => {
+                        // The kernel is the one that knows whether the key is still
+                        // its own; a refused write leaves the switch where the value
+                        // really is, and says so once.
+                        if (!applied) throw new Error(`${setting.label}：内核没有接受这项设置`)
+                        return read()
+                      })
+                      .catch((reason: unknown) => {
+                        setError(reason instanceof Error ? reason.message : String(reason))
+                        void read()
+                      })
+                  }}
+                />
+              }
+            />
+          ))}
           <SettingRow
             title="可执行文件"
             description="找不到时可以让 PICTOR_PI_BIN 直接指向 pi 的入口文件。"
-            control={
-              <span className="block max-w-72 truncate font-mono text-2xs text-muted">
-                {statuses?.['pi']?.binary ?? '未找到'}
-              </span>
-            }
+            note={statuses?.['pi']?.binary ?? '未找到'}
+            control={null}
           />
           <SettingRow
             title="会话数据"
             description="Pi 自己写会话文件，Pictor 只是读回来当历史。"
-            control={
-              <span className="block max-w-72 truncate font-mono text-2xs text-muted">
-                {statuses?.['pi']?.home ?? '—'}
-              </span>
-            }
+            note={statuses?.['pi']?.home ?? '—'}
+            control={null}
           />
           {statuses?.['pi']?.binary == null && (
             <SettingRow

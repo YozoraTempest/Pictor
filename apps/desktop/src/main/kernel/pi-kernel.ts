@@ -21,20 +21,14 @@ import { PiRpcDriver } from './pi-rpc-driver.js'
  */
 export interface PiKernel {
   plugin: KernelPlugin
-  /** Whether Pi keeps its own configuration directory right now. */
-  ownConfig: () => boolean
-  /** Records the choice; the next child starts with it. */
-  setOwnConfig: (value: boolean) => void
-  /** The mounted driver, or null before the host mounts the plugin. */
-  driver: () => PiRpcDriver | null
   /**
-   * The services Pi should see, derived from Pictor's own model configuration.
+   * The mounted driver, or null before the host mounts the plugin.
    *
-   * Pi's guard extension asks for these over the loopback bridge rather than reading
-   * a file, which is what keeps keys out of the profile and one configuration shared
-   * between two kernels. Empty before the host mounts the plugin.
+   * Everything else about Pi — its settings, its catalogue, the services it runs
+   * with — is reached through the driver's interfaces, so nothing outside this file
+   * has to know the type.
    */
-  providers: () => Promise<PiProviderSpec[]>
+  driver: () => PiRpcDriver | null
 }
 
 /** Pictor's services, in the shape Pi's provider registration takes. */
@@ -65,6 +59,10 @@ export function createPiKernel(options: { ownConfig: boolean }): PiKernel {
       instance = new PiRpcDriver({
         userData,
         resolveCwd: hostService(ctx, 'pictor.workspace'),
+        providers: () => (providers === null ? Promise.resolve([]) : providers()),
+        setOwnConfig: (value: boolean) => {
+          ownConfig = value
+        },
         // The same guard chain dsh asks over loopback, written as a Pi extension: a
         // user's tool rules mean the same thing on both kernels. The endpoint is read
         // per launch, and a missing one makes the extension block rather than allow.
@@ -75,13 +73,5 @@ export function createPiKernel(options: { ownConfig: boolean }): PiKernel {
     },
   }
 
-  return {
-    plugin,
-    ownConfig: () => ownConfig,
-    setOwnConfig: (value: boolean) => {
-      ownConfig = value
-    },
-    driver: () => instance,
-    providers: () => (providers === null ? Promise.resolve([]) : providers()),
-  }
+  return { plugin, driver: () => instance }
 }

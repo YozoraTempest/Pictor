@@ -26,3 +26,40 @@ export function isModelSource(driver: KernelDriver): driver is KernelDriver & Ke
   const candidate = driver as Partial<KernelModelSource>
   return typeof candidate.models === 'function' && typeof candidate.selectModel === 'function'
 }
+
+/**
+ * A kernel whose model catalogue can go stale.
+ *
+ * Pi builds its list once per process and keeps it; a service Pictor adds or edits
+ * afterwards is invisible until that process is told to look again. dsh needs none of
+ * this — its catalogue is the profile patch it just booted with.
+ */
+export interface KernelCatalogueSource {
+  /** Forgets the cached catalogue; the next read asks the kernel again. */
+  invalidateCatalogue(): void
+}
+
+/** Whether a driver keeps a catalogue that has to be invalidated. */
+export function isCatalogueSource(
+  driver: KernelDriver,
+): driver is KernelDriver & KernelCatalogueSource {
+  return typeof (driver as Partial<KernelCatalogueSource>).invalidateCatalogue === 'function'
+}
+
+/**
+ * A kernel that asks Pictor to register its services into it.
+ *
+ * The shape is Pi's: its guard extension asks the loopback bridge for the services to
+ * run with, which is how one configuration serves two kernels without a key ever
+ * landing on disk. A kernel that is configured at boot — dsh — needs nothing here.
+ */
+export interface KernelProviderSource<T = unknown> {
+  providers(): Promise<T[]>
+}
+
+/** Whether a driver takes Pictor's services at runtime rather than at boot. */
+export function isProviderSource<T>(
+  driver: KernelDriver,
+): driver is KernelDriver & KernelProviderSource<T> {
+  return typeof (driver as Partial<KernelProviderSource<T>>).providers === 'function'
+}

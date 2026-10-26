@@ -29,7 +29,10 @@ import type {
   KernelModelState,
   PermissionMode,
 } from '../../shared/bridge.js'
+import type { PiProviderSpec } from '@pictor/shared'
+
 import type { AgentProbeResult, KernelDriver } from './driver.js'
+import type { KernelSetting } from './settings-source.js'
 import type { KernelModelSource } from './model-source.js'
 import { PiTranslator, type PiFrame } from './pi-events.js'
 import { ensurePiHome } from './pi-home.js'
@@ -72,6 +75,15 @@ export interface PiRpcDriverOptions {
    * than restarting the app.
    */
   ownConfig?: () => boolean
+  /** Records the choice above; the next child starts with it. */
+  setOwnConfig?: (value: boolean) => void
+  /**
+   * The services this kernel should run with, derived from Pictor's configuration.
+   *
+   * Read by its guard extension over the loopback bridge, which is what keeps the key
+   * out of every file on disk.
+   */
+  providers?: () => Promise<PiProviderSpec[]>
 }
 
 /** One Pi child process, and everything owed to it. */
@@ -467,6 +479,37 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
    * Pi's list now includes the services Pictor registers, so a new or edited service
    * would otherwise stay invisible until the app restarts.
    */
+  /**
+   * The one setting this kernel owns.
+   *
+   * Described here rather than in the settings page: "run on my own configuration" is
+   * a Pi fact, and a page that hard-coded it would have to learn Pi's name to draw a
+   * switch.
+   */
+  /** Pictor's services, in the shape this kernel's provider registration takes. */
+  async providers(): Promise<PiProviderSpec[]> {
+    return this.#options.providers === undefined ? [] : this.#options.providers()
+  }
+
+  settings(): readonly KernelSetting[] {
+    return [
+      {
+        key: 'pi.ownConfig',
+        label: '使用我自己的 Pi 配置',
+        description:
+          'Pi 默认跑在 Pictor 的隔离目录里，只能用 Pictor 注册的服务。打开后它会读 ~/.pi/agent。',
+        hint: () =>
+          this.#options.ownConfig?.() === true
+            ? '当前配置目录：~/.pi/agent'
+            : `当前配置目录：${this.#home}`,
+        read: () => this.#options.ownConfig?.() === true,
+        write: (value: boolean) => {
+          this.#options.setOwnConfig?.(value)
+        },
+      },
+    ]
+  }
+
   invalidateCatalogue(): void {
     this.#catalogue = null
   }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { HarnessStatus } from '../../shared/bridge.js'
 import type { KernelDriver } from './driver.js'
 import { KernelRouter } from './router.js'
+import type { KernelSetting } from './settings-source.js'
 
 function status(id: string): HarnessStatus {
   return {
@@ -20,7 +21,10 @@ function status(id: string): HarnessStatus {
 }
 
 /** A driver that records which sessions it was asked about. */
-function driver(id: string, options: { models?: boolean } = {}): KernelDriver & { seen: string[] } {
+function driver(
+  id: string,
+  options: { models?: boolean; settings?: KernelSetting[]; catalogue?: () => void } = {},
+): KernelDriver & { seen: string[] } {
   const seen: string[] = []
   const unsupported = () => Promise.reject(new Error(`${id} 不支持`))
 
@@ -36,6 +40,9 @@ function driver(id: string, options: { models?: boolean } = {}): KernelDriver & 
           selectModel: () => Promise.resolve(),
         }
       : {}),
+    // A kernel with knobs of its own says which ones; the rest declare nothing.
+    ...(options.settings === undefined ? {} : { settings: () => options.settings ?? [] }),
+    ...(options.catalogue === undefined ? {} : { invalidateCatalogue: options.catalogue }),
     start: () => Promise.resolve(status(id)),
     stop: () => Promise.resolve(status(id)),
     status: () => status(id),
@@ -199,5 +206,69 @@ describe('KernelRouter', () => {
     const kernels = router({}, [driver('dsh'), driver('other')])
 
     await expect(kernels.answerApproval('e1', true)).rejects.toThrow(/dsh.*other/s)
+  })
+
+  it('lets a kernel describe a setting of its own, and only that kernel', () => {
+    // Pi's "run on my own configuration" means nothing to dsh. The router reports
+    // what each kernel declares, so the page can draw one row without knowing which
+    // kernel it belongs to.
+    let own = false
+    const pi = driver('pi', {
+      settings: [
+        {
+          key: 'pi.ownConfig',
+          label: '使用我自己的 Pi 配置',
+          description: '打开后读 ~/.pi/agent。',
+          hint: () => (own ? '当前配置目录：~/.pi/agent' : '当前配置目录：/profile/pi-home'),
+          read: () => own,
+          write: (value) => {
+            own = value
+          },
+        },
+      ],
+    })
+    const kernels = router({}, [driver('dsh'), pi])
+
+    expect(kernels.settings()).toEqual([
+      {
+        kernel: 'pi',
+        key: 'pi.ownConfig',
+        label: '使用我自己的 Pi 配置',
+        description: '打开后读 ~/.pi/agent。',
+        hint: '当前配置目录：/profile/pi-home',
+        value: false,
+      },
+    ])
+  })
+
+  it('writes a declared setting to its owner and refuses a key nobody declares', () => {
+    // A page that hands back a stale key must not look like it worked.
+    let forgot = 0
+    let own = false
+    const pi = driver('pi', {
+      catalogue: () => {
+        forgot += 1
+      },
+      settings: [
+        {
+          key: 'pi.ownConfig',
+          label: '使用我自己的 Pi 配置',
+          description: '',
+          hint: () => '',
+          read: () => own,
+          write: (value) => {
+            own = value
+          },
+        },
+      ],
+    })
+    const kernels = router({}, [driver('dsh'), pi])
+
+    expect(kernels.setKernelSetting('pi.ownConfig', true)).toBe(true)
+    expect(own).toBe(true)
+    expect(kernels.setKernelSetting('pi.gone', true)).toBe(false)
+
+    kernels.invalidateCatalogues()
+    expect(forgot).toBe(1)
   })
 })

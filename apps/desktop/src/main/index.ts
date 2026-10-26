@@ -34,6 +34,7 @@ import {
   type JsonValue,
   type ModelEffort,
   type ModelProtocol,
+  type PiProviderSpec,
   type PluginRecord,
   type Section,
   type SkillEntry,
@@ -57,7 +58,9 @@ import { HarnessChatBridge } from './harness-chat.js'
 import { shouldAdoptTitle } from './harness-title.js'
 import { DEFAULT_PERMISSION_MODE, isPermissionMode } from './kernel/dsh-driver.js'
 import { dshKernel } from './kernel/dsh-kernel.js'
+import type { KernelDriver } from './kernel/driver.js'
 import { startKernelHost, type KernelHost } from './kernel/host.js'
+import { isProviderSource } from './kernel/model-source.js'
 import { prunePiModelsFile } from './kernel/pi-home.js'
 import type { PiRpcDriver } from './kernel/pi-rpc-driver.js'
 import { resolveNodeBinary, resolveNpmCli } from './kernel/node-runtime.js'
@@ -68,6 +71,22 @@ import { ToolGuardServer, type GuardAsk } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
 import { RuleBook, describeAsk, describeRule } from './rule-book.js'
 import { SkillLibrary } from './skill-library.js'
+
+/**
+ * The services the mounted kernels want registered into them.
+ *
+ * Asked of whoever claims to need them rather than of a named kernel: this used to
+ * read `piKernel.providers()`, which is exactly the coupling that made "swap the
+ * kernel" a promise with an asterisk.
+ */
+async function providersFrom(
+  drivers: ReadonlyMap<string, KernelDriver>,
+): Promise<PiProviderSpec[]> {
+  for (const driver of drivers.values()) {
+    if (isProviderSource<PiProviderSpec>(driver)) return driver.providers()
+  }
+  return []
+}
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const appRoot = resolve(here, '../..')
@@ -151,9 +170,8 @@ interface Workspace {
   installer: PluginInstaller
   /** Every plugin directory found at launch, bundled first. */
   pluginDirectories: () => readonly string[]
-  /** Whether Pi keeps its own configuration directory; see `setPiOwnConfig`. */
-  piOwnConfig: () => boolean
-  setPiOwnConfig: (value: boolean) => Promise<boolean>
+  /** Writes one setting a kernel declared, and remembers it. */
+  setKernelSetting: (key: string, value: boolean) => Promise<boolean>
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
@@ -361,7 +379,7 @@ async function startWorkspace(): Promise<Workspace | null> {
   // only services it has are the ones Pictor registers. Kept in memory because the
   // driver reads it at every spawn, and the switch has to take effect without a
   // restart.
-  let piOwnConfig = (await running.client.listSettings())[OWN_CONFIG_KEY] === true
+  const piOwnConfig = (await running.client.listSettings())[OWN_CONFIG_KEY] === true
 
   // A conversation that remembers one of Pi's own models would fail at startup while
   // Pictor's Pi only has Pictor's services; forgetting those choices turns a broken
@@ -438,8 +456,11 @@ async function startWorkspace(): Promise<Workspace | null> {
   // copies. The kernel plugin derives it from `pictor.models`; the bridge only holds
   // the callback, because the extension asks for it over the loopback socket and keys
   // never reach the file on disk.
+  // Resolved per request rather than captured: the bridge outlives any one kernel
+  // being mounted or unmounted, and it is only asked when an extension wants services.
+  let kernelHost: KernelHost | null = null
   const guardBridge = new ToolGuardServer([ruleGuard, ...toolGuards], randomUUID(), askFor, () =>
-    piKernel.providers(),
+    providersFrom(kernelHost?.drivers ?? new Map()),
   )
   void guardBridge.start().catch((error: unknown) => {
     console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
@@ -475,6 +496,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     disabled: disabledBuiltins,
     directories: [join(userData, 'plugins')],
   })
+  kernelHost = kernels
   const pi = piKernel.driver()
   if (pi === null) throw new Error('Pi 内核没有挂载')
   const harness: KernelRouter = new KernelRouter({
@@ -590,17 +612,16 @@ async function startWorkspace(): Promise<Workspace | null> {
     kernels,
     installer,
     pluginDirectories: () => candidateRoots,
-    piOwnConfig: piKernel.ownConfig,
-    setPiOwnConfig: async (value) => {
-      piOwnConfig = value
-      await running.client.putSetting(OWN_CONFIG_KEY, value)
+    setKernelSetting: async (key, value) => {
+      // The kernel records it; Pictor remembers it, because a kernel only reads its
+      // settings when it starts.
+      await running.client.putSetting(key, value)
+      const applied = harness.setKernelSetting(key, value)
       // Entering isolation drops the choices Pictor can no longer offer; leaving it
       // keeps them, because every registered service still exists.
-      if (!value) forgetForeignPiModels(userData)
-      // Pi's catalogue depends on which configuration it runs on and on which services
-      // it can see, so the picker has to ask again.
-      pi.invalidateCatalogue()
-      return piOwnConfig
+      if (key === OWN_CONFIG_KEY && !value) forgetForeignPiModels(userData)
+      harness.invalidateCatalogues()
+      return applied
     },
     readPermissionMode,
     isDisposed: () => disposed,
@@ -1640,11 +1661,13 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:kernels.statuses', async () => workspace.harness.statuses())
 
-  ipcMain.handle('pictor:pi.ownConfig', async () => workspace.piOwnConfig())
+  /** Settings the mounted kernels declare; the page renders what it gets. */
+  ipcMain.handle('pictor:kernels.settings', async () => workspace.harness.settings())
 
-  ipcMain.handle('pictor:pi.setOwnConfig', async (_event, value: unknown) => {
-    if (typeof value !== 'boolean') throw new Error('ownConfig must be a boolean')
-    return workspace.setPiOwnConfig(value)
+  ipcMain.handle('pictor:kernels.setSetting', async (_event, key: unknown, value: unknown) => {
+    if (typeof key !== 'string' || key.length === 0) throw new Error('key must be a string')
+    if (typeof value !== 'boolean') throw new Error('value must be a boolean')
+    return workspace.setKernelSetting(key, value)
   })
 
   ipcMain.handle('pictor:kernel.approval', async (_event, sessionId: unknown) => {
