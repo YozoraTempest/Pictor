@@ -44,6 +44,7 @@ import type {
   AppInfo,
   HarnessStatus,
   HostSnapshot,
+  KernelChangeResult,
   KernelPluginInfo,
   PermissionMode,
   PluginReport,
@@ -55,6 +56,7 @@ import { dshKernel } from './kernel/dsh-kernel.js'
 import { startKernelHost, type KernelHost } from './kernel/host.js'
 import { prunePiModelsFile } from './kernel/pi-home.js'
 import type { PiRpcDriver } from './kernel/pi-rpc-driver.js'
+import { KernelInstaller } from './kernel/installer.js'
 import { createPiKernel } from './kernel/pi-kernel.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
 import { ToolGuardServer, type GuardAsk } from './tool-guard-server.js'
@@ -140,6 +142,8 @@ interface Workspace {
   pi: PiRpcDriver
   /** The kernel container: what is mounted, what was refused, and why. */
   kernels: KernelHost
+  /** Installs and removes kernels under the profile. */
+  installer: KernelInstaller
   /** Whether Pi keeps its own configuration directory; see `setPiOwnConfig`. */
   piOwnConfig: () => boolean
   setPiOwnConfig: (value: boolean) => Promise<boolean>
@@ -353,6 +357,7 @@ async function startWorkspace(): Promise<Workspace | null> {
   // conversation into one that simply has not chosen yet.
   if (!piOwnConfig) forgetForeignPiModels(userData)
   const piKernel = createPiKernel({ ownConfig: piOwnConfig })
+  const installer = new KernelInstaller({ userData })
   const ruleGuard: ToolGuardContribution = {
     id: 'pictor-rules',
     title: '工具规则',
@@ -528,6 +533,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     harness,
     pi,
     kernels,
+    installer,
     piOwnConfig: piKernel.ownConfig,
     setPiOwnConfig: async (value) => {
       piOwnConfig = value
@@ -1309,8 +1315,79 @@ function registerIpc(workspace: Workspace): void {
     return workspace.harness.list()
   })
 
+  /**
+   * Install a kernel, then mount it.
+   *
+   * The two steps stay apart on purpose: a copy that succeeds and a mount that fails
+   * is a kernel on disk with a reason attached, which the settings page shows, rather
+   * than a rollback that hides what went wrong.
+   */
+  const mountAfterInstall = async (
+    install: () => Promise<{ name: string }> | { name: string },
+  ): Promise<KernelChangeResult> => {
+    let installed: { name: string }
+    try {
+      installed = await install()
+    } catch (error) {
+      return {
+        ok: false,
+        id: null,
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
+    const failure = await workspace.kernels.mountInstalled(installed.name)
+    return { ok: failure === null, id: installed.name, message: failure ?? '' }
+  }
+
+  ipcMain.handle('pictor:kernels.chooseFolder', async (): Promise<string | null> => {
+    const chosen = await dialog.showOpenDialog({
+      title: '选择一个内核目录',
+      properties: ['openDirectory'],
+    })
+    return chosen.canceled ? null : (chosen.filePaths[0] ?? null)
+  })
+
+  ipcMain.handle(
+    'pictor:kernels.installFolder',
+    async (_event, source: unknown): Promise<KernelChangeResult> => {
+      if (typeof source !== 'string' || source.length === 0) {
+        return { ok: false, id: null, message: '需要一个目录' }
+      }
+      return mountAfterInstall(() => workspace.installer.installFolder(source))
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:kernels.installPackage',
+    async (_event, spec: unknown): Promise<KernelChangeResult> => {
+      if (typeof spec !== 'string' || spec.trim().length === 0) {
+        return { ok: false, id: null, message: '需要一个包名' }
+      }
+      return mountAfterInstall(() => workspace.installer.installPackage(spec))
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:kernels.remove',
+    async (_event, id: unknown): Promise<KernelChangeResult> => {
+      if (typeof id !== 'string') throw new Error('id must be a string')
+      const report = workspace.kernels.plugins().find((entry) => entry.id === id)
+      if (report === undefined) throw new Error('没有这个内核')
+      if (report.source === 'builtin') throw new Error('内置内核不能卸载')
+      // Unmount first: the conversations it ran would otherwise talk to a kernel whose
+      // files are gone.
+      await workspace.kernels.unmount(id)
+      try {
+        await workspace.installer.remove(report.source)
+      } catch (error) {
+        return { ok: false, id, message: error instanceof Error ? error.message : String(error) }
+      }
+      return { ok: true, id, message: '' }
+    },
+  )
+
   ipcMain.handle('pictor:kernels.plugins', async (): Promise<KernelPluginInfo[]> => {
-    return workspace.kernels.plugins.map((entry) => ({
+    return workspace.kernels.plugins().map((entry) => ({
       id: entry.id,
       label: entry.label,
       source: entry.source,

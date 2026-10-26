@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { Context, type Plugin } from '@deepseek-ai/cordis'
+import { Context, type Fiber, type Plugin } from '@deepseek-ai/cordis'
 
 import type { PermissionMode } from '../../shared/bridge.js'
 import type { ModelService } from '../model-service.js'
@@ -92,12 +92,25 @@ export interface KernelPluginReport {
 }
 
 export interface KernelHost {
-  /** Every kernel that came up, in mount order; the first is the default. */
+  /**
+   * Every kernel that came up, in mount order; the first is the default.
+   *
+   * The map is live: installing a kernel adds to it, uninstalling removes from it,
+   * and the router reads it on every call, so nothing has to be rebuilt.
+   */
   readonly drivers: ReadonlyMap<string, KernelDriver>
   /** Kernels that failed, so the settings page can name them. */
   readonly failures: readonly KernelPluginFailure[]
-  /** Everything that was mounted or refused, for the settings page. */
-  readonly plugins: readonly KernelPluginReport[]
+  /** Everything mounted or refused right now, for the settings page. */
+  plugins(): KernelPluginReport[]
+  /**
+   * Mount one installed kernel by name without restarting the app.
+   *
+   * Resolves with why it could not be mounted, or null when it did.
+   */
+  mountInstalled(name: string): Promise<string | null>
+  /** Unmount a kernel by id; its conversations then report it as missing. */
+  unmount(id: string): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -211,26 +224,32 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
   ctx.provide('pictor.workspace', options.services.workspace)
   ctx.provide('pictor.userdata', options.services.userData)
 
-  /** Which plugin brought each kernel up, and what it said it needs. */
-  const mounted = new Map<string, { source: string; services: readonly string[] }>()
+  /** Which plugin brought each kernel up, what it needs, and how to unload it. */
+  const mounted = new Map<string, { source: string; services: readonly string[]; fiber: Fiber }>()
 
   const mount = async (
     plugin: KernelPlugin,
     source: string,
     failureName = source,
-  ): Promise<void> => {
+  ): Promise<string | null> => {
     const known = new Set(drivers.keys())
+    let fiber: Fiber
     try {
-      await ctx.plugin(plugin)
+      fiber = await ctx.plugin(plugin)
     } catch (error) {
-      failures.push({ source: failureName, message: messageOf(error) })
-      return
+      const message = messageOf(error)
+      failures.push({ source: failureName, message })
+      return message
     }
     // A plugin publishes its service synchronously inside `apply`, so whatever
     // arrived here came from this one.
+    let last: string | null = null
     for (const id of drivers.keys()) {
-      if (!known.has(id)) mounted.set(id, { source, services: declaredServices(plugin) })
+      if (known.has(id)) continue
+      mounted.set(id, { source, services: declaredServices(plugin), fiber })
+      last = id
     }
+    return last === null ? `${failureName} 没有提供内核服务` : null
   }
 
   for (const [index, plugin] of options.builtins.entries()) {
@@ -246,29 +265,45 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
     await mount(found.plugin, found.source)
   }
 
-  const plugins: KernelPluginReport[] = [...drivers].map(([id, driver]) => ({
-    id,
-    label: driver.label,
-    source: mounted.get(id)?.source ?? 'builtin',
-    services: mounted.get(id)?.services ?? [],
-    available: isAvailable(driver),
-    failure: null,
-  }))
-  for (const failure of failures) {
-    plugins.push({
-      id: failure.source,
-      label: failure.source,
-      source: failure.source,
-      services: [],
-      available: false,
-      failure: failure.message,
-    })
-  }
-
   return {
     drivers,
     failures,
-    plugins,
+    plugins(): KernelPluginReport[] {
+      const reports: KernelPluginReport[] = [...drivers].map(([id, driver]) => ({
+        id,
+        label: driver.label,
+        source: mounted.get(id)?.source ?? 'builtin',
+        services: mounted.get(id)?.services ?? [],
+        available: isAvailable(driver),
+        failure: null,
+      }))
+      for (const failure of failures) {
+        reports.push({
+          id: failure.source,
+          label: failure.source,
+          source: failure.source,
+          services: [],
+          available: false,
+          failure: failure.message,
+        })
+      }
+      return reports
+    },
+    async mountInstalled(name: string): Promise<string | null> {
+      const found = discoverKernel(options.directory, name)
+      if ('error' in found) return found.error
+      return mount(found.plugin, found.source)
+    },
+    async unmount(id: string): Promise<void> {
+      const record = mounted.get(id)
+      if (record === undefined) return
+      // Unloading the fiber unprovides the service; the driver map is ours to clean.
+      await record.fiber.dispose()
+      mounted.delete(id)
+      drivers.delete(id)
+      const index = failures.findIndex((entry) => entry.source === id)
+      if (index >= 0) failures.splice(index, 1)
+    },
     async dispose(): Promise<void> {
       await ctx.fiber.dispose()
     },
@@ -277,48 +312,91 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
 
 type KernelEntry = { source: string; plugin: KernelPlugin } | { source: string; error: string }
 
+/** File naming the kernels installed as packages, rather than copied folders. */
+export const PACKAGE_LIST = 'kernels.json'
+
 /**
  * Installed kernels, found by directory and imported by path.
  *
- * Nothing is installed into a package store, so the entry point is imported by
- * file: ESM resolution still walks up from that file, which is where a plugin's own
- * dependencies live. Import itself is deferred to mount time — the module graph is
- * ESM, and a plugin that fails to import has to fail alone.
+ * Two shapes live side by side under the profile's `kernels/`:
+ *
+ * - a **folder**, copied in whole, which is what installing a directory produces;
+ * - a **package**, installed into `kernels/node_modules` by the package manager and
+ *   named in `kernels.json`, which is the only way a kernel can bring its own
+ *   dependencies with it.
+ *
+ * Either way the entry point is imported by file: ESM resolution still walks up from
+ * that file, which is where those dependencies live. The import itself is deferred to
+ * mount time — the module graph is ESM, and a plugin that fails to import has to fail
+ * alone.
  */
 function discoverKernels(directory: string): KernelEntry[] {
-  let names: string[]
+  const entries: KernelEntry[] = []
+  for (const name of installedFolders(directory)) {
+    entries.push(discoverKernel(directory, name))
+  }
+  for (const name of installedPackages(directory)) {
+    entries.push(discoverKernel(directory, name))
+  }
+  return entries
+}
+
+/** One installed kernel by name: a folder first, then a package. */
+function discoverKernel(directory: string, name: string): KernelEntry {
+  const root = kernelRoot(directory, name)
+  if (root === null) return { source: name, error: '内核目录不存在' }
+
+  const manifest = join(root, 'package.json')
+  let main: string
   try {
-    names = readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort()
+    const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as { main?: unknown }
+    main = typeof parsed.main === 'string' && parsed.main.length > 0 ? parsed.main : 'index.js'
+  } catch (error) {
+    return { source: name, error: `package.json 无法解析：${messageOf(error)}` }
+  }
+
+  const entry = join(root, main)
+  if (!existsSync(entry)) return { source: name, error: `入口不存在：${main}` }
+  return { source: name, plugin: mountModule(entry, name) }
+}
+
+/** Where a kernel lives: a folder under `kernels/`, or a package in its store. */
+function kernelRoot(directory: string, name: string): string | null {
+  const folder = join(directory, name)
+  if (existsSync(join(folder, 'package.json'))) return folder
+  const packaged = join(directory, 'node_modules', name)
+  if (existsSync(join(packaged, 'package.json'))) return packaged
+  return null
+}
+
+/** Copied-in kernels: every child directory that is a package. */
+function installedFolders(directory: string): string[] {
+  try {
+    return (
+      readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        // `node_modules` holds packages, and they are listed by name instead.
+        .filter((entry) => entry.name !== 'node_modules')
+        .map((entry) => entry.name)
+        .filter((name) => existsSync(join(directory, name, 'package.json')))
+        .sort()
+    )
   } catch {
     return []
   }
+}
 
-  const entries: KernelEntry[] = []
-  for (const name of names) {
-    const root = join(directory, name)
-    const manifest = join(root, 'package.json')
-    if (!existsSync(manifest)) continue
-
-    let main: string
-    try {
-      const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as { main?: unknown }
-      main = typeof parsed.main === 'string' && parsed.main.length > 0 ? parsed.main : 'index.js'
-    } catch (error) {
-      entries.push({ source: name, error: `package.json 无法解析：${messageOf(error)}` })
-      continue
+/** Package-installed kernels: only the ones the list names, never a dependency. */
+function installedPackages(directory: string): string[] {
+  try {
+    const parsed = JSON.parse(readFileSync(join(directory, PACKAGE_LIST), 'utf8')) as {
+      packages?: unknown
     }
-
-    const entry = join(root, main)
-    if (!existsSync(entry)) {
-      entries.push({ source: name, error: `入口不存在：${main}` })
-      continue
-    }
-    entries.push({ source: name, plugin: mountModule(entry, name) })
+    if (!Array.isArray(parsed.packages)) return []
+    return parsed.packages.filter((entry): entry is string => typeof entry === 'string').sort()
+  } catch {
+    return []
   }
-  return entries
 }
 
 /** A plugin that imports its module when cordis mounts it. */

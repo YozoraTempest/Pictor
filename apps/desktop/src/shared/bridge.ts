@@ -170,6 +170,15 @@ export interface KernelPluginInfo {
   failure: string | null
 }
 
+/** What an install or removal did, in one line the page can show. */
+export interface KernelChangeResult {
+  ok: boolean
+  /** Kernel id once mounted, or the name it would have used. */
+  id: string | null
+  /** Why it failed, or an empty string. */
+  message: string
+}
+
 export interface KernelInfo {
   id: string
   label: string
@@ -295,6 +304,14 @@ export interface PictorBridge {
   listKernels(): Promise<KernelInfo[]>
   /** Every kernel plugin: mounted, installed but broken, or built in. */
   listKernelPlugins(): Promise<KernelPluginInfo[]>
+  /** Ask for a directory; null when the person cancelled. */
+  chooseKernelFolder(): Promise<string | null>
+  /** Install a directory as a kernel. */
+  installKernelFolder(path: string): Promise<KernelChangeResult>
+  /** Install a package as a kernel; the package manager runs in the profile. */
+  installKernelPackage(spec: string): Promise<KernelChangeResult>
+  /** Remove an installed kernel by id; built-ins are refused. */
+  removeKernel(id: string): Promise<KernelChangeResult>
   /** Every kernel's status, by kernel id — one entry per kernel this build drives. */
   kernelStatuses(): Promise<Record<string, HarnessStatus>>
   /**

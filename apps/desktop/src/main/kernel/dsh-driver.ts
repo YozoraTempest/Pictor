@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
@@ -44,6 +44,7 @@ import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from '..
 import { pinnedVersionOf } from '../runtime-version.js'
 import type { HarnessStatus, KernelCapabilities, PermissionMode } from '../../shared/bridge.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
+import { resolveNodeBinary, resolveNpmCli } from './node-runtime.js'
 import type { ModelService } from '../model-service.js'
 
 /**
@@ -308,7 +309,7 @@ export class DshDriver implements KernelDriver {
       error: null,
     }
 
-    const nodePath = this.#resolveNode()
+    const nodePath = resolveNodeBinary()
     if (nodePath === null) {
       throw new Error('没有找到可用的 Node 运行时；安装 Node 22+ 或设置 PICTOR_NODE_BIN')
     }
@@ -738,11 +739,11 @@ export class DshDriver implements KernelDriver {
   }
 
   async #install(): Promise<HarnessStatus> {
-    const nodePath = this.#resolveNode()
+    const nodePath = resolveNodeBinary()
     if (nodePath === null) {
       throw new Error('没有找到可用的 Node 运行时；安装 Node 22+ 或设置 PICTOR_NODE_BIN')
     }
-    const npmCli = this.#resolveNpmCli(nodePath)
+    const npmCli = resolveNpmCli(nodePath)
     if (npmCli === null) throw new Error('没有找到 npm，无法安装运行时')
 
     // Surface progress: the install takes minutes and the page should say so.
@@ -1414,56 +1415,6 @@ export class DshDriver implements KernelDriver {
         // A broken listener must not break the channel for the others.
       }
     }
-  }
-
-  /** npm ships inside a Node installation; find its JS entry for this Node. */
-  #resolveNpmCli(nodePath: string): string | null {
-    const explicit = process.env['PICTOR_NPM_CLI']
-    if (explicit !== undefined && existsSync(explicit)) return explicit
-
-    const candidates = [
-      join(dirname(nodePath), '../lib/node_modules/npm/bin/npm-cli.js'),
-      '/usr/lib/node_modules/npm/bin/npm-cli.js',
-      '/usr/local/lib/node_modules/npm/bin/npm-cli.js',
-    ]
-    for (const candidate of candidates) {
-      if (existsSync(candidate)) return candidate
-    }
-    return null
-  }
-
-  /**
-   * Find a plain Node binary for the runtime.
-   *
-   * The launcher refuses to run under Electron's embedded node (it fingerprints
-   * the runtime and only accepts specific Electron builds), so the app must hand
-   * it a real Node 22+. The app's own PATH is not a reliable source: a packaged
-   * Electron started from a desktop entry does not inherit a shell's fnm shims.
-   */
-  #resolveNode(): string | null {
-    const explicit = process.env['PICTOR_NODE_BIN']
-    if (explicit !== undefined && existsSync(explicit)) return explicit
-
-    const roots = [
-      join(homedir(), '.local/share/fnm/node-versions'),
-      join(homedir(), '.fnm/node-versions'),
-    ]
-    for (const root of roots) {
-      if (!existsSync(root)) continue
-      const versions = readdirSync(root)
-        .filter((entry) => entry.startsWith('v22.'))
-        .sort()
-        .reverse()
-      for (const version of versions) {
-        const candidate = join(root, version, 'installation/bin/node')
-        if (existsSync(candidate)) return candidate
-      }
-    }
-
-    for (const candidate of ['/usr/local/bin/node', '/usr/bin/node']) {
-      if (existsSync(candidate)) return candidate
-    }
-    return null
   }
 
   #resolveBinary(): string | null {

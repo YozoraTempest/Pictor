@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import type { KernelPluginInfo } from '../../../../shared/bridge.js'
+import { Button } from '../../components/ui/Button.js'
+import { Dialog } from '../../components/ui/Dialog.js'
+import { Input } from '../../components/ui/Input.js'
 import { cn } from '../../lib/cn.js'
 import { Section } from './Section.js'
 
@@ -23,26 +26,39 @@ function serviceLabel(name: string): string {
   return SERVICE_LABELS[name] ?? name
 }
 
+/** What the window is about to do, once the person has confirmed it. */
+type Pending =
+  | { kind: 'folder' }
+  | { kind: 'package'; spec: string }
+  | { kind: 'remove'; id: string; label: string }
+
 /**
  * The kernels this app will run, including the ones it does not know about.
  *
- * Two of them are compiled in and the rest are directories under the profile, but
- * the page does not distinguish beyond saying where each came from: what matters is
- * that a third-party kernel is listed with the services it declared, so trusting one
- * is a decision made with the facts in front of you.
+ * Two of them are compiled in and the rest are installed, but the page does not
+ * distinguish beyond saying where each came from: what matters is that a third-party
+ * kernel is listed with the services it declared, so trusting one is a decision made
+ * with the facts in front of you. Installing asks the same question before it copies
+ * anything, because a kernel can read the model service — and the key in it.
  */
 export function KernelPluginsSection(): React.JSX.Element {
   const [plugins, setPlugins] = useState<KernelPluginInfo[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [home, setHome] = useState<string | null>(null)
+  const [pending, setPending] = useState<Pending | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  async function load(): Promise<void> {
+    try {
+      setPlugins(await window.pictor.listKernelPlugins())
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
 
   useEffect(() => {
-    void window.pictor
-      .listKernelPlugins()
-      .then(setPlugins)
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : String(reason)),
-      )
+    void load()
     // The database lives in the same directory as the kernels folder; naming the
     // folder without asking the app for a second path keeps them from disagreeing.
     void window.pictor
@@ -54,12 +70,61 @@ export function KernelPluginsSection(): React.JSX.Element {
       .catch(() => undefined)
   }, [])
 
+  async function submit(): Promise<void> {
+    if (pending === null) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      if (pending.kind === 'remove') {
+        const result = await window.pictor.removeKernel(pending.id)
+        setNotice(result.ok ? `已卸载 ${pending.label}` : result.message)
+      } else if (pending.kind === 'folder') {
+        const path = await window.pictor.chooseKernelFolder()
+        if (path === null) return
+        const result = await window.pictor.installKernelFolder(path)
+        setNotice(result.ok ? `已安装 ${result.id ?? ''}` : result.message)
+      } else {
+        const result = await window.pictor.installKernelPackage(pending.spec.trim())
+        setNotice(result.ok ? `已安装 ${result.id ?? ''}` : result.message)
+      }
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(false)
+      setPending(null)
+    }
+  }
+
   const broken = (plugins ?? []).filter((entry) => entry.failure !== null)
 
   return (
     <Section
       title="内核插件"
-      description="会话由内核执行。装一个内核就是放一个目录，它在下次启动时挂载。"
+      description="会话由内核执行。装一个内核不必重启，装完就能在首页选到它。"
+      actions={
+        <>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setPending({ kind: 'folder' })
+            }}
+          >
+            从目录安装
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setPending({ kind: 'package', spec: '' })
+            }}
+          >
+            从 npm 安装
+          </Button>
+        </>
+      }
     >
       {plugins === null && error === null && <p className="text-xs text-faint">读取中…</p>}
 
@@ -102,6 +167,20 @@ export function KernelPluginsSection(): React.JSX.Element {
                     : `可以读取：${plugin.services.map(serviceLabel).join('、')}`}
                 </p>
               )}
+
+              {plugin.source !== 'builtin' && (
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    className="rounded-sm px-1.5 py-0.5 text-2xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-danger"
+                    onClick={() => {
+                      setPending({ kind: 'remove', id: plugin.id, label: plugin.label })
+                    }}
+                  >
+                    卸载
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -115,16 +194,82 @@ export function KernelPluginsSection(): React.JSX.Element {
 
       <p className="text-2xs leading-relaxed text-faint">
         {home === null
-          ? '内核目录在应用数据目录下的 kernels/ 里。'
-          : `把内核包放进 ${home}/kernels/ 后重启应用生效。`}
-        第三方内核拿到的模型服务包含当前服务的密钥，这是它能跑起来的前提。
+          ? '内核装在应用数据目录下的 kernels/ 里。'
+          : `内核装在 ${home}/kernels/ 里：目录安装会整份复制，包安装由 npm 装进它的 node_modules。`}
       </p>
+
+      {notice !== null && <p className="text-2xs leading-relaxed text-muted">{notice}</p>}
 
       {error !== null && (
         <p className="text-2xs text-danger" role="alert">
           {error}
         </p>
       )}
+
+      <Dialog
+        open={pending !== null}
+        title={
+          pending?.kind === 'remove'
+            ? `卸载 ${pending.label}？`
+            : pending?.kind === 'package'
+              ? '从 npm 安装内核'
+              : '从目录安装内核'
+        }
+        onClose={() => {
+          if (!busy) setPending(null)
+        }}
+        footer={
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                setPending(null)
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              size="sm"
+              variant={pending?.kind === 'remove' ? 'danger' : 'primary'}
+              disabled={busy || (pending?.kind === 'package' && pending.spec.trim().length === 0)}
+              onClick={() => void submit()}
+            >
+              {busy ? '处理中…' : pending?.kind === 'remove' ? '卸载' : '安装'}
+            </Button>
+          </>
+        }
+      >
+        {pending?.kind === 'remove' ? (
+          <p className="text-xs leading-relaxed text-muted">
+            它跑过的会话会变成「内核缺失」，历史仍留在磁盘上，重新装回同一个内核即可再打开。
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs leading-relaxed text-muted">
+              内核可以读取 Pictor 的模型服务配置，其中包含当前服务的密钥 —— 这是它能跑起来的前提。
+              装好后它会出现在首页的内核选择里，每个新会话都属于所选的内核。
+            </p>
+            {pending?.kind === 'package' && (
+              <Input
+                autoFocus
+                aria-label="内核包名"
+                placeholder="@acme/pictor-kernel-codex"
+                value={pending.spec}
+                onChange={(event) => {
+                  setPending({ kind: 'package', spec: event.currentTarget.value })
+                }}
+              />
+            )}
+            {pending?.kind === 'package' && (
+              <p className="text-2xs leading-relaxed text-faint">
+                由 npm 装进内核目录，可以带自己的依赖。目录安装则要求目录自包含。
+              </p>
+            )}
+          </div>
+        )}
+      </Dialog>
     </Section>
   )
 }
