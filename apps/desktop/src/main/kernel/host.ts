@@ -3,109 +3,28 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { Context, type Fiber, type Plugin } from '@deepseek-ai/cordis'
+import {
+  KERNEL_PREFIX,
+  assertKernelDriver,
+  type BuiltinKernel,
+  type KernelEntry,
+  type KernelHostServices,
+  type KernelPlugin,
+} from '@pictor/kernel-sdk'
 import { INSTALLED_LIST } from '@pictor/plugin-host'
 import { parseKernelContribution, parsePackageManifest } from '@pictor/plugin-sdk'
-import type { JsonValue } from '@pictor/shared'
 
-import type { PermissionMode } from '../../shared/bridge.js'
-import type { ModelService } from '../model-service.js'
-import type { RuleBook } from '../rule-book.js'
-import type { KernelDriver } from './driver.js'
+import type { KernelDriver } from '@pictor/kernel-sdk'
 
 /**
- * Where a kernel plugin puts its service.
+ * The kernel container.
  *
- * Every kernel is one cordis service named `kernel.<id>`, so installing a kernel
- * and starting one are the same act: the host watches services arrive and the
- * router is built from what is actually there, never from a list kept by hand.
+ * The contract itself — what a kernel is, what it may reach, how a plugin publishes
+ * one — lives in `@pictor/kernel-sdk`, because a kernel now ships as its own package
+ * and cannot depend on this app. What stays here is the part that needs a running
+ * application: mounting entries into cordis, finding installed kernels on disk, and
+ * remembering which plugin produced which service.
  */
-export const KERNEL_PREFIX = 'kernel.'
-
-/** The loopback bridge that answers tool guards, when any guard is installed. */
-export interface GuardEndpoint {
-  port: number
-  token: string
-}
-
-/**
- * The profile's key/value store, for a kernel that owns a setting.
- *
- * Without this, a kernel's own switch would have to be persisted by whoever
- * assembles the app — which means the assembly has to know the key, and a second
- * kernel with a switch means a second special case in that file. Reads come from a
- * snapshot taken at startup and kept current by every write the app does, so a kernel
- * can answer for its own state synchronously and never from a stale copy.
- */
-export interface KernelSettingsService {
-  /** A stored value as last read or written; undefined when never set. */
-  read(key: string): JsonValue | undefined
-  /** Persists one value and remembers it. */
-  write(key: string, value: JsonValue): Promise<void>
-}
-
-/**
- * What a kernel plugin may reach.
- *
- * Each entry is a separate service on purpose: a plugin declares the ones it needs
- * with `inject`, and that declaration is what the settings page shows a person
- * before they trust it. Nothing here hands out a stored secret — a kernel that
- * needs a key asks `pictor.models` for the running service, and the key travels the
- * same way it does for the built-in kernels.
- */
-export interface KernelHostServices {
-  models: ModelService
-  rules: RuleBook
-  guard: () => GuardEndpoint | null
-  permission: () => Promise<PermissionMode>
-  workspace: (sessionId: string) => Promise<string | null>
-  userData: string
-  settings: KernelSettingsService
-}
-
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    'pictor.models': ModelService
-    'pictor.rules': RuleBook
-    'pictor.guard': () => GuardEndpoint | null
-    'pictor.permission': () => Promise<PermissionMode>
-    'pictor.workspace': (sessionId: string) => Promise<string | null>
-    'pictor.userdata': string
-    'pictor.settings': KernelSettingsService
-    [key: `kernel.${string}`]: KernelDriver
-  }
-}
-
-/** A kernel plugin: a cordis plugin that provides exactly one `kernel.<id>`. */
-export type KernelPlugin = Plugin<void>
-
-/**
- * Where a kernel's plugin comes from.
- *
- * A built-in kernel is compiled into this app and an installed one is a directory
- * on disk, but both are "some module that exports a plugin": keeping that fact here,
- * instead of passing the plugin object around, is what makes turning a built-in into
- * its own package a change of one line rather than a change of shape.
- */
-export interface KernelEntry {
-  /** One plugin per call: a kernel switched off and on again is mounted afresh. */
-  load: () => Promise<KernelPlugin>
-}
-
-/**
- * A kernel compiled into the app.
- *
- * `id` is carried beside the entry because the plugin itself only announces its id
- * once it is mounted — and a kernel a person turned off must never be mounted at all,
- * even briefly.
- */
-export interface BuiltinKernel {
-  id: string
-  /** Shown in the picker and the plugin page, mounted or not. */
-  label: string
-  entry: KernelEntry
-}
-
-/** What asking the host to mount one plugin produced. */
 export interface KernelMountResult {
   /** True when a `kernel.<id>` service appeared. */
   mounted: boolean
@@ -203,63 +122,6 @@ export function provideKernel(ctx: Context, driver: KernelDriver): void {
     })
   }
   ctx.provide(`${KERNEL_PREFIX}${driver.id}`, driver)
-}
-
-/** Methods each capability promises; a `true` with no method behind it is a lie. */
-const CAPABILITY_METHODS: Readonly<
-  Record<keyof KernelDriver['capabilities'], readonly (keyof KernelDriver)[]>
-> = {
-  permission: ['setPermissionMode', 'applyPermission', 'sessionPermission', 'setSessionPermission'],
-  approval: ['answerApproval'],
-  model: [],
-  skills: ['listSkills'],
-  fork: ['fork'],
-}
-
-/** Methods every kernel has, whatever it declares. */
-const CORE_METHODS: readonly (keyof KernelDriver)[] = [
-  'start',
-  'stop',
-  'status',
-  'install',
-  'prompt',
-  'cancel',
-  'adopt',
-  'openHistory',
-  'historyPage',
-  'onNotification',
-  'answerQuestions',
-  'applySettings',
-  'projectRootFor',
-  'probe',
-]
-
-function assertKernelDriver(value: unknown): asserts value is KernelDriver {
-  if (typeof value !== 'object' || value === null) {
-    throw new Error('内核插件没有给出内核对象')
-  }
-  const driver = value as Partial<KernelDriver>
-  if (typeof driver.id !== 'string' || driver.id.length === 0) {
-    throw new Error('内核插件缺少 id')
-  }
-  const missing = CORE_METHODS.filter((name) => typeof driver[name] !== 'function')
-  if (missing.length > 0) {
-    throw new Error(`内核「${driver.id}」缺少必需方法：${missing.join('、')}`)
-  }
-  const capabilities = driver.capabilities
-  if (typeof capabilities !== 'object' || capabilities === null) {
-    throw new Error(`内核「${driver.id}」没有声明 capabilities`)
-  }
-  const dishonoured: string[] = []
-  for (const [capability, methods] of Object.entries(CAPABILITY_METHODS)) {
-    if (capabilities[capability as keyof KernelDriver['capabilities']] !== true) continue
-    for (const method of methods) {
-      if (typeof driver[method] !== 'function') dishonoured.push(`${capability} → ${method}`)
-    }
-  }
-  if (dishonoured.length > 0) {
-    throw new Error(`内核「${driver.id}」声明了做不到的能力：${dishonoured.join('、')}`)
-  }
 }
 
 /**

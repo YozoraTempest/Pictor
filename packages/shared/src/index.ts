@@ -117,3 +117,6 @@ export type { ApprovalRequest, ChatImage } from './chat.js'
 export * from './skill.js'
 
 export * from './tool-rule.js'
+
+export { pinnedVersionOf, versionStateOf, type VersionState } from './runtime-version.js'
+export { DEFAULT_PERMISSION_MODE, isPermissionMode } from './permission.js'

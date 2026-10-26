@@ -2,7 +2,7 @@ import { Download, Play, RefreshCw, Square } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import type { HarnessStatus, KernelSettingInfo } from '../../../../shared/bridge.js'
-import { versionStateOf } from '../../../../main/runtime-version.js'
+import { versionStateOf } from '@pictor/shared'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, Spinner, Switch } from '../../components/ui/index.js'
 import { Section } from './Section.js'

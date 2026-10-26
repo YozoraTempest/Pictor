@@ -89,6 +89,15 @@ importers:
       '@pictor/host-client':
         specifier: workspace:*
         version: link:../../packages/host-client
+      '@pictor/kernel-dsh':
+        specifier: workspace:*
+        version: link:../../packages/kernel-dsh
+      '@pictor/kernel-pi':
+        specifier: workspace:*
+        version: link:../../packages/kernel-pi
+      '@pictor/kernel-sdk':
+        specifier: workspace:*
+        version: link:../../packages/kernel-sdk
       '@pictor/model-config':
         specifier: workspace:*
         version: link:../../packages/model-config
@@ -159,13 +168,62 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
-  packages/harness: {}
+  packages/harness:
+    dependencies:
+      '@pictor/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/host-client:
     dependencies:
       '@pictor/racp':
         specifier: workspace:*
         version: link:../racp
+      '@pictor/shared':
+        specifier: workspace:*
+        version: link:../shared
+
+  packages/kernel-dsh:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.5
+        version: 4.0.5
+      '@pictor/harness':
+        specifier: workspace:*
+        version: link:../harness
+      '@pictor/kernel-sdk':
+        specifier: workspace:*
+        version: link:../kernel-sdk
+      '@pictor/shared':
+        specifier: workspace:*
+        version: link:../shared
+
+  packages/kernel-pi:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.5
+        version: 4.0.5
+      '@pictor/harness':
+        specifier: workspace:*
+        version: link:../harness
+      '@pictor/kernel-sdk':
+        specifier: workspace:*
+        version: link:../kernel-sdk
+      '@pictor/shared':
+        specifier: workspace:*
+        version: link:../shared
+
+  packages/kernel-sdk:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.5
+        version: 4.0.5
+      '@pictor/harness':
+        specifier: workspace:*
+        version: link:../harness
+      '@pictor/model-config':
+        specifier: workspace:*
+        version: link:../model-config
       '@pictor/shared':
         specifier: workspace:*
         version: link:../shared
@@ -200,7 +258,11 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      '@pictor/kernel-sdk':
+        specifier: workspace:*
+        version: link:../kernel-sdk
 
   plugins/fake-kernel: {}
 

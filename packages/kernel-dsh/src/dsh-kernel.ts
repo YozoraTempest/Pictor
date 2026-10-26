@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 
 import { DshDriver } from './dsh-driver.js'
-import { hostService, provideKernel, type KernelPlugin } from './host.js'
+import { hostService, provideKernel, type KernelPlugin } from '@pictor/kernel-sdk'
 
 /**
  * dsh, mounted the way any other kernel is.

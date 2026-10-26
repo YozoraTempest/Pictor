@@ -60,7 +60,7 @@ isolated per plugin and surfaced in the plugin report.
 ### Kernels
 
 A conversation is executed by a kernel, never by Pictor itself. `KernelDriver`
-(`apps/desktop/src/main/kernel/driver.ts`) is the whole contract the rest of the
+(`packages/kernel-sdk/src/driver.ts`) is the whole contract the rest of the
 main process may assume: lifecycle, one turn, history, events, settings,
 diagnosis. `KernelRouter` (`kernel/router.ts`) sends each call to the kernel that
 owns the conversation and **never falls back**: history sent to a kernel that
@@ -70,13 +70,21 @@ never produced it would be a lie about where it came from.
 
 Every kernel is a **cordis plugin** that provides exactly one service named
 `kernel.<id>` (`apps/desktop/src/main/kernel/host.ts`). Adding a kernel is adding a
-plugin: the built-in ones are `kernel/dsh-kernel.ts` and `kernel/pi-kernel.ts`, and an
+plugin: the built-in ones are `@pictor/kernel-dsh` and `@pictor/kernel-pi`, and an
 installed one is a package under `<profile>/plugins` — either a copied directory or a
 package in its `node_modules`, named by `installed.json`. A plugin points at its kernel
 from `pictor.contributes` (`{ point: 'kernel', value: { main } }`); `package.json`'s
 `main` is the UI entry and has nothing to do with the kernel. `startKernelHost` mounts
 them in order, watches `internal/service` for the services they publish, and hands the
 resulting map to `KernelRouter` — nothing enumerates plugins by hand.
+
+A kernel is its own package. `@pictor/kernel-dsh` and `@pictor/kernel-pi` contain the
+driver and its helpers; `@pictor/kernel-sdk` contains what they compile against — the
+driver interface, `KernelPlugin`/`KernelEntry`, the host services a plugin may inject,
+and the kernel-facing types (`HarnessStatus`, `PermissionMode`, `KernelCapabilities`,
+`KernelModel*`). A kernel package may depend on the SDK and on `@pictor/shared`, and on
+nothing else in this repository; the app's `bridge.ts` re-exports the types from the SDK
+so the window still imports one module.
 
 Both halves arrive as a `KernelEntry` — "something that can hand over a plugin" — so
 one `mount()` covers them: a built-in is a closure in this bundle (`{ load: async () =>
@@ -116,9 +124,9 @@ fail-closed because the kernel lives on the other side of it.
 
 Two kernels ship:
 
-- **dsh** (`kernel/dsh-driver.ts`) — the default, and the one the rest of this
+- **dsh** (`packages/kernel-dsh`) — the default, and the one the rest of this
   section describes: a server process booted with a profile Pictor owns.
-- **Pi** (`kernel/pi-rpc-driver.ts`) — an RPC child per conversation: `pi --mode
+- **Pi** (`packages/kernel-pi`) — an RPC child per conversation: `pi --mode
 rpc` speaks JSONL commands on stdin and streams the same events over stdout,
   translated by `kernel/pi-events.ts` into the durable events and chunks the window
   already renders. The child runs on **this process's own runtime**
@@ -222,7 +230,7 @@ Lifecycle calls carry no session id and stay on the default kernel.
 
 ### Runtime (dsh)
 
-`apps/desktop/src/main/kernel/dsh-driver.ts` owns the runtime lifecycle, and
+`packages/kernel-dsh/src/dsh-driver.ts` owns the runtime lifecycle, and
 `@pictor/harness` owns the wire protocol.
 
 - **Boot.** The runtime is spawned from `<userData>/harness-runtime` with

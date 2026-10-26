@@ -13,6 +13,10 @@ export default defineConfig({
       '@pictor/plugin-sdk': fromRoot('./packages/plugin-sdk/src/index.ts'),
       '@pictor/plugin-host': fromRoot('./packages/plugin-host/src/index.ts'),
       '@pictor/model-config': fromRoot('./packages/model-config/src/index.ts'),
+      '@pictor/kernel-sdk': fromRoot('./packages/kernel-sdk/src/index.ts'),
+      '@pictor/kernel-sdk/types': fromRoot('./packages/kernel-sdk/src/types.ts'),
+      '@pictor/kernel-dsh': fromRoot('./packages/kernel-dsh/src/index.ts'),
+      '@pictor/kernel-pi': fromRoot('./packages/kernel-pi/src/index.ts'),
     },
   },
   test: {

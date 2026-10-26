@@ -61,7 +61,10 @@ sidecar actually made it into the bundle.
 
 ```text
 apps/desktop/          Electron main, preload and React renderer
-  src/main/kernel/     the kernel contract, both built-in kernels, the host, installer
+  src/main/kernel/     the kernel container: mounting, discovery, installer
+packages/kernel-sdk/   the kernel contract: what a core is, and what it may reach
+packages/kernel-dsh/   the DeepSeek Harness kernel, as its own package
+packages/kernel-pi/    the Pi kernel, as its own package
 crates/host-core/      Rust sidecar: SQLite schema, migrations, NDJSON JSON-RPC
 packages/shared/       Serializable domain model, error codes, Pi provider mapping
 packages/racp/         NDJSON JSON-RPC framing, client and stdio transport
@@ -90,7 +93,7 @@ plugins/               Bundled plugins, a sample kernel plugin, and how to write
 
 ## Kernels
 
-Pictor owns no agent loop. `KernelDriver` (`apps/desktop/src/main/kernel/driver.ts`)
+Pictor owns no agent loop. `KernelDriver` (`packages/kernel-sdk/src/driver.ts`)
 is everything the rest of the main process may assume about one: lifecycle, one
 turn, history, events, settings, diagnosis. `KernelRouter` sends each call to the
 kernel that owns the conversation and **never falls back** — history handed to a
@@ -108,9 +111,9 @@ the page of the kernel that ran it, or through the search palette.
 
 ### Two built-in kernels
 
-- **dsh** (`kernel/dsh-driver.ts`) — the default. A server process booted with a
+- **dsh** (`packages/kernel-dsh`) — the default. A server process booted with a
   profile Pictor owns, over the runtime's own HTTP and WebSocket API.
-- **Pi** (`kernel/pi-rpc-driver.ts`) — an RPC child per conversation: `pi --mode rpc`
+- **Pi** (`packages/kernel-pi`) — an RPC child per conversation: `pi --mode rpc`
   speaks JSONL commands on stdin and streams the same events over stdout,
   translated by `kernel/pi-events.ts` into the durable events and chunks the window
   already renders. The child runs on the app's own runtime
@@ -125,12 +128,21 @@ of being faked.
 ### Kernel plugins
 
 Every kernel is a **cordis plugin** that provides exactly one service named
-`kernel.<id>` (`kernel/host.ts`). The built-ins are `kernel/dsh-kernel.ts` and
-`kernel/pi-kernel.ts`; an installed one is a plugin under `<profile>/plugins` that
+`kernel.<id>` (`apps/desktop/src/main/kernel/host.ts`). The built-ins are the two
+packages above; an installed one is a plugin under `<profile>/plugins` that
 points at it from `pictor.contributes` — either a copied directory or a package in
 its `node_modules`, named by `installed.json`. `startKernelHost` mounts them in
 order, watches `internal/service` for what they publish, and hands the resulting map
 to `KernelRouter` — nothing enumerates plugins by hand.
+
+A kernel is a **package**, and the two that ship are packages in this repository:
+`packages/kernel-dsh` and `packages/kernel-pi` depend on `@pictor/kernel-sdk` for the
+contract and on `@pictor/shared` for the vocabulary, and on nothing else here. The app
+loads them by name (`entry: { load: () => import('@pictor/kernel-dsh') }`), which is the
+same move it makes for an installed one — the only difference is where the module comes
+from. `packages/kernel-sdk` holds the contract itself (the driver interface, the plugin
+entry, the host services and the kernel-facing types), so a kernel written outside this
+repository compiles against it unchanged.
 
 The map is live: installing a plugin mounts its kernel without a restart, and
 removing one takes it out of the picker at once. Installing and mounting are deliberately two

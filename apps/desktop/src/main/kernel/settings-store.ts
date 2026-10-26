@@ -1,7 +1,7 @@
 import type { MetadataStore } from '@pictor/host-client'
 import type { JsonValue, SettingsMap } from '@pictor/shared'
 
-import type { KernelSettingsService } from './host.js'
+import type { KernelSettingsService } from '@pictor/kernel-sdk'
 
 /** The part of the profile store a kernel's settings need. */
 export type SettingsSource = Pick<MetadataStore, 'listSettings' | 'putSetting'>

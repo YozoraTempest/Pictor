@@ -1,3 +1,23 @@
+// Kernel-facing types belong to the kernel contract, not to the window: a kernel
+// compiled outside this app has to name the same shapes, so the package owns them
+// and this module passes them through.
+import type {
+  HarnessStatus,
+  KernelInfo,
+  KernelModelState,
+  PermissionMode,
+} from '@pictor/kernel-sdk/types'
+
+export type {
+  HarnessStatus,
+  KernelCapabilities,
+  KernelInfo,
+  KernelModel,
+  KernelModelSource,
+  KernelModelState,
+  PermissionMode,
+} from '@pictor/kernel-sdk/types'
+
 import type {
   ApprovalMode,
   ApprovalRequest,
@@ -84,71 +104,6 @@ export interface ToolViewDescriptor {
   label?: string
   icon?: string
 }
-export type PermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
-
-/**
- * What one kernel can actually do.
- *
- * A kernel that cannot express something must not have a control in the window
- * pretending it can: a CLI with no sandbox still showed a permission picker, and
- * a picker that errors is worse than an absent one. Each driver declares what it
- * really offers, and the controls read that instead of assuming the default.
- */
-export interface KernelCapabilities {
-  /** A sandbox mode the kernel applies per conversation. */
-  permission: boolean
-  /**
-   * The kernel lets Pictor decide when a call waits for a person.
-   *
-   * dsh answers this with its own sandbox and approval policy, so the switch is its
-   * own; a kernel without a sandbox can still hold a call, and this is the promise
-   * that the switch in the composer will mean something there.
-   */
-  approval: boolean
-  /** The model chosen in Pictor reaches the kernel, effort included. */
-  model: boolean
-  /** The kernel exposes a skill catalog that a turn can load from. */
-  skills: boolean
-  /** The kernel can branch a conversation at a message boundary. */
-  fork: boolean
-}
-
-/** One model a kernel can run, in that kernel's own words. */
-export interface KernelModel {
-  /** What the kernel calls it; opaque to Pictor. */
-  id: string
-  /** Human name, falling back to the id. */
-  label: string
-  provider: string | null
-  /** Whether this model accepts images. */
-  images: boolean
-  contextWindow: number | null
-  /**
-   * Levels this model accepts, weakest first, when the kernel declares them.
-   *
-   * `null` means the kernel said nothing, which is not the same as "none": the
-   * composer then offers no level control instead of an empty one.
-   */
-  efforts: ModelEffort[] | null
-}
-
-/** One conversation's model state, in the kernel's own words. */
-export interface KernelModelState {
-  models: KernelModel[]
-  /** The model this conversation is running, or null before it has run. */
-  activeId: string | null
-  /** The thinking level in effect, or null when the kernel's own default applies. */
-  activeEffort: ModelEffort | null
-}
-
-/**
- * Whose model set the composer's picker should show.
- *
- * `pictor` is the app's own provider list, which dsh is booted with; `kernel` means
- * the kernel has its own catalogue and answers for it; null means there is nothing
- * to choose — a kernel that runs whatever it was configured with.
- */
-export type KernelModelSource = 'pictor' | 'kernel' | null
 
 /** What one kernel looks like from the renderer's side. */
 /**
@@ -232,34 +187,6 @@ export interface KernelChangeResult {
   id: string | null
   /** Why it failed, or an empty string. */
   message: string
-}
-
-export interface KernelInfo {
-  id: string
-  label: string
-  default: boolean
-  available: boolean
-  capabilities: KernelCapabilities
-  modelSource: KernelModelSource
-}
-
-/** Status of one kernel: whether it can run, what it runs with, why it failed. */
-export interface HarnessStatus {
-  state: 'stopped' | 'starting' | 'ready' | 'error'
-  /** Launcher path, or null when no runtime is installed. */
-  binary: string | null
-  /** Version the launcher on this machine reports, or null when unreadable. */
-  version: string | null
-  /** Version this build pins; a difference is what "stale" means. */
-  expectedVersion: string | null
-  /** Runtime home: profiles, session logs and storages live here. */
-  home: string
-  provider: string | null
-  model: string | null
-  serverInfo: { name: string; version: string } | null
-  /** Sandbox mode the runtime is (or will be) booted with. */
-  permissionMode: PermissionMode
-  error: string | null
 }
 
 export interface CcSwitchScanResult {

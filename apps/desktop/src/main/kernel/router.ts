@@ -16,10 +16,10 @@ import type {
   KernelModelState,
   PermissionMode,
 } from '../../shared/bridge.js'
-import { isApprovalSource, type KernelApprovalSource } from './approval-source.js'
-import type { AgentProbeResult, KernelDriver } from './driver.js'
-import { isCatalogueSource, isModelSource } from './model-source.js'
-import { isSettingsSource } from './settings-source.js'
+import { isApprovalSource, type KernelApprovalSource } from '@pictor/kernel-sdk'
+import type { AgentProbeResult, KernelDriver } from '@pictor/kernel-sdk'
+import { isCatalogueSource, isModelSource } from '@pictor/kernel-sdk'
+import { isSettingsSource } from '@pictor/kernel-sdk'
 
 export type { KernelInfo }
 

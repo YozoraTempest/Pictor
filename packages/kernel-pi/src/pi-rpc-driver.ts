@@ -28,12 +28,12 @@ import type {
   KernelModel,
   KernelModelState,
   PermissionMode,
-} from '../../shared/bridge.js'
+} from '@pictor/kernel-sdk/types'
 import type { PiProviderSpec } from '@pictor/shared'
 
-import type { AgentProbeResult, KernelDriver } from './driver.js'
-import type { KernelSetting } from './settings-source.js'
-import type { KernelModelSource } from './model-source.js'
+import type { AgentProbeResult, KernelDriver } from '@pictor/kernel-sdk'
+import type { KernelSetting } from '@pictor/kernel-sdk'
+import type { KernelModelCatalogue } from '@pictor/kernel-sdk'
 import { PiTranslator, type PiFrame } from './pi-events.js'
 import { ensurePiHome } from './pi-home.js'
 import { historyRows, storedLevel, storedModel, textOf, type StoredRecord } from './pi-history.js'
@@ -157,7 +157,7 @@ interface RpcResponse {
  * the permissions of the account that started it, so `permission` is the one
  * capability it does not claim — and the window therefore draws no sandbox switch.
  */
-export class PiRpcDriver implements KernelDriver, KernelModelSource {
+export class PiRpcDriver implements KernelDriver, KernelModelCatalogue {
   readonly id = 'pi'
   readonly label = 'Pi'
   /**

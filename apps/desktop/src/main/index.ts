@@ -24,7 +24,9 @@ import {
   type ToolViewContribution,
 } from '@pictor/plugin-sdk'
 import {
+  DEFAULT_PERMISSION_MODE,
   MODEL_EFFORTS,
+  isPermissionMode,
   type ApprovalMode,
   type ChatAnswer,
   type ChatImage,
@@ -55,16 +57,14 @@ import type {
   PluginReport,
 } from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
-import { shouldAdoptTitle } from './harness-title.js'
-import { DEFAULT_PERMISSION_MODE, isPermissionMode } from './kernel/dsh-driver.js'
-import { dshKernel } from './kernel/dsh-kernel.js'
-import type { KernelDriver } from './kernel/driver.js'
+import { shouldAdoptTitle } from '@pictor/harness'
+
+import type { KernelDriver } from '@pictor/kernel-sdk'
 import { startKernelHost, type KernelHost } from './kernel/host.js'
-import { isProviderSource } from './kernel/model-source.js'
-import { resolveNodeBinary, resolveNpmCli } from './kernel/node-runtime.js'
+import { isProviderSource } from '@pictor/kernel-sdk'
+import { resolveNodeBinary, resolveNpmCli } from '@pictor/kernel-sdk'
 import { openSettings } from './kernel/settings-store.js'
 
-import { createPiKernel } from './kernel/pi-kernel.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
 import { ToolGuardServer, type GuardAsk } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
@@ -486,8 +486,19 @@ async function startWorkspace(): Promise<Workspace | null> {
       settings: settings.service,
     },
     builtins: [
-      { id: 'dsh', label: 'DeepSeek Harness', entry: { load: async () => dshKernel } },
-      { id: 'pi', label: 'Pi', entry: { load: async () => createPiKernel() } },
+      // Loaded by package name, the way an installed kernel is loaded by path: the
+      // only difference between shipping a kernel and installing one is where the
+      // module comes from.
+      {
+        id: 'dsh',
+        label: 'DeepSeek Harness',
+        entry: { load: async () => (await import('@pictor/kernel-dsh')).dshKernel },
+      },
+      {
+        id: 'pi',
+        label: 'Pi',
+        entry: { load: async () => (await import('@pictor/kernel-pi')).createPiKernel() },
+      },
     ],
     disabled: disabledBuiltins,
     directories: [join(userData, 'plugins')],

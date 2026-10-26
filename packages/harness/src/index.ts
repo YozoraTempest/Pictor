@@ -51,3 +51,4 @@ export type {
   StreamChunk,
 } from './session.js'
 export { EventStream, type EventStreamOptions, type RemoteWaterfallFrame } from './events.js'
+export { sessionTitleOf, shouldAdoptTitle } from './harness-title.js'

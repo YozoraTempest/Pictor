@@ -1,6 +1,6 @@
 import type { ModelEffort } from '@pictor/shared'
 
-import type { KernelModelState } from '../../shared/bridge.js'
+import type { KernelModelState } from './kinds.js'
 import type { KernelDriver } from './driver.js'
 
 /**
@@ -12,7 +12,7 @@ import type { KernelDriver } from './driver.js'
  * separate interface instead of a stub on {@link KernelDriver} keeps a driver from
  * having to implement a method it will never honour.
  */
-export interface KernelModelSource {
+export interface KernelModelCatalogue {
   /** The models this kernel offers for one conversation. */
   models(sessionId: string): Promise<KernelModelState>
   /** Switches the conversation to one of them, without a restart. */
@@ -22,8 +22,8 @@ export interface KernelModelSource {
 }
 
 /** Whether a driver answers for its own models. */
-export function isModelSource(driver: KernelDriver): driver is KernelDriver & KernelModelSource {
-  const candidate = driver as Partial<KernelModelSource>
+export function isModelSource(driver: KernelDriver): driver is KernelDriver & KernelModelCatalogue {
+  const candidate = driver as Partial<KernelModelCatalogue>
   return typeof candidate.models === 'function' && typeof candidate.selectModel === 'function'
 }
 

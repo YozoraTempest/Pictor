@@ -24,7 +24,11 @@
       "@pictor/application": ["./packages/application/src/index.ts"],
       "@pictor/plugin-sdk": ["./packages/plugin-sdk/src/index.ts"],
       "@pictor/plugin-host": ["./packages/plugin-host/src/index.ts"],
-      "@pictor/model-config": ["./packages/model-config/src/index.ts"]
+      "@pictor/model-config": ["./packages/model-config/src/index.ts"],
+      "@pictor/kernel-sdk": ["./packages/kernel-sdk/src/index.ts"],
+      "@pictor/kernel-sdk/types": ["./packages/kernel-sdk/src/types.ts"],
+      "@pictor/kernel-dsh": ["./packages/kernel-dsh/src/index.ts"],
+      "@pictor/kernel-pi": ["./packages/kernel-pi/src/index.ts"]
     }
   }
 }

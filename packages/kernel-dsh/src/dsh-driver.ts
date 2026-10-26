@@ -32,20 +32,20 @@ import {
   type ModelSettings,
 } from '@pictor/shared'
 
-import { loadHarnessHistory } from '../harness-history.js'
-import { sessionTitleOf } from '../harness-title.js'
-import { answerValue, questionsOf } from '../harness-questions.js'
+import { loadHarnessHistory } from './harness-history.js'
+import { DEFAULT_PERMISSION_MODE, isPermissionMode } from '@pictor/shared'
+import { sessionTitleOf } from '@pictor/harness'
+import { answerValue, questionsOf } from './harness-questions.js'
 import {
   GUARD_PLUGIN_NAME,
   GUARD_PLUGIN_PACKAGE,
   GUARD_PLUGIN_SOURCE,
-} from '../harness-guard-plugin.js'
-import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from '../harness-profile.js'
-import { pinnedVersionOf } from '../runtime-version.js'
-import type { HarnessStatus, KernelCapabilities, PermissionMode } from '../../shared/bridge.js'
-import type { AgentProbeResult, KernelDriver } from './driver.js'
-import { resolveNodeBinary, resolveNpmCli } from './node-runtime.js'
-import type { ModelService } from '../model-service.js'
+} from './harness-guard-plugin.js'
+import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
+import { pinnedVersionOf } from '@pictor/shared'
+import type { HarnessStatus, KernelCapabilities, PermissionMode } from '@pictor/kernel-sdk/types'
+import type { AgentProbeResult, KernelDriver, KernelModelService } from '@pictor/kernel-sdk'
+import { resolveNodeBinary, resolveNpmCli } from '@pictor/kernel-sdk'
 
 /**
  * Everything the runtime reads once, at boot.
@@ -68,16 +68,10 @@ function bootFingerprint(input: {
   return [input.baseUrl, input.protocol, input.modelId, key].join('|')
 }
 
-export const DEFAULT_PERMISSION_MODE: PermissionMode = 'workspace-write'
-
-export function isPermissionMode(value: unknown): value is PermissionMode {
-  return value === 'read-only' || value === 'workspace-write' || value === 'danger-full-access'
-}
-
 export interface DshDriverOptions {
   /** Verbose transport logging; set by PICTOR_DEBUG_HARNESS. */
   debug?: boolean
-  model: ModelService
+  model: KernelModelService
   /** `app.getPath('userData')`; the runtime gets its own directory inside it. */
   userData: string
   /** Overrides discovery, for a bundled runtime or a development checkout. */

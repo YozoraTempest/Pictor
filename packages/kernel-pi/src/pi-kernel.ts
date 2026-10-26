@@ -2,9 +2,9 @@ import type { Context } from '@deepseek-ai/cordis'
 
 import { piProvidersOf, type PiProviderSpec } from '@pictor/shared'
 
-import type { ModelService } from '../model-service.js'
-import { writeGuardExtension } from '../pi-guard-extension.js'
-import { hostService, provideKernel, type KernelPlugin } from './host.js'
+import type { KernelModelService } from '@pictor/kernel-sdk'
+import { writeGuardExtension } from './pi-guard-extension.js'
+import { hostService, provideKernel, type KernelPlugin } from '@pictor/kernel-sdk'
 import { forgetForeignPiModels } from './pi-home.js'
 import { PI_OWN_CONFIG_KEY, PiRpcDriver } from './pi-rpc-driver.js'
 
@@ -64,7 +64,7 @@ export function createPiKernel(): KernelPlugin {
 }
 
 /** Pictor's services, in the shape Pi's provider registration takes. */
-function providersOf(model: ModelService): () => Promise<PiProviderSpec[]> {
+function providersOf(model: KernelModelService): () => Promise<PiProviderSpec[]> {
   return async () => {
     const list = await model.providers()
     const settings = await model.settings()

@@ -8,7 +8,7 @@ import type {
   ModelEffort,
 } from '@pictor/shared'
 
-import type { HarnessStatus, KernelCapabilities, PermissionMode } from '../../shared/bridge.js'
+import type { HarnessStatus, KernelCapabilities, PermissionMode } from './kinds.js'
 
 /**
  * One agent kernel, as the main process needs it.
