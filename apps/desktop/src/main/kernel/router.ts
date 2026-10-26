@@ -110,6 +110,20 @@ export class KernelRouter implements KernelDriver {
     return this.#fallback.status()
   }
 
+  /**
+   * Every kernel's own status, in its own words.
+   *
+   * `status()` answers for the default kernel, which is what the composer's "is a
+   * run possible" checks need. A settings page has to show all of them: one kernel
+   * may be a server this app boots, another a CLI that gets spawned per conversation,
+   * and a page that described only the first would be wrong about the second.
+   */
+  statuses(): Record<string, HarnessStatus> {
+    return Object.fromEntries(
+      [...this.#options.drivers.entries()].map(([id, driver]) => [id, driver.status()]),
+    )
+  }
+
   install(): Promise<HarnessStatus> {
     return this.#fallback.install()
   }

@@ -1242,6 +1242,8 @@ function registerIpc(workspace: Workspace): void {
     await workspace.harness.selectKernelModel(sessionId, id)
   })
 
+  ipcMain.handle('pictor:kernels.statuses', async () => workspace.harness.statuses())
+
   ipcMain.handle('pictor:kernel.approval', async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
       throw new Error('sessionId must be a non-empty string')

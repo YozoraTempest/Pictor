@@ -112,6 +112,20 @@ describe('KernelRouter', () => {
     expect(kernels.id).toBe('dsh')
   })
 
+  it('reports each kernel’s own status, not the default one’s', () => {
+    // The settings page describes every kernel, and they are shaped differently: one
+    // server this app boots, one CLI spawned per conversation. A page fed only the
+    // default's status would describe the second as stopped forever.
+    const kernels = router({}, [driver('dsh'), driver('other')])
+
+    const statuses = kernels.statuses()
+    // 'other' is not installed in this fixture, and the point is that its own answer
+    // comes back rather than dsh's: the default's path must not be reported for it.
+    expect(Object.keys(statuses)).toEqual(['dsh', 'other'])
+    expect(statuses['dsh']?.binary).toBe('/bin/dsh')
+    expect(statuses['other']?.binary).toBeNull()
+  })
+
   it('describes every kernel for the picker, marking the default and what is installed', () => {
     const kernels = new KernelRouter({
       drivers: new Map([

@@ -56,10 +56,10 @@ const PAGES = [
   },
   {
     id: 'runtime',
-    label: '运行时',
+    label: '内核',
     icon: Terminal,
-    description: 'Pictor 拉起的 agent 进程：状态、版本与启停',
-    keywords: '运行时 runtime dsh harness 内核 进程 启动 停止 版本 安装',
+    description: '执行会话的每个内核：状态、版本与各自的启停方式',
+    keywords: '运行时 runtime 内核 kernel dsh harness pi 进程 启动 停止 版本 安装 重新检测',
     group: '智能体',
     order: 1,
     render: () => <RuntimePage />,

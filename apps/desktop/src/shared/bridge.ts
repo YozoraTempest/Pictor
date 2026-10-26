@@ -274,6 +274,8 @@ export interface PictorBridge {
   setSessionPermission(sessionId: string, mode: PermissionMode): Promise<PermissionMode | null>
   /** Every kernel this build can drive, for the picker. */
   listKernels(): Promise<KernelInfo[]>
+  /** Every kernel's status, by kernel id — one entry per kernel this build drives. */
+  kernelStatuses(): Promise<Record<string, HarnessStatus>>
   /** The models a kernel offers for one conversation. */
   kernelModels(sessionId: string): Promise<KernelModelState>
   /** Selects one for that conversation, without a restart. */
