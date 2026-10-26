@@ -156,7 +156,7 @@ export function SettingsView(): React.JSX.Element {
           inside the list made a category look like another item in it. */}
       <aside
         aria-label="设置分区"
-        className="flex w-24 shrink-0 flex-col gap-0.5 border-r border-border bg-surface/40 px-1.5 py-3"
+        className="flex w-16 shrink-0 flex-col gap-0.5 border-r border-border bg-surface/40 px-1 py-2"
       >
         {tree.map((entry) => {
           const on = entry.title === category
@@ -177,13 +177,13 @@ export function SettingsView(): React.JSX.Element {
                 setQuery('')
               }}
               className={cn(
-                'flex flex-col items-center gap-1 rounded-md px-1 py-2 text-2xs transition-colors duration-150',
+                'flex flex-col items-center gap-0.5 rounded-md px-0.5 py-1.5 text-2xs transition-colors duration-150',
                 on
                   ? 'bg-surface-raised text-text'
                   : 'text-muted hover:bg-surface-hover hover:text-text',
               )}
             >
-              <Icon className={cn('size-4', on ? 'text-accent' : 'text-faint')} aria-hidden />
+              <Icon className={cn('size-3.5', on ? 'text-accent' : 'text-faint')} aria-hidden />
               <span className="truncate">{entry.title}</span>
             </button>
           )
