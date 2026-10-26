@@ -393,6 +393,14 @@ renderer does not care how a kernel speaks:
 - Branching is `session/fork`: the runtime copies the event prefix into a new
   session and returns its id. The app creates the Pictor conversation and adopts
   that id, so the branch opens with the inherited history and then diverges.
+- **Rewind is a branch plus a judgement.** The log is append-only and there is no
+  `session/rewind`, so 回到这里 forks at the boundary before a turn and archives the
+  conversation that was left (`session.rewind` in the main process does both, in that
+  order). Archiving is the judgement — the old tail is not deleted, it is filed, and
+  un-archiving is one click away. Files are never restored: `dsh-session-checkpoint-policy`
+  makes the _log_ durable before a request, not the workspace, so a confirmation that
+  promised file rollback would be inventing a feature. A branch that exists with an
+  archive that failed reports `archived: false` instead of undoing the branch.
 - The cut is an inclusive event `seq`, and the runtime copies whole turns. A
   message therefore carries the boundary it forks at: an answer keeps its own
   event, a question keeps where the _previous_ turn ended (that is what re-asking

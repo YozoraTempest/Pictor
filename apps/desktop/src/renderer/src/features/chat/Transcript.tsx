@@ -19,6 +19,8 @@ export interface TranscriptProps {
   onLoadOlder: () => void
   /** Branch the conversation at one message; threaded down to each row. */
   onFork?: (point: ForkPoint) => void
+  /** Go back to before one turn; the turn's index says how much is left behind. */
+  onRewind?: (point: ForkPoint, index: number) => void
   /** Width of the conversation panel; the scroller spans the whole column. */
   panelWidth: number
   /** Exposed so the resizer can sit exactly on the panel's edge. */
@@ -57,6 +59,7 @@ export function Transcript({
   loading,
   onLoadOlder,
   onFork,
+  onRewind,
   panelWidth,
   panelRef,
   animateWidth = false,
@@ -267,6 +270,9 @@ export function Transcript({
                         phase={phase}
                         currentTool={currentTool}
                         {...(onFork === undefined ? {} : { onFork })}
+                        {...(onRewind === undefined
+                          ? {}
+                          : { onRewind: (point: ForkPoint) => onRewind(point, index) })}
                       />
                     ))}
                   </div>

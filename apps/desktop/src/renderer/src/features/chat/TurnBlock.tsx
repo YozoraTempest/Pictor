@@ -1,4 +1,4 @@
-import { GitBranch, Sparkles } from 'lucide-react'
+import { GitBranch, Sparkles, Undo2 } from 'lucide-react'
 
 import type { ForkPoint } from '@pictor/shared'
 import { useEffect, useState } from 'react'
@@ -20,6 +20,13 @@ export interface TurnBlockProps {
   currentTool: string | null
   /** Branch the conversation at one message, keeping it; absent when unsupported. */
   onFork?: (point: ForkPoint) => void
+  /**
+   * Go back to before this turn: the caller branches and files the conversation it left.
+   *
+   * Absent for a turn nothing precedes — "back to before the first question" is an empty
+   * conversation, which is what starting a new one already is.
+   */
+  onRewind?: (point: ForkPoint) => void
 }
 
 /**
@@ -34,6 +41,7 @@ export function TurnBlock({
   phase,
   currentTool,
   onFork,
+  onRewind,
 }: TurnBlockProps): React.JSX.Element {
   const startedAt = turn.startedAt ?? turn.finishedAt
   const finishedAt = live ? null : turn.finishedAt
@@ -47,6 +55,9 @@ export function TurnBlock({
     <section id={turn.id} className="flex scroll-mt-4 flex-col gap-3">
       {turn.user !== null && (
         <div className="group flex items-center justify-end gap-1">
+          {onRewind !== undefined && turn.before !== null && (
+            <RewindButton point={turn.before} onRewind={onRewind} />
+          )}
           {onFork !== undefined && turn.before !== null && (
             <ForkButton point={turn.before} label="在这一问之前分叉" onFork={onFork} />
           )}
@@ -139,6 +150,34 @@ function ForkButton({
         onClick={() => onFork(point)}
       >
         <GitBranch className="size-3" />
+      </IconButton>
+    </span>
+  )
+}
+
+/**
+ * Go back to before one question.
+ *
+ * The runtime's log is append-only, so this is a branch — but the intent differs from the
+ * fork beside it: the conversation being left is filed away instead of kept side by side.
+ * Two buttons rather than one menu, because the difference is what happens to the old
+ * conversation and that is worth a label.
+ */
+function RewindButton({
+  point,
+  onRewind,
+}: {
+  point: ForkPoint
+  onRewind: (point: ForkPoint) => void
+}): React.JSX.Element {
+  return (
+    <span className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within/part:opacity-100">
+      <IconButton
+        label="回到这一问之前"
+        className="size-6 text-faint hover:text-text"
+        onClick={() => onRewind(point)}
+      >
+        <Undo2 className="size-3" />
       </IconButton>
     </span>
   )

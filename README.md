@@ -243,6 +243,12 @@ Selecting a session opens its transcript and a composer:
   hovering an answer offers 从这条回答分叉, hovering a question offers 在这一问之前分叉.
   The branch records where it came from — the row carries a branch mark and the title
   says `分支自 …`. The **branch tree** draws every conversation that shares a lineage.
+- **回到这里** (hover a question) goes back to just before it: the conversation is cut
+  there, opened as a branch, and the one you left is archived rather than discarded — the
+  turns you walked away from stay readable and the archive is reversible. What it does
+  _not_ do is roll files back: this runtime's log is append-only and its "checkpoint"
+  means the log is durable, never that the workspace looked like a particular moment. The
+  confirmation says so before it acts.
 - **Archiving is reversible**: an archived conversation keeps its menu and offers
   取消归档. Batched archiving asks first and names how many conversations it moves.
 - **Waiting for an answer** is a label on the sidebar row: a conversation whose kernel

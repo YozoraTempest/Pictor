@@ -248,6 +248,13 @@ export interface PictorBridge {
     kernelId?: string,
     parentId?: string,
   ): Promise<Session>
+  /**
+   * Branches at a point and archives the conversation that was left behind.
+   *
+   * `archived` is false when the branch exists but the archive did not take; the caller
+   * says so rather than leaving a person to discover it.
+   */
+  rewindSession(id: string, at?: ForkPoint): Promise<{ id: string; archived: boolean }>
   deleteSession(id: string): Promise<void>
   setSessionPinned(id: string, pinned: boolean): Promise<Session>
   setSessionArchived(id: string, archived: boolean): Promise<Session>

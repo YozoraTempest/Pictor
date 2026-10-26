@@ -85,6 +85,8 @@ interface WorkspaceState {
   branchToKernel: (kernelId: string, label: string) => Promise<Session | null>
   /** Branches a conversation and selects the copy. */
   forkSession: (sessionId: string, at?: ForkPoint) => Promise<void>
+  /** Branch at a point and file the conversation left behind (undoable). */
+  rewindSession: (sessionId: string, at?: ForkPoint) => Promise<void>
   startDraft: (input: { sectionId: string | null; projectId?: string | null }) => void
   clearDraft: () => void
   deleteSession: (id: string) => Promise<void>
@@ -313,6 +315,21 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     await guard(set, async () => {
       const created = await window.pictor.forkSession(sessionId, at)
       set({ selectedSessionId: created })
+      await get().refresh()
+    })
+  },
+
+  async rewindSession(sessionId, at) {
+    await guard(set, async () => {
+      const result = await window.pictor.rewindSession(sessionId, at)
+      set({
+        selectedSessionId: result.id,
+        // The old conversation is not gone — it is filed. Saying that, and how to get it
+        // back, is the difference between "rewind" and "the app ate my work".
+        notice: result.archived
+          ? '已回到这里；原来的会话已归档，可在「已归档」里恢复'
+          : '已回到这里，但原来的会话没有归档成功，请手动归档',
+      })
       await get().refresh()
     })
   },

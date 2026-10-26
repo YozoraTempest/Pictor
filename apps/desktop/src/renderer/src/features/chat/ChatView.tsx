@@ -5,7 +5,7 @@ import type { ChatImage, ForkPoint } from '@pictor/shared'
 
 import { pendingFor } from '../../app/pending.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
-import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
+import { Badge, Banner, Button, Dialog, EmptyState } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { formatDuration, newSessionTitle, phaseLabel } from '../../lib/format-time.js'
 import { useApprovalStore } from '../../app/approval-store.js'
@@ -45,6 +45,7 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const clearDraft = useWorkspaceStore((state) => state.clearDraft)
   const forkSession = useWorkspaceStore((state) => state.forkSession)
+  const rewindSession = useWorkspaceStore((state) => state.rewindSession)
   // A kernel without a message-level fork offers no branch button: the affordance
   // would only explain, on click, that this conversation cannot be cut there.
   // The card for this conversation when one is held here, otherwise the newest one
@@ -90,6 +91,14 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
   const [resizing, setResizing] = useState(false)
   /** A timeline jump; the nonce lets the same turn be jumped to twice. */
   const [jumpTo, setJumpTo] = useState<{ id: string; nonce: number } | null>(null)
+  /**
+   * A rewind waiting for an answer.
+   *
+   * It archives a conversation, so it asks first — and it says what is *not* undone,
+   * which is the file changes the turns made. A dialog that only said "go back?" would
+   * be promising a checkpoint this runtime does not keep.
+   */
+  const [rewindAt, setRewindAt] = useState<{ point: ForkPoint; index: number } | null>(null)
 
   /** Keeps the panel inside its column, leaving the outer gutter for the scrollbar. */
   const clampWidth = useCallback((next: number): number => {
@@ -327,6 +336,7 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
                     onFork: (point: ForkPoint) => {
                       if (selectedSessionId !== null) void forkSession(selectedSessionId, point)
                     },
+                    onRewind: (point: ForkPoint, index: number) => setRewindAt({ point, index }),
                   }
                 : {})}
               panelWidth={panelWidth}
@@ -385,6 +395,47 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
           </div>
         </div>
       )}
+
+      <Dialog
+        open={rewindAt !== null}
+        title="回到这一问之前"
+        onClose={() => setRewindAt(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRewindAt(null)}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (rewindAt === null || selectedSessionId === null) return
+                const target = rewindAt
+                setRewindAt(null)
+                void rewindSession(selectedSessionId, target.point)
+              }}
+            >
+              回到这里
+            </Button>
+          </>
+        }
+      >
+        {rewindAt !== null && (
+          <div className="flex flex-col gap-2 text-sm leading-relaxed text-muted">
+            <p>
+              会从这里开一个新分支，停在第 {rewindAt.index + 1} 问之前；这一段对话本身不会消失，
+              它会被归档（可在「已归档」里恢复）。
+            </p>
+            <p>
+              这次会话后面的 {turns.length - rewindAt.index}{' '}
+              轮仍留在原来那段对话里，随时可以回去看。
+            </p>
+            <p className="text-faint">
+              文件不会回滚：这一轮之后改过的东西还会是现在的样子。内核只提供日志上的分支，
+              没有文件快照。
+            </p>
+          </div>
+        )}
+      </Dialog>
     </section>
   )
 }

@@ -22,7 +22,12 @@ export default {
 
     const first = '第一轮的回答。'
     const second = '第二轮的回答。'
-    const model = await startStubModel({ replies: [first, second], title: 'e2e 分叉源' })
+    // Four answers, because the rewind case runs a second conversation of its own: the
+    // stub hands them out in order across the whole app, not per session.
+    const model = await startStubModel({
+      replies: [first, second, first, second],
+      title: 'e2e 分叉源',
+    })
 
     const transcript = (sessionId) =>
       page.evaluate((id) => window.pictor.chatHistory(`harness:${id}`, 50, 0), sessionId)
@@ -127,6 +132,50 @@ export default {
           (await page.getByText('第二问').count()) === 0 &&
           (await page.getByText(second).count()) === 0,
         'the copy to end before the second question',
+      )
+
+      // 4. 回到这里: the same cut, but the conversation that was left is filed instead of
+      //    kept beside it. It is reversible, so the assertion is about where it went, not
+      //    that it vanished.
+      const source = await page.evaluate(() => window.pictor.createSession(null, 'e2e 回滚源'))
+      for (const prompt of ['回滚第一问', '回滚第二问']) {
+        await page.evaluate(([id, text]) => window.pictor.sendChat(id, text), [source.id, prompt])
+      }
+      await waitForText(source.id, first)
+      await waitForText(source.id, second)
+
+      const sourceHistory = await page.evaluate((id) => window.pictor.openChat(id), source.id)
+      const answerOfFirst = [...sourceHistory.history.messages]
+        .reverse()
+        .find((message) => message.role === 'assistant' && message.text.includes(first))
+      assert.ok(answerOfFirst !== undefined, 'the first answer is a boundary to go back to')
+
+      const rewind = await page.evaluate(
+        ([id, point]) => window.pictor.rewindSession(id, point),
+        [source.id, { seq: answerOfFirst.seq }],
+      )
+      assert.equal(rewind.archived, true, 'the conversation that was left is filed, not lost')
+
+      const settled = await page.evaluate(() => window.pictor.getSnapshot(), null)
+      const left = settled.sessions.find((entry) => entry.id === source.id)
+      const branch = settled.sessions.find((entry) => entry.id === rewind.id)
+      assert.equal(left?.archived, true, 'the source is archived')
+      assert.equal(branch?.parentId, source.id, 'the branch points back at its source')
+
+      const branchRows = await page.evaluate((id) => window.pictor.openChat(id), rewind.id)
+      const texts = branchRows.history.messages.map((message) => message.text)
+      assert.ok(
+        texts.some((text) => text.includes(first)) && !texts.some((text) => text.includes(second)),
+        `the branch stops before the second turn: ${texts.join(' / ')}`,
+      )
+
+      // Undo it the way the notice says: the archived conversation comes back.
+      await page.evaluate((id) => window.pictor.setSessionArchived(id, false), source.id)
+      const restored = await page.evaluate(() => window.pictor.getSnapshot(), null)
+      assert.equal(
+        restored.sessions.find((entry) => entry.id === source.id)?.archived,
+        false,
+        'archiving is reversible',
       )
     } finally {
       await model.close()

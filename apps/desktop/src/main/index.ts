@@ -1284,11 +1284,14 @@ function registerIpc(workspace: Workspace): void {
    * The runtime owns the copy, so the new conversation is created here and then
    * pointed at the runtime's child id; opening it reads the inherited history.
    */
-  ipcMain.handle('pictor:session.fork', async (_event, sessionId: unknown, at: unknown) => {
-    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
-    // The point is whatever the caller's rows carry: an event sequence for dsh, an
-    // entry id for a kernel that branches by message. Both are optional.
-    const point = parseForkPoint(at)
+  /**
+   * Cut one conversation at a point and record the family.
+   *
+   * The kernel copies the event prefix and answers its own session id; the Pictor
+   * conversation is created here, because only this side knows which conversations
+   * belong to the same lineage.
+   */
+  const branchAt = async (sessionId: string, point: ForkPoint | undefined): Promise<string> => {
     if ((await workspace.harness.statusOf(sessionId)).state !== 'ready') {
       throw new Error('先启动 agent 运行时')
     }
@@ -1298,8 +1301,6 @@ function registerIpc(workspace: Workspace): void {
     if (source === undefined) throw new Error('session not found')
 
     const child = await workspace.harness.fork(sessionId, point)
-    // The parent is recorded here, not in the runtime: only Pictor knows which
-    // conversations belong to the same family.
     const created = await workspace.client.createSession(
       source.projectId,
       `${source.title} · 分支`,
@@ -1309,6 +1310,42 @@ function registerIpc(workspace: Workspace): void {
     )
     workspace.harness.adopt(created.id, child)
     return created.id
+  }
+
+  ipcMain.handle('pictor:session.fork', async (_event, sessionId: unknown, at: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    // The point is whatever the caller's rows carry: an event sequence for dsh, an
+    // entry id for a kernel that branches by message. Both are optional.
+    return branchAt(sessionId, parseForkPoint(at))
+  })
+
+  /**
+   * 回到这里: branch at the point, then file the conversation that was left behind.
+   *
+   * The runtime's log is append-only and has no rewind, so "going back" is a branch plus
+   * a judgement about where the old tail belongs. Archiving is that judgement, and it is
+   * reversible on purpose: the turns the person walked away from are still there, in a
+   * conversation they can un-archive. Files are *not* restored — a checkpoint in this
+   * runtime means "the log is durable up to here", never "the workspace looked like this"
+   * — and the window says so before it acts.
+   */
+  ipcMain.handle('pictor:session.rewind', async (_event, sessionId: unknown, at: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    const created = await branchAt(sessionId, parseForkPoint(at))
+
+    // A branch that exists and an archive that failed is still a usable outcome: the
+    // conversation can be archived by hand, and saying so beats undoing the branch.
+    let archived = true
+    try {
+      await workspace.client.setSessionArchived(sessionId, true)
+    } catch (error) {
+      archived = false
+      console.warn(
+        '[rewind] 分支已建立，但原会话没有归档',
+        error instanceof Error ? error.message : error,
+      )
+    }
+    return { id: created, archived }
   })
 
   ipcMain.handle(

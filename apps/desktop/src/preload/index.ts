@@ -30,6 +30,7 @@ const bridge: PictorBridge = {
   removeProjectFolder: (id, path) => invoke('pictor:project.removeFolder', id, path),
   createSession: (projectId, title, kernelId, parentId) =>
     invoke('pictor:session.create', projectId, title, kernelId, parentId),
+  rewindSession: (id, at) => invoke('pictor:session.rewind', id, at),
   deleteSession: (id) => invoke('pictor:session.delete', id),
   setSessionPinned: (id, pinned) => invoke('pictor:session.setPinned', id, pinned),
   setSessionArchived: (id, archived) => invoke('pictor:session.setArchived', id, archived),
