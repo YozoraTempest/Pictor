@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -8,7 +8,9 @@ import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@pictor
 import { resolveHostCoreBinary, startHostCore } from '@pictor/host-client'
 import {
   PluginHost,
+  PluginInstaller,
   discoverPlugins,
+  type DiscoveredPlugin,
   expandPluginRoots,
   resolveActivationOrder,
 } from '@pictor/plugin-host'
@@ -56,13 +58,28 @@ import { dshKernel } from './kernel/dsh-kernel.js'
 import { startKernelHost, type KernelHost } from './kernel/host.js'
 import { prunePiModelsFile } from './kernel/pi-home.js'
 import type { PiRpcDriver } from './kernel/pi-rpc-driver.js'
-import { KernelInstaller } from './kernel/installer.js'
+import { resolveNodeBinary, resolveNpmCli } from './kernel/node-runtime.js'
+
 import { createPiKernel } from './kernel/pi-kernel.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
 import { ToolGuardServer, type GuardAsk } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
 import { RuleBook, describeAsk, describeRule } from './rule-book.js'
 import { SkillLibrary } from './skill-library.js'
+
+/** Whether a directory is a kernel plugin from before the `pictor` field. */
+function hasLegacyKernelEntry(root: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      main?: unknown
+      pictor?: unknown
+    }
+    if (parsed.pictor !== undefined) return false
+    return typeof parsed.main === 'string' && existsSync(join(root, parsed.main))
+  } catch {
+    return false
+  }
+}
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const appRoot = resolve(here, '../..')
@@ -142,8 +159,8 @@ interface Workspace {
   pi: PiRpcDriver
   /** The kernel container: what is mounted, what was refused, and why. */
   kernels: KernelHost
-  /** Installs and removes kernels under the profile. */
-  installer: KernelInstaller
+  /** Installs and removes plugins under the profile. */
+  installer: PluginInstaller
   /** Whether Pi keeps its own configuration directory; see `setPiOwnConfig`. */
   piOwnConfig: () => boolean
   setPiOwnConfig: (value: boolean) => Promise<boolean>
@@ -214,11 +231,14 @@ async function startWorkspace(): Promise<Workspace | null> {
 
   const appHost = new ApplicationHost(running.client)
 
-  const bundledRoots = app.isPackaged
-    ? expandPluginRoots([join(process.resourcesPath, 'plugins')])
-    : expandPluginRoots([join(repositoryRoot, 'plugins')])
+  // What ships with the app, plus what a person installed: one discovery pass, so a
+  // downloaded plugin behaves exactly like a bundled one.
+  const pluginRoot = app.isPackaged
+    ? join(process.resourcesPath, 'plugins')
+    : join(repositoryRoot, 'plugins')
+  const candidateRoots = expandPluginRoots([pluginRoot, join(userData, 'plugins')])
 
-  const discovery = discoverPlugins(bundledRoots)
+  const discovery = discoverPlugins(candidateRoots)
   for (const plugin of discovery.plugins) {
     const existing = (await running.client.listPlugins()).find((record) => record.id === plugin.id)
     if (existing === undefined) {
@@ -249,7 +269,8 @@ async function startWorkspace(): Promise<Workspace | null> {
 
   const pluginHost = new PluginHost({
     plugins: discovery.plugins,
-    pictorVersion: '0.0.0',
+    // The running app's version, so `engines.pictor` checks against something real.
+    pictorVersion: app.getVersion(),
     dataRoot: join(userData, 'plugins-data'),
     isEnabled: (id) => enabled.get(id) ?? true,
     logger: {
@@ -357,7 +378,30 @@ async function startWorkspace(): Promise<Workspace | null> {
   // conversation into one that simply has not chosen yet.
   if (!piOwnConfig) forgetForeignPiModels(userData)
   const piKernel = createPiKernel({ ownConfig: piOwnConfig })
-  const installer = new KernelInstaller({ userData })
+  // One installer for both halves: a plugin may contribute panels, a kernel, or both,
+  // and installing it should not be two decisions.
+  const installer = new PluginInstaller({
+    directory: join(userData, 'plugins'),
+    npm: () => {
+      const node = resolveNodeBinary()
+      if (node === null)
+        throw new Error('没有找到可用的 Node；安装 Node 22+ 或设置 PICTOR_NODE_BIN')
+      const cli = resolveNpmCli(node)
+      if (cli === null) throw new Error('没有找到 npm，无法安装插件包')
+      return { node, cli }
+    },
+    validate: (root) => {
+      const discovery = discoverPlugins([root])
+      if (discovery.plugins.length > 0) return
+      // A kernel-only plugin from before the `pictor` field: an npm package whose
+      // `main` is the cordis plugin. The kernel host still reads those, so refusing
+      // them here would break what an earlier version installed.
+      if (hasLegacyKernelEntry(root)) return
+      throw new Error(
+        discovery.failures[0]?.reason ?? '这不是一个插件：缺少 manifest.json 或 pictor 字段',
+      )
+    },
+  })
   const ruleGuard: ToolGuardContribution = {
     id: 'pictor-rules',
     title: '工具规则',
@@ -432,7 +476,9 @@ async function startWorkspace(): Promise<Workspace | null> {
       userData,
     },
     builtins: [dshKernel, piKernel.plugin],
-    directory: join(userData, 'kernels'),
+    // One root for everything now; the older `kernels/` stays readable so what an
+    // earlier version installed does not vanish.
+    directories: [join(userData, 'plugins'), join(userData, 'kernels')],
   })
   const pi = piKernel.driver()
   if (pi === null) throw new Error('Pi 内核没有挂载')
@@ -1335,6 +1381,13 @@ function registerIpc(workspace: Workspace): void {
    * is a kernel on disk with a reason attached, which the settings page shows, rather
    * than a rollback that hides what went wrong.
    */
+  /**
+   * Install a plugin, then start both halves of it.
+   *
+   * A plugin may contribute panels, a kernel, or both, and installing is one act: the
+   * kernel half is mounted and the UI half activated, without a restart. Whichever
+   * half it does not have is simply not there.
+   */
   const mountAfterInstall = async (
     install: () => Promise<{ name: string }> | { name: string },
   ): Promise<KernelChangeResult> => {
@@ -1348,8 +1401,36 @@ function registerIpc(workspace: Workspace): void {
         message: error instanceof Error ? error.message : String(error),
       }
     }
-    const failure = await workspace.kernels.mountInstalled(installed.name)
-    return { ok: failure === null, id: installed.name, message: failure ?? '' }
+
+    const root = workspace.installer.rootOf(installed.name)
+    const found = root === null ? [] : discoverPlugins([root]).plugins
+    const kernelId = await activateHalves(found, installed.name)
+    return kernelId
+  }
+
+  /**
+   * Starts the halves of one plugin and reports what it became.
+   *
+   * The kernel is mounted first: it is the half that can fail for a reason worth
+   * showing (a broken cordis plugin, a capability it cannot honour), and the UI half
+   * failing would otherwise be reported as if the whole plugin had.
+   */
+  const activateHalves = async (
+    plugins: readonly DiscoveredPlugin[],
+    name: string,
+  ): Promise<KernelChangeResult> => {
+    for (const plugin of plugins) {
+      await workspace.pluginHost.add(plugin)
+    }
+
+    // The kernel host is the one that knows whether this directory holds a kernel: an
+    // older plugin has no manifest to ask, and a UI-only plugin has no kernel to mount
+    // — neither is a failure.
+    const mounted = await workspace.kernels.mountInstalled(name)
+    if (!mounted.mounted && mounted.failure !== null) {
+      return { ok: false, id: name, message: mounted.failure }
+    }
+    return { ok: true, id: name, message: '' }
   }
 
   ipcMain.handle('pictor:kernels.chooseFolder', async (): Promise<string | null> => {
@@ -1390,6 +1471,12 @@ function registerIpc(workspace: Workspace): void {
       // Unmount first: the conversations it ran would otherwise talk to a kernel whose
       // files are gone.
       await workspace.kernels.unmount(id)
+      const root = workspace.installer.rootOf(report.source)
+      if (root !== null) {
+        for (const plugin of discoverPlugins([root]).plugins) {
+          await workspace.pluginHost.remove(plugin.id)
+        }
+      }
       try {
         await workspace.installer.remove(report.source)
       } catch (error) {

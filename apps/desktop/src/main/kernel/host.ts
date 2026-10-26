@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { Context, type Fiber, type Plugin } from '@deepseek-ai/cordis'
+import { parseKernelContribution, parsePackageManifest } from '@pictor/plugin-sdk'
 
 import type { PermissionMode } from '../../shared/bridge.js'
 import type { ModelService } from '../model-service.js'
@@ -57,6 +58,19 @@ declare module '@deepseek-ai/cordis' {
 /** A kernel plugin: a cordis plugin that provides exactly one `kernel.<id>`. */
 export type KernelPlugin = Plugin<void>
 
+/** What asking the host to mount one plugin produced. */
+export interface KernelMountResult {
+  /** True when a `kernel.<id>` service appeared. */
+  mounted: boolean
+  /**
+   * Why it did not mount, when that is a problem.
+   *
+   * `null` with `mounted: false` means the directory simply holds no kernel — a UI
+   * plugin, say — which is not a failure and must not be reported as one.
+   */
+  failure: string | null
+}
+
 /** A kernel that could not be used, and why. */
 export interface KernelPluginFailure {
   /** Directory name, or `builtin:<index>` for one compiled into the app. */
@@ -69,12 +83,13 @@ export interface KernelHostOptions {
   /** Kernels compiled into the app, in mount order; the first one is the default. */
   builtins: readonly KernelPlugin[]
   /**
-   * Directory scanned for installed kernels.
+   * Directories scanned for installed plugins, highest priority first.
    *
-   * Each child directory is a package: a `package.json` with a `main` entry the
-   * kernel is imported from. A missing directory means no installed kernels.
+   * Plugins and kernels share one root now, so the profile's `plugins/` comes first
+   * and the older `kernels/` still works for what an earlier version installed. A
+   * missing directory is simply nothing to scan.
    */
-  directory: string
+  directories: readonly string[]
 }
 
 /** One kernel as the settings page reports it: what it is and what it may reach. */
@@ -103,12 +118,8 @@ export interface KernelHost {
   readonly failures: readonly KernelPluginFailure[]
   /** Everything mounted or refused right now, for the settings page. */
   plugins(): KernelPluginReport[]
-  /**
-   * Mount one installed kernel by name without restarting the app.
-   *
-   * Resolves with why it could not be mounted, or null when it did.
-   */
-  mountInstalled(name: string): Promise<string | null>
+  /** Mount one installed plugin's kernel half without restarting the app. */
+  mountInstalled(name: string): Promise<KernelMountResult>
   /** Unmount a kernel by id; its conversations then report it as missing. */
   unmount(id: string): Promise<void>
   dispose(): Promise<void>
@@ -257,7 +268,7 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
     await mount(plugin, 'builtin', `builtin:${String(index)}`)
   }
 
-  for (const found of discoverKernels(options.directory)) {
+  for (const found of discoverKernels(options.directories)) {
     if ('error' in found) {
       failures.push({ source: found.source, message: found.error })
       continue
@@ -289,10 +300,12 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
       }
       return reports
     },
-    async mountInstalled(name: string): Promise<string | null> {
-      const found = discoverKernel(options.directory, name)
-      if ('error' in found) return found.error
-      return mount(found.plugin, found.source)
+    async mountInstalled(name: string): Promise<KernelMountResult> {
+      const found = discoverKernel(options.directories, name, { required: false })
+      if (found === null) return { mounted: false, failure: null }
+      if ('error' in found) return { mounted: false, failure: found.error }
+      const failure = await mount(found.plugin, found.source)
+      return { mounted: failure === null, failure }
     },
     async unmount(id: string): Promise<void> {
       const record = mounted.get(id)
@@ -330,29 +343,43 @@ export const PACKAGE_LIST = 'kernels.json'
  * mount time — the module graph is ESM, and a plugin that fails to import has to fail
  * alone.
  */
-function discoverKernels(directory: string): KernelEntry[] {
+function discoverKernels(directories: readonly string[]): KernelEntry[] {
   const entries: KernelEntry[] = []
-  for (const name of installedFolders(directory)) {
-    entries.push(discoverKernel(directory, name))
-  }
-  for (const name of installedPackages(directory)) {
-    entries.push(discoverKernel(directory, name))
+  const seen = new Set<string>()
+  for (const directory of directories) {
+    // The first root that offers a name wins; a plugin installed twice is one plugin.
+    for (const name of [...installedFolders(directory), ...installedPackages(directory)]) {
+      if (seen.has(name)) continue
+      seen.add(name)
+      const found = discoverKernel(directories, name, { required: false })
+      if (found === null) continue
+      seen.add(name)
+      entries.push(found)
+    }
   }
   return entries
 }
 
-/** One installed kernel by name: a folder first, then a package. */
-function discoverKernel(directory: string, name: string): KernelEntry {
-  const root = kernelRoot(directory, name)
-  if (root === null) return { source: name, error: '内核目录不存在' }
+/** One installed kernel by name, looked up across the roots: folder first, then package. */
+function discoverKernel(
+  directories: readonly string[],
+  name: string,
+  options: { required: boolean },
+): KernelEntry | null {
+  const root = kernelRoot(directories, name)
+  if (root === null) return options.required ? { source: name, error: '内核目录不存在' } : null
 
-  const manifest = join(root, 'package.json')
   let main: string
   try {
-    const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as { main?: unknown }
-    main = typeof parsed.main === 'string' && parsed.main.length > 0 ? parsed.main : 'index.js'
+    const found = kernelEntryOf(root)
+    // A plugin that contributes no kernel shares this directory with ones that do;
+    // it is not a broken kernel, it is simply not one.
+    if (found === null) {
+      return options.required ? { source: name, error: '这个插件没有声明内核' } : null
+    }
+    main = found
   } catch (error) {
-    return { source: name, error: `package.json 无法解析：${messageOf(error)}` }
+    return { source: name, error: messageOf(error) }
   }
 
   const entry = join(root, main)
@@ -360,12 +387,39 @@ function discoverKernel(directory: string, name: string): KernelEntry {
   return { source: name, plugin: mountModule(entry, name) }
 }
 
-/** Where a kernel lives: a folder under `kernels/`, or a package in its store. */
-function kernelRoot(directory: string, name: string): string | null {
-  const folder = join(directory, name)
-  if (existsSync(join(folder, 'package.json'))) return folder
-  const packaged = join(directory, 'node_modules', name)
-  if (existsSync(join(packaged, 'package.json'))) return packaged
+/**
+ * Where a plugin's kernel entry is.
+ *
+ * The `pictor` field is the format now: `main` in a `package.json` is the UI entry,
+ * and a kernel names its own module under `contributes`. A package without the field
+ * predates it and used `main` for the kernel itself, which still works.
+ */
+function kernelEntryOf(root: string): string | null {
+  const parsed = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >
+
+  if (!('pictor' in parsed)) {
+    return typeof parsed.main === 'string' && parsed.main.length > 0 ? parsed.main : 'index.js'
+  }
+
+  const manifest = parsePackageManifest(parsed)
+  for (const contribution of manifest.contributes ?? []) {
+    if (contribution.point !== 'kernel') continue
+    return parseKernelContribution(contribution.value).main
+  }
+  return null
+}
+
+/** Where a kernel lives: a folder under a root, or a package in its store. */
+function kernelRoot(directories: readonly string[], name: string): string | null {
+  for (const directory of directories) {
+    const folder = join(directory, name)
+    if (existsSync(join(folder, 'package.json'))) return folder
+    const packaged = join(directory, 'node_modules', name)
+    if (existsSync(join(packaged, 'package.json'))) return packaged
+  }
   return null
 }
 

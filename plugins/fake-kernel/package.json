@@ -7,7 +7,7 @@
   "pictor": {
     "id": "pictor.kernel.fake",
     "engines": {
-      "pictor": "^0.1.0"
+      "pictor": ">=0.0.0"
     },
     "contributes": [
       {

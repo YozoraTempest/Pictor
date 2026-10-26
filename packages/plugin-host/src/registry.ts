@@ -96,7 +96,13 @@ function readPlugin(
   }
 }
 
-/** Expands `<root>/*` into candidate plugin roots, skipping files. */
+/**
+ * Expands `<root>/*` into candidate plugin roots, skipping files.
+ *
+ * A candidate either carries the old `manifest.json` or a `package.json` that may
+ * declare `pictor`; deciding which is a plugin is `discoverPlugins`' job, so this
+ * stays a cheap directory listing.
+ */
 export function expandPluginRoots(parentDirectories: string[]): string[] {
   const roots: string[] = []
 
@@ -105,7 +111,10 @@ export function expandPluginRoots(parentDirectories: string[]): string[] {
 
     for (const entry of readdirSync(parent)) {
       const path = join(parent, entry)
-      if (statSync(path).isDirectory() && existsSync(join(path, 'manifest.json'))) {
+      if (
+        statSync(path).isDirectory() &&
+        (existsSync(join(path, 'manifest.json')) || existsSync(join(path, 'package.json')))
+      ) {
         roots.push(path)
       }
     }

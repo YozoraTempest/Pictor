@@ -83,6 +83,56 @@ export class PluginHost {
     return this.report()
   }
 
+  /**
+   * Activates one plugin that arrived while the app was running.
+   *
+   * Installing must not need a restart: the contributions a plugin makes are the same
+   * whether it was on disk at launch or copied in a minute ago. A plugin with no UI
+   * entry is skipped here — its kernel half is mounted by the kernel host.
+   */
+  async add(plugin: DiscoveredPlugin): Promise<PluginHostReport> {
+    const enabled = this.#options.isEnabled?.(plugin.id, 'user') ?? true
+    if (!enabled || plugin.manifest.main === undefined) {
+      if (!this.#skipped.includes(plugin.id)) this.#skipped.push(plugin.id)
+      return this.report()
+    }
+    if (this.#activated.includes(plugin.id)) return this.report()
+
+    try {
+      await this.#activate(plugin)
+      this.#activated.push(plugin.id)
+    } catch (error) {
+      this.#failures.push({ source: plugin.root, reason: (error as Error).message })
+      this.#logger.error(`plugin failed to activate: ${plugin.id}`, error)
+    }
+    return this.report()
+  }
+
+  /** Removes one plugin and everything it contributed, leaving the rest running. */
+  async remove(id: string): Promise<void> {
+    const index = this.#active.findIndex((plugin) => plugin.id === id)
+    // Nothing to unmount: it never activated, so it contributed nothing either.
+    if (index < 0) return
+
+    const plugin = this.#active[index] as ActivePlugin
+    this.#active.splice(index, 1)
+    for (const dispose of [...plugin.disposers].reverse()) {
+      try {
+        dispose()
+      } catch (error) {
+        this.#logger.warn(`contribution disposal failed for ${plugin.id}: ${String(error)}`)
+      }
+    }
+    try {
+      await plugin.module.deactivate?.()
+    } catch (error) {
+      this.#logger.warn(`plugin deactivate failed: ${plugin.id}: ${String(error)}`)
+    }
+
+    const at = this.#activated.indexOf(id)
+    if (at >= 0) this.#activated.splice(at, 1)
+  }
+
   async stop(): Promise<void> {
     for (const plugin of [...this.#active].reverse()) {
       for (const dispose of [...plugin.disposers].reverse()) {

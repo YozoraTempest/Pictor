@@ -1,105 +1,122 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import type { PluginRecord } from '@pictor/shared'
+import { INSTALLED_LIST, PluginInstaller } from './installer.js'
 
-import { installPlugin, uninstallPlugin, type PluginStateStore } from './installer.js'
-
-class MemoryStore implements PluginStateStore {
-  readonly records = new Map<string, PluginRecord>()
-
-  async listPlugins(): Promise<PluginRecord[]> {
-    return [...this.records.values()]
-  }
-
-  async upsertPlugin(input: {
-    id: string
-    version: string
-    enabled?: boolean
-    source?: string
-  }): Promise<PluginRecord> {
-    const record: PluginRecord = {
-      id: input.id,
-      version: input.version,
-      enabled: input.enabled ?? true,
-      source: input.source ?? 'user',
-      installedAt: Date.now(),
-    }
-    this.records.set(input.id, record)
-    return record
-  }
-
-  async setPluginEnabled(id: string, enabled: boolean): Promise<PluginRecord> {
-    const record = this.records.get(id)
-    if (record === undefined) throw new Error('missing plugin')
-    const updated = { ...record, enabled }
-    this.records.set(id, updated)
-    return updated
-  }
-
-  async removePlugin(id: string): Promise<void> {
-    this.records.delete(id)
-  }
-}
-
-function writeSource(root: string): void {
-  mkdirSync(join(root, 'dist'), { recursive: true })
+/** A plugin directory the caller might have built. */
+function pluginFolder(name: string, manifest: Record<string, unknown> = {}): string {
+  const root = join(mkdtempSync(join(tmpdir(), 'pictor-plugin-src-')), name)
+  mkdirSync(root, { recursive: true })
   writeFileSync(
-    join(root, 'manifest.json'),
+    join(root, 'package.json'),
     JSON.stringify({
-      id: 'pictor.sample',
-      name: 'Sample',
-      version: '1.2.3',
-      main: 'dist/index.js',
-      engines: { pictor: '^1.0.0' },
+      name: `@example/${name}`,
+      version: '0.0.0',
+      main: 'index.js',
+      pictor: { id: `example.${name}`, engines: { pictor: '^0.0.0' } },
+      ...manifest,
     }),
+    'utf8',
   )
-  writeFileSync(join(root, 'dist', 'index.js'), 'export default {}')
+  writeFileSync(join(root, 'index.js'), 'export function activate() {}\n', 'utf8')
+  return root
 }
 
-describe('installer', () => {
-  it('copies a plugin and records it', async () => {
-    const workspace = mkdtempSync(join(tmpdir(), 'pictor-install-'))
-    const source = join(workspace, 'source')
-    const pluginsRoot = join(workspace, 'plugins')
-    writeSource(source)
+/** Rejects anything without a `pictor` field, the way discovery would. */
+function validate(root: string): void {
+  const parsed = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+    pictor?: unknown
+  }
+  if (parsed.pictor === undefined) throw new Error('package.json 没有 pictor 字段')
+}
 
-    const store = new MemoryStore()
-    const record = await installPlugin({ sourceDirectory: source, pluginsRoot, store })
+function installer(options: { npm?: () => { node: string; cli: string } } = {}): {
+  directory: string
+  subject: PluginInstaller
+} {
+  const directory = mkdtempSync(join(tmpdir(), 'pictor-plugins-'))
+  return { directory, subject: new PluginInstaller({ directory, validate, ...options }) }
+}
 
-    expect(record).toMatchObject({ id: 'pictor.sample', version: '1.2.3', enabled: true })
-    expect(existsSync(join(pluginsRoot, 'pictor.sample', 'manifest.json'))).toBe(true)
-    expect(store.records.has('pictor.sample')).toBe(true)
+describe('PluginInstaller', () => {
+  it('copies a folder in under the plugin root', () => {
+    const { directory, subject } = installer()
+
+    const installed = subject.installFolder(pluginFolder('notes'))
+
+    expect(installed).toEqual({ name: 'notes', kind: 'folder' })
+    expect(subject.rootOf('notes')).toBe(join(directory, 'notes'))
   })
 
-  it('rejects a source without a valid manifest', async () => {
-    const workspace = mkdtempSync(join(tmpdir(), 'pictor-install-'))
-    const source = join(workspace, 'source')
-    mkdirSync(source, { recursive: true })
+  it('refuses a directory that is not a plugin', () => {
+    const { subject } = installer()
+    const empty = mkdtempSync(join(tmpdir(), 'pictor-not-plugin-'))
+    writeFileSync(join(empty, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }))
 
-    await expect(
-      installPlugin({
-        sourceDirectory: source,
-        pluginsRoot: join(workspace, 'plugins'),
-        store: new MemoryStore(),
-      }),
-    ).rejects.toThrow(/cannot install plugin/)
+    expect(() => subject.installFolder(empty)).toThrow(/pictor/)
   })
 
-  it('removes the installed copy and record on uninstall', async () => {
-    const workspace = mkdtempSync(join(tmpdir(), 'pictor-install-'))
-    const source = join(workspace, 'source')
-    const pluginsRoot = join(workspace, 'plugins')
-    writeSource(source)
+  it('refuses a second plugin with the same name', () => {
+    const { subject } = installer()
+    subject.installFolder(pluginFolder('notes'))
 
-    const store = new MemoryStore()
-    await installPlugin({ sourceDirectory: source, pluginsRoot, store })
-    await uninstallPlugin({ id: 'pictor.sample', pluginsRoot, store })
+    expect(() => subject.installFolder(pluginFolder('notes'))).toThrow(/同名/)
+  })
 
-    expect(existsSync(join(pluginsRoot, 'pictor.sample'))).toBe(false)
-    expect(store.records.size).toBe(0)
+  it('removes a copied plugin', async () => {
+    const { subject } = installer()
+    subject.installFolder(pluginFolder('notes'))
+
+    await subject.remove('notes')
+
+    expect(subject.rootOf('notes')).toBeNull()
+  })
+
+  it('refuses to remove something that is not installed', async () => {
+    const { subject } = installer()
+
+    await expect(subject.remove('nothing')).rejects.toThrow(/没有这个插件/)
+  })
+
+  it('refuses a name that cannot be a folder', async () => {
+    const { subject } = installer()
+
+    await expect(subject.remove('..')).rejects.toThrow(/不合法/)
+    await expect(subject.remove('node_modules')).rejects.toThrow(/不合法/)
+  })
+
+  it('rejects a spec that is not a package name', async () => {
+    const { subject } = installer()
+
+    // Each of these would otherwise ask npm to run something else entirely.
+    for (const spec of ['', 'file:../elsewhere', 'git+https://example.com/x.git', './local']) {
+      await expect(subject.installPackage(spec)).rejects.toThrow(/包名/)
+    }
+  })
+
+  it('says so when there is no package manager', async () => {
+    const { subject } = installer()
+
+    await expect(subject.installPackage('@example/notes')).rejects.toThrow(/npm/)
+  })
+
+  it('reads the list left by the version that shared a directory with kernels', () => {
+    const { directory, subject } = installer()
+    writeFileSync(join(directory, 'kernels.json'), JSON.stringify({ packages: ['@example/old'] }))
+
+    expect(subject.packages()).toEqual(['@example/old'])
+  })
+
+  it('writes the list under its own name', async () => {
+    const { directory, subject } = installer({
+      // A stand-in for npm: the installer's own job is the record, not the download.
+      npm: () => ({ node: process.execPath, cli: '/bin/true' }),
+    })
+
+    expect(INSTALLED_LIST).toBe('installed.json')
+    expect(subject.directory).toBe(directory)
   })
 })

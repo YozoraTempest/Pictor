@@ -9,11 +9,10 @@ export {
 export { resolveActivationOrder, type ResolutionResult } from './resolution.js'
 
 export {
-  installPlugin,
-  setPluginEnabled,
-  uninstallPlugin,
-  type InstallOptions,
-  type PluginStateStore,
+  INSTALLED_LIST,
+  PluginInstaller,
+  type InstalledPlugin,
+  type PluginInstallerOptions,
 } from './installer.js'
 
 export { PluginHost, type PluginHostOptions, type PluginHostReport } from './host.js'
