@@ -163,6 +163,14 @@ the switch on the Pi runtime page — Pi then brings its own services, keys and
 extensions, which is the only way to keep using those, at the cost of two lists
 that differ again.
 
+A kernel may also own a setting rather than only read one: Pi's "run on my own
+configuration" means nothing to dsh. It declares it as a `KernelSetting` — key,
+label, description, and a `hint` for what the current value means — the host
+collects whatever the mounted kernels declare, and the runtime page draws those
+rows without knowing which kernel they belong to. Pictor persists the key and
+hands the write to the kernel that declared it; a key nobody owns comes back
+`false` rather than looking like it worked.
+
 A kernel that brings its own models declares it (`KernelModelSource`), and
 `kernels.list` says whose list the picker should show: `pictor` for a kernel
 booted with Pictor's providers, `kernel` for one that answers for its own
