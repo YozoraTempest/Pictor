@@ -48,3 +48,50 @@ describe('applyToolViews', () => {
     expect(presentTool(call('fetch', {}, 'done')).label).toBe('fetch')
   })
 })
+
+/** A namespace view is the reason a view may be a pattern instead of a name. */
+describe('wildcard tool views', () => {
+  it('dresses every tool of a namespace nobody enumerated', () => {
+    const dispose = applyToolViews([
+      { id: 'github', tools: ['mcp__github__*'], label: 'GitHub', icon: 'git-branch' },
+    ])
+
+    const view = presentTool(call('mcp__github__create_issue', { title: 'x' }, 'opened #1'))
+
+    expect(view.label).toBe('GitHub')
+    // The tool's own sections survive: a view is presentation, not rendering.
+    expect(view.sections.length).toBeGreaterThan(0)
+    dispose()
+  })
+
+  it('lets an exact name win over the namespace it belongs to', () => {
+    const dispose = applyToolViews([
+      { id: 'github', tools: ['mcp__github__*'], label: 'GitHub' },
+      { id: 'issues', tools: ['mcp__github__create_issue'], label: '建 issue' },
+    ])
+
+    expect(presentTool(call('mcp__github__create_issue', {}, 'ok')).label).toBe('建 issue')
+    expect(presentTool(call('mcp__github__list_issues', {}, 'ok')).label).toBe('GitHub')
+    dispose()
+  })
+
+  it('prefers the narrower prefix when two namespaces match', () => {
+    const dispose = applyToolViews([
+      { id: 'mcp', tools: ['mcp__*'], label: '外部工具' },
+      { id: 'github', tools: ['mcp__github__*'], label: 'GitHub' },
+      { id: 'gitlab', tools: ['mcp__gitlab__*'], label: 'GitLab' },
+    ])
+
+    expect(presentTool(call('mcp__gitlab__mr', {}, 'ok')).label).toBe('GitLab')
+    expect(presentTool(call('mcp__other__thing', {}, 'ok')).label).toBe('外部工具')
+    dispose()
+  })
+
+  it('forgets a view once it is disposed', () => {
+    const dispose = applyToolViews([{ id: 'github', tools: ['mcp__github__*'], label: 'GitHub' }])
+    dispose()
+
+    // Nothing left to match: the tool reads as itself again.
+    expect(presentTool(call('mcp__github__create_issue', {}, 'ok')).label).not.toBe('GitHub')
+  })
+})

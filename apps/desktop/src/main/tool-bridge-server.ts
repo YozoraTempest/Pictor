@@ -1,6 +1,12 @@
 import { createServer, type Server, type Socket } from 'node:net'
 
-import { evaluateToolGuards, type ToolGuardContribution } from '@pictor/plugin-sdk'
+import {
+  evaluateToolHooks,
+  evaluateToolGuards,
+  hookOutputOf,
+  type ToolGuardContribution,
+  type ToolHookContribution,
+} from '@pictor/plugin-sdk'
 
 /**
  * Where the runtime's guard plugin reaches the app.
@@ -14,11 +20,15 @@ export interface GuardEndpoint {
 }
 
 /**
- * Answers the runtime's guard plugin over a loopback socket.
+ * The app's end of the tool bridge: guards before a call, hooks after it.
  *
- * Plugin guards are ordinary JavaScript that runs in this process, so they cannot
- * be serialised into the kernel's configuration. The kernel-side plugin therefore
- * asks this server one question per tool call and applies the answer.
+ * Plugin code is ordinary JavaScript that runs in this process, so it cannot be
+ * serialised into a kernel's configuration. Each kernel-side plugin is written into that
+ * kernel's profile and asks this server over loopback instead: one question per call
+ * before it runs (guards, fail closed) and one after it settles (hooks, fail open).
+ *
+ * Both halves ride one socket because both halves are about the same call, and a second
+ * bridge would only be a second token to keep in step.
  */
 /** What one call looks like when the app has to decide whether to hold it. */
 export interface GuardAsk {
@@ -50,8 +60,10 @@ export type GuardAskDecider = (
   context: GuardAsk,
 ) => Promise<GuardAskPrompt | null> | GuardAskPrompt | null
 
-export class ToolGuardServer {
+export class ToolBridgeServer {
   readonly #guards: readonly ToolGuardContribution[]
+  /** What runs after a call, in contribution order. */
+  readonly #hooks: readonly ToolHookContribution[]
   readonly #token: string
   readonly #ask: GuardAskDecider | null
   /**
@@ -70,8 +82,10 @@ export class ToolGuardServer {
     token: string,
     ask: GuardAskDecider | null = null,
     providers: (() => Promise<readonly unknown[]>) | null = null,
+    hooks: readonly ToolHookContribution[] = [],
   ) {
     this.#guards = guards
+    this.#hooks = hooks
     this.#token = token
     this.#ask = ask
     this.#providers = providers
@@ -159,6 +173,26 @@ export class ToolGuardServer {
 
     const tool = typeof record['tool'] === 'string' ? record['tool'] : ''
     const args = record['args'] ?? null
+
+    // After a call: the hooks may say what the model should read next. Failing here is
+    // never a refusal — a hook cannot grant or deny, so an empty answer is the honest
+    // one and the kernel keeps the result it already has.
+    if (record['kind'] === 'after') {
+      const output = typeof record['output'] === 'string' ? record['output'] : ''
+      const outcome = await evaluateToolHooks(this.#hooks, {
+        tool,
+        args,
+        session: typeof record['session'] === 'string' ? record['session'] : null,
+        ok: record['ok'] !== false,
+        output: hookOutputOf(output),
+      })
+      for (const failure of outcome.failures) console.warn(`[hook] ${failure.reason}`)
+      reply({
+        ...(outcome.note === undefined ? {} : { note: outcome.note }),
+        ...(outcome.fail === undefined ? {} : { fail: outcome.fail }),
+      })
+      return
+    }
     const verdict = await evaluateToolGuards(this.#guards, { tool, args })
     if (verdict.blocked) {
       reply({ block: true, reason: verdict.reason ?? 'blocked by a tool guard' })

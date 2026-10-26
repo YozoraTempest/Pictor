@@ -26,15 +26,18 @@ afterEach(async () => {
 /** A bridge that answers every guard question with one fixed verdict. */
 function bridge(
   answer: unknown,
-  extra: { providers?: unknown } = {},
+  extra: { providers?: unknown; after?: unknown } = {},
 ): Promise<{
   port: number
   asked: Record<string, unknown>[]
   providersAsked: Record<string, unknown>[]
+  afterAsked: Record<string, unknown>[]
 }> {
   const asked: Record<string, unknown>[] = []
   // The service-list question is a different one; it does not count as a guard call.
   const providersAsked: Record<string, unknown>[] = []
+  // Nor does the post-call one: it is answered by hooks, not by guards.
+  const afterAsked: Record<string, unknown>[] = []
   const server = createServer((socket) => {
     let buffer = ''
     socket.setEncoding('utf8')
@@ -44,11 +47,15 @@ function bridge(
       if (end === -1) return
       const request = JSON.parse(buffer.slice(0, end)) as Record<string, unknown>
       if (request['kind'] === 'providers') providersAsked.push(request)
+      else if (request['kind'] === 'after') afterAsked.push(request)
       else asked.push(request)
-      // The extension asks two different questions on this socket; the guard verdict
-      // answers only the tool-call one.
+      // Three questions ride this socket; each has its own answer.
       const payload =
-        request['kind'] === 'providers' ? { providers: extra.providers ?? [] } : answer
+        request['kind'] === 'providers'
+          ? { providers: extra.providers ?? [] }
+          : request['kind'] === 'after'
+            ? (extra.after ?? {})
+            : answer
       socket.end(`${JSON.stringify(payload)}\n`)
     })
   })
@@ -60,6 +67,7 @@ function bridge(
         port: typeof address === 'object' && address !== null ? address.port : 0,
         asked,
         providersAsked,
+        afterAsked,
       })
     })
   })
@@ -81,6 +89,7 @@ async function loadExtension(
   } = {},
 ): Promise<{
   call: (event: { toolName: string; input: unknown }) => Promise<unknown>
+  result: (event: Record<string, unknown>) => Promise<unknown>
   ask: (params: Record<string, unknown>) => Promise<unknown>
   confirms: { title: string; message: string }[]
   asks: { title: string; options: string[] }[]
@@ -97,11 +106,13 @@ async function loadExtension(
   }
 
   let handler: ((event: unknown, ctx: unknown) => Promise<unknown>) | null = null
+  let resultHandler: ((event: unknown) => Promise<unknown>) | null = null
   const tools: Record<string, unknown>[] = []
   const registered: { name: string; config: unknown }[] = []
   const api = {
     on: (name: string, fn: (event: unknown, ctx: unknown) => Promise<unknown>) => {
       if (name === 'tool_call') handler = fn
+      if (name === 'tool_result') resultHandler = fn as (event: unknown) => Promise<unknown>
       return () => undefined
     },
     registerTool: (tool: Record<string, unknown>) => {
@@ -150,6 +161,10 @@ async function loadExtension(
     call: async (event) => {
       if (handler === null) throw new Error('the extension registered no tool_call handler')
       return handler(event, ctx)
+    },
+    result: async (event) => {
+      if (resultHandler === null) throw new Error('the extension registered no tool_result handler')
+      return resultHandler(event)
     },
     /** Runs the asking tool the extension registered, as Pi would. */
     ask: async (params: Record<string, unknown>) => {
@@ -408,5 +423,87 @@ describe('guardExtensionSource', () => {
     // The source is still valid JavaScript with no endpoint: Pi loads it, and the
     // guard simply has nothing to ask. This is the shape a broken profile gets.
     expect(guardExtensionSource(null)).toContain('const endpoint = null')
+  })
+})
+
+/** The three questions this extension asks, each in its own words. */
+describe('the after-the-call half', () => {
+  it('appends a hook’s note to what the model reads', async () => {
+    const port = await bridge({ block: false }, { after: { note: '[acme.lint] 有一处未使用变量' } })
+    const extension = await loadExtension({ port: port.port, token: 'secret' })
+
+    const verdict = await extension.result({
+      toolName: 'bash',
+      input: { command: 'npm test' },
+      content: [{ type: 'text', text: 'ok' }],
+      isError: false,
+    })
+
+    expect(verdict).toEqual({
+      content: [
+        { type: 'text', text: 'ok' },
+        { type: 'text', text: '[acme.lint] 有一处未使用变量' },
+      ],
+    })
+    // The question carries what a hook needs to decide, and nothing about the guard.
+    expect(port.afterAsked).toEqual([
+      {
+        token: 'secret',
+        kind: 'after',
+        tool: 'bash',
+        args: { command: 'npm test' },
+        ok: true,
+        output: 'ok',
+      },
+    ])
+  })
+
+  it('keeps the structured content Pi would otherwise drop', async () => {
+    const port = await bridge({ block: false }, { after: { note: '看过' } })
+    const extension = await loadExtension({ port: port.port, token: 'secret' })
+
+    const verdict = (await extension.result({
+      toolName: 'read',
+      input: { path: 'a.ts' },
+      content: [{ type: 'text', text: 'body' }],
+      structuredContent: { lines: 3 },
+      isError: false,
+    })) as Record<string, unknown>
+
+    // Pi drops structuredContent whenever content is replaced without it.
+    expect(verdict['structuredContent']).toEqual({ lines: 3 })
+  })
+
+  it('turns the result into a failure that still shows what happened', async () => {
+    const port = await bridge(
+      { block: false },
+      { after: { fail: '[acme.guard] 不要用 npm publish' } },
+    )
+    const extension = await loadExtension({ port: port.port, token: 'secret' })
+
+    const verdict = (await extension.result({
+      toolName: 'bash',
+      input: { command: 'npm publish' },
+      content: [{ type: 'text', text: 'published 1.2.3' }],
+      isError: false,
+    })) as { content: { text: string }[]; isError: boolean }
+
+    expect(verdict.isError).toBe(true)
+    expect(verdict.content[0]?.text).toContain('[acme.guard] 不要用 npm publish')
+    // The call already ran; the model is told what it did as well as what not to do.
+    expect(verdict.content[0]?.text).toContain('published 1.2.3')
+  })
+
+  it('leaves the result alone when the bridge cannot be reached', async () => {
+    const extension = await loadExtension(null)
+
+    // Fail open: a hook cannot grant or deny, so its absence costs nothing.
+    expect(
+      await extension.result({
+        toolName: 'bash',
+        content: [{ type: 'text', text: 'ok' }],
+        isError: false,
+      }),
+    ).toBeUndefined()
   })
 })

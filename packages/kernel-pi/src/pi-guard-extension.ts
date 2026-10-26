@@ -74,7 +74,7 @@ async function loadProviders(pi) {
   }
 }
 
-/** A bare question on the same socket, with no tool attached. */
+/** A question on the same socket, in whatever shape the caller needs. */
 function askRaw(payload) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host: '127.0.0.1', port: endpoint.port })
@@ -245,6 +245,55 @@ export default async function pictorGuard(pi) {
       )
       if (allowed !== true) return { block: true, reason: '你拒绝了这次调用' }
     }
+    return undefined
+  })
+
+  /**
+   * The second half: Pictor's hooks, after the call settled.
+   *
+   * Pi composes tool_result handlers, so appending here is additive — but a failure has
+   * to replace content, and Pi drops structuredContent when content is replaced without
+   * it, so it is passed back through. A bridge that cannot be reached leaves the result
+   * alone: a hook cannot grant or deny anything, so there is nothing to fail closed
+   * about.
+   */
+  pi.on('tool_result', async (event) => {
+    if (endpoint === null) return undefined
+    const tool = String(event.toolName || 'tool')
+    const content = Array.isArray(event.content) ? event.content : []
+    const output = content
+      .filter((block) => block && block.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join('\\n')
+    const answer = await askRaw({
+      token: endpoint.token,
+      kind: 'after',
+      tool: tool,
+      args: event.input ?? null,
+      ok: event.isError !== true,
+      output: output,
+    })
+    if (answer === null) return undefined
+
+    if (typeof answer.fail === 'string' && answer.fail.length > 0) {
+      // The output follows the hook's words on purpose: the call happened, and a model
+      // told only what not to do, without what it did, would have to ask again.
+      const said =
+        output.length === 0
+          ? answer.fail
+          : answer.fail + '\\n\\n---\\n\\nThe call already ran; its output was:\\n' + output
+      return { content: [{ type: 'text', text: said }], isError: true }
+    }
+
+    if (typeof answer.note === 'string' && answer.note.length > 0) {
+      return {
+        content: [...content, { type: 'text', text: answer.note }],
+        ...(event.structuredContent === undefined
+          ? {}
+          : { structuredContent: event.structuredContent }),
+      }
+    }
+
     return undefined
   })
 }

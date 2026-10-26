@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
+import { matchesTool, toolPatternSpecificity } from '@pictor/plugin-sdk'
 import type { ChatMessage } from '@pictor/shared'
 
 import { diffLines, formatDiff } from '../../lib/diff.js'
@@ -53,35 +54,47 @@ export function registerToolPresenter(tool: string, presenter: ToolPresenter): (
   }
 }
 /**
- * Overrides the label and icon of a tool without losing its sections.
+ * Plugin views, matched when a row is drawn rather than registered per tool.
  *
- * A plugin contributes presentation, not rendering: its view is layered on top
- * of whatever presenter already exists, so `编辑` keeps its diff while a plugin
- * renames the row.
+ * A view may name a namespace (`mcp__github__*`), and the tools inside it are not known
+ * until a server answers — so a view cannot be turned into one presenter per name ahead
+ * of time. Keeping the patterns and matching at render time is what makes a wildcard
+ * view possible at all.
+ *
+ * Precedence: an exact name always wins; among prefixes the longest one is closest to
+ * the tool; two patterns of equal reach are decided by registration order. That is the
+ * same rule everywhere a tool is named in this SDK (`matchesTool`), so a guard and its
+ * view cannot disagree about which tool they describe.
  */
-export function decorateToolPresentation(
-  tool: string,
+const views: { pattern: string; patch: { label?: string; icon?: LucideIcon } }[] = []
+
+/** Registers one view pattern. Returns a disposer that removes it again. */
+export function registerToolView(
+  pattern: string,
   patch: { label?: string; icon?: LucideIcon },
 ): () => void {
-  const base = presenters.get(tool)
-  const presenter: ToolPresenter = (message) => {
-    const view = base === undefined ? fallbackPresentation(message, tool) : base(message)
-    return {
-      ...view,
-      ...(patch.label === undefined ? {} : { label: patch.label }),
-      ...(patch.icon === undefined ? {} : { icon: patch.icon }),
+  const entry = { pattern, patch }
+  views.push(entry)
+  return () => {
+    const at = views.indexOf(entry)
+    if (at !== -1) views.splice(at, 1)
+  }
+}
+
+/** The view that should describe `tool`, or undefined when none applies. */
+function viewFor(tool: string): { label?: string; icon?: LucideIcon } | undefined {
+  let best: (typeof views)[number] | undefined
+  let bestScore = -1
+  for (const entry of views) {
+    if (!matchesTool(entry.pattern, tool)) continue
+    const score = toolPatternSpecificity(entry.pattern)
+    // Strictly greater, so an earlier registration wins a tie.
+    if (score > bestScore) {
+      best = entry
+      bestScore = score
     }
   }
-
-  registerToolPresenter(tool, presenter)
-
-  // Undoing an override must put the previous presenter back: deleting the entry
-  // would drop the built-in one and leave the tool with the generic fallback.
-  return () => {
-    if (presenters.get(tool) !== presenter) return
-    if (base === undefined) presenters.delete(tool)
-    else presenters.set(tool, base)
-  }
+  return best?.patch
 }
 
 /** Presentation for a tool call; unknown tools fall back to args + output. */
@@ -99,11 +112,24 @@ export function presentTool(message: ChatMessage): ToolPresentation {
     }
   }
   const presenter = presenters.get(tool)
-  if (presenter !== undefined) return presenter(message)
-  return fallbackPresentation(message, tool)
+  const base = presenter === undefined ? fallbackPresentation(message, tool) : presenter(message)
+  return withView(tool, base)
+}
+
+/** A plugin's view layered over whatever the row already was. */
+function withView(tool: string, view: ToolPresentation): ToolPresentation {
+  const patch = viewFor(tool)
+  if (patch === undefined) return view
+  return {
+    ...view,
+    ...(patch.label === undefined ? {} : { label: patch.label }),
+    ...(patch.icon === undefined ? {} : { icon: patch.icon }),
+  }
 }
 /** Display name for a tool, used where only the name is known (status line). */
 export function toolLabel(tool: string): string {
+  const patch = viewFor(tool)
+  if (patch?.label !== undefined) return patch.label
   const presenter = presenters.get(tool)
   if (presenter === undefined) return tool
   return presenter({ id: '', role: 'tool', text: '', timestamp: null, toolName: tool }).label

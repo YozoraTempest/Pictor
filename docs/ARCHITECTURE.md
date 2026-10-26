@@ -263,6 +263,35 @@ into an answer — carrying the saving the kernel reported (`shadowedTokenCount`
 summary draws one: dsh prunes each large tool result on its own, and a divider per
 prune would bury the conversation.
 
+### The tool bridge
+
+One loopback socket carries two questions about a tool call, because they are about the
+same call and a second bridge would only be a second token to keep in step
+(`apps/desktop/src/main/tool-bridge-server.ts`). Each kernel gets a generated plugin in
+its profile that asks — dsh through `tools/pre-execute` and `tools/post-execute`, Pi
+through `tool_call` and `tool_result`.
+
+- **Before: guards, fail closed.** `allow | deny`, plus "ask a person" where the caller
+  can actually suspend the call (`hold`). dsh's own decision type is
+  `allow | deny | cancel | ask` and excludes input rewriting on purpose, so a contract
+  that promised to rewrite arguments would be a promise the kernel this app is built
+  around cannot keep. A bridge that cannot be reached refuses the call.
+- **After: hooks, fail open.** A hook sees the finished call (`tool`, `args`, `session`,
+  `ok`, a clipped `output`) and may return a `note` — appended to what the model reads,
+  prefixed with the hook's id — or a `fail`, which replaces the outcome with an error that
+  still carries what the tool printed. Hook text is always attributed, because a
+  transcript that reads as the tool's own words is making a claim about the tool. A hook
+  that throws costs its own contribution: it cannot grant or deny, so its absence changes
+  nothing about safety, and failing it closed would let an observation break a
+  conversation.
+
+A tool name is written either exactly (`mcp__github__create_issue`) or as a prefix ending
+in `*` (`mcp__github__*`); one matcher (`packages/plugin-sdk/src/tool-pattern.ts`) serves
+guards, hooks and views, so a guard and its view cannot disagree about which tool they
+describe. Views match at render time (`registerToolView`), which is what lets a plugin
+describe a namespace before any server has enumerated it; an exact name beats a prefix,
+and a longer prefix beats a shorter one.
+
 ### Current state
 
 Three things a conversation _is_ ride above the composer rather than in the transcript:

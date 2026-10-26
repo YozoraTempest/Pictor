@@ -157,3 +157,70 @@ describe('loadHarnessHistory', () => {
     expect(loadHarnessHistory([], 50, 0)).toEqual({ messages: [], nextOffset: 0, hasMore: false })
   })
 })
+
+/** The stored tool result, in the shape the runtime actually writes it. */
+describe('tool/result as the runtime writes it', () => {
+  it('reads the answer out of the message it carries', () => {
+    // The event's own fields carry the call id; the content and the error flag live on
+    // the message inside it. Reading only the top level lost every tool output on reload.
+    const messages = projectHarnessEvents([
+      userMessage('m1', 'run it'),
+      {
+        type: 'tool/call',
+        seq: 3,
+        time: 3000,
+        data: { callId: 'c1', name: 'bash', arguments: '{"command":"echo hi"}' },
+      },
+      {
+        type: 'tool/result',
+        seq: 4,
+        time: 4000,
+        data: {
+          turn: 1,
+          step: 1,
+          message: {
+            role: 'tool',
+            toolCallId: 'c1',
+            content: [{ type: 'text', text: 'hi\n' }],
+            isError: false,
+          },
+          meta: { cwd: '/tmp' },
+        },
+      },
+    ])
+
+    const tool = messages.find((message) => message.role === 'tool')
+    expect(tool).toMatchObject({ toolName: 'bash', text: 'hi\n', isError: false })
+    // One row per call: the result fills in the row its call opened.
+    expect(messages.filter((message) => message.role === 'tool')).toHaveLength(1)
+  })
+
+  it('keeps a failure a failure when the message says so', () => {
+    const messages = projectHarnessEvents([
+      {
+        type: 'tool/call',
+        seq: 3,
+        time: 3000,
+        data: { callId: 'c1', name: 'bash', arguments: '{}' },
+      },
+      {
+        type: 'tool/result',
+        seq: 4,
+        time: 4000,
+        data: {
+          message: {
+            role: 'tool',
+            toolCallId: 'c1',
+            content: [{ type: 'text', text: 'exit code: 1' }],
+            isError: true,
+          },
+        },
+      },
+    ])
+
+    expect(messages.find((message) => message.role === 'tool')).toMatchObject({
+      text: 'exit code: 1',
+      isError: true,
+    })
+  })
+})

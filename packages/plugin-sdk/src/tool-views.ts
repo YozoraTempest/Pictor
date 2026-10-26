@@ -1,3 +1,5 @@
+import { isToolPattern } from './tool-pattern.js'
+
 /**
  * Contribution point `toolViews`.
  *
@@ -13,7 +15,13 @@
 export interface ToolViewContribution {
   /** Contribution id, unique across the workbench. Dots are conventional: `web.fetch`. */
   id: string
-  /** Tool names this view applies to. */
+  /**
+   * Tool names this view applies to.
+   *
+   * Exact names, or a namespace prefix ending in `*` (`mcp__github__*`). Exact beats a
+   * prefix at render time, so a view can describe a whole server and still let one tool
+   * from it read differently.
+   */
   tools: string[]
   /** Display name; defaults to the built-in presenter's label. */
   label?: string
@@ -34,7 +42,6 @@ export class ToolViewContributionError extends Error {
 }
 
 const ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/
-const TOOL_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/
 const ICON_PATTERN = /^[a-z][a-z0-9-]*$/
 const MAX_LABEL = 24
 const MAX_TOOLS = 32
@@ -64,7 +71,7 @@ export function parseToolViewContribution(value: unknown): ToolViewContribution 
 
   const tools = record.tools.map((tool) => {
     const name = typeof tool === 'string' ? tool.trim() : ''
-    if (!TOOL_PATTERN.test(name)) {
+    if (!isToolPattern(name)) {
       throw new ToolViewContributionError(`toolView.tools has an invalid tool name: ${id}`)
     }
     return name
@@ -113,7 +120,7 @@ export function parseToolViewContributions(values: readonly unknown[]): {
   const views: ToolViewContribution[] = []
   const failures: ToolViewContributionFailure[] = []
   const seenIds = new Set<string>()
-  const seenTools = new Set<string>()
+  const seenPatterns = new Set<string>()
 
   for (const value of values) {
     try {
@@ -123,14 +130,17 @@ export function parseToolViewContributions(values: readonly unknown[]): {
         continue
       }
 
-      const clash = view.tools.find((tool) => seenTools.has(tool))
+      // Two views may cover the same tool as long as one is more specific — that is how
+      // a namespace view and a single-tool override coexist. Only the same pattern
+      // twice is a clash, because nothing would decide between them.
+      const clash = view.tools.find((tool) => seenPatterns.has(tool))
       if (clash !== undefined) {
         failures.push({ id: view.id, reason: `tool already has a view: ${clash}` })
         continue
       }
 
       seenIds.add(view.id)
-      for (const tool of view.tools) seenTools.add(tool)
+      for (const tool of view.tools) seenPatterns.add(tool)
       views.push(view)
     } catch (error) {
       const id =

@@ -18,6 +18,7 @@ import {
   parsePanelContributions,
   parseSkillContributions,
   parseToolGuardContributions,
+  parseToolHookContributions,
   parseToolViewContributions,
   type PanelContribution,
   type ToolGuardContribution,
@@ -68,7 +69,7 @@ import { resolveNodeBinary, resolveNpmCli } from '@pictor/kernel-sdk'
 import { openSettings } from './kernel/settings-store.js'
 
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
-import { ToolGuardServer, type GuardAsk } from './tool-guard-server.js'
+import { ToolBridgeServer, type GuardAsk } from './tool-bridge-server.js'
 import { ModelService } from './model-service.js'
 import { RuleBook, describeAsk, describeRule } from './rule-book.js'
 import { SkillLibrary } from './skill-library.js'
@@ -331,6 +332,14 @@ async function startWorkspace(): Promise<Workspace | null> {
   }
   const toolGuards = parsedGuards.guards
 
+  // Hooks run after a call and fail open: they can shape what the model reads next, but
+  // they cannot grant or deny, so a broken hook costs its own contribution only.
+  const parsedHooks = parseToolHookContributions(pluginHost.contributions('toolHooks'))
+  for (const failure of parsedHooks.failures) {
+    console.warn(`[plugin] tool hook ignored: ${failure.reason}`)
+  }
+  const toolHooks = parsedHooks.hooks
+
   // Skills live in one root the runtime already scans; a plugin contributes data
   // and Pictor writes the file, so the plugin never touches the runtime's home.
   const skills = new SkillLibrary({
@@ -458,8 +467,12 @@ async function startWorkspace(): Promise<Workspace | null> {
   // Resolved per request rather than captured: the bridge outlives any one kernel
   // being mounted or unmounted, and it is only asked when an extension wants services.
   let kernelHost: KernelHost | null = null
-  const guardBridge = new ToolGuardServer([ruleGuard, ...toolGuards], randomUUID(), askFor, () =>
-    providersFrom(kernelHost?.drivers ?? new Map()),
+  const guardBridge = new ToolBridgeServer(
+    [ruleGuard, ...toolGuards],
+    randomUUID(),
+    askFor,
+    () => providersFrom(kernelHost?.drivers ?? new Map()),
+    toolHooks,
   )
   void guardBridge.start().catch((error: unknown) => {
     console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
@@ -1591,7 +1604,7 @@ function registerIpc(workspace: Workspace): void {
 
     // `kernel` is not counted here: a kernel is a cordis service, not a contribution
     // the plugin host recorded, and the row lists it separately with its services.
-    const points = ['commands', 'panels', 'toolGuards', 'toolViews', 'skills'] as const
+    const points = ['commands', 'panels', 'toolGuards', 'toolHooks', 'toolViews', 'skills'] as const
     return found.plugins.map((plugin) => {
       const name = basename(plugin.root)
       const record = records.find((entry) => entry.id === plugin.id)

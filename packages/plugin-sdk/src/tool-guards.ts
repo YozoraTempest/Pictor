@@ -1,3 +1,5 @@
+import { isToolPattern, matchesTool } from './tool-pattern.js'
+
 /**
  * Contribution point `toolGuards`.
  *
@@ -22,7 +24,12 @@ export interface ToolGuardContribution {
   id: string
   /** Shown in the plugin list; defaults to the id. */
   title?: string
-  /** Restrict the guard to these tools; omit to see every call. */
+  /**
+   * Restrict the guard to these tools; omit to see every call.
+   *
+   * Exact names, or a prefix ending in `*` for a namespace a plugin cannot enumerate
+   * (`mcp__github__*`). See `matchesTool`.
+   */
   tools?: string[]
   decide: (context: ToolGuardContext) => ToolGuardDecision | Promise<ToolGuardDecision>
 }
@@ -40,7 +47,6 @@ export class ToolGuardContributionError extends Error {
 }
 
 const ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/
-const TOOL_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/
 const MAX_TITLE = 60
 
 /** Validates one guard contribution at the plugin boundary. */
@@ -78,7 +84,7 @@ export function parseToolGuardContribution(value: unknown): ToolGuardContributio
       throw new ToolGuardContributionError(`tool guard tools must be a non-empty array: ${id}`)
     }
     for (const tool of tools) {
-      if (typeof tool !== 'string' || !TOOL_PATTERN.test(tool)) {
+      if (typeof tool !== 'string' || !isToolPattern(tool)) {
         throw new ToolGuardContributionError(`tool guard lists an invalid tool name: ${id}`)
       }
     }
@@ -149,7 +155,12 @@ export async function evaluateToolGuards(
   context: ToolGuardContext,
 ): Promise<ToolGuardVerdict> {
   for (const guard of guards) {
-    if (guard.tools !== undefined && !guard.tools.includes(context.tool)) continue
+    if (
+      guard.tools !== undefined &&
+      !guard.tools.some((pattern) => matchesTool(pattern, context.tool))
+    ) {
+      continue
+    }
 
     let decision: ToolGuardDecision
     try {

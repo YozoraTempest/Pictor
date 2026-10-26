@@ -7,6 +7,11 @@ interface SessionEvent {
   data?: Record<string, unknown>
 }
 
+/** Whether a stored tool message marked itself as a failure. */
+function messageIsError(message: { isError?: unknown }): boolean {
+  return message.isError === true
+}
+
 function textOf(content: unknown): string {
   if (!Array.isArray(content)) return ''
   return content
@@ -136,11 +141,18 @@ export function projectHarnessEvents(events: readonly unknown[]): ChatMessage[] 
       }
 
       case 'tool/result': {
-        const callId = String(data['callId'] ?? data['id'] ?? '')
+        // The call id is on the event; the answer is inside the message it carries,
+        // which is where the runtime files both the content and the error flag.
+        const message = data['message'] as
+          { content?: unknown; toolCallId?: unknown; isError?: unknown } | undefined
+        const callId = String(
+          data['callId'] ?? data['toolCallId'] ?? message?.toolCallId ?? data['id'] ?? '',
+        )
         const index = toolRows.get(callId)
-        const result = data['output'] ?? data['result'] ?? data['content'] ?? ''
-        const text = typeof result === 'string' ? result : JSON.stringify(result)
-        const isError = data['isError'] === true
+        const result = data['output'] ?? data['result'] ?? data['content'] ?? message?.content ?? ''
+        const text = typeof result === 'string' ? result : textOf(result)
+        const isError =
+          data['isError'] === true || (message !== undefined && messageIsError(message))
 
         if (index === undefined) {
           // A result without its call still has to be visible.

@@ -44,10 +44,45 @@ shows. `engines.pictor` is checked against the running app.
 | ------------ | ----------------------------------------- | ------------------------------------------------------- |
 | `panels`     | `{ id, title, icon?, command }`           | A side-panel entry that runs a command                  |
 | `commands`   | `{ id, description?, result? }`           | Registers a command in the app's command engine         |
-| `toolGuards` | `{ id, title, decide(context) }` (module) | Decides allow/deny for a tool call                      |
-| `toolViews`  | `{ tool, … }`                             | How a tool call is presented in the transcript          |
+| `toolGuards` | `{ id, title, tools?, decide(context) }`  | Decides allow/deny **before** a call runs               |
+| `toolHooks`  | `{ id, title?, tools?, after(context) }`  | Reacts **after** a call settled: note or fail           |
+| `toolViews`  | `{ id, tools, label?, icon? }`            | How a tool call is presented in the transcript          |
 | `skills`     | `{ name, description, body, whenToUse? }` | A skill the agent can load on demand                    |
 | `kernel`     | `{ main, label? }`                        | A cordis plugin that provides one `kernel.<id>` service |
+
+### Naming a tool
+
+Every point that names a tool takes the same two forms: an exact name (`bash`,
+`mcp__github__create_issue`) or a namespace prefix ending in `*` (`mcp__github__*`). An
+exact name always beats a prefix, and the longer prefix beats the shorter one — so one
+view can dress a whole MCP server while a single tool from it still reads differently.
+
+### Guards decide, hooks react
+
+The split follows what a kernel can actually do. dsh's pre-execute decision is
+`allow | deny | cancel | ask` and nothing else — it excludes input rewriting on purpose —
+while both kernels let a post-execution step replace or annotate the result. So:
+
+- **`toolGuards`** run before the call and **fail closed**: a guard that cannot be reached
+  refuses, because a policy that silently disappears was never a policy.
+- **`toolHooks`** run after it and **fail open**: a hook cannot grant or deny anything, so
+  a hook that throws costs its own contribution and nothing else.
+
+```js
+context.contribute('toolHooks', {
+  id: 'acme.no-publish',
+  tools: ['bash'],
+  after: ({ args, ok, output }) =>
+    // `fail` turns the result into a failure that still carries what the tool printed;
+    // `note` is appended to what the model reads, prefixed with this id.
+    ok && String(args.command).includes('npm publish')
+      ? { fail: '发版请走 release 工作流' }
+      : undefined,
+})
+```
+
+Watch it in the transcript: whatever a hook adds is **attributed to the hook**, so a
+reader never mistakes a plugin's words for the tool's own.
 
 `main` is the **UI** entry (`activate`). A kernel's entry is `main` inside the
 `kernel` contribution — they are two different files, and a plugin may provide

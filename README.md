@@ -263,6 +263,14 @@ Selecting a session opens its transcript and a composer:
   when the kernel never mentions it, and replayed from the same log on reload — so a
   reloaded conversation shows the same list, mode and roster. Stopping a job is offered
   only where the kernel can honour it.
+- **Plugins can act on a finished tool call.** A `toolHooks` contribution sees
+  `{ tool, args, session, ok, output }` and may append a note to what the model reads or
+  turn the result into a failure that still carries the tool's output. Hooks fail open
+  (they cannot grant or deny); guards keep failing closed. Whatever a hook adds is
+  attributed to it, so the transcript never reads as if the tool said it.
+- **A tool can be named by namespace**: `mcp__github__*` covers every tool that server
+  offers, in a guard, a hook or a view, without listing them in advance. An exact name
+  always wins, then the longest prefix.
 - **MCP servers** (**设置 › 通用 › 智能体 › MCP**) are one list for every kernel: stdio
   (a command and its arguments) or HTTP (an endpoint and its headers). dsh mounts each
   one from its profile patch, so an edit restarts the runtime; Pi gets the same list

@@ -21,6 +21,20 @@ export {
   type PanelContribution,
   type PanelContributionFailure,
 } from './panels.js'
+export { isToolPattern, matchesTool, toolPatternSpecificity } from './tool-pattern.js'
+export {
+  HOOK_OUTPUT_LIMIT,
+  ToolHookContributionError,
+  evaluateToolHooks,
+  hookOutputOf,
+  parseToolHookContribution,
+  parseToolHookContributions,
+  type ToolHookContext,
+  type ToolHookContribution,
+  type ToolHookFailure,
+  type ToolHookOutcome,
+  type ToolHookVerdict,
+} from './tool-hooks.js'
 export {
   ToolGuardContributionError,
   evaluateToolGuards,

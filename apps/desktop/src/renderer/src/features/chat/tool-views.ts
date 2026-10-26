@@ -28,7 +28,7 @@ import {
 
 import type { ToolViewDescriptor } from '../../../../shared/bridge.js'
 
-import { decorateToolPresentation } from './tool-presenters.js'
+import { registerToolView } from './tool-presenters.js'
 
 /**
  * Icons a plugin may name, mapped to the renderer's own set.
@@ -73,14 +73,15 @@ export function iconForName(name: string | undefined): LucideIcon | undefined {
 /**
  * Applies plugin tool views to the presenter registry.
  *
- * Each view only overrides label and icon: the sections a tool produces stay
- * whatever the built-in presenter says, so a plugin cannot change what a call
- * actually did. Returns a disposer that restores the previous presenters.
+ * Each view only overrides label and icon: the sections a tool produces stay whatever
+ * the built-in presenter says, so a plugin cannot change what a call actually did.
+ * Patterns are registered as patterns, not expanded into tool names, because a
+ * namespace view (`mcp__github__*`) covers tools that do not exist yet.
  */
 export function applyToolViews(views: readonly ToolViewDescriptor[]): () => void {
   const disposers = views.flatMap((view) =>
-    view.tools.map((tool) =>
-      decorateToolPresentation(tool, {
+    view.tools.map((pattern) =>
+      registerToolView(pattern, {
         ...(view.label === undefined ? {} : { label: view.label }),
         ...(view.icon === undefined ? {} : { icon: iconForName(view.icon) }),
       }),
