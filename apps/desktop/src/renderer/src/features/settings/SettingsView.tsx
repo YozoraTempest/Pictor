@@ -1,4 +1,12 @@
-import { ChevronRight, Search } from 'lucide-react'
+import {
+  Boxes,
+  ChevronRight,
+  Info,
+  Search,
+  Settings2,
+  Terminal,
+  type LucideIcon,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { Input } from '../../components/ui/index.js'
@@ -55,6 +63,19 @@ function search(query: string): SearchHit[] {
   return [...rows, ...pages]
 }
 
+/**
+ * One icon per top-level category.
+ *
+ * Data, not a field on each page: a category is a place in the rail, and its icon
+ * belongs to the rail rather than to any single page in it.
+ */
+const CATEGORY_ICON: Record<string, LucideIcon> = {
+  通用: Settings2,
+  DSH: Boxes,
+  Pi: Terminal,
+  关于: Info,
+}
+
 /** `通用 › 智能体 › 模型`, for a search hit that has to say where it lives. */
 function pathOf(id: SettingsPageId): string {
   const page = SETTINGS_PAGES.find((entry) => entry.id === id)
@@ -103,6 +124,13 @@ export function SettingsView(): React.JSX.Element {
   // not a necessity.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const current = SETTINGS_PAGES.find((page) => page.id === active) ?? SETTINGS_PAGES[0]
+  const category = current?.category ?? ''
+  const shown = tree.find((entry) => entry.title === category) ?? tree[0]
+  /** Pages of one category, in the order the tree draws them. */
+  const pagesOf = (title: string): string[] =>
+    (tree.find((entry) => entry.title === title)?.entries ?? []).flatMap((entry) =>
+      entry.kind === 'page' ? [entry.page.id] : entry.group.pages.map((page) => page.id),
+    )
 
   /** Opens the page a hit belongs to and reveals the row it names. */
   function jumpTo(hit: SearchHit): void {
@@ -124,9 +152,48 @@ export function SettingsView(): React.JSX.Element {
 
   return (
     <div className="flex h-full min-h-0">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface/20">
+      {/* Level one: whose settings these are. A rail of its own, because a heading
+          inside the list made a category look like another item in it. */}
+      <aside
+        aria-label="设置分区"
+        className="flex w-24 shrink-0 flex-col gap-0.5 border-r border-border bg-surface/40 px-1.5 py-3"
+      >
+        {tree.map((entry) => {
+          const on = entry.title === category
+          const icon = CATEGORY_ICON[entry.title] ?? Settings2
+          const Icon = icon
+
+          return (
+            <button
+              key={entry.title}
+              type="button"
+              aria-current={on ? 'true' : undefined}
+              onClick={() => {
+                // A category has no page of its own: opening it opens its first page,
+                // which is what the second column lists first anyway. A search in
+                // progress is dropped — the click asked for a place, not a result.
+                const first = pagesOf(entry.title)[0]
+                if (first !== undefined) setActive(first as SettingsPageId)
+                setQuery('')
+              }}
+              className={cn(
+                'flex flex-col items-center gap-1 rounded-md px-1 py-2 text-2xs transition-colors duration-150',
+                on
+                  ? 'bg-surface-raised text-text'
+                  : 'text-muted hover:bg-surface-hover hover:text-text',
+              )}
+            >
+              <Icon className={cn('size-4', on ? 'text-accent' : 'text-faint')} aria-hidden />
+              <span className="truncate">{entry.title}</span>
+            </button>
+          )
+        })}
+      </aside>
+
+      {/* Levels two and three: the open category's groups and pages. */}
+      <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-surface/20">
         <div className="px-3 pt-3 pb-2">
-          <h1 className="mb-2 text-sm font-semibold">设置</h1>
+          <h1 className="mb-2 text-sm font-semibold">{category}</h1>
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-faint" />
             <Input
@@ -165,71 +232,63 @@ export function SettingsView(): React.JSX.Element {
               </ul>
             )
           ) : (
-            tree.map((category) => (
-              <div key={category.title} className="mb-2">
-                <h2 className="px-2 pt-1 pb-1 text-2xs font-semibold tracking-wider text-faint">
-                  {category.title}
-                </h2>
+            (shown?.entries ?? []).map((entry) => {
+              if (entry.kind === 'page') {
+                return (
+                  <PageItem
+                    key={entry.page.id}
+                    page={entry.page}
+                    active={entry.page.id === active}
+                    onOpen={() => setActive(entry.page.id)}
+                  />
+                )
+              }
 
-                {category.entries.map((entry) => {
-                  if (entry.kind === 'page') {
-                    return (
-                      <PageItem
-                        key={entry.page.id}
-                        page={entry.page}
-                        active={entry.page.id === active}
-                        onOpen={() => setActive(entry.page.id)}
-                      />
-                    )
-                  }
+              const { title, pages } = entry.group
+              const shut = collapsed[`${category}/${title}`] === true
+              const holdsActive = pages.some((page) => page.id === active)
 
-                  const { title, pages } = entry.group
-                  const shut = collapsed[`${category.title}/${title}`] === true
-                  const holdsActive = pages.some((page) => page.id === active)
-
-                  return (
-                    <div key={title} className="mb-px">
-                      <button
-                        type="button"
-                        aria-expanded={!shut}
-                        onClick={() =>
-                          setCollapsed((current) => ({
-                            ...current,
-                            [`${category.title}/${title}`]: !shut,
-                          }))
-                        }
-                        className={cn(
-                          'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-2xs transition-colors duration-150 hover:bg-surface-hover',
-                          holdsActive && shut ? 'text-text' : 'text-faint',
-                        )}
-                      >
-                        <ChevronRight
-                          className={cn(
-                            'size-3 shrink-0 transition-transform duration-150',
-                            !shut && 'rotate-90',
-                          )}
-                          aria-hidden
-                        />
-                        <span className="truncate">{title}</span>
-                      </button>
-
-                      {!shut && (
-                        <div className="pl-2">
-                          {pages.map((page) => (
-                            <PageItem
-                              key={page.id}
-                              page={page}
-                              active={page.id === active}
-                              onOpen={() => setActive(page.id)}
-                            />
-                          ))}
-                        </div>
+              return (
+                <div key={title} className="mb-px">
+                  <button
+                    type="button"
+                    aria-expanded={!shut}
+                    onClick={() =>
+                      setCollapsed((current) => ({
+                        ...current,
+                        [`${category}/${title}`]: !shut,
+                      }))
+                    }
+                    className={cn(
+                      'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-2xs transition-colors duration-150 hover:bg-surface-hover',
+                      holdsActive && shut ? 'text-text' : 'text-faint',
+                    )}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        'size-3 shrink-0 transition-transform duration-150',
+                        !shut && 'rotate-90',
                       )}
+                      aria-hidden
+                    />
+                    <span className="truncate">{title}</span>
+                  </button>
+
+                  {!shut && (
+                    <div className="pl-2">
+                      {pages.map((page) => (
+                        <PageItem
+                          key={page.id}
+                          page={page}
+                          active={page.id === active}
+                          onOpen={() => setActive(page.id)}
+                        />
+                      ))}
                     </div>
-                  )
-                })}
-              </div>
-            ))
+                  )}
+                </div>
+              )
+            })
           )}
         </nav>
       </aside>
