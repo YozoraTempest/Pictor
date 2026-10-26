@@ -276,6 +276,16 @@ export interface PictorBridge {
   listKernels(): Promise<KernelInfo[]>
   /** Every kernel's status, by kernel id — one entry per kernel this build drives. */
   kernelStatuses(): Promise<Record<string, HarnessStatus>>
+  /**
+   * Whether Pi runs on its own configuration (`~/.pi/agent`) instead of Pictor's.
+   *
+   * Off by default: Pictor's Pi only sees the services Pictor registers, which is what
+   * keeps one configuration. On, Pi brings its own services, keys and extensions — the
+   * two lists then differ again, and a conversation may resume on a model Pictor does
+   * not know.
+   */
+  piOwnConfig(): Promise<boolean>
+  setPiOwnConfig(value: boolean): Promise<boolean>
   /** The models a kernel offers for one conversation. */
   kernelModels(sessionId: string): Promise<KernelModelState>
   /** Selects one for that conversation, without a restart. */

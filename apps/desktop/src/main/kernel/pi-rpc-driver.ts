@@ -65,6 +65,13 @@ export interface PiRpcDriverOptions {
    * one would block every tool call. A null path means no guard is available.
    */
   guardExtension?: () => string | null
+  /**
+   * True when Pi should keep its own configuration directory.
+   *
+   * Read per spawn, because the switch takes effect on the next conversation rather
+   * than restarting the app.
+   */
+  ownConfig?: () => boolean
 }
 
 /** One Pi child process, and everything owed to it. */
@@ -1186,15 +1193,16 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   }
 
   #runtimeEnv(): Record<string, string> {
-    return {
-      // `ELECTRON_RUN_AS_NODE` turns the app's own binary into a plain Node, so Pi
-      // runs on the Node this app was built against.
-      ELECTRON_RUN_AS_NODE: '1',
-      // Pi's own config directory, not the user's: inside Pictor the only services it
-      // has are the ones Pictor registers, which is what makes one configuration
-      // serve both kernels instead of two copies drifting apart.
-      PI_CODING_AGENT_DIR: this.#home,
-    }
+    // `ELECTRON_RUN_AS_NODE` turns the app's own binary into a plain Node, so Pi
+    // runs on the Node this app was built against.
+    const env: Record<string, string> = { ELECTRON_RUN_AS_NODE: '1' }
+    // Pictor's own configuration directory, not the user's: inside Pictor the only
+    // services Pi has are the ones Pictor registers, which is what makes one
+    // configuration serve both kernels instead of two copies drifting apart. The
+    // switch to use Pi's own directory exists because that is also the only way to
+    // keep Pi's extensions, and it is off by default for exactly this reason.
+    if (this.#options.ownConfig?.() !== true) env['PI_CODING_AGENT_DIR'] = this.#home
+    return env
   }
 
   #runtime(): string {

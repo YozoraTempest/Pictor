@@ -212,13 +212,17 @@ function handle(command) {
   return { userData, script, log }
 }
 
-function driverFor(fake: { userData: string; script: string }): PiRpcDriver {
+function driverFor(
+  fake: { userData: string; script: string },
+  options: { ownConfig?: boolean } = {},
+): PiRpcDriver {
   return new PiRpcDriver({
     userData: fake.userData,
     script: fake.script,
     // The app's own runtime: exactly what production does, minus Electron.
     runtime: process.execPath,
     resolveCwd: () => Promise.resolve(fake.userData),
+    ...(options.ownConfig === undefined ? {} : { ownConfig: () => options.ownConfig === true }),
   })
 }
 
@@ -512,6 +516,20 @@ describe('PiRpcDriver', () => {
     // which is what keeps one configuration instead of two that drift apart.
     const started = commands(fake).find((entry) => entry['type'] === 'argv')
     expect(String(started?.['home'])).toBe(join(fake.userData, 'pi-home'))
+    await driver.stop()
+  })
+
+  it('leaves Pi on its own configuration when the switch is on', async () => {
+    const fake = fakePi({ input: 'text' })
+    const driver = driverFor(fake, { ownConfig: true })
+
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+    })
+
+    // The only way to keep Pi's own services and extensions: it reads ~/.pi/agent,
+    // and the two model lists differ again.
+    expect(commands(fake).find((entry) => entry['type'] === 'argv')?.['home']).toBeNull()
     await driver.stop()
   })
 

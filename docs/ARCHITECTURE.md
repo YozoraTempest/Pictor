@@ -115,6 +115,15 @@ left out entirely when the levels were never declared, so Pi keeps applying its 
 default rather than a map invented here. Editing a service invalidates Pi's cached
 catalogue, so the picker shows the new list without a restart.
 
+Inside Pictor, Pi is pointed at a configuration directory of its own
+(`<profile>/pi-home`, via `PI_CODING_AGENT_DIR`), so it sees exactly the providers
+Pictor registered and nothing from `~/.pi/agent`: no second copy of the same
+service, no models Pictor cannot offer. A conversation that had picked one of Pi's
+own models is pruned at boot rather than left failing to start. The one way out is
+the switch on the Pi runtime page — Pi then brings its own services, keys and
+extensions, which is the only way to keep using those, at the cost of two lists
+that differ again.
+
 A kernel that brings its own models declares it (`KernelModelSource`), and
 `kernels.list` says whose list the picker should show: `pictor` for a kernel
 booted with Pictor's providers, `kernel` for one that answers for its own

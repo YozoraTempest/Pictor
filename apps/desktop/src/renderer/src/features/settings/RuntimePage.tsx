@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { HarnessStatus } from '../../../../shared/bridge.js'
 import { versionStateOf } from '../../../../main/runtime-version.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
-import { Badge, Banner, Button, Spinner } from '../../components/ui/index.js'
+import { Badge, Banner, Button, Spinner, Switch } from '../../components/ui/index.js'
 import { Section } from './Section.js'
 import { SettingRow } from './SettingRow.js'
 
@@ -68,15 +68,18 @@ export function RuntimePage({ kernel }: RuntimePageProps): React.JSX.Element {
   // The install runs npm for minutes; its own last line is the only honest sign of
   // life the page can show while the button spins.
   const [installLine, setInstallLine] = useState<string | null>(null)
+  /** Whether Pi keeps its own configuration; `null` until it has answered. */
+  const [ownConfig, setOwnConfig] = useState<boolean | null>(null)
 
   const read = useCallback(async (): Promise<void> => {
     setError(null)
     try {
       setStatuses(await window.pictor.kernelStatuses())
+      if (kernel === 'pi') setOwnConfig(await window.pictor.piOwnConfig())
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
-  }, [])
+  }, [kernel])
 
   useEffect(() => {
     void read()
@@ -278,11 +281,40 @@ export function RuntimePage({ kernel }: RuntimePageProps): React.JSX.Element {
             }
           />
           <SettingRow
+            title="使用我自己的 Pi 配置"
+            description={
+              ownConfig === true
+                ? 'Pi 读 ~/.pi/agent：它自己的服务、密钥与扩展都在，但也因此和 Pictor 的列表不同。'
+                : '关着时 Pi 用自己的配置目录，只加载 Pictor 配置的服务；~/.pi/agent 下的服务与扩展不参与。'
+            }
+            control={
+              <Switch
+                label="使用我自己的 Pi 配置"
+                checked={ownConfig === true}
+                disabled={ownConfig === null || busy !== null}
+                onChange={(next) => {
+                  setOwnConfig(next)
+                  void window.pictor
+                    .setPiOwnConfig(next)
+                    .then((saved) => {
+                      setOwnConfig(saved)
+                      // The model list changes with the switch, so both the statuses
+                      // and the catalogue behind them have to be read again.
+                      return read()
+                    })
+                    .catch((reason: unknown) => {
+                      setError(reason instanceof Error ? reason.message : String(reason))
+                    })
+                }}
+              />
+            }
+          />
+          <SettingRow
             title="配置目录"
-            description="Pictor 里的 Pi 用自己的配置目录，只加载 Pictor 配置的服务；~/.pi/agent 下的服务与扩展不参与。"
+            description="Pi 实际读取的目录。"
             control={
               <span className="block max-w-72 truncate font-mono text-2xs text-muted">
-                {piConfigDirOf(statuses?.['pi'])}
+                {ownConfig === true ? '~/.pi/agent' : piConfigDirOf(statuses?.['pi'])}
               </span>
             }
           />

@@ -116,6 +116,9 @@ interface Workspace {
    * has to invalidate it, and only the driver knows that.
    */
   pi: PiRpcDriver
+  /** Whether Pi keeps its own configuration directory; see `setPiOwnConfig`. */
+  piOwnConfig: () => boolean
+  setPiOwnConfig: (value: boolean) => Promise<boolean>
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
@@ -392,13 +395,16 @@ async function startWorkspace(): Promise<Workspace | null> {
   // Pi runs over its RPC protocol: one child per conversation, started on first
   // use, driven by JSONL commands. Each conversation keeps the kernel it was
   // opened on.
-  // A conversation that remembers one of Pi's own models would fail at startup now
-  // that Pictor's Pi only has Pictor's services; forgetting those choices at boot
-  // turns a broken conversation into one that simply has not chosen yet.
-  const prunedPiModels = prunePiModelsFile(userData)
-  if (prunedPiModels > 0) {
-    console.warn(`[pi] 忘记了 ${String(prunedPiModels)} 个不再存在的模型选择`)
-  }
+  // Which configuration Pi runs on. Off by default: Pictor's own directory, so the
+  // only services it has are the ones Pictor registers. Kept in memory because the
+  // driver reads it at every spawn, and the switch has to take effect without a
+  // restart.
+  let piOwnConfig = (await running.client.listSettings())[OWN_CONFIG_KEY] === true
+
+  // A conversation that remembers one of Pi's own models would fail at startup while
+  // Pictor's Pi only has Pictor's services; forgetting those choices turns a broken
+  // conversation into one that simply has not chosen yet.
+  if (!piOwnConfig) forgetForeignPiModels(userData)
   const pi = new PiRpcDriver({
     userData,
     resolveCwd,
@@ -406,6 +412,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     // user's tool rules mean the same thing on both kernels. The endpoint is read
     // per launch, and a missing one makes the extension block rather than allow.
     guardExtension: () => writeGuardExtension(userData, guardBridge.endpoint),
+    ownConfig: () => piOwnConfig,
   })
   const harness: KernelRouter = new KernelRouter({
     drivers: new Map<string, KernelDriver>([
@@ -507,6 +514,18 @@ async function startWorkspace(): Promise<Workspace | null> {
     model,
     harness,
     pi,
+    piOwnConfig: () => piOwnConfig,
+    setPiOwnConfig: async (value) => {
+      piOwnConfig = value
+      await running.client.putSetting(OWN_CONFIG_KEY, value)
+      // Entering isolation drops the choices Pictor can no longer offer; leaving it
+      // keeps them, because every registered service still exists.
+      if (!value) forgetForeignPiModels(userData)
+      // Pi's catalogue depends on which configuration it runs on and on which services
+      // it can see, so the picker has to ask again.
+      pi.invalidateCatalogue()
+      return piOwnConfig
+    },
     readPermissionMode,
     isDisposed: () => disposed,
     client: running.client,
@@ -744,6 +763,17 @@ function parseAnswers(value: unknown): ChatAnswer[] {
       ...(typeof custom === 'string' ? { custom } : {}),
     }
   })
+}
+
+/** Where the "Pi keeps its own config" switch is stored. */
+const OWN_CONFIG_KEY = 'pi.ownConfig'
+
+/** Forgets remembered models that only Pi's own configuration could offer. */
+function forgetForeignPiModels(userData: string): void {
+  const dropped = prunePiModelsFile(userData)
+  if (dropped > 0) {
+    console.warn(`[pi] 忘记了 ${String(dropped)} 个只存在于 Pi 自己配置里的模型选择`)
+  }
 }
 
 function registerIpc(workspace: Workspace): void {
@@ -1281,6 +1311,13 @@ function registerIpc(workspace: Workspace): void {
   })
 
   ipcMain.handle('pictor:kernels.statuses', async () => workspace.harness.statuses())
+
+  ipcMain.handle('pictor:pi.ownConfig', async () => workspace.piOwnConfig())
+
+  ipcMain.handle('pictor:pi.setOwnConfig', async (_event, value: unknown) => {
+    if (typeof value !== 'boolean') throw new Error('ownConfig must be a boolean')
+    return workspace.setPiOwnConfig(value)
+  })
 
   ipcMain.handle('pictor:kernel.approval', async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
