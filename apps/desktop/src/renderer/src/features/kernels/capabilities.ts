@@ -29,6 +29,7 @@ const EVERYTHING: KernelCapabilities = {
   skills: true,
   fork: true,
   commands: true,
+  jobs: true,
 }
 
 export function capabilitiesOf(

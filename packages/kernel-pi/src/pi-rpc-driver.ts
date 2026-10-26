@@ -183,6 +183,9 @@ export class PiRpcDriver implements KernelDriver, KernelModelCatalogue {
     // Pi's RPC surface offers exactly one command — `compact` — and the menu says so
     // rather than pretending the terminal's `/tree` and `/mcp` are reachable.
     commands: true,
+    // One child per conversation runs one turn at a time; there is no registry of
+    // background jobs to list or stop, so nothing here promises one.
+    jobs: false,
   }
 
   readonly #options: PiRpcDriverOptions

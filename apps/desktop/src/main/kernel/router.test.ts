@@ -39,6 +39,7 @@ function driver(
       skills: true,
       fork: true,
       commands: false,
+      jobs: false,
     },
     // A driver that answers for its own models; the picker follows this.
     ...(options.models === true
@@ -157,6 +158,7 @@ describe('KernelRouter', () => {
       skills: true,
       fork: true,
       commands: false,
+      jobs: false,
     }
 
     expect(kernels.list()).toEqual([

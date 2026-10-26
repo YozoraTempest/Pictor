@@ -138,6 +138,8 @@ const CAPABILITY_METHODS: Readonly<
   skills: ['listSkills'],
   fork: ['fork'],
   commands: ['commands', 'runCommand'],
+  // The roster is projected from events, so only the stop has to exist.
+  jobs: ['killJob'],
 }
 
 /** Methods every kernel has, whatever it declares. */

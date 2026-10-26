@@ -1685,6 +1685,30 @@ function registerIpc(workspace: Workspace): void {
     return workspace.harness.runKernelCommand(sessionId, line)
   })
 
+  /**
+   * Background jobs the conversation's kernel reports.
+   *
+   * Asked rather than pushed: the roster also arrives as `job.updated` events, but a
+   * reload has to reconcile against the runtime that is alive *now*, or a job whose
+   * process died would keep claiming to run.
+   */
+  ipcMain.handle('pictor:kernel.jobs', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelJobs(sessionId)
+  })
+
+  ipcMain.handle('pictor:kernel.killJob', async (_event, sessionId: unknown, jobId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof jobId !== 'string' || jobId.length === 0) {
+      throw new Error('jobId must be a non-empty string')
+    }
+    await workspace.harness.killKernelJob(sessionId, jobId)
+  })
+
   ipcMain.handle('pictor:kernel.selectModel', async (_event, sessionId: unknown, id: unknown) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
       throw new Error('sessionId must be a non-empty string')

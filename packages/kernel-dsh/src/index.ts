@@ -9,3 +9,10 @@
  */
 export { dshKernel } from './dsh-kernel.js'
 export { DshDriver } from './dsh-driver.js'
+export {
+  jobOf,
+  planActiveOf,
+  sessionStates,
+  todosOf,
+  type SessionStates,
+} from './harness-session-state.js'

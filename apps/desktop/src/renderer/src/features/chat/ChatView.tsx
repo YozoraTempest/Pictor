@@ -16,6 +16,7 @@ import { QuestionCard } from './QuestionCard.js'
 import { useKernelCapabilities } from '../kernels/capabilities.js'
 import { useChatStore } from './chat-store.js'
 import { Composer } from './Composer.js'
+import { SessionStateBar } from './SessionStateBar.js'
 import { ProjectPicker } from './ProjectPicker.js'
 import { PANEL_GUTTER, Transcript } from './Transcript.js'
 import { Timeline } from './Timeline.js'
@@ -344,6 +345,10 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
                   {draft !== null && (
                     <ProjectPicker projectId={draft.projectId} onChange={setDraftProject} />
                   )}
+                  {/* Current state lives with the input it affects: the todo list the
+                      agent is working through, plan mode, background jobs. Absent for a
+                      kernel that keeps none of them. */}
+                  {selectedSessionId !== null && <SessionStateBar sessionId={selectedSessionId} />}
                   {/* A kernel page answered "which kernel" for anything new there; an
                       open conversation can still move to another one, and that is a
                       branch rather than a switch. */}

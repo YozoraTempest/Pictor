@@ -418,3 +418,116 @@ describe('follow stream', () => {
     ])
   })
 })
+
+/**
+ * The three current states.
+ *
+ * None of them is a transcript row, so the risk here is different from the rest of the
+ * translator: a wrong mapping does not lose a sentence, it draws a list that is not the
+ * list, a mode that is not the mode, or a job that is not running.
+ */
+describe('HarnessChatBridge session state', () => {
+  it('passes a todo snapshot through as the whole list', () => {
+    const bridge = new HarnessChatBridge()
+
+    expect(
+      bridge.map(
+        sessionEvent('todo/write', {
+          todos: [
+            { content: '读代码', status: 'completed' },
+            { content: '写补丁', status: 'in_progress' },
+          ],
+        }),
+      ),
+    ).toEqual([
+      {
+        type: 'todo.updated',
+        sessionId: 's1',
+        todos: [
+          { content: '读代码', status: 'completed' },
+          { content: '写补丁', status: 'in_progress' },
+        ],
+      },
+    ])
+  })
+
+  it('says nothing for a todo payload it cannot read', () => {
+    const bridge = new HarnessChatBridge()
+
+    // An empty event would clear a list the agent really wrote.
+    expect(bridge.map(sessionEvent('todo/write', {}))).toEqual([])
+  })
+
+  it('reports the mode a `plan/mode` event settles on', () => {
+    const bridge = new HarnessChatBridge()
+
+    expect(bridge.map(sessionEvent('plan/mode', { active: true }))).toEqual([
+      { type: 'plan.changed', sessionId: 's1', active: true, pending: false },
+    ])
+  })
+
+  it('marks the mode as switching between `/plan` and its settlement', () => {
+    const bridge = new HarnessChatBridge()
+
+    expect(
+      bridge.map(sessionEvent('command/run', { commandId: 'c1', name: 'plan', args: '' })),
+    ).toEqual([{ type: 'plan.changed', sessionId: 's1', active: null, pending: true }])
+
+    // Another command's settlement must not clear this one.
+    expect(bridge.map(sessionEvent('command/done', { commandId: 'c2', kind: 'success' }))).toEqual(
+      [],
+    )
+    expect(bridge.map(sessionEvent('command/done', { commandId: 'c1', kind: 'success' }))).toEqual([
+      { type: 'plan.changed', sessionId: 's1', active: null, pending: false },
+    ])
+  })
+
+  it('ignores every other command', () => {
+    const bridge = new HarnessChatBridge()
+
+    expect(
+      bridge.map(sessionEvent('command/run', { commandId: 'c9', name: 'compact', args: '' })),
+    ).toEqual([])
+  })
+
+  it('upserts a job when it registers and again when it settles', () => {
+    const bridge = new HarnessChatBridge()
+
+    expect(
+      bridge.map(
+        sessionEvent('job/registered', {
+          jobId: 'j1',
+          kind: 'bash',
+          label: 'npm test',
+          startedAt: 10,
+        }),
+      ),
+    ).toEqual([
+      {
+        type: 'job.updated',
+        sessionId: 's1',
+        job: {
+          id: 'j1',
+          kind: 'bash',
+          label: 'npm test',
+          status: 'running',
+          startedAt: 10,
+          finishedAt: null,
+          detail: null,
+        },
+      },
+    ])
+
+    const settled = bridge.map(
+      sessionEvent('job/settled', {
+        jobId: 'j1',
+        kind: 'bash',
+        label: 'npm test',
+        startedAt: 10,
+        finishedAt: 30,
+        status: 'completed',
+      }),
+    )
+    expect(settled[0]).toMatchObject({ type: 'job.updated', job: { status: 'completed' } })
+  })
+})

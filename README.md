@@ -257,6 +257,12 @@ Selecting a session opens its transcript and a composer:
   transcript gets a divider saying 上下文已压缩 together with the saving it reported, and
   the summary behind 查看摘要. It survives a reload, because each kernel's own history
   reader emits the same row.
+- **Current state sits above the composer**: the agent's task list (`任务 2/5` with the
+  step it is on), a 计划模式 badge while the conversation is exploring read-only, and
+  `后台任务 N 个运行中` for background work. Each is collapsed until asked for, absent
+  when the kernel never mentions it, and replayed from the same log on reload — so a
+  reloaded conversation shows the same list, mode and roster. Stopping a job is offered
+  only where the kernel can honour it.
 - **MCP servers** (**设置 › 通用 › 智能体 › MCP**) are one list for every kernel: stdio
   (a command and its arguments) or HTTP (an endpoint and its headers). dsh mounts each
   one from its profile patch, so an edit restarts the runtime; Pi gets the same list

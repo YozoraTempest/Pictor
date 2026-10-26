@@ -3,6 +3,7 @@ import type {
   CatalogSkill,
   ChatAnswer,
   ChatHistoryPage,
+  ChatJob,
   ChatImage,
   ForkPoint,
   ModelEffort,
@@ -112,6 +113,19 @@ export interface KernelDriver {
    */
   commands?(sessionId: string): Promise<KernelCommand[]>
   runCommand?(sessionId: string, line: string): Promise<string | null>
+
+  // ---- background jobs -----------------------------------------------------
+  /**
+   * The jobs the kernel currently considers live or recently finished.
+   *
+   * Asked rather than remembered: a roster rebuilt from events alone would keep
+   * claiming a job is running after the runtime that owned it died. Optional because
+   * a kernel may have no background work; a kernel that declares `capabilities.jobs`
+   * has to implement {@link killJob}, which is what the flag actually guards.
+   */
+  jobs?(sessionId: string): Promise<ChatJob[]>
+  /** Asks the kernel to stop one background job. */
+  killJob?(sessionId: string, jobId: string): Promise<void>
 
   // ---- diagnosis -----------------------------------------------------------
   /** Runs one throwaway turn against the configured model. */

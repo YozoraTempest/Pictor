@@ -18,6 +18,9 @@ function reset(): void {
     error: null,
     retry: null,
     usage: null,
+    todos: null,
+    plan: null,
+    jobs: [],
   }
 
   useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })
@@ -242,6 +245,9 @@ describe('chat-store send', () => {
       error: null,
       retry: null,
       usage: null,
+      todos: null,
+      plan: null,
+      jobs: [],
     }
     useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })
 
@@ -275,6 +281,9 @@ describe('chat-store send', () => {
       error: null,
       retry: null,
       usage: null,
+      todos: null,
+      plan: null,
+      jobs: [],
     }
     useChatStore.setState({ viewing: 's1', chats: { s1: slice }, current: slice })
 

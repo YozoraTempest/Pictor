@@ -9,6 +9,7 @@ import {
   EventStream,
   FollowStream,
   HarnessRemote,
+  streamOnce,
   type PromptContentPart,
   type HarnessNotification,
   type SessionCreateValue,
@@ -26,6 +27,7 @@ import {
   type ChatAnswer,
   type ChatHistoryPage,
   type ChatImage,
+  type ChatJob,
   type ChatQuestion,
   type ForkPoint,
   type ModelEffort,
@@ -36,6 +38,7 @@ import {
 
 import { commandTextOf, parseCommands } from './harness-commands.js'
 import { loadHarnessHistory } from './harness-history.js'
+import { jobOf, sessionStates } from './harness-session-state.js'
 import { DEFAULT_PERMISSION_MODE, isPermissionMode } from '@pictor/shared'
 import { sessionTitleOf } from '@pictor/harness'
 import { answerValue, questionsOf } from './harness-questions.js'
@@ -189,6 +192,9 @@ export class DshDriver implements KernelDriver {
     // The runtime's command service answers `commands/list` and `commands/execute`
     // over the same remote wire `/permission` already uses.
     commands: true,
+    // A job registry with a per-session roster (`job/list`) and a human kill
+    // (`job/kill`); the roster is drawn from its events, the stop from that endpoint.
+    jobs: true,
   }
   readonly #options: DshDriverOptions
   readonly #listeners = new Set<(notification: HarnessNotification) => void>()
@@ -664,6 +670,58 @@ export class DshDriver implements KernelDriver {
       submittedAttachments: [],
     })
     return commandTextOf(executed)
+  }
+
+  /**
+   * The jobs the runtime says this conversation can see right now.
+   *
+   * Asked rather than replayed: the event log answers "what happened", and a job whose
+   * runtime died between its registration and its settlement would stay running there
+   * forever. `job/list` is a stream, but its opening frame is documented as the complete
+   * set, so one frame and a hang-up is the whole roster.
+   */
+  async jobs(sessionId: string): Promise<ChatJob[]> {
+    const remote = this.#remote
+    const socket = this.#socket
+    const cookie = remote?.cookie
+    if (remote === null || socket === null || cookie === undefined || cookie === null) {
+      throw new Error('agent 运行时尚未启动')
+    }
+    const harnessId = await this.#sessionFor(sessionId)
+    const frame = await streamOnce({
+      url: `${remote.baseUrl.replace(/^http/, 'ws')}/api/remote.mux`,
+      cookie,
+      endpoint: 'job/list',
+      request: { sessionId: harnessId },
+      WebSocket: socket,
+    })
+
+    const rows = (frame as { jobs?: unknown } | null)?.jobs
+    if (!Array.isArray(rows)) return []
+    return rows
+      .flatMap((row): ChatJob[] => {
+        // `job/list` speaks the projection, whose id field is `id`; the event payload
+        // calls the same thing `jobId`. One reader per shape keeps both honest.
+        const record = row as Record<string, unknown> | null
+        if (record === null || typeof record !== 'object') return []
+        const job = jobOf({ ...record, jobId: record['id'] })
+        return job === null ? [] : [job]
+      })
+      .sort((left, right) => left.startedAt - right.startedAt)
+  }
+
+  /**
+   * Asks the runtime to stop one background job.
+   *
+   * The runtime fenced the request on the session that can see the job, so this is the
+   * same session id the roster was asked about. A job that already finished is not an
+   * error — the outcome says which of the two happened.
+   */
+  async killJob(sessionId: string, jobId: string): Promise<void> {
+    const remote = this.#remote
+    if (remote === null) throw new Error('agent 运行时尚未启动')
+    const harnessId = await this.#sessionFor(sessionId)
+    await remote.call('job/kill', { request: { sessionId: harnessId, jobId } })
   }
 
   /** Stop the turn the runtime is running for one session. */
@@ -1157,7 +1215,13 @@ export class DshDriver implements KernelDriver {
     if (known === undefined) return loadHarnessHistory([], limit, offset)
     const harnessId = known
     const events = this.#snapshots.get(harnessId) ?? (await this.#loadSnapshot(harnessId))
-    return loadHarnessHistory(events ?? [], limit, offset)
+    const page = loadHarnessHistory(events ?? [], limit, offset)
+    // The opening page carries the conversation's *current* states as well as its
+    // newest messages: a todo list or a plan mode is not a row, so paging backwards
+    // must not move it, and reading it here is what makes a reload land on the same
+    // answer the live stream would have shown. Replayed from the same window the
+    // transcript uses, so the two cannot disagree.
+    return offset === 0 ? { ...page, ...sessionStates(events ?? []) } : page
   }
 
   /**

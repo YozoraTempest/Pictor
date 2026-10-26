@@ -1,8 +1,17 @@
 import { create } from 'zustand'
 
-import type { ChatEvent, ChatImage, ChatMessage, ModelEffort } from '@pictor/shared'
+import type {
+  ChatEvent,
+  ChatImage,
+  ChatJob,
+  ChatMessage,
+  ChatPlanState,
+  ChatTodoItem,
+  ModelEffort,
+} from '@pictor/shared'
 
 import { lastUsageOf, type TurnUsage } from './context-usage.js'
+import { applyPlanEvent, mergeJobs } from './session-state.js'
 
 /** Phase of a running agent, shown next to its name. */
 export type ChatPhase = 'idle' | 'connecting' | 'thinking' | 'tool' | 'writing'
@@ -26,6 +35,17 @@ export interface ChatSlice {
   retry: { attempt: number; maxAttempts: number; message: string } | null
   /** Tokens the last turn used, as the provider reported them. */
   usage: TurnUsage | null
+  /**
+   * The agent's current task list, or null when this kernel never wrote one.
+   *
+   * `null` and `[]` are different answers: the first hides the bar, the second draws
+   * an empty list the agent really did write.
+   */
+  todos: ChatTodoItem[] | null
+  /** Whether the conversation is exploring read-only; null before it ever said. */
+  plan: ChatPlanState | null
+  /** Background jobs, newest state per id, running and finished alike. */
+  jobs: ChatJob[]
 }
 
 interface ChatState {
@@ -45,6 +65,8 @@ interface ChatState {
   close: (sessionId: string) => Promise<void>
   send: (prompt: string, images?: ChatImage[]) => Promise<void>
   stop: () => Promise<void>
+  /** Asks the kernel to stop one background job. */
+  killJob: (jobId: string) => Promise<void>
   loadOlder: () => Promise<void>
   handleEvent: (event: ChatEvent) => void
 }
@@ -64,6 +86,9 @@ const EMPTY: ChatSlice = {
   error: null,
   retry: null,
   usage: null,
+  todos: null,
+  plan: null,
+  jobs: [],
 }
 
 function emptySlice(sessionId: string): ChatSlice {
@@ -212,7 +237,23 @@ export const useChatStore = create<ChatState>()((set, get) => {
           offset: result.history.nextOffset,
           hasMore: result.history.hasMore,
           loading: false,
+          // Replayed from the same log the transcript came from, so a reload lands on
+          // the states the live stream would have shown.
+          todos: result.history.todos ?? null,
+          plan: result.history.plan ?? null,
+          jobs: result.history.jobs ?? [],
         }))
+
+        // The log says what happened; the runtime says what is still there. Asking is
+        // best-effort: with the runtime down, the replayed answer is all there is, and
+        // a failed question must not turn into an error banner over a working turn.
+        void window.pictor
+          .kernelJobs(sessionId)
+          .then((roster) => {
+            if (loadTokens.get(sessionId) !== token) return
+            patch(sessionId, (current) => ({ jobs: mergeJobs(current.jobs, roster) }))
+          })
+          .catch(() => undefined)
       } catch (reason) {
         if (loadTokens.get(sessionId) !== token) return
         patch(sessionId, () => ({
@@ -281,6 +322,38 @@ export const useChatStore = create<ChatState>()((set, get) => {
       const sessionId = get().viewing
       if (sessionId === null) return
       await window.pictor.stopChat(sessionId)
+    },
+
+    /**
+     * Stops one background job.
+     *
+     * Drawn as `stopping` first: the runtime accepts the request and the process may
+     * take a moment to die, so a button that looked dead until `job/settled` arrived
+     * would invite a second click that the runtime would refuse as already finished.
+     */
+    async killJob(jobId) {
+      const sessionId = get().viewing
+      if (sessionId === null) return
+
+      const before = get().chats[sessionId]?.jobs ?? []
+      patch(sessionId, () => ({
+        jobs: before.map((job) =>
+          job.id === jobId && (job.status === 'running' || job.status === 'stopping')
+            ? { ...job, status: 'stopping' }
+            : job,
+        ),
+      }))
+
+      try {
+        await window.pictor.killKernelJob(sessionId, jobId)
+      } catch (reason) {
+        // Put the row back: the runtime refused, so the job is still running and the
+        // button has to be pressable again.
+        patch(sessionId, () => ({
+          jobs: before,
+          error: reason instanceof Error ? reason.message : String(reason),
+        }))
+      }
     },
 
     async loadOlder() {
@@ -561,6 +634,28 @@ export const useChatStore = create<ChatState>()((set, get) => {
               },
             ],
           }
+        })
+        return
+      }
+
+      if (event.type === 'todo.updated') {
+        // Wholesale: the runtime logs a snapshot per write, so the newest one is the
+        // list, and a diff would only be a chance to drift.
+        patch(sessionId, () => ({ todos: event.todos }))
+        return
+      }
+
+      if (event.type === 'plan.changed') {
+        patch(sessionId, (state) => ({
+          plan: applyPlanEvent(state.plan, { active: event.active, pending: event.pending }),
+        }))
+        return
+      }
+
+      if (event.type === 'job.updated') {
+        patch(sessionId, (state) => {
+          const others = state.jobs.filter((job) => job.id !== event.job.id)
+          return { jobs: [...others, event.job].sort((a, b) => a.startedAt - b.startedAt) }
         })
         return
       }

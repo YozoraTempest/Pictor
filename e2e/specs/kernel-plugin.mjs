@@ -32,6 +32,7 @@ export default {
       skills: false,
       fork: false,
       commands: false,
+      jobs: false,
     })
 
     const created = await page.evaluate(() =>

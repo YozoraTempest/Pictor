@@ -33,6 +33,7 @@ import type {
   ProviderList,
   ChatEvent,
   ChatHistoryPage,
+  ChatJob,
   JsonValue,
   ModelEffort,
   ModelEntry,
@@ -331,6 +332,10 @@ export interface PictorBridge {
   kernelCommands(sessionId: string): Promise<KernelCommand[]>
   /** Runs one complete slash line; resolves with what the kernel said, if anything. */
   runKernelCommand(sessionId: string, line: string): Promise<string | null>
+  /** Background jobs the conversation's kernel reports; empty when it has none. */
+  kernelJobs(sessionId: string): Promise<ChatJob[]>
+  /** Asks the owning kernel to stop one background job. */
+  killKernelJob(sessionId: string, jobId: string): Promise<void>
   /** The models a kernel offers for one conversation. */
   kernelModels(sessionId: string): Promise<KernelModelState>
   /** Selects one for that conversation, without a restart. */

@@ -50,6 +50,7 @@ export function apply(ctx) {
       skills: false,
       fork: false,
       commands: false,
+      jobs: false,
     },
 
     async start() {

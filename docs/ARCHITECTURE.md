@@ -158,7 +158,7 @@ rpc` speaks JSONL commands on stdin and streams the same events over stdout,
   because Pictor keeps none.
 
 Each driver also declares what it can do (`KernelCapabilities`: sandbox, approval,
-model, skills, fork), and that declaration reaches the renderer with
+model, skills, fork, commands, jobs), and that declaration reaches the renderer with
 `kernels.list`. The composer draws a control only where the conversation's kernel
 says it exists: a CLI kernel gets no sandbox switch and no model picker, instead
 of a control that throws when pressed. The approval switch follows the same rule:
@@ -262,6 +262,35 @@ into an answer — carrying the saving the kernel reported (`shadowedTokenCount`
 `tokensBefore - estimatedTokensAfter` on Pi) and the summary behind "查看摘要". Only a
 summary draws one: dsh prunes each large tool result on its own, and a divider per
 prune would bury the conversation.
+
+### Current state
+
+Three things a conversation _is_ ride above the composer rather than in the transcript:
+the agent's task list, plan mode, and the background jobs. None of them is history. A
+transcript accumulates rows; these three are replaced wholesale, so the newest snapshot
+is the whole truth and a reload has to land on the same answer (`ChatHistoryPage`
+carries `todos`, `plan` and `jobs`; absent means the kernel keeps none of them, which is
+why a Pi conversation draws no bar at all).
+
+- **Replayed, never stored.** `sessionStates()` (`packages/kernel-dsh/src/harness-session-state.ts`)
+  reads the same durable events the live stream carries — `todo/write` is last-write-wins,
+  `plan/mode` is the mode, `job/registered` and `job/settled` are a roster keyed by id —
+  so a reopened conversation and a running one are computed by one function.
+- **Plan mode needs three events.** The runtime changes its own mode by running a `plan`
+  command, and that command is in flight between `command/run` and `command/done`. A
+  `plan.changed` event may therefore say nothing about the mode (`active: null`) and only
+  report `pending`, because flipping the badge before the runtime agrees would be a
+  promise it has not made.
+- **The roster is asked, not remembered.** `jobs(sessionId)` opens `job/list` and takes
+  its opening frame — the runtime documents it as the complete set — through
+  `streamOnce` (`packages/harness/src/once.ts`), then hangs up. That is what
+  reconciliation means here: a job whose runtime died between its registration and its
+  settlement would otherwise keep claiming to run forever, so `mergeJobs` closes anything
+  the live roster no longer names and says so in its own words.
+- **Only the stop is a capability.** `capabilities.jobs` guards `killJob`; without it the
+  roster is still drawn, because the runtime said the job is running and hiding it would
+  be the lie. `job/kill` is fenced on the session that can see the job, and it answers
+  `requested` or `already-finished` — a second click is not an error.
 
 ### Runtime (dsh)
 

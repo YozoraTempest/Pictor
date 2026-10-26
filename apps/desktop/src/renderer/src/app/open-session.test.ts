@@ -57,6 +57,7 @@ function kernel(id: string): KernelInfo {
       skills: false,
       fork: false,
       commands: false,
+      jobs: false,
     },
     modelSource: null,
   }

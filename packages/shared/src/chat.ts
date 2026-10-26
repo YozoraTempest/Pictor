@@ -16,6 +16,45 @@ export interface ChatNotice {
   summary: string
 }
 
+/** One step the agent is tracking for this conversation. */
+export interface ChatTodoItem {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
+/**
+ * Where a conversation stands, as the runtime sees it.
+ *
+ * Three states share one home because they share one property: they are *current*,
+ * not historical. A transcript accumulates rows; a todo list, a plan mode and a job
+ * roster are each replaced wholesale, so the newest snapshot is the whole truth and a
+ * reload has to land on the same one.
+ */
+export interface ChatPlanState {
+  /** The conversation is exploring rather than changing files. */
+  active: boolean
+  /** A `/plan` command is still running, so `active` has not caught up yet. */
+  pending: boolean
+}
+
+/**
+ * One background execution the runtime is running for this conversation.
+ *
+ * `running` and `stopping` are live; the other three are terminal and never move
+ * again. `detail` is the runtime's own last word — an exit code, a kill reason.
+ */
+export interface ChatJob {
+  id: string
+  /** Producer kind (`bash`, `subagent`, …), as the runtime names it. */
+  kind: string
+  label: string
+  status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
+  /** Epoch ms. */
+  startedAt: number
+  finishedAt: number | null
+  detail: string | null
+}
+
 /** What one turn cost, in the provider's own count. `null` means it said nothing. */
 export interface ChatUsage {
   input: number | null
@@ -117,6 +156,16 @@ export interface ChatHistoryPage {
   /** Offset to pass to the next history call to load older messages. */
   nextOffset: number
   hasMore: boolean
+  /**
+   * The current states, replayed from the same events the live stream carries.
+   *
+   * Absent means the kernel does not keep this state at all — not that it is empty:
+   * an empty todo list and "no todo list here" are different answers, and only the
+   * second one should hide a panel.
+   */
+  todos?: ChatTodoItem[]
+  plan?: ChatPlanState
+  jobs?: ChatJob[]
 }
 
 /** Events forwarded from the main process to the renderer. */
@@ -216,6 +265,28 @@ export type ChatEvent =
       /** Why it compacted: the kernel's own word (`threshold`, `manual`, …). */
       reason: string | null
     }
+  /**
+   * The agent replaced its whole task list.
+   *
+   * Wholesale, not incremental: the runtime logs a snapshot per write and replays
+   * last-write-wins, so a reload lands on the same list without replaying a diff.
+   */
+  | { type: 'todo.updated'; sessionId: string; todos: ChatTodoItem[] }
+  /**
+   * Plan mode turned on or off, or a `/plan` command is still settling.
+   *
+   * `active` is null when the event only reports that a command is in flight: a
+   * `/plan` issued but not yet settled cannot say which mode it will land in, and
+   * guessing here would flip the badge before the runtime agrees.
+   */
+  | {
+      type: 'plan.changed'
+      sessionId: string
+      active: boolean | null
+      pending: boolean
+    }
+  /** One background job registered, moved, or settled. Upsert by `job.id`. */
+  | { type: 'job.updated'; sessionId: string; job: ChatJob }
 
 /**
  * One decision the runtime is waiting for.

@@ -35,6 +35,14 @@ export interface KernelCapabilities {
   fork: boolean
   /** The kernel has slash commands of its own that Pictor can list and run. */
   commands: boolean
+  /**
+   * The kernel runs background jobs Pictor can list and cancel.
+   *
+   * Only the cancel is behind this flag. A kernel that emits job events but has no way
+   * to stop one still gets its roster drawn — the panel shows what the kernel says is
+   * running — it just never offers a stop button that cannot be honoured.
+   */
+  jobs: boolean
 }
 
 /** One model a kernel can run, in that kernel's own words. */

@@ -5,6 +5,7 @@ import type {
   ChatAnswer,
   ChatHistoryPage,
   ChatImage,
+  ChatJob,
   ForkPoint,
   ModelEffort,
 } from '@pictor/shared'
@@ -418,6 +419,28 @@ export class KernelRouter implements KernelDriver {
     return driver.runCommand(sessionId, line)
   }
 
+  /**
+   * The background jobs the conversation's kernel reports right now.
+   *
+   * No capability gate: a kernel that emits no job events answers with an empty list,
+   * which draws nothing. Only the stop is gated, because that is the half that would
+   * otherwise be a button with nothing behind it.
+   */
+  async kernelJobs(sessionId: string): Promise<ChatJob[]> {
+    const driver = await this.#for(sessionId)
+    if (driver.jobs === undefined) return []
+    return driver.jobs(sessionId)
+  }
+
+  /** Asks the kernel that owns the conversation to stop one background job. */
+  async killKernelJob(sessionId: string, jobId: string): Promise<void> {
+    const driver = await this.#for(sessionId)
+    if (driver.killJob === undefined) {
+      throw new Error(`这个会话的内核「${driver.id}」没有后台任务`)
+    }
+    await driver.killJob(sessionId, jobId)
+  }
+
   /** Tools this conversation no longer asks about. */
   async kernelGrants(sessionId: string): Promise<string[]> {
     const driver = await this.#for(sessionId)
@@ -493,6 +516,7 @@ const NO_CAPABILITIES: KernelCapabilities = {
   skills: false,
   fork: false,
   commands: false,
+  jobs: false,
 }
 
 /** The status of a machine with no kernel: nothing runs, and nothing is broken. */

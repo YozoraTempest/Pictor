@@ -92,6 +92,8 @@ export default {
       // Pi's RPC surface offers exactly one command, and the menu lists it rather
       // than pretending the terminal's other slashes exist.
       commands: true,
+      // There is no registry of background jobs to list or stop.
+      jobs: false,
     })
     assert.deepEqual(declared.find((kernel) => kernel.id === 'dsh')?.capabilities, {
       permission: true,
@@ -101,6 +103,8 @@ export default {
       skills: true,
       fork: true,
       commands: true,
+      // `job/list` for the roster, `job/kill` for the stop.
+      jobs: true,
     })
 
     // Pi decides its own sandbox, so its composer draws no switch. The row still

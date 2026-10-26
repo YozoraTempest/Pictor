@@ -1,3 +1,4 @@
+import { jobOf, planActiveOf, todosOf } from '@pictor/kernel-dsh'
 import type { ChatEvent, ChatRole } from '@pictor/shared'
 import type {
   HarnessNotification,
@@ -69,6 +70,15 @@ export class HarnessChatBridge {
   readonly #calls = new Map<string, string>()
   /** Arguments streamed so far per `<session>:<callId>`, until the call lands. */
   readonly #partials = new Map<string, string>()
+  /**
+   * The `plan` command a conversation has issued but not finished.
+   *
+   * Plan mode is changed by the runtime running its own `plan` command, so between
+   * `/plan` and its settlement the mode has not moved yet. Keeping the command id is
+   * what lets the window say "switching" instead of drawing the old mode as if nothing
+   * had been asked for.
+   */
+  readonly #planCommands = new Map<string, string>()
 
   /** Map one notification to renderer events; unknown notifications map to none. */
   map(notification: HarnessNotification): ChatEvent[] {
@@ -282,6 +292,54 @@ export class HarnessChatBridge {
        * per oversized tool output, and a divider for each would bury the transcript.
        * This one is the whole-conversation compaction, which is worth a row.
        */
+      /**
+       * The agent's task list, as a whole snapshot.
+       *
+       * `todo_write` is the model's own planning surface; the row it leaves in the
+       * transcript is a record of one write, while this event is what the list *is*
+       * now. Both are drawn: the row where it happened, the bar where it stands.
+       */
+      case 'todo/write': {
+        const todos = todosOf(data['todos'])
+        if (todos === null) return []
+        return [{ type: 'todo.updated', sessionId, todos }]
+      }
+
+      case 'plan/mode': {
+        this.#planCommands.delete(sessionId)
+        return [{ type: 'plan.changed', sessionId, active: planActiveOf(data), pending: false }]
+      }
+
+      case 'command/run': {
+        // Only the runtime's own `plan` command changes the mode; every other command
+        // is none of this row's business.
+        if (data['name'] !== 'plan') return []
+        const commandId = String(data['commandId'] ?? '')
+        if (commandId.length > 0) this.#planCommands.set(sessionId, commandId)
+        return [{ type: 'plan.changed', sessionId, active: null, pending: true }]
+      }
+
+      case 'command/done': {
+        const pending = this.#planCommands.get(sessionId)
+        if (pending === undefined || pending !== String(data['commandId'] ?? '')) return []
+        this.#planCommands.delete(sessionId)
+        // A settled command that changed nothing still clears the pending mark; the
+        // `plan/mode` event that accompanies a real change sets the mode itself.
+        return [{ type: 'plan.changed', sessionId, active: null, pending: false }]
+      }
+
+      /**
+       * One background job registered or settled.
+       *
+       * Sent as an upsert per job so the roster is a map, not a transcript: the panel
+       * shows what is running now, and a settled job stays visible with its outcome.
+       */
+      case 'job/registered':
+      case 'job/settled': {
+        const job = jobOf(data)
+        return job === null ? [] : [{ type: 'job.updated', sessionId, job }]
+      }
+
       case 'compaction/summary': {
         const saved = data['shadowedTokenCount']
         const summary = data['summary']

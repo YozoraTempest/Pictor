@@ -31,6 +31,7 @@ export {
   type WebSocketLike,
 } from './follow.js'
 export { HarnessRemote, type HarnessRemoteOptions } from './remote.js'
+export { streamOnce, type OnceStreamOptions } from './once.js'
 export type {
   PromptContentPart,
   SessionAddress,
