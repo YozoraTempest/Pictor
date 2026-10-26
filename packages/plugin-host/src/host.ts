@@ -64,6 +64,13 @@ export class PluginHost {
         continue
       }
 
+      // A plugin that only contributes a kernel has no module to activate here; the
+      // kernel host mounts that half. Skipping is not a failure: it is the shape.
+      if (plugin.manifest.main === undefined) {
+        this.#skipped.push(plugin.id)
+        continue
+      }
+
       try {
         await this.#activate(plugin)
         this.#activated.push(plugin.id)
@@ -126,7 +133,9 @@ export class PluginHost {
     const dataDirectory = join(this.#options.dataRoot, plugin.id)
     mkdirSync(dataDirectory, { recursive: true })
 
-    const entry = join(plugin.root, plugin.manifest.main)
+    const main = plugin.manifest.main
+    if (main === undefined) throw new Error(`plugin ${plugin.id} has no module to activate`)
+    const entry = join(plugin.root, main)
     const loaded = (await import(pathToFileURL(entry).href)) as {
       default?: PluginModule
       activate?: PluginModule['activate']

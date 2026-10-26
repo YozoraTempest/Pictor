@@ -4,5 +4,19 @@
   "private": true,
   "description": "示例内核插件：只回声，用来说明第三方内核的形状",
   "type": "module",
-  "main": "index.js"
+  "pictor": {
+    "id": "pictor.kernel.fake",
+    "engines": {
+      "pictor": "^0.1.0"
+    },
+    "contributes": [
+      {
+        "point": "kernel",
+        "value": {
+          "main": "index.js",
+          "label": "回声（示例）"
+        }
+      }
+    ]
+  }
 }

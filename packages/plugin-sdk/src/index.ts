@@ -1,6 +1,14 @@
 export {
+  KernelContributionError,
+  parseKernelContribution,
+  parseKernelContributions,
+  type KernelContribution,
+  type KernelContributionFailure,
+} from './kernel.js'
+export {
   ManifestError,
   parseManifest,
+  parsePackageManifest,
   type PluginContribution,
   type PluginContext,
   type PluginLogger,

@@ -23,6 +23,27 @@ function writePlugin(parent: string, id: string, manifest: Record<string, unknow
   return root
 }
 
+/** A plugin in the npm-package format: `package.json` with a `pictor` field. */
+function writePackagePlugin(
+  parent: string,
+  id: string,
+  overrides: Record<string, unknown> = {},
+): string {
+  const root = join(parent, id.replace(/\./g, '-'))
+  mkdirSync(root, { recursive: true })
+  writeFileSync(
+    join(root, 'package.json'),
+    JSON.stringify({
+      name: `@example/${id}`,
+      version: '0.0.0',
+      main: 'index.js',
+      pictor: { id, engines: { pictor: '^0.0.0' } },
+      ...overrides,
+    }),
+  )
+  return root
+}
+
 describe('discoverPlugins', () => {
   it('reads valid manifests', () => {
     const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
@@ -74,5 +95,68 @@ describe('discoverPlugins', () => {
     const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
 
     expect(discoverPlugins([parent]).plugins).toEqual([])
+  })
+})
+
+describe('discoverPlugins across both formats', () => {
+  it('reads a plugin from its package.json', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
+    const root = writePackagePlugin(parent, 'acme.codex')
+
+    const discovery = discoverPlugins([root])
+
+    expect(discovery.plugins.map((plugin) => plugin.id)).toEqual(['acme.codex'])
+    expect(discovery.plugins[0]?.manifestPath.endsWith('package.json')).toBe(true)
+    expect(discovery.failures).toEqual([])
+  })
+
+  it('still reads a plugin that predates the field', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
+    const root = writePlugin(parent, 'pictor.legacy')
+
+    const discovery = discoverPlugins([root])
+
+    expect(discovery.plugins.map((plugin) => plugin.id)).toEqual(['pictor.legacy'])
+    expect(discovery.plugins[0]?.manifestPath.endsWith('manifest.json')).toBe(true)
+  })
+
+  it('prefers package.json when a root carries both', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
+    const root = writePackagePlugin(parent, 'acme.codex')
+    writeFileSync(
+      join(root, 'manifest.json'),
+      JSON.stringify({
+        id: 'acme.stale',
+        name: 'stale',
+        version: '0.0.0',
+        main: 'index.js',
+        engines: { pictor: '^0.0.0' },
+      }),
+    )
+
+    // One plugin, one truth: the older file does not get a second say.
+    expect(discoverPlugins([root]).plugins.map((plugin) => plugin.id)).toEqual(['acme.codex'])
+  })
+
+  it('reports a malformed pictor field instead of falling back', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
+    const root = writePackagePlugin(parent, 'acme.codex', { pictor: { id: 'acme.codex' } })
+
+    const discovery = discoverPlugins([root])
+
+    expect(discovery.plugins).toEqual([])
+    expect(discovery.failures[0]?.reason).toMatch(/engines/)
+  })
+
+  it('leaves a package that never opted in alone', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
+    const root = join(parent, 'not-a-plugin')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }))
+
+    const discovery = discoverPlugins([root])
+
+    expect(discovery.plugins).toEqual([])
+    expect(discovery.failures).toEqual([])
   })
 })

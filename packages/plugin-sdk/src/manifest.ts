@@ -10,8 +10,13 @@ export interface PluginManifest {
   name: string
   version: string
   description?: string
-  /** Entry module relative to the plugin root. */
-  main: string
+  /**
+   * UI entry module relative to the plugin root.
+   *
+   * Absent for a plugin that only contributes a kernel: there is nothing for the main
+   * process to import and activate, and pretending otherwise would fail at load.
+   */
+  main?: string
   engines: {
     pictor: string
   }
@@ -101,10 +106,77 @@ export function parseManifest(value: unknown): PluginManifest {
   }
 }
 
-function requireString(record: Record<string, unknown>, key: string): string {
+/**
+ * Reads a plugin out of a `package.json`'s `pictor` field.
+ *
+ * A plugin is an npm package, and that is the whole point: `npm install` becomes the
+ * only install step, the version a person sees is the version npm installed, and a
+ * plugin can bring its own dependencies. The metadata therefore lives beside `name`
+ * and `version` instead of in a second file that could disagree with them.
+ *
+ * `manifest.json` is still read by {@link parseManifest}, so plugins already on disk
+ * keep working; this format simply wins when both are present.
+ */
+export function parsePackageManifest(value: unknown): PluginManifest {
+  if (typeof value !== 'object' || value === null) {
+    throw new ManifestError('package.json must be an object')
+  }
+
+  const record = value as Record<string, unknown>
+  const meta = record.pictor
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) {
+    throw new ManifestError('package.json.pictor is required')
+  }
+  const pictor = meta as Record<string, unknown>
+
+  const id = requireString(pictor, 'id', 'pictor')
+  if (!ID_PATTERN.test(id)) {
+    throw new ManifestError(`invalid plugin id: ${id}`)
+  }
+
+  const name = requireString(record, 'name', 'package')
+  const version = requireString(record, 'version', 'package')
+  if (!SEMVER_PATTERN.test(version)) {
+    throw new ManifestError(`invalid plugin version: ${version}`)
+  }
+
+  const engines = pictor.engines
+  if (typeof engines !== 'object' || engines === null) {
+    throw new ManifestError('pictor.engines is required')
+  }
+  const pictorRange = requireString(engines as Record<string, unknown>, 'pictor', 'pictor.engines')
+
+  const dependencies = parseDependencies(pictor.dependencies)
+  const contributes = parseContributions(pictor.contributes)
+
+  return {
+    id,
+    name,
+    version,
+    ...(typeof record.description === 'string' ? { description: record.description } : {}),
+    ...(record.main === undefined ? {} : { main: normalizeMain(record.main) }),
+    engines: { pictor: pictorRange },
+    ...(dependencies === undefined ? {} : { dependencies }),
+    ...(contributes === undefined ? {} : { contributes }),
+  }
+}
+
+/** A main entry, refused unless it stays inside the plugin root. */
+function normalizeMain(value: unknown): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new ManifestError('package.main must be a non-empty string')
+  }
+  const main = value.trim().replace(/\\/g, '/')
+  if (main.startsWith('/') || main.split('/').includes('..')) {
+    throw new ManifestError(`plugin main must stay inside the plugin root: ${main}`)
+  }
+  return main
+}
+
+function requireString(record: Record<string, unknown>, key: string, prefix = 'manifest'): string {
   const value = record[key]
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new ManifestError(`manifest.${key} must be a non-empty string`)
+    throw new ManifestError(`${prefix}.${key} must be a non-empty string`)
   }
   return value.trim()
 }
