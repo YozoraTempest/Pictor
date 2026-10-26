@@ -40,16 +40,15 @@ describe('settings pages', () => {
   it('grows a third level only where a group has something to hold', () => {
     const tree = settingsTree()
 
-    // The example the sidebar is built around: 通用 › 智能体 › 模型.
+    // 通用 holds two groups: how you like the app, then how a conversation runs.
     const general = tree.find((category) => category.title === '通用')
-    const agent = general?.entries.find(
-      (entry) => entry.kind === 'group' && entry.group.title === '智能体',
+    const groups = (general?.entries ?? []).flatMap((entry) =>
+      entry.kind === 'group' ? [[entry.group.title, entry.group.pages.map((p) => p.label)]] : [],
     )
-    expect(
-      agent !== undefined && agent.kind === 'group'
-        ? agent.group.pages.map((page) => page.label)
-        : [],
-    ).toEqual(['模型', '工具规则', '默认权限', '技能'])
+    expect(groups).toEqual([
+      ['偏好', ['常规', '权限']],
+      ['智能体', ['模型', '技能']],
+    ])
 
     // A category of one page is a heading and a row, not a heading, a group, and a row.
     for (const category of tree) {
