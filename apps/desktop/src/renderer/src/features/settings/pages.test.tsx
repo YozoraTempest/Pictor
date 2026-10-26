@@ -14,7 +14,7 @@ vi.stubGlobal('matchMedia', (query: string) => ({
   dispatchEvent: () => false,
 }))
 
-const { SETTING_ROWS, SETTINGS_PAGES, settingsGroups } = await import('./pages.js')
+const { SETTING_ROWS, SETTINGS_PAGES, settingsTree } = await import('./pages.js')
 
 /**
  * The row index is what makes search land on a setting instead of a page, so it
@@ -26,10 +26,35 @@ describe('settings pages', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('groups every page exactly once', () => {
-    const grouped = settingsGroups().flatMap((group) => group.pages.map((page) => page.id))
-    expect(grouped).toHaveLength(SETTINGS_PAGES.length)
-    expect(new Set(grouped).size).toBe(SETTINGS_PAGES.length)
+  it('puts every page in the tree exactly once', () => {
+    const listed = settingsTree().flatMap((category) =>
+      category.entries.flatMap((entry) =>
+        entry.kind === 'page' ? [entry.page.id] : entry.group.pages.map((page) => page.id),
+      ),
+    )
+
+    expect(listed).toHaveLength(SETTINGS_PAGES.length)
+    expect(new Set(listed).size).toBe(SETTINGS_PAGES.length)
+  })
+
+  it('grows a third level only where a group has something to hold', () => {
+    const tree = settingsTree()
+
+    // The example the sidebar is built around: 通用 › 智能体 › 模型.
+    const general = tree.find((category) => category.title === '通用')
+    const agent = general?.entries.find(
+      (entry) => entry.kind === 'group' && entry.group.title === '智能体',
+    )
+    expect(
+      agent !== undefined && agent.kind === 'group'
+        ? agent.group.pages.map((page) => page.label)
+        : [],
+    ).toEqual(['模型', '工具规则'])
+
+    // A category of one page is a heading and a row, not a heading, a group, and a row.
+    for (const category of tree) {
+      expect(category.entries.length).toBeGreaterThan(0)
+    }
   })
 
   it('keeps row ids unique', () => {

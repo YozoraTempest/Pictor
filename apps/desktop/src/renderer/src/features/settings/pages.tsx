@@ -27,26 +27,53 @@ export interface SettingsPage {
   icon: LucideIcon
   description: string
   keywords: string
-  /** Sidebar group heading. */
-  group: string
+  /** Top level of the sidebar: whose setting this is. */
+  category: string
+  /**
+   * Middle level, for a category with enough pages to need one.
+   *
+   * Optional on purpose: a category of three pages reads worse split into three
+   * headings of one, so the tree only grows a level where it carries meaning.
+   */
+  group?: string
   order: number
   render: () => ReactNode
   /** Shown beside the page title, for page-level actions. */
   actions?: () => ReactNode
 }
 
+/** One collapsible middle level: the pages filed under one group name. */
+export interface SettingsGroupNode {
+  title: string
+  pages: Array<SettingsPage & { id: SettingsPageId }>
+}
+
 /**
- * The three groups the sidebar shows.
+ * One top level of the sidebar.
  *
- * The split is by owner, not by topic: what belongs to the shell, what belongs to
- * dsh, and what belongs to Pi. A setting that only means something inside one
- * kernel lives in that kernel's group, so a reader looking for "the sandbox
- * default" does not have to guess whether it applies to the kernel they run.
+ * `entries` keeps the author's order across pages and groups, so a category can be
+ * "a page, then a group, then another page" without the group floating to the top.
  */
-const GROUPS = {
+export interface SettingsCategory {
+  title: string
+  entries: Array<
+    | { kind: 'page'; page: SettingsPage & { id: SettingsPageId } }
+    | { kind: 'group'; group: SettingsGroupNode }
+  >
+}
+
+/**
+ * The sidebar's top level: whose setting this is.
+ *
+ * 通用 is the shell — how the window behaves and where its data lives. DSH and Pi
+ * are the kernels, and a setting that only means something inside one of them lives
+ * in that one's category. 关于 is the page nobody looks for until they need it.
+ */
+const CATEGORIES = {
   general: '通用',
   dsh: 'DSH',
   pi: 'Pi',
+  about: '关于',
 } as const
 
 const PAGES = [
@@ -56,9 +83,20 @@ const PAGES = [
     icon: Settings2,
     description: '会话列表在左栏里怎么分组',
     keywords: '常规 通用 互斥 置顶 重复 分区 时间线 最近',
-    group: GROUPS.general,
+    category: CATEGORIES.general,
     order: 0,
     render: () => <GeneralSection />,
+  },
+  {
+    id: 'model',
+    label: '模型',
+    icon: Cpu,
+    description: 'AI 服务：地址、密钥、模型与试运行。DSH 用这些服务跑会话。',
+    keywords: '模型 api key base url 端点 连接 导入 cc-switch 试运行 agent 服务 provider',
+    category: CATEGORIES.general,
+    group: '智能体',
+    order: 1,
+    render: () => <AgentModelPage />,
   },
   {
     id: 'rules',
@@ -66,8 +104,9 @@ const PAGES = [
     icon: ShieldCheck,
     description: '按工具拒绝、询问或自动同意 agent 的调用',
     keywords: '工具 规则 权限 拒绝 询问 允许 bash 拦截 rule 内核',
-    group: GROUPS.general,
-    order: 1,
+    category: CATEGORIES.general,
+    group: '智能体',
+    order: 2,
     render: () => <ToolRulesSection />,
   },
   {
@@ -76,29 +115,19 @@ const PAGES = [
     icon: Blocks,
     description: '插件与面板的启用状态',
     keywords: '插件 plugin 拓展 面板',
-    group: GROUPS.general,
-    order: 2,
+    category: CATEGORIES.general,
+    order: 3,
     render: () => <PluginsSection />,
   },
   {
-    id: 'about',
-    label: '关于 Pictor',
-    icon: Info,
-    description: '版本、数据目录与许可',
-    keywords: '关于 版本 version 路径 数据库',
-    group: GROUPS.general,
-    order: 3,
-    render: () => <AboutSection />,
-  },
-  {
-    id: 'model',
-    label: '模型',
-    icon: Cpu,
-    description: 'DSH 使用的 AI 服务：地址、密钥、模型与试运行',
-    keywords: '模型 api key base url 端点 连接 导入 cc-switch 试运行 agent 服务 provider dsh',
-    group: GROUPS.dsh,
+    id: 'dsh-runtime',
+    label: '运行时',
+    icon: Terminal,
+    description: 'DSH 的进程：状态、版本与启停',
+    keywords: '运行时 runtime 进程 启动 停止 版本 安装 会话数据 dsh harness 重装',
+    category: CATEGORIES.dsh,
     order: 0,
-    render: () => <AgentModelPage />,
+    render: () => <RuntimePage kernel="dsh" />,
   },
   {
     id: 'permission',
@@ -106,7 +135,7 @@ const PAGES = [
     icon: Shield,
     description: '新建的 DSH 会话用哪个沙箱范围',
     keywords: '默认 权限 沙箱 只读 工作区 完全访问 permission dsh 审批',
-    group: GROUPS.dsh,
+    category: CATEGORIES.dsh,
     order: 1,
     render: () => <DefaultPermissionSection />,
   },
@@ -116,19 +145,9 @@ const PAGES = [
     icon: BookOpen,
     description: 'DSH 能加载的技能，以及它们来自哪个文件',
     keywords: '技能 skill 技能目录 SKILL.md 提示 说明 dsh 启用 停用',
-    group: GROUPS.dsh,
+    category: CATEGORIES.dsh,
     order: 2,
     render: () => <SkillsSection />,
-  },
-  {
-    id: 'dsh-runtime',
-    label: '运行时',
-    icon: Terminal,
-    description: 'DSH 的进程：状态、版本与启停',
-    keywords: '运行时 runtime 进程 启动 停止 版本 安装 会话数据 dsh harness 重装',
-    group: GROUPS.dsh,
-    order: 3,
-    render: () => <RuntimePage kernel="dsh" />,
   },
   {
     id: 'pi-runtime',
@@ -136,9 +155,19 @@ const PAGES = [
     icon: Terminal,
     description: 'Pi 的安装状态、版本与可执行文件',
     keywords: '运行时 runtime pi 安装 版本 可执行文件 PICTOR_PI_BIN 会话数据 重新检测',
-    group: GROUPS.pi,
+    category: CATEGORIES.pi,
     order: 0,
     render: () => <RuntimePage kernel="pi" />,
+  },
+  {
+    id: 'about',
+    label: '关于 Pictor',
+    icon: Info,
+    description: '版本、数据目录与许可',
+    keywords: '关于 版本 version 路径 数据库 许可',
+    category: CATEGORIES.about,
+    order: 0,
+    render: () => <AboutSection />,
   },
 ] as const satisfies readonly SettingsPage[]
 
@@ -174,18 +203,39 @@ export const SETTING_ROWS: readonly SettingRowEntry[] = [
   },
 ]
 
-/** Pages in sidebar order, grouped. */
-export function settingsGroups(): Array<{
-  title: string
-  pages: Array<SettingsPage & { id: SettingsPageId }>
-}> {
+/**
+ * The sidebar as a tree: categories, with pages and (where they earn it) a group.
+ *
+ * Consecutive pages that share a `group` become one collapsible block, so a category
+ * can be "a page, then a group, then another page" in the order it was written.
+ */
+export function settingsTree(): SettingsCategory[] {
   const titles: string[] = []
   for (const page of SETTINGS_PAGES) {
-    if (!titles.includes(page.group)) titles.push(page.group)
+    if (!titles.includes(page.category)) titles.push(page.category)
   }
 
-  return titles.map((title) => ({
-    title,
-    pages: SETTINGS_PAGES.filter((page) => page.group === title).sort((a, b) => a.order - b.order),
-  }))
+  return titles.map((title) => {
+    const pages = SETTINGS_PAGES.filter((page) => page.category === title).sort(
+      (a, b) => a.order - b.order,
+    )
+
+    const entries: SettingsCategory['entries'] = []
+    for (const page of pages) {
+      const group = page.group
+      if (group === undefined) {
+        entries.push({ kind: 'page', page })
+        continue
+      }
+      // Same group directly above? Then it is the block being built.
+      const last = entries[entries.length - 1]
+      if (last !== undefined && last.kind === 'group' && last.group.title === group) {
+        last.group.pages.push(page)
+        continue
+      }
+      entries.push({ kind: 'group', group: { title: group, pages: [page] } })
+    }
+
+    return { title, entries }
+  })
 }

@@ -1,10 +1,16 @@
-import { Search } from 'lucide-react'
+import { ChevronRight, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { Input } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { SettingHighlight } from './highlight.js'
-import { SETTING_ROWS, SETTINGS_PAGES, settingsGroups, type SettingsPageId } from './pages.js'
+import {
+  SETTING_ROWS,
+  SETTINGS_PAGES,
+  settingsTree,
+  type SettingsPage,
+  type SettingsPageId,
+} from './pages.js'
 
 interface SearchHit {
   page: SettingsPageId
@@ -49,13 +55,53 @@ function search(query: string): SearchHit[] {
   return [...rows, ...pages]
 }
 
+/** `通用 › 智能体 › 模型`, for a search hit that has to say where it lives. */
+function pathOf(id: SettingsPageId): string {
+  const page = SETTINGS_PAGES.find((entry) => entry.id === id)
+  if (page === undefined) return ''
+  return [page.category, ...(page.group === undefined ? [] : [page.group]), page.label].join(' › ')
+}
+
+/** One page row; the tree decides how far it is indented. */
+function PageItem({
+  page,
+  active,
+  onOpen,
+}: {
+  page: SettingsPage
+  active: boolean
+  onOpen: () => void
+}): React.JSX.Element {
+  const Icon = page.icon
+
+  return (
+    <button
+      type="button"
+      aria-current={active ? 'page' : undefined}
+      onClick={onOpen}
+      className={cn(
+        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors duration-150',
+        active
+          ? 'bg-surface-raised text-text'
+          : 'text-muted hover:bg-surface-hover hover:text-text',
+      )}
+    >
+      <Icon className={cn('size-3.5 shrink-0', active ? 'text-accent' : 'text-faint')} />
+      <span className="truncate">{page.label}</span>
+    </button>
+  )
+}
+
 export function SettingsView(): React.JSX.Element {
   const [active, setActive] = useState<SettingsPageId>('general')
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState<string | null>(null)
 
   const hits = useMemo(() => search(query), [query])
-  const groups = useMemo(() => settingsGroups(), [])
+  const tree = useMemo(() => settingsTree(), [])
+  // Groups start open; the tree is short enough that collapsing is a preference,
+  // not a necessity.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const current = SETTINGS_PAGES.find((page) => page.id === active) ?? SETTINGS_PAGES[0]
 
   /** Opens the page a hit belongs to and reveals the row it names. */
@@ -108,7 +154,9 @@ export function SettingsView(): React.JSX.Element {
                     >
                       <span className="truncate text-text">{hit.title}</span>
                       <span className="truncate text-2xs text-faint">
-                        {SETTINGS_PAGES.find((page) => page.id === hit.page)?.label ?? ''}
+                        {/* The path, not just the page: two categories can hold a page
+                            with the same name (both runtimes are called 运行时). */}
+                        {pathOf(hit.page)}
                         {hit.row === null ? '' : ` › ${hit.description}`}
                       </span>
                     </button>
@@ -117,41 +165,69 @@ export function SettingsView(): React.JSX.Element {
               </ul>
             )
           ) : (
-            groups.map((group) => (
-              <div key={group.title} className="mb-2">
+            tree.map((category) => (
+              <div key={category.title} className="mb-2">
                 <h2 className="px-2 pt-1 pb-1 text-2xs font-semibold tracking-wider text-faint">
-                  {group.title}
+                  {category.title}
                 </h2>
-                <ul className="flex flex-col gap-px">
-                  {group.pages.map((page) => {
-                    const Icon = page.icon
-                    const isActive = page.id === active
 
+                {category.entries.map((entry) => {
+                  if (entry.kind === 'page') {
                     return (
-                      <li key={page.id}>
-                        <button
-                          type="button"
-                          aria-current={isActive ? 'page' : undefined}
-                          onClick={() => setActive(page.id)}
-                          className={cn(
-                            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors duration-150',
-                            isActive
-                              ? 'bg-surface-raised text-text'
-                              : 'text-muted hover:bg-surface-hover hover:text-text',
-                          )}
-                        >
-                          <Icon
-                            className={cn(
-                              'size-3.5 shrink-0',
-                              isActive ? 'text-accent' : 'text-faint',
-                            )}
-                          />
-                          <span className="truncate">{page.label}</span>
-                        </button>
-                      </li>
+                      <PageItem
+                        key={entry.page.id}
+                        page={entry.page}
+                        active={entry.page.id === active}
+                        onOpen={() => setActive(entry.page.id)}
+                      />
                     )
-                  })}
-                </ul>
+                  }
+
+                  const { title, pages } = entry.group
+                  const shut = collapsed[`${category.title}/${title}`] === true
+                  const holdsActive = pages.some((page) => page.id === active)
+
+                  return (
+                    <div key={title} className="mb-px">
+                      <button
+                        type="button"
+                        aria-expanded={!shut}
+                        onClick={() =>
+                          setCollapsed((current) => ({
+                            ...current,
+                            [`${category.title}/${title}`]: !shut,
+                          }))
+                        }
+                        className={cn(
+                          'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-2xs transition-colors duration-150 hover:bg-surface-hover',
+                          holdsActive && shut ? 'text-text' : 'text-faint',
+                        )}
+                      >
+                        <ChevronRight
+                          className={cn(
+                            'size-3 shrink-0 transition-transform duration-150',
+                            !shut && 'rotate-90',
+                          )}
+                          aria-hidden
+                        />
+                        <span className="truncate">{title}</span>
+                      </button>
+
+                      {!shut && (
+                        <div className="pl-2">
+                          {pages.map((page) => (
+                            <PageItem
+                              key={page.id}
+                              page={page}
+                              active={page.id === active}
+                              onOpen={() => setActive(page.id)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             ))
           )}
