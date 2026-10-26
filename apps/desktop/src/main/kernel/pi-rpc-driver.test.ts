@@ -34,7 +34,7 @@ function fakePi(
     input: string
     reply?: string
     settle?: 'immediately' | 'onAbort'
-    ask?: 'confirm' | 'select' | 'input'
+    ask?: 'confirm' | 'select' | 'input' | 'editor'
   } = {
     input: 'text',
   },
@@ -168,6 +168,11 @@ function handle(command) {
     if (ask === 'input') {
       send({ type: 'extension_ui_request', id: 'dlg-3', method: 'input',
         title: '提交说明写什么？', placeholder: '一句话' })
+      return
+    }
+    if (ask === 'editor') {
+      send({ type: 'extension_ui_request', id: 'dlg-4', method: 'editor',
+        title: '改一下这条提交说明', prefill: 'feat: 原始草稿' })
       return
     }
     if (settle === 'immediately') {
@@ -713,6 +718,71 @@ describe('PiRpcDriver', () => {
       },
     )
     expect(toolOutputs(collected).at(-1)).toBe('cancelled')
+    await driver.stop()
+  })
+
+  it('hands an editor its draft and sends back the edited text', async () => {
+    const fake = fakePi({ input: 'text', ask: 'editor' })
+    const driver = driverFor(fake)
+    const asked: Record<string, unknown>[] = []
+    let shown: () => void = () => undefined
+    const offered = new Promise<void>((resolve) => {
+      shown = resolve
+    })
+    driver.onNotification((notification: HarnessNotification) => {
+      if (notification.method !== 'question.request') return
+      asked.push(notification.params as Record<string, unknown>)
+      shown()
+    })
+
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+      await offered
+      // The draft travels with the question: a card that opened empty would replace
+      // what the person was asked to edit.
+      const questions = asked[0]?.['questions'] as { prefill?: string }[]
+      expect(questions[0]?.prefill).toBe('feat: 原始草稿')
+      await driver.answerQuestions('dlg-4', [
+        { id: 'dlg-4', selected: [], custom: 'feat: 改过的草稿' },
+      ])
+    })
+
+    expect(commands(fake).find((entry) => entry['type'] === 'extension_ui_response')).toMatchObject(
+      {
+        id: 'dlg-4',
+        value: 'feat: 改过的草稿',
+      },
+    )
+    expect(toolOutputs(collected).at(-1)).toBe('feat: 改过的草稿')
+    await driver.stop()
+  })
+
+  it('sends an emptied draft as an edit, not as a refusal', async () => {
+    const fake = fakePi({ input: 'text', ask: 'editor' })
+    const driver = driverFor(fake)
+    let shown: () => void = () => undefined
+    const offered = new Promise<void>((resolve) => {
+      shown = resolve
+    })
+    driver.onNotification((notification: HarnessNotification) => {
+      if (notification.method === 'question.request') shown()
+    })
+
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+      await offered
+      // Deleting the whole draft is an edit; only answering nothing at all is a
+      // dismissal, and the two must not collapse into one.
+      await driver.answerQuestions('dlg-4', [{ id: 'dlg-4', selected: [], custom: '' }])
+    })
+
+    expect(commands(fake).find((entry) => entry['type'] === 'extension_ui_response')).toMatchObject(
+      {
+        id: 'dlg-4',
+        value: '',
+      },
+    )
+    expect(toolOutputs(collected).at(-1)).toBe('')
     await driver.stop()
   })
 

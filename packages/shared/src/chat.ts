@@ -228,6 +228,14 @@ export interface ChatQuestion {
   /** Offered answers; absent when the model wants free text. */
   options?: ChatQuestionOption[]
   multiSelect?: boolean
+  /**
+   * Text the person is asked to edit rather than write from scratch.
+   *
+   * Present means the question is a draft — a commit message, a config block, a
+   * prompt — and the card shows it in an editor seeded with this text. Absent means
+   * free text starts empty.
+   */
+  prefill?: string
 }
 
 /** A batch of questions one tool call is waiting on. */

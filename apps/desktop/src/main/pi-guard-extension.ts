@@ -97,7 +97,7 @@ const askTool = {
   name: ASK_TOOL,
   label: 'Ask the person',
   description:
-    'Ask the person a question and wait for the answer. Use it when a choice cannot be inferred from the code, the request or the conversation — an ambiguity that guessing would turn into wrong work. Pass options when the answer is one of a few choices; omit them for free text.',
+    'Ask the person a question and wait for the answer. Use it when a choice cannot be inferred from the code, the request or the conversation — an ambiguity that guessing would turn into wrong work. Pass options when the answer is one of a few choices, draft when they should edit text you wrote, and nothing for free text.',
   // Read-only on purpose: asking is not doing, and a session that asks before every
   // mutating call must not have to approve the question first.
   annotations: { readOnlyHint: true },
@@ -114,6 +114,11 @@ const askTool = {
         type: 'string',
         description: 'Context shown with the question: paths, snippets, what you tried.',
       },
+      draft: {
+        type: 'string',
+        description:
+          'Text for the person to edit rather than write from scratch, such as a commit message or a config block. The answer is the edited text.',
+      },
     },
     required: ['question'],
   },
@@ -125,20 +130,32 @@ const askTool = {
     const offered = Array.isArray(params && params.options)
       ? params.options.filter((option) => typeof option === 'string' && option.trim().length > 0)
       : []
-    const answer = offered.length > 0 ? await ctx.ui.select(text, offered) : await ctx.ui.input(text)
-    const value = answer === undefined || answer === null ? '' : String(answer).trim()
+    const draft = params && typeof params.draft === 'string' ? params.draft : null
+    // A draft wins over options: it is the more specific request, and asking someone
+    // to pick from a list while holding text they should change is incoherent.
+    const answer =
+      draft !== null
+        ? await ctx.ui.editor(text, draft)
+        : offered.length > 0
+          ? await ctx.ui.select(text, offered)
+          : await ctx.ui.input(text)
+    // Trailing whitespace is noise in a one-line answer and part of the content in an
+    // edited draft, so only the one-line case is trimmed.
+    const declined = answer === undefined || answer === null
+    const raw = declined ? '' : String(answer)
+    const value = draft === null ? raw.trim() : raw
     // A declined question is an answer too: the model has to decide what to do next
-    // instead of treating silence as permission.
+    // instead of treating silence as permission. A draft edited down to nothing is
+    // not a refusal — it is the person deleting what you wrote.
+    const said = declined
+      ? 'The person did not answer. Do not assume an answer; say what you need and stop.'
+      : draft !== null
+        ? 'The person edited the draft to: ' + String.fromCharCode(10) + value
+        : value.length === 0
+          ? 'The person did not answer. Do not assume an answer; say what you need and stop.'
+          : 'The person answered: ' + value
     return {
-      content: [
-        {
-          type: 'text',
-          text:
-            value.length === 0
-              ? 'The person did not answer. Do not assume an answer; say what you need and stop.'
-              : 'The person answered: ' + value,
-        },
-      ],
+      content: [{ type: 'text', text: said }],
       details: undefined,
     }
   },

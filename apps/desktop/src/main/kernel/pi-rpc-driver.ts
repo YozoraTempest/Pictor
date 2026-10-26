@@ -95,7 +95,7 @@ interface Kid {
  */
 interface Dialog {
   sessionId: string
-  kind: 'confirm' | 'select' | 'input'
+  kind: 'confirm' | 'select' | 'input' | 'editor'
 }
 
 interface RpcResponse {
@@ -630,7 +630,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   }
 
   /**
-   * Answers a `select` or `input` dialog.
+   * Answers a `select`, `input` or `editor` dialog.
    *
    * Pi asked one thing, so the batch Pictor sends is the one answer that settles it:
    * the picked label when there is one, else the text the person typed. Nothing at
@@ -647,21 +647,27 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     if (kid === undefined) throw new Error('这个会话的 pi 进程已经结束')
 
     const answer = answers?.[0]
-    const value =
-      answer === undefined
-        ? null
-        : dialog.kind === 'select'
-          ? // Pi's own list is the only thing its extension can branch on, so a picked
-            // option wins; text the person typed themselves is passed on when it is
-            // all they gave, which is the closest honest reading of their answer.
-            (answer.selected[0] ?? answer.custom ?? null)
-          : (answer.custom ?? answer.selected[0] ?? null)
-
-    if (value === null || value.trim().length === 0) {
+    if (answer === undefined) {
       this.#respond(kid, { type: 'extension_ui_response', id: eventId, cancelled: true })
       return
     }
-    this.#respond(kid, { type: 'extension_ui_response', id: eventId, value })
+
+    const value =
+      dialog.kind === 'select'
+        ? // Pi's own list is the only thing its extension can branch on, so a picked
+          // option wins; text the person typed themselves is passed on when it is all
+          // they gave, which is the closest honest reading of their answer.
+          (answer.selected[0] ?? answer.custom ?? null)
+        : (answer.custom ?? answer.selected[0] ?? null)
+
+    // An editor's answer may legitimately be empty: deleting the whole draft is an
+    // edit, not a refusal. Dismissal is expressed by answering nothing at all, which
+    // the branch above already handled.
+    if (dialog.kind !== 'editor' && (value === null || value.trim().length === 0)) {
+      this.#respond(kid, { type: 'extension_ui_response', id: eventId, cancelled: true })
+      return
+    }
+    this.#respond(kid, { type: 'extension_ui_response', id: eventId, value: value ?? '' })
   }
 
   /** One throwaway run, for the diagnosis button. */
@@ -838,22 +844,18 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   /**
    * Turns one of Pi's dialogs into something the window can settle.
    *
-   * Pi's `confirm` is a held tool call, so it becomes an approval card. `select` and
-   * `input` are a question, and the question card already draws both shapes — an
-   * extension asking is the same interaction as a model asking, so it lands in the
-   * same place instead of being refused.
-   *
-   * `editor` is the one that stays unanswered: it is a multi-line editor, and a
-   * single-line field that cannot show the draft would replace what the person was
-   * asked to edit. Cancelling says so honestly, and the extension's own "cancelled"
-   * branch runs.
+   * Pi's `confirm` is a held tool call, so it becomes an approval card. `select`,
+   * `input` and `editor` are a question, and the question card draws all three shapes
+   * — an extension asking is the same interaction as a model asking, so it lands in
+   * the same place instead of being refused. `editor` differs only in what it brings:
+   * a draft to change, which the card shows in a seeded multi-line field.
    */
   #ask(kid: Kid, record: Record<string, unknown>): void {
     const id = typeof record['id'] === 'string' ? record['id'] : null
     if (id === null) return
 
     const method = typeof record['method'] === 'string' ? record['method'] : ''
-    if (method !== 'confirm' && method !== 'select' && method !== 'input') {
+    if (method !== 'confirm' && method !== 'select' && method !== 'input' && method !== 'editor') {
       this.#respond(kid, { type: 'extension_ui_response', id, cancelled: true })
       return
     }
@@ -880,11 +882,14 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     }
 
     // Pi hands `select` a list of strings; the card shows each as an option. `input`
-    // offers none, which the card reads as free text.
+    // offers none, which the card reads as free text, and `editor` carries the draft
+    // the person is meant to change.
     const options =
       method === 'select'
         ? optionsOf(record['options']).map((label): { label: string } => ({ label }))
         : []
+    const prefill =
+      method === 'editor' && typeof record['prefill'] === 'string' ? record['prefill'] : null
     this.#dialogs.set(id, { sessionId, kind: method })
     this.#emit({
       method: 'question.request',
@@ -896,6 +901,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
             id,
             question: title.length === 0 ? 'Pi 想问你一件事' : title,
             ...(options.length === 0 ? {} : { options }),
+            ...(prefill === null ? {} : { prefill }),
           },
         ],
         // Same reason as the approval: the card belongs to this conversation.

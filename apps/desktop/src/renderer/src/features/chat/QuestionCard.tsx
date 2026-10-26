@@ -12,7 +12,10 @@ import { cn } from '../../lib/cn.js'
  *
  * A question with options is answered by picking them; the same field also takes
  * free text, because "none of these" is a real answer and the runtime accepts a
- * custom string beside the selection. A question with no options is text only.
+ * custom string beside the selection. A question with no options is text only, and
+ * one carrying a draft is an editor: a multi-line field seeded with the text the
+ * person is asked to change. A single-line box there would hide the draft and
+ * replace it, which is the one thing an edit must not do.
  */
 function QuestionRow({
   question,
@@ -23,7 +26,9 @@ function QuestionRow({
   answer: ChatAnswer | undefined
   onChange: (next: ChatAnswer) => void
 }): React.JSX.Element {
-  const [custom, setCustom] = useState(answer?.custom ?? '')
+  // A draft starts as the text it came with: an untouched answer is "the draft as
+  // written", not "nothing", and clearing it on purpose is an edit too.
+  const [custom, setCustom] = useState(answer?.custom ?? question.prefill ?? '')
   const selected = answer?.selected ?? []
   const options = question.options ?? []
 
@@ -77,20 +82,39 @@ function QuestionRow({
         </div>
       )}
 
-      <input
-        value={custom}
-        aria-label={`补充说明：${question.question}`}
-        placeholder={options.length > 0 ? '或输入你自己的答案' : '输入你的答案'}
-        onChange={(event) => {
-          setCustom(event.target.value)
-          onChange({
-            id: question.id,
-            selected,
-            ...(event.target.value.length === 0 ? {} : { custom: event.target.value }),
-          })
-        }}
-        className="h-7 rounded-md border border-border bg-bg px-2 text-xs text-text placeholder:text-faint focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
-      />
+      {question.prefill !== undefined ? (
+        <textarea
+          value={custom}
+          aria-label={`编辑草稿：${question.question}`}
+          rows={6}
+          onChange={(event) => {
+            setCustom(event.target.value)
+            onChange({
+              id: question.id,
+              selected,
+              ...(event.target.value.length === 0
+                ? { custom: '' }
+                : { custom: event.target.value }),
+            })
+          }}
+          className="resize-y rounded-md border border-border bg-bg px-2 py-1.5 font-mono text-xs leading-relaxed text-text focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
+        />
+      ) : (
+        <input
+          value={custom}
+          aria-label={`补充说明：${question.question}`}
+          placeholder={options.length > 0 ? '或输入你自己的答案' : '输入你的答案'}
+          onChange={(event) => {
+            setCustom(event.target.value)
+            onChange({
+              id: question.id,
+              selected,
+              ...(event.target.value.length === 0 ? {} : { custom: event.target.value }),
+            })
+          }}
+          className="h-7 rounded-md border border-border bg-bg px-2 text-xs text-text placeholder:text-faint focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
+        />
+      )}
     </div>
   )
 }
@@ -165,7 +189,13 @@ export function QuestionCard({
           onClick={() =>
             void send(
               request.questions.map(
-                (question) => answers[question.id] ?? { id: question.id, selected: [] },
+                (question) =>
+                  answers[question.id] ?? {
+                    id: question.id,
+                    selected: [],
+                    // Untouched, a draft is answered with the draft.
+                    ...(question.prefill === undefined ? {} : { custom: question.prefill }),
+                  },
               ),
             )
           }

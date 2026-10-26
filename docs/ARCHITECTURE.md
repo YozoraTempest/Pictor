@@ -88,9 +88,10 @@ rpc` speaks JSONL commands on stdin and streams the same events over stdout,
   (`ctx.ui.confirm`), which is what keeps timeouts, cancellation and parallel
   calls Pi's business. A conversation can also remember "not this tool again",
   which it can forget again from the same switch. Pi's other dialogs (`select`,
-  `input`) become the question card, and since Pi ships no model-facing asking
-  tool, that extension registers `ask_user_question` under dsh's name — so a Pi
-  conversation can ask, not only answer. What it still cannot express is a
+  `input`, `editor`) become the question card — options, free text, and a seeded
+  multi-line field for a draft someone is meant to change — and since Pi ships no
+  model-facing asking tool, that extension registers `ask_user_question` under
+  dsh's name, `draft` included — so a Pi conversation can ask, not only answer. What it still cannot express is a
   per-conversation sandbox; it declares none instead of faking one. Its
   transcript is read back from Pi's own session file (`kernel/pi-history.ts`),
   because Pictor keeps none.

@@ -69,6 +69,7 @@ async function loadExtension(
   confirms: { title: string; message: string }[]
   asks: { title: string; options: string[] }[]
   typings: { title: string }[]
+  edits: { title: string; draft: string }[]
   tools: Record<string, unknown>[]
 }> {
   const dir = mkdtempSync(join(tmpdir(), 'pictor-pi-guard-'))
@@ -95,6 +96,7 @@ async function loadExtension(
   const confirms: { title: string; message: string }[] = []
   const asks: { title: string; options: string[] }[] = []
   const typings: { title: string }[] = []
+  const edits: { title: string; draft: string }[] = []
   const ctx = {
     ui: {
       confirm: async (title: string, message: string) => {
@@ -109,6 +111,10 @@ async function loadExtension(
         typings.push({ title })
         return options.answer
       },
+      editor: async (title: string, draft: string) => {
+        edits.push({ title, draft })
+        return options.answer
+      },
     },
   }
 
@@ -116,6 +122,7 @@ async function loadExtension(
     confirms,
     asks,
     typings,
+    edits,
     tools,
     call: async (event) => {
       if (handler === null) throw new Error('the extension registered no tool_call handler')
@@ -257,6 +264,40 @@ describe('guardExtensionSource', () => {
     // the person needs to answer at all.
     expect(extension.typings[0]?.title).toContain('改了登录页')
     expect(result.content[0]?.text).toBe('The person answered: 修好了')
+  })
+
+  it('offers a draft as an editor instead of a blank field', async () => {
+    const port = await bridge({ block: false })
+    const extension = await loadExtension(
+      { port: port.port, token: 'secret' },
+      { answer: 'feat: 改过的草稿' },
+    )
+
+    const result = (await extension.ask({
+      question: '改一下这条提交说明',
+      draft: 'feat: 原始草稿',
+    })) as { content: { text: string }[] }
+
+    // The draft is what the person starts from, so it has to travel to the editor.
+    expect(extension.edits).toEqual([{ title: '改一下这条提交说明', draft: 'feat: 原始草稿' }])
+    expect(extension.asks).toEqual([])
+    expect(extension.typings).toEqual([])
+    expect(result.content[0]?.text).toContain('feat: 改过的草稿')
+  })
+
+  it('treats an emptied draft as an edit, not as silence', async () => {
+    const port = await bridge({ block: false })
+    const extension = await loadExtension({ port: port.port, token: 'secret' }, { answer: '' })
+
+    const result = (await extension.ask({
+      question: '留着这段吗？',
+      draft: 'feat: 原始草稿',
+    })) as { content: { text: string }[] }
+
+    // The person deliberately deleted the text; the model must not read that as
+    // "nobody answered" and re-ask the same thing.
+    expect(result.content[0]?.text).toContain('edited the draft to')
+    expect(result.content[0]?.text).not.toContain('did not answer')
   })
 
   it('says the person did not answer instead of inventing one', async () => {
