@@ -16,8 +16,13 @@ export interface KernelSetting {
   /** What the current value means, in one line; shown under the switch. */
   hint: () => string
   read: () => boolean
-  /** Records the choice. A kernel that reads it at spawn picks it up next time. */
-  write: (value: boolean) => void
+  /**
+   * Records the choice.
+   *
+   * May return a promise: the kernel is also the one that persists the value (through
+   * `pictor.settings`), so saving is its business and the caller only waits for it.
+   */
+  write: (value: boolean) => void | Promise<void>
 }
 
 /** A kernel that declares settings of its own. */

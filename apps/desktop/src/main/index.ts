@@ -25,12 +25,13 @@ import {
 } from '@pictor/plugin-sdk'
 import {
   MODEL_EFFORTS,
-  type ApprovalRequest,
+  type ApprovalMode,
   type ChatAnswer,
   type ChatImage,
   type ChatQuestion,
   type ForkPoint,
   type ChatQuestionRequest,
+  type ApprovalRequest,
   type JsonValue,
   type ModelEffort,
   type ModelProtocol,
@@ -59,10 +60,9 @@ import { shouldAdoptTitle } from './harness-title.js'
 import { DEFAULT_PERMISSION_MODE, isPermissionMode } from './kernel/dsh-driver.js'
 import { dshKernel } from './kernel/dsh-kernel.js'
 import type { KernelDriver } from './kernel/driver.js'
-import { startKernelHost, type KernelHost } from './kernel/host.js'
+import { startKernelHost, type KernelHost, type KernelSettingsService } from './kernel/host.js'
 import { isProviderSource } from './kernel/model-source.js'
-import { prunePiModelsFile } from './kernel/pi-home.js'
-import type { PiRpcDriver } from './kernel/pi-rpc-driver.js'
+import type { SettingsMap } from '@pictor/shared'
 import { resolveNodeBinary, resolveNpmCli } from './kernel/node-runtime.js'
 
 import { createPiKernel } from './kernel/pi-kernel.js'
@@ -159,11 +159,6 @@ interface Workspace {
   model: ModelService
   /** Routes each conversation to the kernel that owns it. */
   harness: KernelRouter
-  /**
-   * The Pi kernel, kept reachable because its catalogue is cached: editing a service
-   * has to invalidate it, and only the driver knows that.
-   */
-  pi: PiRpcDriver
   /** The kernel container: what is mounted, what was refused, and why. */
   kernels: KernelHost
   /** Installs and removes plugins under the profile. */
@@ -375,24 +370,24 @@ async function startWorkspace(): Promise<Workspace | null> {
   const rules = new RuleBook(running.client)
   await rules.load()
 
-  // Which configuration Pi runs on. Off by default: Pictor's own directory, so the
-  // only services it has are the ones Pictor registers. Kept in memory because the
-  // driver reads it at every spawn, and the switch has to take effect without a
-  // restart.
-  const piOwnConfig = (await running.client.listSettings())[OWN_CONFIG_KEY] === true
-
-  // A conversation that remembers one of Pi's own models would fail at startup while
-  // Pictor's Pi only has Pictor's services; forgetting those choices turns a broken
-  // conversation into one that simply has not chosen yet.
-  if (!piOwnConfig) forgetForeignPiModels(userData)
-  const piKernel = createPiKernel({ ownConfig: piOwnConfig })
+  // One snapshot of the profile's settings, and the service kernels write theirs back
+  // through. Keeping it here rather than in each kernel is what lets a kernel ask
+  // "what did the person choose?" without this file knowing which key it means.
+  const stored: SettingsMap = { ...(await running.client.listSettings()) }
+  const settingsService: KernelSettingsService = {
+    read: (key) => stored[key],
+    write: async (key, value) => {
+      await running.client.putSetting(key, value)
+      stored[key] = value
+    },
+  }
 
   // Which kernels this machine runs. Both are a person's choice, kept in settings so
   // "the built-in kernel is the default" stops being a fact of the build.
-  const kernelSettings = await running.client.listSettings()
-  const disabledBuiltins = readStringList(kernelSettings[BuiltinKernelsKey])
+  const disabledBuiltins = readStringList(stored[BuiltinKernelsKey])
   const preferredKernel =
-    typeof kernelSettings[DefaultKernelKey] === 'string' ? kernelSettings[DefaultKernelKey] : null
+    typeof stored[DefaultKernelKey] === 'string' ? stored[DefaultKernelKey] : null
+
   // One installer for both halves: a plugin may contribute panels, a kernel, or both,
   // and installing it should not be two decisions.
   const installer = new PluginInstaller({
@@ -423,15 +418,21 @@ async function startWorkspace(): Promise<Workspace | null> {
         : { decision: 'deny', reason: `被工具规则拦截：${describeRule(rule)}` }
     },
   }
-  // Holding a call for a person is a second question, asked only by a caller that
-  // can wait for the answer. The rules answer it, and so does the conversation's own
-  // mode — which lives on the kernel that cannot decide this for itself.
-  const askFor = (context: GuardAsk): { tool: string; reason: string } | null => {
-    // A call with no conversation to name cannot have a mode; the rules still apply,
-    // so it is asked as if the conversation never opted in.
-    const kernel = piKernel.driver()
-    const mode =
-      context.session === null || kernel === null ? 'never' : kernel.approvalMode(context.session)
+  // Holding a call for a person is a second question, asked only by a caller that can
+  // wait for the answer. The rules answer it, and so does the conversation's own mode —
+  // which belongs to the kernel that runs that conversation, not to a named one here.
+  let router: KernelRouter | null = null
+  const askFor = async (context: GuardAsk): Promise<{ tool: string; reason: string } | null> => {
+    const session = context.session
+    // A call with no conversation to name cannot have a mode; the rules still apply, so
+    // it is asked as if its kernel never opted in. Otherwise the conversation's own
+    // kernel answers, whatever kernel that is.
+    let mode: ApprovalMode = 'never'
+    let granted = false
+    if (session !== null && router !== null) {
+      mode = await router.guardApprovalMode(session)
+      granted = await router.guardIsGranted(session, context.tool)
+    }
     const verdict = rules.askFor({
       tool: context.tool,
       args: context.args,
@@ -439,10 +440,7 @@ async function startWorkspace(): Promise<Workspace | null> {
       mode,
       // A tool the person already allowed in this conversation stops asking — unless
       // a rule of theirs names this call, which the policy decides.
-      granted:
-        context.session !== null &&
-        kernel !== null &&
-        kernel.isGranted(context.session, context.tool),
+      granted,
     })
     return verdict === null
       ? null
@@ -488,17 +486,16 @@ async function startWorkspace(): Promise<Workspace | null> {
       permission: readPermissionMode,
       workspace: resolveCwd,
       userData,
+      settings: settingsService,
     },
     builtins: [
-      { id: 'dsh', label: 'DeepSeek Harness', plugin: dshKernel },
-      { id: 'pi', label: 'Pi', plugin: piKernel.plugin },
+      { id: 'dsh', label: 'DeepSeek Harness', entry: { load: async () => dshKernel } },
+      { id: 'pi', label: 'Pi', entry: { load: async () => createPiKernel() } },
     ],
     disabled: disabledBuiltins,
     directories: [join(userData, 'plugins')],
   })
   kernelHost = kernels
-  const pi = piKernel.driver()
-  if (pi === null) throw new Error('Pi 内核没有挂载')
   const harness: KernelRouter = new KernelRouter({
     drivers: kernels.drivers,
     defaultKernel: preferredKernel,
@@ -511,6 +508,7 @@ async function startWorkspace(): Promise<Workspace | null> {
       },
     },
   })
+  router = harness
   // The runtime reports durable session events; the renderer renders runs and
   // deltas. One translation keeps the transcript unchanged by the swap.
   const chatBridge = new HarnessChatBridge()
@@ -608,18 +606,13 @@ async function startWorkspace(): Promise<Workspace | null> {
     pluginHost,
     model,
     harness,
-    pi,
     kernels,
     installer,
     pluginDirectories: () => candidateRoots,
+    // The kernel that declared the key is the one that writes it, persistence
+    // included; this only asks every catalogue to look again afterwards.
     setKernelSetting: async (key, value) => {
-      // The kernel records it; Pictor remembers it, because a kernel only reads its
-      // settings when it starts.
-      await running.client.putSetting(key, value)
-      const applied = harness.setKernelSetting(key, value)
-      // Entering isolation drops the choices Pictor can no longer offer; leaving it
-      // keeps them, because every registered service still exists.
-      if (key === OWN_CONFIG_KEY && !value) forgetForeignPiModels(userData)
+      const applied = await harness.setKernelSetting(key, value)
       harness.invalidateCatalogues()
       return applied
     },
@@ -863,9 +856,6 @@ function parseAnswers(value: unknown): ChatAnswer[] {
   })
 }
 
-/** Where the "Pi keeps its own config" switch is stored. */
-const OWN_CONFIG_KEY = 'pi.ownConfig'
-
 /** Built-in kernel ids a person turned off. */
 const BuiltinKernelsKey = 'kernel.disabled'
 
@@ -876,14 +866,6 @@ const DefaultKernelKey = 'kernel.default'
 function readStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter((entry): entry is string => typeof entry === 'string')
-}
-
-/** Forgets remembered models that only Pi's own configuration could offer. */
-function forgetForeignPiModels(userData: string): void {
-  const dropped = prunePiModelsFile(userData)
-  if (dropped > 0) {
-    console.warn(`[pi] 忘记了 ${String(dropped)} 个只存在于 Pi 自己配置里的模型选择`)
-  }
 }
 
 function registerIpc(workspace: Workspace): void {
@@ -1198,21 +1180,21 @@ function registerIpc(workspace: Workspace): void {
     const saved = await workspace.model.saveProvider(
       input as Parameters<ModelService['saveProvider']>[0],
     )
-    workspace.pi.invalidateCatalogue()
+    workspace.harness.invalidateCatalogues()
     return applyToRuntime(saved)
   })
 
   ipcMain.handle('pictor:provider.remove', async (_event, id: unknown) => {
     if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
     const left = await workspace.model.removeProvider(id)
-    workspace.pi.invalidateCatalogue()
+    workspace.harness.invalidateCatalogues()
     return applyToRuntime(left)
   })
 
   ipcMain.handle('pictor:provider.activate', async (_event, id: unknown) => {
     if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
     const active = await workspace.model.activateProvider(id)
-    workspace.pi.invalidateCatalogue()
+    workspace.harness.invalidateCatalogues()
     return applyToRuntime(active)
   })
 
@@ -1226,7 +1208,7 @@ function registerIpc(workspace: Workspace): void {
       if (typeof id !== 'string' || id.trim().length === 0)
         throw new Error('provider id is required')
       const imported = await workspace.model.importCcSwitchProvider(id, includeApiKey === true)
-      workspace.pi.invalidateCatalogue()
+      workspace.harness.invalidateCatalogues()
       return applyToRuntime(imported)
     },
   )

@@ -5,7 +5,8 @@ import { piProvidersOf, type PiProviderSpec } from '@pictor/shared'
 import type { ModelService } from '../model-service.js'
 import { writeGuardExtension } from '../pi-guard-extension.js'
 import { hostService, provideKernel, type KernelPlugin } from './host.js'
-import { PiRpcDriver } from './pi-rpc-driver.js'
+import { forgetForeignPiModels } from './pi-home.js'
+import { PI_OWN_CONFIG_KEY, PiRpcDriver } from './pi-rpc-driver.js'
 
 /**
  * Pi, mounted the way any other kernel is.
@@ -14,21 +15,52 @@ import { PiRpcDriver } from './pi-rpc-driver.js'
  * plugin exists to take its dependencies from the host instead of from the file that
  * assembles the app, which is what lets the settings page say what it can reach.
  *
- * One thing it owns rather than reads is whether Pi runs on Pictor's configuration
- * or its own. That switch is flipped from the settings page while the driver is
- * already alive, and the driver reads it on the next spawn, so the value lives in
- * this closure and the caller writes through {@link PiKernel.setOwnConfig}.
+ * One thing it owns rather than reads is whether Pi runs on Pictor's configuration or
+ * its own. That is Pi's setting, so Pi is the one that reads it at mount, remembers it
+ * while the driver is alive, and persists it back — the app that assembles the two
+ * never names the key.
  */
-export interface PiKernel {
-  plugin: KernelPlugin
-  /**
-   * The mounted driver, or null before the host mounts the plugin.
-   *
-   * Everything else about Pi — its settings, its catalogue, the services it runs
-   * with — is reached through the driver's interfaces, so nothing outside this file
-   * has to know the type.
-   */
-  driver: () => PiRpcDriver | null
+export function createPiKernel(): KernelPlugin {
+  return {
+    name: 'pictor-kernel-pi',
+    // A model catalogue, a stored setting, an RPC endpoint and a guard extension: all
+    // it needs from Pictor, and all the settings page reports it can reach.
+    inject: [
+      'pictor.models',
+      'pictor.userdata',
+      'pictor.workspace',
+      'pictor.guard',
+      'pictor.settings',
+    ],
+    apply(ctx: Context): void {
+      const userData = hostService(ctx, 'pictor.userdata')
+      const settings = hostService(ctx, 'pictor.settings')
+      let ownConfig = settings.read(PI_OWN_CONFIG_KEY) === true
+      // Starting on Pictor's configuration means any remembered choice of one of Pi's
+      // own models is unusable here; forgetting it now beats failing the first turn.
+      if (!ownConfig) forgetForeignPiModels(userData)
+
+      const providers = providersOf(hostService(ctx, 'pictor.models'))
+      provideKernel(
+        ctx,
+        new PiRpcDriver({
+          userData,
+          resolveCwd: hostService(ctx, 'pictor.workspace'),
+          providers,
+          setOwnConfig: async (value: boolean) => {
+            ownConfig = value
+            await settings.write(PI_OWN_CONFIG_KEY, value)
+            if (!value) forgetForeignPiModels(userData)
+          },
+          // The same guard chain dsh asks over loopback, written as a Pi extension: a
+          // user's tool rules mean the same thing on both kernels. The endpoint is read
+          // per launch, and a missing one makes the extension block rather than allow.
+          guardExtension: () => writeGuardExtension(userData, hostService(ctx, 'pictor.guard')()),
+          ownConfig: () => ownConfig,
+        }),
+      )
+    },
+  }
 }
 
 /** Pictor's services, in the shape Pi's provider registration takes. */
@@ -41,37 +73,4 @@ function providersOf(model: ModelService): () => Promise<PiProviderSpec[]> {
       modelId: settings.modelId,
     }).providers
   }
-}
-
-export function createPiKernel(options: { ownConfig: boolean }): PiKernel {
-  let ownConfig = options.ownConfig
-  let instance: PiRpcDriver | null = null
-  let providers: (() => Promise<PiProviderSpec[]>) | null = null
-
-  const plugin: KernelPlugin = {
-    name: 'pictor-kernel-pi',
-    // A model catalogue, an RPC endpoint and a guard extension: all it needs from
-    // Pictor, and all the settings page reports it can reach.
-    inject: ['pictor.models', 'pictor.userdata', 'pictor.workspace', 'pictor.guard'],
-    apply(ctx: Context): void {
-      const userData = hostService(ctx, 'pictor.userdata')
-      providers = providersOf(hostService(ctx, 'pictor.models'))
-      instance = new PiRpcDriver({
-        userData,
-        resolveCwd: hostService(ctx, 'pictor.workspace'),
-        providers: () => (providers === null ? Promise.resolve([]) : providers()),
-        setOwnConfig: (value: boolean) => {
-          ownConfig = value
-        },
-        // The same guard chain dsh asks over loopback, written as a Pi extension: a
-        // user's tool rules mean the same thing on both kernels. The endpoint is read
-        // per launch, and a missing one makes the extension block rather than allow.
-        guardExtension: () => writeGuardExtension(userData, hostService(ctx, 'pictor.guard')()),
-        ownConfig: () => ownConfig,
-      })
-      provideKernel(ctx, instance)
-    },
-  }
-
-  return { plugin, driver: () => instance }
 }

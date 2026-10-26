@@ -135,9 +135,16 @@ settings page shows, instead of a rollback that hides what went wrong.
 
 What a plugin may reach is a service, and the `inject` list it declares is the
 sentence the settings page shows a person: `pictor.models`, `pictor.rules`,
-`pictor.guard`, `pictor.permission`, `pictor.workspace`, `pictor.userdata`. A
-capability declared `true` with no method behind it is refused at mount time, so the
-window never draws a control the kernel cannot answer.
+`pictor.guard`, `pictor.permission`, `pictor.workspace`, `pictor.userdata`,
+`pictor.settings`. A capability declared `true` with no method behind it is refused at
+mount time, so the window never draws a control the kernel cannot answer.
+
+Built-in and installed kernels take the same road: both arrive as a `KernelEntry`
+(`{ load: () => Promise<plugin> }`) and mount through one function, so shipping a
+built-in as its own package is a change of one closure. `pictor.settings` is how a
+kernel remembers a setting it declared — it reads the profile's settings and writes
+back through the same store, so the file that assembles the kernels never spells out
+their keys.
 
 The container lives in the **main process only**. The runtime stays a child process:
 cordis has no cross-process semantics, and the tool-guard bridge is only fail-closed

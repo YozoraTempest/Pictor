@@ -48,6 +48,14 @@ const SCRIPT = /\.[cm]?js$/i
 /** How many history rows one page opens with. */
 const HISTORY_PAGE = 50
 
+/**
+ * The one setting this kernel owns.
+ *
+ * Exported because the plugin that mounts it is also the one that persists it: the
+ * key belongs to Pi, and no other file has to spell it out.
+ */
+export const PI_OWN_CONFIG_KEY = 'pi.ownConfig'
+
 export interface PiRpcDriverOptions {
   userData: string
   /** Directory a conversation runs in, resolved from its project. */
@@ -75,8 +83,11 @@ export interface PiRpcDriverOptions {
    * than restarting the app.
    */
   ownConfig?: () => boolean
-  /** Records the choice above; the next child starts with it. */
-  setOwnConfig?: (value: boolean) => void
+  /**
+   * Records the choice above: updates the flag, persists it, and does whatever else
+   * leaving the isolated directory means. The driver only waits for it.
+   */
+  setOwnConfig?: (value: boolean) => void | Promise<void>
   /**
    * The services this kernel should run with, derived from Pictor's configuration.
    *
@@ -494,7 +505,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   settings(): readonly KernelSetting[] {
     return [
       {
-        key: 'pi.ownConfig',
+        key: PI_OWN_CONFIG_KEY,
         label: '使用我自己的 Pi 配置',
         description:
           'Pi 默认跑在 Pictor 的隔离目录里，只能用 Pictor 注册的服务。打开后它会读 ~/.pi/agent。',
@@ -503,9 +514,7 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
             ? '当前配置目录：~/.pi/agent'
             : `当前配置目录：${this.#home}`,
         read: () => this.#options.ownConfig?.() === true,
-        write: (value: boolean) => {
-          this.#options.setOwnConfig?.(value)
-        },
+        write: (value: boolean) => this.#options.setOwnConfig?.(value),
       },
     ]
   }

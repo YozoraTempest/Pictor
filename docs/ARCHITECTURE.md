@@ -78,6 +78,13 @@ from `pictor.contributes` (`{ point: 'kernel', value: { main } }`); `package.jso
 them in order, watches `internal/service` for the services they publish, and hands the
 resulting map to `KernelRouter` — nothing enumerates plugins by hand.
 
+Both halves arrive as a `KernelEntry` — "something that can hand over a plugin" — so
+one `mount()` covers them: a built-in is a closure in this bundle (`{ load: async () =>
+dshKernel }`) and an installed kernel is a module imported by path. Turning a built-in
+into its own package is then a change of that one closure to an `import()`, not a change
+of shape, and a kernel that fails to load fails alone with its reason on the settings
+page.
+
 The map is **live**. `KernelHost.mountInstalled` starts one more plugin and
 `unmount` disposes its fiber, so installing a kernel does not need a restart and
 removing one takes it out of the picker at once. The two steps are kept apart on
@@ -90,11 +97,16 @@ dependencies with it; only the names a person actually installed are plugins.
 
 What a plugin may reach is a service, and the `inject` list it declares is the
 sentence the settings page shows a person: `pictor.models`, `pictor.rules`,
-`pictor.guard`, `pictor.permission`, `pictor.workspace`, `pictor.userdata`. A
-capability declared `true` with no method behind it is refused at mount time, so the
-window never draws a control the kernel cannot answer. `pictor.models` includes the
-running service's key — a kernel cannot take a turn without it — which is why
-installing one asks first.
+`pictor.guard`, `pictor.permission`, `pictor.workspace`, `pictor.userdata`,
+`pictor.settings`. A capability declared `true` with no method behind it is refused at
+mount time, so the window never draws a control the kernel cannot answer.
+`pictor.models` includes the running service's key — a kernel cannot take a turn
+without it — which is why installing one asks first.
+
+`pictor.settings` is what makes a kernel's own switch the kernel's business: it reads
+a snapshot of the profile's settings, and it writes back through the same store, so a
+plugin that declares a setting can remember it itself. The app that assembles the
+kernels never spells out those keys.
 
 The container is deliberately **in the main process only**. The runtime stays a child
 process: cordis has no cross-process semantics, and the tool-guard bridge is only
@@ -142,6 +154,13 @@ says it exists: a CLI kernel gets no sandbox switch and no model picker, instead
 of a control that throws when pressed. The approval switch follows the same rule:
 dsh decides for itself when to ask, so it draws no such switch, and a kernel that
 hands the decision over draws one.
+
+Who answers that "when" question is the conversation's own kernel
+(`KernelRouter.guardApprovalMode` / `guardIsGranted`), asked per call by the guard
+bridge: a kernel that decides for itself — dsh — answers `never`, because its own
+policy already decided to hold the call, and only a `deny`/`ask` rule can hold one of
+its calls from outside. Naming a kernel there instead is how the guard used to end up
+asking Pi about dsh's conversations.
 
 Pictor also hands its own services to Pi. The same loopback bridge that answers the
 guard also answers "what can I run": the extension calls

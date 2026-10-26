@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { Context, type Fiber, type Plugin } from '@deepseek-ai/cordis'
 import { INSTALLED_LIST } from '@pictor/plugin-host'
 import { parseKernelContribution, parsePackageManifest } from '@pictor/plugin-sdk'
+import type { JsonValue } from '@pictor/shared'
 
 import type { PermissionMode } from '../../shared/bridge.js'
 import type { ModelService } from '../model-service.js'
@@ -27,6 +28,22 @@ export interface GuardEndpoint {
 }
 
 /**
+ * The profile's key/value store, for a kernel that owns a setting.
+ *
+ * Without this, a kernel's own switch would have to be persisted by whoever
+ * assembles the app — which means the assembly has to know the key, and a second
+ * kernel with a switch means a second special case in that file. Reads come from a
+ * snapshot taken at startup and kept current by {@link KernelSettingsService.write},
+ * so a kernel can answer for its own state synchronously.
+ */
+export interface KernelSettingsService {
+  /** A stored value as last read or written; undefined when never set. */
+  read(key: string): JsonValue | undefined
+  /** Persists one value and remembers it. */
+  write(key: string, value: JsonValue): Promise<void>
+}
+
+/**
  * What a kernel plugin may reach.
  *
  * Each entry is a separate service on purpose: a plugin declares the ones it needs
@@ -42,6 +59,7 @@ export interface KernelHostServices {
   permission: () => Promise<PermissionMode>
   workspace: (sessionId: string) => Promise<string | null>
   userData: string
+  settings: KernelSettingsService
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -52,6 +70,7 @@ declare module '@deepseek-ai/cordis' {
     'pictor.permission': () => Promise<PermissionMode>
     'pictor.workspace': (sessionId: string) => Promise<string | null>
     'pictor.userdata': string
+    'pictor.settings': KernelSettingsService
     [key: `kernel.${string}`]: KernelDriver
   }
 }
@@ -60,9 +79,22 @@ declare module '@deepseek-ai/cordis' {
 export type KernelPlugin = Plugin<void>
 
 /**
+ * Where a kernel's plugin comes from.
+ *
+ * A built-in kernel is compiled into this app and an installed one is a directory
+ * on disk, but both are "some module that exports a plugin": keeping that fact here,
+ * instead of passing the plugin object around, is what makes turning a built-in into
+ * its own package a change of one line rather than a change of shape.
+ */
+export interface KernelEntry {
+  /** One plugin per call: a kernel switched off and on again is mounted afresh. */
+  load: () => Promise<KernelPlugin>
+}
+
+/**
  * A kernel compiled into the app.
  *
- * `id` is carried beside the plugin because the plugin itself only announces its id
+ * `id` is carried beside the entry because the plugin itself only announces its id
  * once it is mounted — and a kernel a person turned off must never be mounted at all,
  * even briefly.
  */
@@ -70,7 +102,7 @@ export interface BuiltinKernel {
   id: string
   /** Shown in the picker and the plugin page, mounted or not. */
   label: string
-  plugin: KernelPlugin
+  entry: KernelEntry
 }
 
 /** What asking the host to mount one plugin produced. */
@@ -260,18 +292,28 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
   ctx.provide('pictor.permission', options.services.permission)
   ctx.provide('pictor.workspace', options.services.workspace)
   ctx.provide('pictor.userdata', options.services.userData)
+  ctx.provide('pictor.settings', options.services.settings)
 
   /** Which plugin brought each kernel up, what it needs, and how to unload it. */
   const mounted = new Map<string, { source: string; services: readonly string[]; fiber: Fiber }>()
 
+  /**
+   * Mount one entry, whatever brought it here.
+   *
+   * A built-in is a closure in this bundle and an installed kernel is a directory on
+   * disk, but both arrive as "something that can hand over a plugin". Mounting them
+   * through one function is what keeps installing and shipping a kernel the same act.
+   */
   const mount = async (
-    plugin: KernelPlugin,
+    entry: KernelEntry,
     source: string,
     failureName = source,
   ): Promise<string | null> => {
     const known = new Set(drivers.keys())
+    let plugin: KernelPlugin
     let fiber: Fiber
     try {
+      plugin = await entry.load()
       fiber = await ctx.plugin(plugin)
     } catch (error) {
       const message = messageOf(error)
@@ -295,7 +337,7 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
     // A built-in that is turned off is simply not mounted: no service, no kernel,
     // and the picker will not offer it.
     if (disabled.has(entry.id)) continue
-    await mount(entry.plugin, 'builtin', `builtin:${entry.id}`)
+    await mount(entry.entry, 'builtin', `builtin:${entry.id}`)
   }
 
   for (const found of discoverKernels(options.directories)) {
@@ -303,9 +345,8 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
       failures.push({ source: found.source, message: found.error })
       continue
     }
-    await mount(found.plugin, found.source)
+    await mount(found.entry, found.source)
   }
-
   return {
     drivers,
     failures,
@@ -340,14 +381,14 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
     async mountBuiltin(id: string): Promise<KernelMountResult> {
       const entry = builtinById.get(id)
       if (entry === undefined) return { mounted: false, failure: `没有内置内核 ${id}` }
-      const failure = await mount(entry.plugin, 'builtin', `builtin:${id}`)
+      const failure = await mount(entry.entry, 'builtin', `builtin:${id}`)
       return { mounted: failure === null, failure }
     },
     async mountInstalled(name: string): Promise<KernelMountResult> {
       const found = discoverKernel(options.directories, name, { required: false })
       if (found === null) return { mounted: false, failure: null }
       if ('error' in found) return { mounted: false, failure: found.error }
-      const failure = await mount(found.plugin, found.source)
+      const failure = await mount(found.entry, found.source)
       return { mounted: failure === null, failure }
     },
     async unmount(id: string): Promise<void> {
@@ -366,7 +407,8 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
   }
 }
 
-type KernelEntry = { source: string; plugin: KernelPlugin } | { source: string; error: string }
+/** One directory that might hold a kernel, and the reason when it does not. */
+type DiscoveredKernel = { source: string; entry: KernelEntry } | { source: string; error: string }
 
 /** File naming the plugins installed as packages, rather than copied folders. */
 const PACKAGE_LIST = INSTALLED_LIST
@@ -386,8 +428,8 @@ const PACKAGE_LIST = INSTALLED_LIST
  * mount time — the module graph is ESM, and a plugin that fails to import has to fail
  * alone.
  */
-function discoverKernels(directories: readonly string[]): KernelEntry[] {
-  const entries: KernelEntry[] = []
+function discoverKernels(directories: readonly string[]): DiscoveredKernel[] {
+  const entries: DiscoveredKernel[] = []
   const seen = new Set<string>()
   for (const directory of directories) {
     // The first root that offers a name wins; a plugin installed twice is one plugin.
@@ -408,7 +450,7 @@ function discoverKernel(
   directories: readonly string[],
   name: string,
   options: { required: boolean },
-): KernelEntry | null {
+): DiscoveredKernel | null {
   const root = kernelRoot(directories, name)
   if (root === null) return options.required ? { source: name, error: '内核目录不存在' } : null
 
@@ -426,8 +468,9 @@ function discoverKernel(
   }
 
   const entry = join(root, main)
-  if (!existsSync(entry)) return { source: name, error: `入口不存在：${main}` }
-  return { source: name, plugin: mountModule(entry, name) }
+  // The plugin is a wrapper around the import, so a kernel that fails to load fails
+  // on its own instead of taking this scan with it.
+  return { source: name, entry: { load: async () => mountModule(entry, name) } }
 }
 
 /**

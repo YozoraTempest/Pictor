@@ -16,7 +16,7 @@ import type {
   KernelModelState,
   PermissionMode,
 } from '../../shared/bridge.js'
-import { isApprovalSource } from './approval-source.js'
+import { isApprovalSource, type KernelApprovalSource } from './approval-source.js'
 import type { AgentProbeResult, KernelDriver } from './driver.js'
 import { isCatalogueSource, isModelSource } from './model-source.js'
 import { isSettingsSource } from './settings-source.js'
@@ -145,13 +145,18 @@ export class KernelRouter implements KernelDriver {
     return found
   }
 
-  /** Writes one declared setting; false when no mounted kernel owns that key. */
-  setKernelSetting(key: string, value: boolean): boolean {
+  /**
+   * Writes one declared setting to the kernel that owns the key.
+   *
+   * Awaitable because the kernel also persists it: false means no mounted kernel
+   * declared that key, which the window shows instead of pretending it stuck.
+   */
+  async setKernelSetting(key: string, value: boolean): Promise<boolean> {
     for (const driver of this.#options.drivers.values()) {
       if (!isSettingsSource(driver)) continue
       const setting = driver.settings().find((entry) => entry.key === key)
       if (setting === undefined) continue
-      setting.write(value)
+      await setting.write(value)
       return true
     }
     return false
@@ -357,6 +362,34 @@ export class KernelRouter implements KernelDriver {
       throw new Error(`这个会话的内核「${driver.id}」自己决定何时问人`)
     }
     driver.setApprovalMode(sessionId, mode)
+  }
+
+  /**
+   * The approval mode the guard should apply to one conversation.
+   *
+   * `never` when the kernel decides for itself — its own policy already decided to
+   * hold the call, so applying a second mode here would ask twice — and `never` when
+   * this build no longer has that kernel. A tool rule still applies either way.
+   *
+   * This is the question the guard asks; it is not the settings page's question,
+   * which is why it answers instead of throwing.
+   */
+  async guardApprovalMode(sessionId: string): Promise<ApprovalMode> {
+    const source = await this.#approvalSource(sessionId)
+    return source === null ? 'never' : source.approvalMode(sessionId)
+  }
+
+  /** Whether this conversation already allowed one tool, in its own kernel's terms. */
+  async guardIsGranted(sessionId: string, tool: string): Promise<boolean> {
+    const source = await this.#approvalSource(sessionId)
+    return source === null ? false : source.isGranted(sessionId, tool)
+  }
+
+  /** The kernel that owns this conversation and hands approval decisions to us. */
+  async #approvalSource(sessionId: string): Promise<(KernelDriver & KernelApprovalSource) | null> {
+    const wanted = await this.#options.lookup.kernelOf(sessionId)
+    const driver = wanted === null ? this.#fallback : (this.#options.drivers.get(wanted) ?? null)
+    return driver !== null && isApprovalSource(driver) ? driver : null
   }
 
   /** Tools this conversation no longer asks about. */

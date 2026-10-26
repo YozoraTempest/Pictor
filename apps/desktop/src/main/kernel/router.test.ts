@@ -241,9 +241,10 @@ describe('KernelRouter', () => {
     ])
   })
 
-  it('writes a declared setting to its owner and refuses a key nobody declares', () => {
-    // A page that hands back a stale key must not look like it worked.
+  it('waits for the kernel to finish writing a setting it declared', async () => {
+    // The kernel also persists the value, so a promise here is the save itself.
     let forgot = 0
+    let saved = false
     let own = false
     const pi = driver('pi', {
       catalogue: () => {
@@ -256,19 +257,44 @@ describe('KernelRouter', () => {
           description: '',
           hint: () => '',
           read: () => own,
-          write: (value) => {
+          write: async (value) => {
             own = value
+            await Promise.resolve()
+            saved = true
           },
         },
       ],
     })
     const kernels = router({}, [driver('dsh'), pi])
 
-    expect(kernels.setKernelSetting('pi.ownConfig', true)).toBe(true)
+    await expect(kernels.setKernelSetting('pi.ownConfig', true)).resolves.toBe(true)
+    expect(saved).toBe(true)
     expect(own).toBe(true)
-    expect(kernels.setKernelSetting('pi.gone', true)).toBe(false)
+    // A page that hands back a stale key must not look like it worked.
+    await expect(kernels.setKernelSetting('pi.gone', true)).resolves.toBe(false)
 
     kernels.invalidateCatalogues()
     expect(forgot).toBe(1)
+  })
+
+  it('asks the conversation’s own kernel what mode the guard should apply', async () => {
+    // dsh decides for itself, so the guard gets `never` and only a rule can hold a
+    // call. A kernel that handed the decision over answers with its own mode.
+    const pi = {
+      ...driver('pi'),
+      approvalMode: () => 'mutating' as const,
+      setApprovalMode: () => undefined,
+      grantedTools: () => ['write'],
+      isGranted: (_sessionId: string, tool: string) => tool === 'write',
+      grantTool: () => undefined,
+      revokeGrants: () => undefined,
+    }
+    const kernels = router({ s1: 'dsh', s2: 'pi' }, [driver('dsh'), pi])
+
+    await expect(kernels.guardApprovalMode('s1')).resolves.toBe('never')
+    await expect(kernels.guardIsGranted('s1', 'write')).resolves.toBe(false)
+    await expect(kernels.guardApprovalMode('s2')).resolves.toBe('mutating')
+    await expect(kernels.guardIsGranted('s2', 'write')).resolves.toBe(true)
+    await expect(kernels.guardIsGranted('s2', 'bash')).resolves.toBe(false)
   })
 })

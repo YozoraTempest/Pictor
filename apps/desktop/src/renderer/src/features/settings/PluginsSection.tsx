@@ -26,6 +26,8 @@ const SERVICE_LABEL: Record<string, string> = {
   'pictor.permission': '默认权限模式',
   'pictor.workspace': '会话工作目录',
   'pictor.userdata': '数据目录',
+  // A kernel's own key/value entries: it can read back what the person chose.
+  'pictor.settings': '设置读写（含它自己的键）',
 }
 
 function serviceLabel(name: string): string {

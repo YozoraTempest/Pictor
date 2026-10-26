@@ -74,3 +74,18 @@ export function prunePiModelsFile(userData: string): number {
   writeFileSync(file, `${JSON.stringify(kept, null, 2)}\n`, 'utf8')
   return dropped.length
 }
+
+/**
+ * Forgets the model choices that only Pi's own configuration could offer.
+ *
+ * Called whenever Pi is pointed back at Pictor's isolated directory: a conversation
+ * that remembers one of those models would fail at startup, and forgetting it turns a
+ * broken conversation into one that simply has not chosen yet. Pictor's own models
+ * start with `pictor-`, which is what survives.
+ */
+export function forgetForeignPiModels(userData: string): void {
+  const dropped = prunePiModelsFile(userData)
+  if (dropped > 0) {
+    console.warn(`[pi] 忘记了 ${String(dropped)} 个只存在于 Pi 自己配置里的模型选择`)
+  }
+}
