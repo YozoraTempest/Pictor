@@ -74,8 +74,30 @@ if (userDataOverride !== undefined && userDataOverride.trim().length > 0) {
   app.setPath('userData', userDataOverride)
 }
 
+/**
+ * Whether this process owns the profile.
+ *
+ * A second launch belongs to the window that is already open, not to a second copy of
+ * the app: the copy would take the debug port, fail the profile lock below, and leave
+ * nothing behind that a person could see. Electron raises the existing window through
+ * `second-instance` instead, which is what clicking the icon a second time means.
+ */
+const ownsInstance = app.requestSingleInstanceLock()
+if (!ownsInstance) {
+  // Exits immediately: the copy has nothing to attach to, and the profile lock in
+  // `startWorkspace` would refuse it after binding Electron's debug port.
+  app.exit(4)
+}
+
 let mainWindow: BrowserWindow | null = null
 let disposeWorkspace: (() => Promise<void>) | null = null
+
+app.on('second-instance', () => {
+  if (mainWindow === null) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+})
 
 void app.whenReady().then(async () => {
   app.setAppUserModelId('dev.pictor.desktop')
@@ -149,11 +171,13 @@ async function startWorkspace(): Promise<Workspace | null> {
     })
   } catch (error) {
     if (error instanceof ProfileLockedError) {
-      dialog.showErrorBox(
-        'Pictor is already running',
-        `Another Pictor frontend owns this profile (${error.owner}).`,
+      // No dialog: a modal box waits for a person, so a launch from a terminal or a
+      // test harness would sit forever on a profile nobody can unlock. The lock owner
+      // is enough to diagnose it, and the exit code says the profile was refused.
+      process.stderr.write(
+        `pictor: profile is locked by ${error.owner} (${lockPath}); another instance owns it\n`,
       )
-      process.exitCode = 4
+      app.exit(4)
       return null
     }
     throw error
