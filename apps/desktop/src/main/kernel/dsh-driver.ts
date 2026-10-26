@@ -161,6 +161,7 @@ interface BootOptions {
  */
 export class DshDriver implements KernelDriver {
   readonly id = 'dsh'
+  readonly label = 'DeepSeek Harness'
   /**
    * Everything Pictor's vocabulary can express: this is the kernel the rest of the
    * interface was built around, so every control applies.

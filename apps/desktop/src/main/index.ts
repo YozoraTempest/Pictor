@@ -51,8 +51,10 @@ import type {
 } from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
 import { shouldAdoptTitle } from './harness-title.js'
-import { DEFAULT_PERMISSION_MODE, DshDriver, isPermissionMode } from './kernel/dsh-driver.js'
+import { DEFAULT_PERMISSION_MODE, isPermissionMode } from './kernel/dsh-driver.js'
+import { dshKernel } from './kernel/dsh-kernel.js'
 import type { KernelDriver } from './kernel/driver.js'
+import { startKernelHost, type KernelHost } from './kernel/host.js'
 import { prunePiModelsFile } from './kernel/pi-home.js'
 import { PiRpcDriver } from './kernel/pi-rpc-driver.js'
 import { writeGuardExtension } from './pi-guard-extension.js'
@@ -405,16 +407,20 @@ async function startWorkspace(): Promise<Workspace | null> {
     return path !== null && existsSync(path) ? path : null
   }
 
-  // One kernel per conversation, and a conversation keeps the one it was opened
-  // on. Two are registered here; the router is what lets the rest of the main
-  // process stay unaware of how many there are or how each one runs.
-  const dsh = new DshDriver({
-    model,
-    userData,
-    readPermissionMode,
-    guardEndpoint: () => guardBridge.endpoint,
-    rules,
-    resolveCwd,
+  // Every kernel is mounted the same way — one cordis plugin that provides one
+  // `kernel.<id>` service — so adding a third is a directory, not a build. What is
+  // compiled in goes first, and whatever the profile has installed follows.
+  const kernels: KernelHost = await startKernelHost({
+    services: {
+      models: model,
+      rules,
+      guard: () => guardBridge.endpoint,
+      permission: readPermissionMode,
+      workspace: resolveCwd,
+      userData,
+    },
+    builtins: [dshKernel],
+    directory: join(userData, 'kernels'),
   })
   // Pi runs over its RPC protocol: one child per conversation, started on first
   // use, driven by JSONL commands. Each conversation keeps the kernel it was
@@ -438,12 +444,12 @@ async function startWorkspace(): Promise<Workspace | null> {
     guardExtension: () => writeGuardExtension(userData, guardBridge.endpoint),
     ownConfig: () => piOwnConfig,
   })
+  // Pi still arrives as its own process rather than through the container; it joins
+  // the same map here so the router cannot tell the difference.
+  const drivers = new Map<string, KernelDriver>(kernels.drivers)
+  drivers.set(pi.id, pi)
   const harness: KernelRouter = new KernelRouter({
-    drivers: new Map<string, KernelDriver>([
-      [dsh.id, dsh],
-      [pi.id, pi],
-    ]),
-    labels: { dsh: 'DeepSeek Harness', pi: 'Pi' },
+    drivers,
     lookup: {
       kernelOf: async (sessionId) => {
         const session = (await running.client.listSessions()).find(
@@ -562,6 +568,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     dispose: async () => {
       if (disposed) return
       disposed = true
+      await kernels.dispose()
       await pluginHost.stop()
       running.dispose()
       lock.release()
@@ -1168,12 +1175,12 @@ function registerIpc(workspace: Workspace): void {
     // The runtime owns every transcript: there is no second store, so an
     // unready runtime is an empty page the window explains rather than a
     // conversation that appears to have lost its history.
+    const ready = (await workspace.harness.statusOf(sessionId)).state === 'ready'
     return {
       path: `harness:${sessionId}`,
-      history:
-        workspace.harness.status().state === 'ready'
-          ? await workspace.harness.openHistory(sessionId)
-          : { messages: [], nextOffset: 0, hasMore: false },
+      history: ready
+        ? await workspace.harness.openHistory(sessionId)
+        : { messages: [], nextOffset: 0, hasMore: false },
     }
   })
 
@@ -1188,7 +1195,9 @@ function registerIpc(workspace: Workspace): void {
     // The point is whatever the caller's rows carry: an event sequence for dsh, an
     // entry id for a kernel that branches by message. Both are optional.
     const point = parseForkPoint(at)
-    if (workspace.harness.status().state !== 'ready') throw new Error('先启动 agent 运行时')
+    if ((await workspace.harness.statusOf(sessionId)).state !== 'ready') {
+      throw new Error('先启动 agent 运行时')
+    }
 
     const sessions = await workspace.client.listSessions()
     const source = sessions.find((entry) => entry.id === sessionId)
@@ -1218,7 +1227,7 @@ function registerIpc(workspace: Workspace): void {
       if (prompt.trim().length === 0 && attachments.length === 0) {
         throw new Error('a message needs text or an image')
       }
-      if (workspace.harness.status().state !== 'ready') {
+      if ((await workspace.harness.statusOf(sessionId)).state !== 'ready') {
         throw new Error('agent 运行时没有运行；先启动它再发消息')
       }
       await workspace.harness.prompt(sessionId, prompt, attachments, level)
@@ -1227,8 +1236,8 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:chat.stop', async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
-    // Nothing to stop when the runtime is down: the turn died with it.
-    if (workspace.harness.status().state !== 'ready') return
+    // Nothing to stop when the kernel is down: the turn died with it.
+    if ((await workspace.harness.statusOf(sessionId)).state !== 'ready') return
     await workspace.harness.cancel(sessionId)
   })
 

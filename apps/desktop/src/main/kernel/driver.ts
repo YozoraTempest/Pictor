@@ -34,6 +34,8 @@ export interface AgentProbeResult {
 export interface KernelDriver {
   /** Stable id, used to remember which kernel a conversation belongs to. */
   readonly id: string
+  /** Human name for the picker; the kernel knows its own best. */
+  readonly label: string
   /**
    * What this kernel can actually do.
    *

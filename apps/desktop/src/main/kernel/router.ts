@@ -33,8 +33,6 @@ export interface KernelRouterOptions {
   drivers: ReadonlyMap<string, KernelDriver>
   /** Which kernel a conversation belongs to; falls back to the default. */
   lookup: KernelLookup
-  /** Human name per kernel id, for the picker. */
-  labels?: Readonly<Record<string, string>>
 }
 
 /**
@@ -66,16 +64,32 @@ export class KernelRouter implements KernelDriver {
     return this.#fallback.id
   }
 
+  /** Lifecycle, name and capabilities are all the default kernel's. */
+  get label(): string {
+    return this.#fallback.label
+  }
+
   /** Lifecycle is the default kernel's, so its capabilities are the router's. */
   get capabilities(): KernelCapabilities {
     return this.#fallback.capabilities
+  }
+
+  /**
+   * State of the kernel running `sessionId`.
+   *
+   * Lifecycle used to belong to one process, so `status()` answering for the default
+   * kernel was enough. An installed kernel has its own state, and asking the wrong
+   * one either refuses a turn that could run or starts one that cannot.
+   */
+  async statusOf(sessionId: string): Promise<HarnessStatus> {
+    return (await this.#for(sessionId)).status()
   }
 
   /** Every kernel, for the picker; `available` is the driver's own answer. */
   list(): KernelInfo[] {
     return [...this.#options.drivers.entries()].map(([id, driver]) => ({
       id,
-      label: this.#options.labels?.[id] ?? id,
+      label: driver.label,
       default: id === this.#fallback.id,
       available: driver.status().binary !== null,
       // What this kernel can actually do travels with it: the window hides the

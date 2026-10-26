@@ -66,6 +66,26 @@ diagnosis. `KernelRouter` (`kernel/router.ts`) sends each call to the kernel tha
 owns the conversation and **never falls back**: history sent to a kernel that
 never produced it would be a lie about where it came from.
 
+### How a kernel is mounted
+
+Every kernel is a **cordis plugin** that provides exactly one service named
+`kernel.<id>` (`apps/desktop/src/main/kernel/host.ts`). Adding a kernel is adding a
+plugin: the built-in ones are `kernel/dsh-kernel.ts` and, in time, Pi; an installed one
+is a directory under `<profile>/kernels/<name>` with a `package.json` whose `main`
+exports a cordis plugin. `startKernelHost` mounts them in order, watches
+`internal/service` for the services they publish, and hands the resulting map to
+`KernelRouter` — nothing enumerates plugins by hand.
+
+What a plugin may reach is a service, and the `inject` list it declares is the
+sentence the settings page shows a person: `pictor.models`, `pictor.rules`,
+`pictor.guard`, `pictor.permission`, `pictor.workspace`, `pictor.userdata`. A
+capability declared `true` with no method behind it is refused at mount time, so the
+window never draws a control the kernel cannot answer.
+
+The container is deliberately **in the main process only**. The runtime stays a child
+process: cordis has no cross-process semantics, and the tool-guard bridge is only
+fail-closed because the kernel lives on the other side of it.
+
 Two kernels ship:
 
 - **dsh** (`kernel/dsh-driver.ts`) — the default, and the one the rest of this

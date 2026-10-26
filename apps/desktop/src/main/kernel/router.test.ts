@@ -26,6 +26,7 @@ function driver(id: string, options: { models?: boolean } = {}): KernelDriver & 
 
   return {
     id,
+    label: id,
     seen,
     capabilities: { permission: true, approval: true, model: true, skills: true, fork: true },
     // A driver that answers for its own models; the picker follows this.
@@ -132,7 +133,6 @@ describe('KernelRouter', () => {
         ['dsh', driver('dsh')],
         ['other', driver('other')],
       ]),
-      labels: { dsh: 'DeepSeek Harness' },
       lookup: { kernelOf: () => Promise.resolve(null) },
     })
 
@@ -141,7 +141,7 @@ describe('KernelRouter', () => {
     expect(kernels.list()).toEqual([
       {
         id: 'dsh',
-        label: 'DeepSeek Harness',
+        label: 'dsh',
         default: true,
         available: true,
         // What a kernel declares travels with it, so the window can hide a

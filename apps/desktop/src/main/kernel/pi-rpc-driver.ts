@@ -135,6 +135,7 @@ interface RpcResponse {
  */
 export class PiRpcDriver implements KernelDriver, KernelModelSource {
   readonly id = 'pi'
+  readonly label = 'Pi'
   /**
    * Pi answers for its own models and branches its own conversations; it still
    * decides the sandbox and the skill catalog itself.
