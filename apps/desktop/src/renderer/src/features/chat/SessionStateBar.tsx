@@ -1,11 +1,23 @@
-import { CheckCircle2, ChevronDown, Circle, Compass, Loader2, Square, Terminal } from 'lucide-react'
+import {
+  Bot,
+  CheckCircle2,
+  ChevronDown,
+  Circle,
+  Compass,
+  Loader2,
+  Square,
+  Terminal,
+} from 'lucide-react'
 import { useState } from 'react'
+
+import { isLocalSubagent } from '@pictor/shared'
 
 import { useKernelCapabilities } from '../kernels/capabilities.js'
 import { cn } from '../../lib/cn.js'
 import { Button, Spinner } from '../../components/ui/index.js'
 import { useChatStore } from './chat-store.js'
 import { liveJobs, todoSummary } from './session-state.js'
+import { SubagentDialog } from './SubagentDialog.js'
 
 /**
  * What the conversation is doing right now, above the composer.
@@ -22,10 +34,14 @@ export function SessionStateBar({ sessionId }: { sessionId: string }): React.JSX
   const plan = useChatStore((state) => state.current.plan)
   const jobs = useChatStore((state) => state.current.jobs)
   const killJob = useChatStore((state) => state.killJob)
+  const subagents = useChatStore((state) => state.current.subagents)
   const capabilities = useKernelCapabilities(sessionId)
 
   const [openTodos, setOpenTodos] = useState(false)
   const [openJobs, setOpenJobs] = useState(false)
+  const [openChildren, setOpenChildren] = useState(false)
+  /** The child whose transcript is on screen, if any. */
+  const [reading, setReading] = useState<string | null>(null)
 
   const running = liveJobs(jobs)
   const summary = todos === null ? null : todoSummary(todos)
@@ -33,7 +49,7 @@ export function SessionStateBar({ sessionId }: { sessionId: string }): React.JSX
   // list the agent emptied — must not leave an empty strip above the composer.
   const showPlan = plan !== null && (plan.active || plan.pending)
   const showTodos = summary !== null && summary.total > 0
-  if (!showPlan && !showTodos && jobs.length === 0) return null
+  if (!showPlan && !showTodos && jobs.length === 0 && subagents.length === 0) return null
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -57,6 +73,16 @@ export function SessionStateBar({ sessionId }: { sessionId: string }): React.JSX
             {...(summary.current === null ? {} : { note: summary.current })}
             onClick={() => setOpenTodos((current) => !current)}
             expanded={openTodos}
+          />
+        )}
+
+        {subagents.length > 0 && (
+          <Chip
+            icon={<Bot className="size-3" aria-hidden />}
+            label={`子代理 ${String(subagents.length)} 个`}
+            {...(subagents[0] === undefined ? {} : { note: subagents[0].label })}
+            onClick={() => setOpenChildren((current) => !current)}
+            expanded={openChildren}
           />
         )}
 
@@ -98,6 +124,32 @@ export function SessionStateBar({ sessionId }: { sessionId: string }): React.JSX
         </ul>
       )}
 
+      {openChildren && subagents.length > 0 && (
+        <ul className="selectable flex flex-col gap-1 rounded-md border border-border bg-surface/40 px-3 py-2">
+          {subagents.map((child) => (
+            <li key={child.id} className="flex items-start justify-between gap-2 text-2xs">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <Bot className="size-3 shrink-0 text-faint" aria-hidden />
+                  <span className="truncate text-muted">{child.label}</span>
+                  <span className="shrink-0 text-faint">{child.mode}</span>
+                </div>
+              </div>
+              {isLocalSubagent(child) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`查看 ${child.label} 的记录`}
+                  onClick={() => setReading(child.id)}
+                >
+                  查看步骤
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {openJobs && jobs.length > 0 && (
         <ul className="selectable flex flex-col gap-1 rounded-md border border-border bg-surface/40 px-3 py-2">
           {jobs.map((job) => {
@@ -126,6 +178,14 @@ export function SessionStateBar({ sessionId }: { sessionId: string }): React.JSX
             )
           })}
         </ul>
+      )}
+      {reading !== null && (
+        <SubagentDialog
+          sessionId={sessionId}
+          // The dialog is only ever opened from a row of this list.
+          subagent={subagents.find((child) => child.id === reading) ?? subagents[0]!}
+          onClose={() => setReading(null)}
+        />
       )}
     </div>
   )

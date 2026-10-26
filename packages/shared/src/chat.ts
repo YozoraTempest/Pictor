@@ -38,6 +38,35 @@ export interface ChatPlanState {
 }
 
 /**
+ * One agent this conversation delegated work to.
+ *
+ * A subagent is not a row: the runtime documents it as a *direct child session* with its
+ * own log, recorded in the parent as a discovery fact. So this is a link — who was
+ * started, under what name — and reading the child's steps is a separate, on-demand read
+ * of that session. `mode` is the kernel's own word (`one-shot`, `continuable`, or
+ * `external` for a provider that has no local session at all).
+ */
+export interface ChatSubagent {
+  /** The kernel's own child identity; opaque to Pictor. */
+  id: string
+  /** Short task label the runtime kept with the child. */
+  label: string
+  mode: string
+  /** Epoch ms, when the kernel recorded it. */
+  createdAt: number | null
+}
+
+/**
+ * Whether this child has a session to read.
+ *
+ * An external provider runs elsewhere and keeps no local log, so a "show the steps"
+ * control there would promise something no read can answer.
+ */
+export function isLocalSubagent(subagent: ChatSubagent): boolean {
+  return subagent.mode !== 'external'
+}
+
+/**
  * One background execution the runtime is running for this conversation.
  *
  * `running` and `stopping` are live; the other three are terminal and never move
@@ -166,6 +195,8 @@ export interface ChatHistoryPage {
   todos?: ChatTodoItem[]
   plan?: ChatPlanState
   jobs?: ChatJob[]
+  /** Agents this conversation delegated to; absent when the kernel has none. */
+  subagents?: ChatSubagent[]
 }
 
 /** Events forwarded from the main process to the renderer. */
@@ -287,6 +318,8 @@ export type ChatEvent =
     }
   /** One background job registered, moved, or settled. Upsert by `job.id`. */
   | { type: 'job.updated'; sessionId: string; job: ChatJob }
+  /** The runtime started an agent for this conversation. Upsert by `subagent.id`. */
+  | { type: 'subagent.linked'; sessionId: string; subagent: ChatSubagent }
 
 /**
  * One decision the runtime is waiting for.

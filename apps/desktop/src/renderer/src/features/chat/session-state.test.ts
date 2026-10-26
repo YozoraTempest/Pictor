@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { ChatJob } from '@pictor/shared'
 
 import { applyPlanEvent, liveJobs, mergeJobs, todoSummary } from './session-state.js'
+import { isLocalSubagent } from '@pictor/shared'
 
 function job(overrides: Partial<ChatJob> & Pick<ChatJob, 'id'>): ChatJob {
   return {
@@ -102,5 +103,14 @@ describe('liveJobs', () => {
     ]
 
     expect(liveJobs(jobs).map((entry) => entry.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('isLocalSubagent', () => {
+  it('tells a child with a session apart from one that runs elsewhere', () => {
+    // The dialog offers "查看步骤" only for the first kind: an external provider keeps no
+    // local log, and a button there would promise a read nothing can answer.
+    expect(isLocalSubagent({ id: 'a', label: 'a', mode: 'one-shot', createdAt: null })).toBe(true)
+    expect(isLocalSubagent({ id: 'b', label: 'b', mode: 'external', createdAt: null })).toBe(false)
   })
 })

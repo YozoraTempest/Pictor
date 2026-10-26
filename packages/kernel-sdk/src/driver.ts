@@ -4,6 +4,7 @@ import type {
   ChatAnswer,
   ChatHistoryPage,
   ChatJob,
+  ChatMessage,
   ChatImage,
   ForkPoint,
   ModelEffort,
@@ -126,6 +127,18 @@ export interface KernelDriver {
   jobs?(sessionId: string): Promise<ChatJob[]>
   /** Asks the kernel to stop one background job. */
   killJob?(sessionId: string, jobId: string): Promise<void>
+
+  // ---- subagents -----------------------------------------------------------
+  /**
+   * One child agent's stored transcript, read on demand.
+   *
+   * A child is its own session, so this is a read of that session rather than a view of
+   * the parent's: what it returns describes work that happened elsewhere, and nothing
+   * here merges it into the parent's transcript. Optional because a kernel may have no
+   * subagents, and because a child started by an external provider has no local log to
+   * read at all.
+   */
+  childTranscript?(sessionId: string, childId: string, mode: string): Promise<ChatMessage[]>
 
   // ---- diagnosis -----------------------------------------------------------
   /** Runs one throwaway turn against the configured model. */

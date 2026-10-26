@@ -268,6 +268,11 @@ Selecting a session opens its transcript and a composer:
   turn the result into a failure that still carries the tool's output. Hooks fail open
   (they cannot grant or deny); guards keep failing closed. Whatever a hook adds is
   attributed to it, so the transcript never reads as if the tool said it.
+- **Delegation is visible**: when a kernel starts a subagent, a `子代理 N 个` chip appears
+  above the composer with the labels it was given. 查看步骤 reads that child's own session
+  and shows it in a dialog — a child is a conversation of its own, so its steps are shown
+  where they happened rather than pasted into this transcript. A child that runs on an
+  external provider keeps no local log, and the row says so instead of offering a read.
 - **A tool can be named by namespace**: `mcp__github__*` covers every tool that server
   offers, in a guard, a hook or a view, without listing them in advance. An exact name
   always wins, then the longest prefix.

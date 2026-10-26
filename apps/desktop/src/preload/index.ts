@@ -93,6 +93,8 @@ const bridge: PictorBridge = {
   runKernelCommand: (sessionId, line) => invoke('pictor:kernel.runCommand', sessionId, line),
   kernelJobs: (sessionId) => invoke('pictor:kernel.jobs', sessionId),
   killKernelJob: (sessionId, jobId) => invoke('pictor:kernel.killJob', sessionId, jobId),
+  childTranscript: (sessionId, childId, mode) =>
+    invoke('pictor:kernel.childTranscript', sessionId, childId, mode),
   kernelModels: (sessionId) => invoke('pictor:kernel.models', sessionId),
   selectKernelModel: (sessionId, id) => invoke('pictor:kernel.selectModel', sessionId, id),
   selectKernelEffort: (sessionId, effort) =>

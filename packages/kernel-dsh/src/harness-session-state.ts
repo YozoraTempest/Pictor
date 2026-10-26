@@ -1,4 +1,4 @@
-import type { ChatJob, ChatPlanState, ChatTodoItem } from '@pictor/shared'
+import type { ChatJob, ChatPlanState, ChatSubagent, ChatTodoItem } from '@pictor/shared'
 
 /**
  * The three states a conversation has *now*, replayed from its own event log.
@@ -77,6 +77,31 @@ export function jobOf(value: unknown): ChatJob | null {
   }
 }
 
+/**
+ * One `subagent/catalog` payload.
+ *
+ * The runtime appends this to the *parent* the moment a child is published, which is
+ * what makes a delegation knowable before the child has produced anything. Two versions
+ * exist: a local child (0) and an external provider's (2, no local session).
+ */
+export function subagentOf(value: unknown): ChatSubagent | null {
+  if (typeof value !== 'object' || value === null) return null
+  const record = value as Record<string, unknown>
+  const id = typeof record['childId'] === 'string' ? record['childId'] : ''
+  if (id.length === 0) return null
+
+  const label = typeof record['label'] === 'string' ? record['label'].trim() : ''
+  const mode = typeof record['mode'] === 'string' ? record['mode'] : 'unknown'
+  const createdAt = record['childCreatedAt']
+
+  return {
+    id,
+    label: label.length > 0 ? label : id,
+    mode,
+    createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : null,
+  }
+}
+
 /** One stored event, as the wire carries it. */
 interface StoredEvent {
   type?: unknown
@@ -94,6 +119,7 @@ export interface SessionStates {
   todos?: ChatTodoItem[]
   plan?: ChatPlanState
   jobs?: ChatJob[]
+  subagents?: ChatSubagent[]
 }
 
 /**
@@ -109,6 +135,7 @@ export function sessionStates(events: readonly unknown[]): SessionStates {
   let planSaid = false
   let planCommandId: string | null = null
   const jobs = new Map<string, ChatJob>()
+  const subagents = new Map<string, ChatSubagent>()
 
   for (const raw of events) {
     if (typeof raw !== 'object' || raw === null) continue
@@ -142,6 +169,12 @@ export function sessionStates(events: readonly unknown[]): SessionStates {
       continue
     }
 
+    if (type === 'subagent/catalog' && data !== null) {
+      const subagent = subagentOf(data)
+      if (subagent !== null) subagents.set(subagent.id, subagent)
+      continue
+    }
+
     if ((type === 'job/registered' || type === 'job/settled') && data !== null) {
       const job = jobOf(data)
       // Later records win: settlement repeats the registration fields.
@@ -158,6 +191,11 @@ export function sessionStates(events: readonly unknown[]): SessionStates {
   if (jobs.size > 0) {
     // Oldest first, the order they were started in: a roster reads like a queue.
     states.jobs = [...jobs.values()].sort((left, right) => left.startedAt - right.startedAt)
+  }
+  if (subagents.size > 0) {
+    states.subagents = [...subagents.values()].sort(
+      (left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0),
+    )
   }
   return states
 }

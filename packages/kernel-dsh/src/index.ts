@@ -13,6 +13,7 @@ export {
   jobOf,
   planActiveOf,
   sessionStates,
+  subagentOf,
   todosOf,
   type SessionStates,
 } from './harness-session-state.js'

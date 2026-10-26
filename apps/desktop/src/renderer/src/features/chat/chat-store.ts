@@ -6,6 +6,7 @@ import type {
   ChatJob,
   ChatMessage,
   ChatPlanState,
+  ChatSubagent,
   ChatTodoItem,
   ModelEffort,
 } from '@pictor/shared'
@@ -46,6 +47,8 @@ export interface ChatSlice {
   plan: ChatPlanState | null
   /** Background jobs, newest state per id, running and finished alike. */
   jobs: ChatJob[]
+  /** Agents this conversation delegated to; the child's steps are read on demand. */
+  subagents: ChatSubagent[]
 }
 
 interface ChatState {
@@ -89,6 +92,7 @@ const EMPTY: ChatSlice = {
   todos: null,
   plan: null,
   jobs: [],
+  subagents: [],
 }
 
 function emptySlice(sessionId: string): ChatSlice {
@@ -242,6 +246,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
           todos: result.history.todos ?? null,
           plan: result.history.plan ?? null,
           jobs: result.history.jobs ?? [],
+          subagents: result.history.subagents ?? [],
         }))
 
         // The log says what happened; the runtime says what is still there. Asking is
@@ -649,6 +654,18 @@ export const useChatStore = create<ChatState>()((set, get) => {
         patch(sessionId, (state) => ({
           plan: applyPlanEvent(state.plan, { active: event.active, pending: event.pending }),
         }))
+        return
+      }
+
+      if (event.type === 'subagent.linked') {
+        patch(sessionId, (state) => {
+          const others = state.subagents.filter((child) => child.id !== event.subagent.id)
+          return {
+            subagents: [...others, event.subagent].sort(
+              (left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0),
+            ),
+          }
+        })
         return
       }
 

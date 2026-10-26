@@ -28,6 +28,7 @@ import {
   type ChatHistoryPage,
   type ChatImage,
   type ChatJob,
+  type ChatMessage,
   type ChatQuestion,
   type ForkPoint,
   type ModelEffort,
@@ -37,7 +38,7 @@ import {
 } from '@pictor/shared'
 
 import { commandTextOf, parseCommands } from './harness-commands.js'
-import { loadHarnessHistory } from './harness-history.js'
+import { loadHarnessHistory, projectHarnessEvents } from './harness-history.js'
 import { jobOf, sessionStates } from './harness-session-state.js'
 import { DEFAULT_PERMISSION_MODE, isPermissionMode } from '@pictor/shared'
 import { sessionTitleOf } from '@pictor/harness'
@@ -122,6 +123,9 @@ const PROFILE_NAME = 'pictor'
 const BOOT_TIMEOUT = 120_000
 
 /** Messages the opening snapshot carries; the transcript pages back through it. */
+/** How much of a child agent's log one read brings back; a page, not the world. */
+const CHILD_MESSAGES = 120
+
 const SNAPSHOT_MESSAGES = 200
 
 /** `ws` is the only client that can send a cookie header on the upgrade. */
@@ -1222,6 +1226,59 @@ export class DshDriver implements KernelDriver {
     // answer the live stream would have shown. Replayed from the same window the
     // transcript uses, so the two cannot disagree.
     return offset === 0 ? { ...page, ...sessionStates(events ?? []) } : page
+  }
+
+  /**
+   * One child agent's transcript, read from its own session.
+   *
+   * A subagent is a child session the runtime owns, addressed as such — so this opens
+   * that session's stream, keeps the opening snapshot (the complete history cut) and
+   * hangs up. Nothing is registered here: the child is not a Pictor conversation, it is
+   * something this conversation delegated to, and giving it a row in the sidebar would
+   * be inventing a second place work can live.
+   *
+   * Read on demand rather than streamed, because a child's steps are not part of the
+   * transcript: keeping a live stream per child would cost a socket for something nobody
+   * is watching until they ask.
+   */
+  async childTranscript(sessionId: string, childId: string, mode: string): Promise<ChatMessage[]> {
+    const remote = this.#remote
+    const socket = this.#socket
+    const cookie = remote?.cookie
+    if (remote === null || socket === null || cookie === undefined || cookie === null) {
+      throw new Error('agent 运行时尚未启动')
+    }
+    if (childId.trim().length === 0) throw new Error('childId 不能为空')
+
+    // A child session is only addressable through its parent: the runtime refuses a plain
+    // session address for one ("subagent Sessions require their durable parent address"),
+    // which is also why the mode the catalog reported has to travel here. Omitting
+    // `assistantStream` is what keeps this a read of committed events.
+    const parent = await this.#sessionFor(sessionId)
+    const frame = await streamOnce({
+      url: `${remote.baseUrl.replace(/^http/, 'ws')}/api/remote.mux`,
+      cookie,
+      endpoint: 'session/follow',
+      request: {
+        address: {
+          kind: 'subagent',
+          parentSessionId: parent,
+          childSessionId: childId,
+          // The enum is the runtime's; a mode it does not know reads as unknown.
+          mode: mode === 'one-shot' || mode === 'continuable' ? mode : 'unknown',
+        },
+        maxMessages: CHILD_MESSAGES,
+      },
+      WebSocket: socket,
+    })
+
+    const records = (frame as { records?: unknown } | null)?.records
+    if (!Array.isArray(records)) return []
+    const events = records.flatMap((record) => {
+      const event = (record as { event?: unknown }).event
+      return event === undefined ? [] : [event]
+    })
+    return projectHarnessEvents(events)
   }
 
   /**

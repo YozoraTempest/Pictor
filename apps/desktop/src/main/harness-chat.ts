@@ -1,4 +1,4 @@
-import { jobOf, planActiveOf, todosOf } from '@pictor/kernel-dsh'
+import { jobOf, planActiveOf, subagentOf, todosOf } from '@pictor/kernel-dsh'
 import type { ChatEvent, ChatRole } from '@pictor/shared'
 import type {
   HarnessNotification,
@@ -338,6 +338,18 @@ export class HarnessChatBridge {
       case 'job/settled': {
         const job = jobOf(data)
         return job === null ? [] : [{ type: 'job.updated', sessionId, job }]
+      }
+
+      /**
+       * A child agent was published.
+       *
+       * The runtime reports the delegation as it happens, which is the only moment the
+       * window can learn about it: the child's own log belongs to another session, and
+       * nothing in the parent's transcript says "I started someone".
+       */
+      case 'subagent/catalog': {
+        const subagent = subagentOf(data)
+        return subagent === null ? [] : [{ type: 'subagent.linked', sessionId, subagent }]
       }
 
       case 'compaction/summary': {

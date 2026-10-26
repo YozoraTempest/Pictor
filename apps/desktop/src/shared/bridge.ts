@@ -34,6 +34,7 @@ import type {
   ChatEvent,
   ChatHistoryPage,
   ChatJob,
+  ChatMessage,
   JsonValue,
   ModelEffort,
   ModelEntry,
@@ -336,6 +337,8 @@ export interface PictorBridge {
   kernelJobs(sessionId: string): Promise<ChatJob[]>
   /** Asks the owning kernel to stop one background job. */
   killKernelJob(sessionId: string, jobId: string): Promise<void>
+  /** One child agent's stored transcript, read from its own session. */
+  childTranscript(sessionId: string, childId: string, mode: string): Promise<ChatMessage[]>
   /** The models a kernel offers for one conversation. */
   kernelModels(sessionId: string): Promise<KernelModelState>
   /** Selects one for that conversation, without a restart. */

@@ -531,3 +531,34 @@ describe('HarnessChatBridge session state', () => {
     expect(settled[0]).toMatchObject({ type: 'job.updated', job: { status: 'completed' } })
   })
 })
+
+/** One delegation, as the parent's log records it. */
+describe('HarnessChatBridge subagents', () => {
+  it('reports a child the moment the runtime publishes it', () => {
+    const bridge = new HarnessChatBridge()
+
+    expect(
+      bridge.map(
+        sessionEvent('subagent/catalog', {
+          version: 0,
+          childId: 'child-1',
+          childCreatedAt: 1_700,
+          mode: 'one-shot',
+          label: '查依赖',
+        }),
+      ),
+    ).toEqual([
+      {
+        type: 'subagent.linked',
+        sessionId: 's1',
+        subagent: { id: 'child-1', label: '查依赖', mode: 'one-shot', createdAt: 1_700 },
+      },
+    ])
+  })
+
+  it('says nothing for a payload it cannot read', () => {
+    const bridge = new HarnessChatBridge()
+
+    expect(bridge.map(sessionEvent('subagent/catalog', { version: 0 }))).toEqual([])
+  })
+})

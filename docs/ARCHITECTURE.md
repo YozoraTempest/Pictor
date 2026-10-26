@@ -320,6 +320,14 @@ why a Pi conversation draws no bar at all).
   roster is still drawn, because the runtime said the job is running and hiding it would
   be the lie. `job/kill` is fenced on the session that can see the job, and it answers
   `requested` or `already-finished` — a second click is not an error.
+- **A subagent is a link, not a row.** The runtime records a delegation in the _parent_
+  as a `subagent/catalog` discovery fact — `{childId, label, mode}` — and the child is a
+  session of its own. So the bar lists who was started, and the steps are read from that
+  session on demand (`childTranscript`), shown in a dialog: drawing them inline would
+  claim this conversation said them. A child is only addressable through its parent
+  ("subagent Sessions require their durable parent address"), which is why the mode the
+  catalog reported travels with the read, and why an `external` child — one with no local
+  log — gets no "查看步骤" control at all.
 
 ### Runtime (dsh)
 

@@ -1722,6 +1722,31 @@ function registerIpc(workspace: Workspace): void {
     await workspace.harness.killKernelJob(sessionId, jobId)
   })
 
+  /**
+   * A child agent's transcript.
+   *
+   * `sessionId` only picks the kernel that owns the conversation; `childId` is that
+   * kernel's own name for the child, which is why both are required and neither is
+   * translated here.
+   */
+  ipcMain.handle(
+    'pictor:kernel.childTranscript',
+    async (_event, sessionId: unknown, childId: unknown, mode: unknown) => {
+      if (typeof sessionId !== 'string' || sessionId.length === 0) {
+        throw new Error('sessionId must be a non-empty string')
+      }
+      if (typeof childId !== 'string' || childId.length === 0) {
+        throw new Error('childId must be a non-empty string')
+      }
+      // The kernel needs the mode to address the child at all; a caller that does not
+      // know it says so instead of guessing.
+      if (typeof mode !== 'string' || mode.length === 0) {
+        throw new Error('mode must be a non-empty string')
+      }
+      return workspace.harness.childTranscript(sessionId, childId, mode)
+    },
+  )
+
   ipcMain.handle('pictor:kernel.selectModel', async (_event, sessionId: unknown, id: unknown) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
       throw new Error('sessionId must be a non-empty string')

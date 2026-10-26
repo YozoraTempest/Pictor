@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { jobOf, sessionStates, todosOf } from './harness-session-state.js'
+import { jobOf, sessionStates, subagentOf, todosOf } from './harness-session-state.js'
 
 /**
  * These three states are what a conversation *is* right now, so the risk is the same
@@ -167,5 +167,62 @@ describe('sessionStates', () => {
     // A Pi conversation reaches here with no todo, no plan and no jobs: the bar must
     // stay hidden rather than draw three empty shells.
     expect(sessionStates([{ type: 'assistant/message', seq: 1, data: {} }])).toEqual({})
+  })
+})
+
+describe('subagentOf', () => {
+  it('reads the discovery fact the parent records', () => {
+    expect(
+      subagentOf({
+        version: 0,
+        childId: 'child-1',
+        childCreatedAt: 1_700,
+        mode: 'one-shot',
+        label: '查依赖',
+      }),
+    ).toEqual({ id: 'child-1', label: '查依赖', mode: 'one-shot', createdAt: 1_700 })
+  })
+
+  it('keeps an external child, which has no local session', () => {
+    // The mode is what tells the window whether a "show the steps" read can answer.
+    expect(
+      subagentOf({
+        version: 2,
+        childId: 'ext-1',
+        childCreatedAt: 1,
+        mode: 'external',
+        label: '远端',
+      }),
+    ).toMatchObject({ id: 'ext-1', mode: 'external' })
+  })
+
+  it('falls back to the id when the runtime sent no label', () => {
+    expect(subagentOf({ childId: 'child-2' })?.label).toBe('child-2')
+    expect(subagentOf({})).toBeNull()
+  })
+})
+
+describe('sessionStates with subagents', () => {
+  it('keeps every child, in the order they were started', () => {
+    const states = sessionStates([
+      {
+        type: 'subagent/catalog',
+        seq: 2,
+        data: { childId: 'b', childCreatedAt: 20, mode: 'one-shot', label: '乙' },
+      },
+      {
+        type: 'subagent/catalog',
+        seq: 1,
+        data: { childId: 'a', childCreatedAt: 10, mode: 'one-shot', label: '甲' },
+      },
+    ])
+
+    expect(states.subagents?.map((child) => child.id)).toEqual(['a', 'b'])
+  })
+
+  it('says nothing when the kernel delegated to nobody', () => {
+    expect(
+      sessionStates([{ type: 'assistant/message', seq: 1, data: {} }]).subagents,
+    ).toBeUndefined()
   })
 })

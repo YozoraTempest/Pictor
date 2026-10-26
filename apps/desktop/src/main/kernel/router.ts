@@ -6,6 +6,7 @@ import type {
   ChatHistoryPage,
   ChatImage,
   ChatJob,
+  ChatMessage,
   ForkPoint,
   ModelEffort,
 } from '@pictor/shared'
@@ -439,6 +440,21 @@ export class KernelRouter implements KernelDriver {
       throw new Error(`这个会话的内核「${driver.id}」没有后台任务`)
     }
     await driver.killJob(sessionId, jobId)
+  }
+
+  /**
+   * One child agent's transcript, read from the kernel that owns the conversation.
+   *
+   * No capability gate: a kernel with no subagents never reported one, so the window has
+   * nothing to offer. The read is refused only when the kernel has no such method at all,
+   * which is a wiring mistake worth naming rather than an empty transcript.
+   */
+  async childTranscript(sessionId: string, childId: string, mode: string): Promise<ChatMessage[]> {
+    const driver = await this.#for(sessionId)
+    if (driver.childTranscript === undefined) {
+      throw new Error(`这个会话的内核「${driver.id}」不提供子代理记录`)
+    }
+    return driver.childTranscript(sessionId, childId, mode)
   }
 
   /** Tools this conversation no longer asks about. */

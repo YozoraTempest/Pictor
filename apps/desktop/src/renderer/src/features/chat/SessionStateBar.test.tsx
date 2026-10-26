@@ -72,6 +72,7 @@ function show(state: {
   todos?: { content: string; status: 'pending' | 'in_progress' | 'completed' }[] | null
   plan?: { active: boolean; pending: boolean } | null
   jobs?: ChatJob[]
+  subagents?: { id: string; label: string; mode: string; createdAt: number | null }[]
 }): void {
   useChatStore.setState((current) => ({
     current: {
@@ -80,6 +81,7 @@ function show(state: {
       todos: state.todos === undefined ? null : state.todos,
       plan: state.plan === undefined ? null : state.plan,
       jobs: state.jobs ?? [],
+      subagents: state.subagents ?? [],
     },
   }))
 }
@@ -150,5 +152,26 @@ describe('SessionStateBar', () => {
     render(<SessionStateBar sessionId="s1" />)
     await userEvent.click(screen.getByRole('button', { name: /后台任务 1 个运行中/ }))
     expect(screen.queryByRole('button', { name: '停止 j1' })).toBeNull()
+  })
+})
+
+/** A delegation is a link, not a row: the steps live in the child's own session. */
+describe('the subagent chip', () => {
+  it('lists the children and offers the steps only where a log exists', async () => {
+    seed(true)
+    show({
+      subagents: [
+        { id: 'child-1', label: '查依赖', mode: 'one-shot', createdAt: 1 },
+        { id: 'ext-1', label: '远端', mode: 'external', createdAt: 2 },
+      ],
+    })
+    render(<SessionStateBar sessionId="s1" />)
+
+    await userEvent.click(screen.getByRole('button', { name: /子代理 2 个/ }))
+
+    // The local child has a session to read; the external one does not, and a button
+    // there would promise a read that cannot answer.
+    expect(screen.getByRole('button', { name: '查看 查依赖 的记录' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '查看 远端 的记录' })).toBeNull()
   })
 })
