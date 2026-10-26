@@ -34,7 +34,7 @@ function fakePi(
     input: string
     reply?: string
     settle?: 'immediately' | 'onAbort'
-    ask?: 'confirm' | 'select' | 'input' | 'editor'
+    ask?: 'confirm' | 'select' | 'input' | 'editor' | 'notify' | 'setStatus'
   } = {
     input: 'text',
   },
@@ -174,6 +174,20 @@ function handle(command) {
     if (ask === 'editor') {
       send({ type: 'extension_ui_request', id: 'dlg-4', method: 'editor',
         title: '改一下这条提交说明', prefill: 'feat: 原始草稿' })
+      return
+    }
+    if (ask === 'notify') {
+      send({ type: 'extension_ui_request', id: 'n-1', method: 'notify',
+        message: '依赖已经装好', notifyType: 'warning' })
+      send({ type: 'agent_end', messages: [] })
+      send({ type: 'agent_settled', aborted: false })
+      return
+    }
+    if (ask === 'setStatus') {
+      send({ type: 'extension_ui_request', id: 'st-1', method: 'setStatus',
+        statusKey: 'branch', statusText: 'main' })
+      send({ type: 'agent_end', messages: [] })
+      send({ type: 'agent_settled', aborted: false })
       return
     }
     if (settle === 'immediately') {
@@ -752,6 +766,43 @@ describe('PiRpcDriver', () => {
       },
     )
     expect(toolOutputs(collected).at(-1)).toBe('cancelled')
+    await driver.stop()
+  })
+
+  it('shows what an extension asked to say, without answering it', async () => {
+    const fake = fakePi({ input: 'text', ask: 'notify' })
+    const driver = driverFor(fake)
+    const notices: Record<string, unknown>[] = []
+    let said: () => void = () => undefined
+    const spoken = new Promise<void>((resolve) => {
+      said = resolve
+    })
+    driver.onNotification((notification: HarnessNotification) => {
+      if (notification.method !== 'kernel.notice') return
+      notices.push(notification.params as Record<string, unknown>)
+      said()
+    })
+
+    await driver.prompt('s1', '你好')
+    await spoken
+
+    expect(notices).toEqual([expect.objectContaining({ message: '依赖已经装好', level: 'info' })])
+    // `notify` is fire and forget: Pi keeps no pending entry for it, so an answer
+    // would be traffic with nothing to match.
+    expect(commands(fake).filter((entry) => entry['type'] === 'extension_ui_response')).toEqual([])
+    await driver.stop()
+  })
+
+  it('leaves terminal-only requests unanswered', async () => {
+    const fake = fakePi({ input: 'text', ask: 'setStatus' })
+    const driver = driverFor(fake)
+
+    await driver.prompt('s1', '你好')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    // `setStatus` describes a footer this app does not have; answering the id would
+    // only be noise in Pi's log.
+    expect(commands(fake).filter((entry) => entry['type'] === 'extension_ui_response')).toEqual([])
     await driver.stop()
   })
 

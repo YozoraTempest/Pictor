@@ -503,6 +503,19 @@ async function startWorkspace(): Promise<Workspace | null> {
         }
       }
     }
+    if (notification.method === 'kernel.notice') {
+      const params = (notification.params ?? {}) as { message?: unknown; level?: unknown }
+      const message = typeof params.message === 'string' ? params.message : ''
+      if (message.length > 0) {
+        const notice = {
+          message: message.slice(0, 400),
+          level: params.level === 'error' ? 'error' : 'info',
+        }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('pictor:kernel.notice', notice)
+        }
+      }
+    }
     if (notification.method === 'runtime.install') {
       const line = (notification.params as { line?: unknown } | null)?.line
       if (typeof line === 'string') {

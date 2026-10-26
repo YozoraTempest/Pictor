@@ -877,8 +877,28 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
     if (id === null) return
 
     const method = typeof record['method'] === 'string' ? record['method'] : ''
+
+    // `notify` is the one fire-and-forget request with a place in a GUI. Pi sends it
+    // with `type: info | warning | error` and does not wait for an answer.
+    if (method === 'notify') {
+      const message = typeof record['message'] === 'string' ? record['message'] : ''
+      if (message.length > 0) {
+        this.#emit({
+          method: 'kernel.notice',
+          params: {
+            sessionId: this.#pictorIdOf(kid),
+            message,
+            level: record['notifyType'] === 'error' ? 'error' : 'info',
+          },
+        })
+      }
+      return
+    }
+
+    // Everything else — `setStatus`, `setWidget`, `setTitle`, a custom terminal
+    // component — describes a terminal's own surface and is not awaited. Answering
+    // them would be traffic Pi has nothing to match, so they are simply not answered.
     if (method !== 'confirm' && method !== 'select' && method !== 'input' && method !== 'editor') {
-      this.#respond(kid, { type: 'extension_ui_response', id, cancelled: true })
       return
     }
 

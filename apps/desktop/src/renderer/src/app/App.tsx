@@ -30,6 +30,17 @@ export function App(): React.JSX.Element {
     })
   }, [refresh, setError])
 
+  // An extension asked to say something. It is not Pictor's message, so it lands in
+  // the same banner every other notice uses and names the kernel that sent it.
+  useEffect(
+    () =>
+      window.pictor.onKernelNotice((notice) => {
+        if (notice.level === 'error') setError(notice.message)
+        else setNotice(notice.message)
+      }),
+    [setError, setNotice],
+  )
+
   useEffect(
     () =>
       window.pictor.onChatEvent((event) => {

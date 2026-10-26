@@ -170,6 +170,12 @@ export interface KernelPluginInfo {
   failure: string | null
 }
 
+/** A message an extension asked to show; the kernel sent it, not Pictor. */
+export interface KernelNotice {
+  message: string
+  level: 'info' | 'error'
+}
+
 /** What an install or removal did, in one line the page can show. */
 export interface KernelChangeResult {
   ok: boolean
@@ -302,6 +308,8 @@ export interface PictorBridge {
   setSessionPermission(sessionId: string, mode: PermissionMode): Promise<PermissionMode | null>
   /** Every kernel this build can drive, for the picker. */
   listKernels(): Promise<KernelInfo[]>
+  /** Messages extensions asked to show, already trimmed by the main process. */
+  onKernelNotice(callback: (notice: KernelNotice) => void): () => void
   /** Every kernel plugin: mounted, installed but broken, or built in. */
   listKernelPlugins(): Promise<KernelPluginInfo[]>
   /** Ask for a directory; null when the person cancelled. */

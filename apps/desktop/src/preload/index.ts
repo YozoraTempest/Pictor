@@ -169,6 +169,13 @@ const bridge: PictorBridge = {
     ipcRenderer.on('pictor:harness.install', handler)
     return () => ipcRenderer.removeListener('pictor:harness.install', handler)
   },
+  onKernelNotice: (listener) => {
+    const handler = (_event: unknown, payload: unknown): void => {
+      listener(payload as Parameters<typeof listener>[0])
+    }
+    ipcRenderer.on('pictor:kernel.notice', handler)
+    return () => ipcRenderer.removeListener('pictor:kernel.notice', handler)
+  },
   onHarnessStatus: (listener) => {
     const handler = (_event: unknown, payload: unknown): void => {
       listener(payload as Parameters<typeof listener>[0])

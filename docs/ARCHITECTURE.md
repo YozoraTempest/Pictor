@@ -70,17 +70,30 @@ never produced it would be a lie about where it came from.
 
 Every kernel is a **cordis plugin** that provides exactly one service named
 `kernel.<id>` (`apps/desktop/src/main/kernel/host.ts`). Adding a kernel is adding a
-plugin: the built-in ones are `kernel/dsh-kernel.ts` and, in time, Pi; an installed one
-is a directory under `<profile>/kernels/<name>` with a `package.json` whose `main`
-exports a cordis plugin. `startKernelHost` mounts them in order, watches
-`internal/service` for the services they publish, and hands the resulting map to
-`KernelRouter` — nothing enumerates plugins by hand.
+plugin: the built-in ones are `kernel/dsh-kernel.ts` and `kernel/pi-kernel.ts`; an
+installed one is either a directory under `<profile>/kernels/<name>` or a package in
+`<profile>/kernels/node_modules` named by `<profile>/kernels/kernels.json`. Both
+kinds are a `package.json` whose `main` exports a cordis plugin. `startKernelHost`
+mounts them in order, watches `internal/service` for the services they publish, and
+hands the resulting map to `KernelRouter` — nothing enumerates plugins by hand.
+
+The map is **live**. `KernelHost.mountInstalled` starts one more plugin and
+`unmount` disposes its fiber, so installing a kernel does not need a restart and
+removing one takes it out of the picker at once. The two steps are kept apart on
+purpose (`kernel/installer.ts` owns the disk, the host owns the mount): a copy that
+succeeds and a mount that fails is a kernel on disk with a reason attached, which the
+settings page shows, rather than a rollback that hides what went wrong.
+
+`kernels.json` exists because the package manager owns `node_modules` and drags in
+dependencies with it; only the names a person actually installed are kernels.
 
 What a plugin may reach is a service, and the `inject` list it declares is the
 sentence the settings page shows a person: `pictor.models`, `pictor.rules`,
 `pictor.guard`, `pictor.permission`, `pictor.workspace`, `pictor.userdata`. A
 capability declared `true` with no method behind it is refused at mount time, so the
-window never draws a control the kernel cannot answer.
+window never draws a control the kernel cannot answer. `pictor.models` includes the
+running service's key — a kernel cannot take a turn without it — which is why
+installing one asks first.
 
 The container is deliberately **in the main process only**. The runtime stays a child
 process: cordis has no cross-process semantics, and the tool-guard bridge is only
@@ -111,7 +124,12 @@ rpc` speaks JSONL commands on stdin and streams the same events over stdout,
   `input`, `editor`) become the question card — options, free text, and a seeded
   multi-line field for a draft someone is meant to change — and since Pi ships no
   model-facing asking tool, that extension registers `ask_user_question` under
-  dsh's name, `draft` included — so a Pi conversation can ask, not only answer. What it still cannot express is a
+  dsh's name, `draft` included — so a Pi conversation can ask, not only answer.
+  `notify` is the one fire-and-forget request a GUI has a place for: it becomes the
+  banner, marked with the kernel that sent it. The rest (`setStatus`, `setWidget`,
+  `setTitle`, a custom terminal component) describe a terminal's own surface, so
+  they are neither drawn nor answered — Pi keeps no pending entry for them, and
+  `custom` does not exist in RPC mode at all. What it still cannot express is a
   per-conversation sandbox; it declares none instead of faking one. Its
   transcript is read back from Pi's own session file (`kernel/pi-history.ts`),
   because Pictor keeps none.
