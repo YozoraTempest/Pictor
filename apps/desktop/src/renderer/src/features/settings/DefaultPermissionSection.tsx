@@ -24,12 +24,12 @@ const MODES: Array<{ id: PermissionMode; label: string; description: string }> =
 ]
 
 /**
- * The sandbox default for conversations created from now on.
+ * The sandbox default for conversations dsh creates from now on.
  *
- * This is a kernel setting, not a shell one — the runtime owns it and applies it
- * live — so it belongs with the other preferences rather than on the page that
- * manages the process. A conversation that already exists keeps its own mode;
- * the composer's picker is where that one is changed.
+ * It sits in the kernel's own group rather than in the shell's: the runtime owns
+ * this value and applies it live, and a kernel without a sandbox has nothing to set
+ * here. A conversation that already exists keeps its own mode — the composer's
+ * picker is where that one is changed.
  */
 export function DefaultPermissionSection(): React.JSX.Element {
   const [status, setStatus] = useState<HarnessStatus | null>(null)

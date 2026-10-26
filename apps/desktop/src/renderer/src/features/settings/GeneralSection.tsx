@@ -1,7 +1,6 @@
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { cn } from '../../lib/cn.js'
 import type { GroupingMode } from '../sessions/grouping.js'
-import { DefaultPermissionSection } from './DefaultPermissionSection.js'
 import { Section } from './Section.js'
 import { SettingRow } from './SettingRow.js'
 
@@ -91,8 +90,6 @@ export function GeneralSection(): React.JSX.Element {
           }
         />
       </Section>
-
-      <DefaultPermissionSection />
     </>
   )
 }

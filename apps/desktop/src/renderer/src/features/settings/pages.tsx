@@ -4,6 +4,7 @@ import {
   Cpu,
   Info,
   Settings2,
+  Shield,
   ShieldCheck,
   Terminal,
   type LucideIcon,
@@ -12,6 +13,7 @@ import type { ReactNode } from 'react'
 
 import { AboutSection } from './AboutSection.js'
 import { AgentModelPage } from './AgentModelPage.js'
+import { DefaultPermissionSection } from './DefaultPermissionSection.js'
 import { GeneralSection } from './GeneralSection.js'
 import { PluginsSection } from './PluginsSection.js'
 import { RuntimePage } from './RuntimePage.js'
@@ -33,56 +35,40 @@ export interface SettingsPage {
   actions?: () => ReactNode
 }
 
+/**
+ * The three groups the sidebar shows.
+ *
+ * The split is by owner, not by topic: what belongs to the shell, what belongs to
+ * dsh, and what belongs to Pi. A setting that only means something inside one
+ * kernel lives in that kernel's group, so a reader looking for "the sandbox
+ * default" does not have to guess whether it applies to the kernel they run.
+ */
+const GROUPS = {
+  general: '通用',
+  dsh: 'DSH',
+  pi: 'Pi',
+} as const
+
 const PAGES = [
   {
     id: 'general',
     label: '常规',
     icon: Settings2,
-    description: '会话列表与默认权限',
-    keywords: '常规 通用 互斥 置顶 权限 沙箱 只读 完全访问',
-    group: '偏好',
+    description: '会话列表在左栏里怎么分组',
+    keywords: '常规 通用 互斥 置顶 重复 分区 时间线 最近',
+    group: GROUPS.general,
     order: 0,
     render: () => <GeneralSection />,
-  },
-  {
-    id: 'model',
-    label: '模型',
-    icon: Cpu,
-    description: 'AI 服务列表、连接配置与试运行',
-    keywords: '模型 api key base url 端点 连接 导入 cc-switch 试运行 agent 服务 provider',
-    group: '智能体',
-    order: 0,
-    render: () => <AgentModelPage />,
-  },
-  {
-    id: 'runtime',
-    label: '内核',
-    icon: Terminal,
-    description: '执行会话的每个内核：状态、版本与各自的启停方式',
-    keywords: '运行时 runtime 内核 kernel dsh harness pi 进程 启动 停止 版本 安装 重新检测',
-    group: '智能体',
-    order: 1,
-    render: () => <RuntimePage />,
   },
   {
     id: 'rules',
     label: '工具规则',
     icon: ShieldCheck,
-    description: '按工具拒绝或自动同意 agent 的调用',
-    keywords: '工具 规则 权限 拒绝 允许 bash 拦截 rule',
-    group: '智能体',
-    order: 2,
+    description: '按工具拒绝、询问或自动同意 agent 的调用',
+    keywords: '工具 规则 权限 拒绝 询问 允许 bash 拦截 rule 内核',
+    group: GROUPS.general,
+    order: 1,
     render: () => <ToolRulesSection />,
-  },
-  {
-    id: 'skills',
-    label: '技能',
-    icon: BookOpen,
-    description: '当前会话能看到的技能，以及它们来自哪个文件',
-    keywords: '技能 skill 技能目录 SKILL.md 提示 说明',
-    group: '智能体',
-    order: 3,
-    render: () => <SkillsSection />,
   },
   {
     id: 'plugins',
@@ -90,19 +76,69 @@ const PAGES = [
     icon: Blocks,
     description: '插件与面板的启用状态',
     keywords: '插件 plugin 拓展 面板',
-    group: '扩展',
-    order: 0,
+    group: GROUPS.general,
+    order: 2,
     render: () => <PluginsSection />,
   },
   {
     id: 'about',
     label: '关于 Pictor',
     icon: Info,
-    description: '版本、运行时与数据库位置',
-    keywords: '关于 版本 version',
-    group: '系统',
-    order: 0,
+    description: '版本、数据目录与许可',
+    keywords: '关于 版本 version 路径 数据库',
+    group: GROUPS.general,
+    order: 3,
     render: () => <AboutSection />,
+  },
+  {
+    id: 'model',
+    label: '模型',
+    icon: Cpu,
+    description: 'DSH 使用的 AI 服务：地址、密钥、模型与试运行',
+    keywords: '模型 api key base url 端点 连接 导入 cc-switch 试运行 agent 服务 provider dsh',
+    group: GROUPS.dsh,
+    order: 0,
+    render: () => <AgentModelPage />,
+  },
+  {
+    id: 'permission',
+    label: '默认权限',
+    icon: Shield,
+    description: '新建的 DSH 会话用哪个沙箱范围',
+    keywords: '默认 权限 沙箱 只读 工作区 完全访问 permission dsh 审批',
+    group: GROUPS.dsh,
+    order: 1,
+    render: () => <DefaultPermissionSection />,
+  },
+  {
+    id: 'skills',
+    label: '技能',
+    icon: BookOpen,
+    description: 'DSH 能加载的技能，以及它们来自哪个文件',
+    keywords: '技能 skill 技能目录 SKILL.md 提示 说明 dsh 启用 停用',
+    group: GROUPS.dsh,
+    order: 2,
+    render: () => <SkillsSection />,
+  },
+  {
+    id: 'dsh-runtime',
+    label: '运行时',
+    icon: Terminal,
+    description: 'DSH 的进程：状态、版本与启停',
+    keywords: '运行时 runtime 进程 启动 停止 版本 安装 会话数据 dsh harness 重装',
+    group: GROUPS.dsh,
+    order: 3,
+    render: () => <RuntimePage kernel="dsh" />,
+  },
+  {
+    id: 'pi-runtime',
+    label: '运行时',
+    icon: Terminal,
+    description: 'Pi 的安装状态、版本与可执行文件',
+    keywords: '运行时 runtime pi 安装 版本 可执行文件 PICTOR_PI_BIN 会话数据 重新检测',
+    group: GROUPS.pi,
+    order: 0,
+    render: () => <RuntimePage kernel="pi" />,
   },
 ] as const satisfies readonly SettingsPage[]
 

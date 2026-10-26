@@ -119,7 +119,7 @@ export function SettingsView(): React.JSX.Element {
           ) : (
             groups.map((group) => (
               <div key={group.title} className="mb-2">
-                <h2 className="px-2 pt-1 pb-1 text-2xs font-semibold tracking-wider text-faint uppercase">
+                <h2 className="px-2 pt-1 pb-1 text-2xs font-semibold tracking-wider text-faint">
                   {group.title}
                 </h2>
                 <ul className="flex flex-col gap-px">
