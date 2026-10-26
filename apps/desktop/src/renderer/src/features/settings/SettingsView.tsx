@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import { Input } from '../../components/ui/index.js'
+import { Input, Tooltip } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
 import { SettingHighlight } from './highlight.js'
 import {
@@ -152,43 +152,43 @@ export function SettingsView(): React.JSX.Element {
 
   return (
     <div className="flex h-full min-h-0">
-      {/* Level one: whose settings these are. A rail of its own, because a heading
-          inside the list made a category look like another item in it. */}
-      <aside
+      {/* Level one: whose settings these are, drawn as the same icon rail the app
+          uses — one width, one rhythm, so the two never fight for the eye. */}
+      <nav
         aria-label="设置分区"
-        className="flex w-16 shrink-0 flex-col gap-0.5 border-r border-border bg-surface/40 px-1 py-2"
+        className="flex w-13 shrink-0 flex-col items-center gap-1 border-r border-border bg-surface/40 py-2"
       >
         {tree.map((entry) => {
           const on = entry.title === category
-          const icon = CATEGORY_ICON[entry.title] ?? Settings2
-          const Icon = icon
+          const Icon = CATEGORY_ICON[entry.title] ?? Settings2
 
           return (
-            <button
-              key={entry.title}
-              type="button"
-              aria-current={on ? 'true' : undefined}
-              onClick={() => {
-                // A category has no page of its own: opening it opens its first page,
-                // which is what the second column lists first anyway. A search in
-                // progress is dropped — the click asked for a place, not a result.
-                const first = pagesOf(entry.title)[0]
-                if (first !== undefined) setActive(first as SettingsPageId)
-                setQuery('')
-              }}
-              className={cn(
-                'flex flex-col items-center gap-0.5 rounded-md px-0.5 py-1.5 text-2xs transition-colors duration-150',
-                on
-                  ? 'bg-surface-raised text-text'
-                  : 'text-muted hover:bg-surface-hover hover:text-text',
-              )}
-            >
-              <Icon className={cn('size-3.5', on ? 'text-accent' : 'text-faint')} aria-hidden />
-              <span className="truncate">{entry.title}</span>
-            </button>
+            <Tooltip key={entry.title} label={entry.title} side="right">
+              <button
+                type="button"
+                aria-label={entry.title}
+                aria-current={on ? 'page' : undefined}
+                onClick={() => {
+                  // A category has no page of its own: opening it opens its first page,
+                  // which is what the second column lists first anyway. A search in
+                  // progress is dropped — the click asked for a place, not a result.
+                  const first = pagesOf(entry.title)[0]
+                  if (first !== undefined) setActive(first as SettingsPageId)
+                  setQuery('')
+                }}
+                className={cn(
+                  'grid size-9 place-items-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent/40',
+                  on
+                    ? 'bg-surface-raised text-text'
+                    : 'text-faint hover:bg-surface-hover hover:text-muted',
+                )}
+              >
+                <Icon className="size-4.5" />
+              </button>
+            </Tooltip>
           )
         })}
-      </aside>
+      </nav>
 
       {/* Levels two and three: the open category's groups and pages. */}
       <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-surface/20">
