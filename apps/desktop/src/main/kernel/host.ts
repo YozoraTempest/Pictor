@@ -77,11 +77,27 @@ export interface KernelHostOptions {
   directory: string
 }
 
+/** One kernel as the settings page reports it: what it is and what it may reach. */
+export interface KernelPluginReport {
+  /** Kernel id once mounted; the directory name or `builtin:<n>` otherwise. */
+  id: string
+  label: string
+  /** `builtin`, or the directory under the profile that holds it. */
+  source: string
+  /** Host services the plugin declared with `inject`. */
+  services: readonly string[]
+  available: boolean
+  /** Why it could not be used, when it could not. */
+  failure: string | null
+}
+
 export interface KernelHost {
   /** Every kernel that came up, in mount order; the first is the default. */
   readonly drivers: ReadonlyMap<string, KernelDriver>
   /** Kernels that failed, so the settings page can name them. */
   readonly failures: readonly KernelPluginFailure[]
+  /** Everything that was mounted or refused, for the settings page. */
+  readonly plugins: readonly KernelPluginReport[]
   dispose(): Promise<void>
 }
 
@@ -195,12 +211,31 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
   ctx.provide('pictor.workspace', options.services.workspace)
   ctx.provide('pictor.userdata', options.services.userData)
 
-  for (const [index, plugin] of options.builtins.entries()) {
+  /** Which plugin brought each kernel up, and what it said it needs. */
+  const mounted = new Map<string, { source: string; services: readonly string[] }>()
+
+  const mount = async (
+    plugin: KernelPlugin,
+    source: string,
+    failureName = source,
+  ): Promise<void> => {
+    const known = new Set(drivers.keys())
     try {
       await ctx.plugin(plugin)
     } catch (error) {
-      failures.push({ source: `builtin:${index}`, message: messageOf(error) })
+      failures.push({ source: failureName, message: messageOf(error) })
+      return
     }
+    // A plugin publishes its service synchronously inside `apply`, so whatever
+    // arrived here came from this one.
+    for (const id of drivers.keys()) {
+      if (!known.has(id)) mounted.set(id, { source, services: declaredServices(plugin) })
+    }
+  }
+
+  for (const [index, plugin] of options.builtins.entries()) {
+    // The successful ones are all `builtin`; a failure names which built-in it was.
+    await mount(plugin, 'builtin', `builtin:${String(index)}`)
   }
 
   for (const found of discoverKernels(options.directory)) {
@@ -208,16 +243,32 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
       failures.push({ source: found.source, message: found.error })
       continue
     }
-    try {
-      await ctx.plugin(found.plugin)
-    } catch (error) {
-      failures.push({ source: found.source, message: messageOf(error) })
-    }
+    await mount(found.plugin, found.source)
+  }
+
+  const plugins: KernelPluginReport[] = [...drivers].map(([id, driver]) => ({
+    id,
+    label: driver.label,
+    source: mounted.get(id)?.source ?? 'builtin',
+    services: mounted.get(id)?.services ?? [],
+    available: isAvailable(driver),
+    failure: null,
+  }))
+  for (const failure of failures) {
+    plugins.push({
+      id: failure.source,
+      label: failure.source,
+      source: failure.source,
+      services: [],
+      available: false,
+      failure: failure.message,
+    })
   }
 
   return {
     drivers,
     failures,
+    plugins,
     async dispose(): Promise<void> {
       await ctx.fiber.dispose()
     },
@@ -286,6 +337,40 @@ function mountModule(entry: string, name: string): KernelPlugin {
       // A separate fiber, so the kernel's service disappears when it unloads.
       await ctx.plugin(inner as Plugin)
     },
+  }
+}
+
+/**
+ * A host service, which an `inject` list already promised exists.
+ *
+ * Cordis types a lookup as possibly undefined because a service can be unloaded
+ * while a plugin is still running; here a plugin only starts once every injected
+ * service is available, so a missing one means the host itself is broken.
+ */
+export function hostService<K extends Parameters<Context['get']>[0] & keyof Context>(
+  ctx: Context,
+  name: K,
+): Context[K] {
+  const value = ctx.get(name)
+  if (value === undefined) throw new Error(`宿主服务 ${String(name)} 不可用`)
+  return value
+}
+
+/** The host services a plugin declared, in the shape `inject` allows. */
+function declaredServices(plugin: KernelPlugin): readonly string[] {
+  const inject = (plugin as { inject?: unknown }).inject
+  if (Array.isArray(inject))
+    return inject.filter((entry): entry is string => typeof entry === 'string')
+  if (typeof inject === 'object' && inject !== null) return Object.keys(inject)
+  return []
+}
+
+/** Whether the kernel says it can run here; a broken one is not available. */
+function isAvailable(driver: KernelDriver): boolean {
+  try {
+    return driver.status().binary !== null
+  } catch {
+    return false
   }
 }
 

@@ -32,20 +32,19 @@ import {
   type JsonValue,
   type ModelEffort,
   type ModelProtocol,
-  type PiProviderSpec,
   type PluginRecord,
   type Section,
   type SkillEntry,
   type ToolRule,
   composeSkills,
   parseToolRules,
-  piProvidersOf,
 } from '@pictor/shared'
 
 import type {
   AppInfo,
   HarnessStatus,
   HostSnapshot,
+  KernelPluginInfo,
   PermissionMode,
   PluginReport,
 } from '../shared/bridge.js'
@@ -53,11 +52,10 @@ import { HarnessChatBridge } from './harness-chat.js'
 import { shouldAdoptTitle } from './harness-title.js'
 import { DEFAULT_PERMISSION_MODE, isPermissionMode } from './kernel/dsh-driver.js'
 import { dshKernel } from './kernel/dsh-kernel.js'
-import type { KernelDriver } from './kernel/driver.js'
 import { startKernelHost, type KernelHost } from './kernel/host.js'
 import { prunePiModelsFile } from './kernel/pi-home.js'
-import { PiRpcDriver } from './kernel/pi-rpc-driver.js'
-import { writeGuardExtension } from './pi-guard-extension.js'
+import type { PiRpcDriver } from './kernel/pi-rpc-driver.js'
+import { createPiKernel } from './kernel/pi-kernel.js'
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
 import { ToolGuardServer, type GuardAsk } from './tool-guard-server.js'
 import { ModelService } from './model-service.js'
@@ -140,6 +138,8 @@ interface Workspace {
    * has to invalidate it, and only the driver knows that.
    */
   pi: PiRpcDriver
+  /** The kernel container: what is mounted, what was refused, and why. */
+  kernels: KernelHost
   /** Whether Pi keeps its own configuration directory; see `setPiOwnConfig`. */
   piOwnConfig: () => boolean
   setPiOwnConfig: (value: boolean) => Promise<boolean>
@@ -341,6 +341,18 @@ async function startWorkspace(): Promise<Workspace | null> {
   // the book and reads it per call, so saving a rule needs no restart.
   const rules = new RuleBook(running.client)
   await rules.load()
+
+  // Which configuration Pi runs on. Off by default: Pictor's own directory, so the
+  // only services it has are the ones Pictor registers. Kept in memory because the
+  // driver reads it at every spawn, and the switch has to take effect without a
+  // restart.
+  let piOwnConfig = (await running.client.listSettings())[OWN_CONFIG_KEY] === true
+
+  // A conversation that remembers one of Pi's own models would fail at startup while
+  // Pictor's Pi only has Pictor's services; forgetting those choices turns a broken
+  // conversation into one that simply has not chosen yet.
+  if (!piOwnConfig) forgetForeignPiModels(userData)
+  const piKernel = createPiKernel({ ownConfig: piOwnConfig })
   const ruleGuard: ToolGuardContribution = {
     id: 'pictor-rules',
     title: '工具规则',
@@ -357,7 +369,9 @@ async function startWorkspace(): Promise<Workspace | null> {
   const askFor = (context: GuardAsk): { tool: string; reason: string } | null => {
     // A call with no conversation to name cannot have a mode; the rules still apply,
     // so it is asked as if the conversation never opted in.
-    const mode = context.session === null ? 'never' : pi.approvalMode(context.session)
+    const kernel = piKernel.driver()
+    const mode =
+      context.session === null || kernel === null ? 'never' : kernel.approvalMode(context.session)
     const verdict = rules.askFor({
       tool: context.tool,
       args: context.args,
@@ -365,7 +379,10 @@ async function startWorkspace(): Promise<Workspace | null> {
       mode,
       // A tool the person already allowed in this conversation stops asking — unless
       // a rule of theirs names this call, which the policy decides.
-      granted: context.session !== null && pi.isGranted(context.session, context.tool),
+      granted:
+        context.session !== null &&
+        kernel !== null &&
+        kernel.isGranted(context.session, context.tool),
     })
     return verdict === null
       ? null
@@ -376,21 +393,11 @@ async function startWorkspace(): Promise<Workspace | null> {
   // socket instead of receiving them as configuration. The bridge is always up:
   // the rule guard is always present, and rules can be added while it runs.
   // What Pi needs to run the same services: one shared configuration instead of two
-  // copies. Keys are read here and travel over the loopback socket, never into the
-  // extension file on disk.
-  const piProviders = async (): Promise<PiProviderSpec[]> => {
-    const list = await model.providers()
-    const settings = await model.settings()
-    return piProvidersOf(list.providers, (id) => model.apiKeyOf(id), {
-      providerId: list.activeId,
-      modelId: settings.modelId,
-    }).providers
-  }
-  const guardBridge = new ToolGuardServer(
-    [ruleGuard, ...toolGuards],
-    randomUUID(),
-    askFor,
-    piProviders,
+  // copies. The kernel plugin derives it from `pictor.models`; the bridge only holds
+  // the callback, because the extension asks for it over the loopback socket and keys
+  // never reach the file on disk.
+  const guardBridge = new ToolGuardServer([ruleGuard, ...toolGuards], randomUUID(), askFor, () =>
+    piKernel.providers(),
   )
   void guardBridge.start().catch((error: unknown) => {
     console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
@@ -419,37 +426,13 @@ async function startWorkspace(): Promise<Workspace | null> {
       workspace: resolveCwd,
       userData,
     },
-    builtins: [dshKernel],
+    builtins: [dshKernel, piKernel.plugin],
     directory: join(userData, 'kernels'),
   })
-  // Pi runs over its RPC protocol: one child per conversation, started on first
-  // use, driven by JSONL commands. Each conversation keeps the kernel it was
-  // opened on.
-  // Which configuration Pi runs on. Off by default: Pictor's own directory, so the
-  // only services it has are the ones Pictor registers. Kept in memory because the
-  // driver reads it at every spawn, and the switch has to take effect without a
-  // restart.
-  let piOwnConfig = (await running.client.listSettings())[OWN_CONFIG_KEY] === true
-
-  // A conversation that remembers one of Pi's own models would fail at startup while
-  // Pictor's Pi only has Pictor's services; forgetting those choices turns a broken
-  // conversation into one that simply has not chosen yet.
-  if (!piOwnConfig) forgetForeignPiModels(userData)
-  const pi = new PiRpcDriver({
-    userData,
-    resolveCwd,
-    // The same guard chain dsh asks over loopback, written as a Pi extension: a
-    // user's tool rules mean the same thing on both kernels. The endpoint is read
-    // per launch, and a missing one makes the extension block rather than allow.
-    guardExtension: () => writeGuardExtension(userData, guardBridge.endpoint),
-    ownConfig: () => piOwnConfig,
-  })
-  // Pi still arrives as its own process rather than through the container; it joins
-  // the same map here so the router cannot tell the difference.
-  const drivers = new Map<string, KernelDriver>(kernels.drivers)
-  drivers.set(pi.id, pi)
+  const pi = piKernel.driver()
+  if (pi === null) throw new Error('Pi 内核没有挂载')
   const harness: KernelRouter = new KernelRouter({
-    drivers,
+    drivers: kernels.drivers,
     lookup: {
       kernelOf: async (sessionId) => {
         const session = (await running.client.listSessions()).find(
@@ -544,7 +527,8 @@ async function startWorkspace(): Promise<Workspace | null> {
     model,
     harness,
     pi,
-    piOwnConfig: () => piOwnConfig,
+    kernels,
+    piOwnConfig: piKernel.ownConfig,
     setPiOwnConfig: async (value) => {
       piOwnConfig = value
       await running.client.putSetting(OWN_CONFIG_KEY, value)
@@ -1323,6 +1307,17 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:kernels.list', async (): Promise<KernelInfo[]> => {
     return workspace.harness.list()
+  })
+
+  ipcMain.handle('pictor:kernels.plugins', async (): Promise<KernelPluginInfo[]> => {
+    return workspace.kernels.plugins.map((entry) => ({
+      id: entry.id,
+      label: entry.label,
+      source: entry.source,
+      services: [...entry.services],
+      available: entry.available,
+      failure: entry.failure,
+    }))
   })
 
   // A kernel that brings its own models answers for them; Pictor only relays.

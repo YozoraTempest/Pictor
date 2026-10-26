@@ -3,6 +3,7 @@ import {
   BookOpen,
   Cpu,
   Info,
+  Network,
   Settings2,
   Shield,
   ShieldCheck,
@@ -15,6 +16,7 @@ import { AboutSection } from './AboutSection.js'
 import { AgentModelPage } from './AgentModelPage.js'
 import { DefaultPermissionSection } from './DefaultPermissionSection.js'
 import { GeneralSection } from './GeneralSection.js'
+import { KernelPluginsSection } from './KernelPluginsSection.js'
 import { PluginsSection } from './PluginsSection.js'
 import { RuntimePage } from './RuntimePage.js'
 import { SkillsSection } from './SkillsSection.js'
@@ -118,6 +120,16 @@ const PAGES = [
     category: CATEGORIES.general,
     order: 3,
     render: () => <PluginsSection />,
+  },
+  {
+    id: 'kernels',
+    label: '内核插件',
+    icon: Network,
+    description: '哪些内核可以跑会话，以及每个内核能读取什么',
+    keywords: '内核 kernel cordis 插件 plugin 第三方 安装 挂载 失败 服务',
+    category: CATEGORIES.general,
+    order: 4,
+    render: () => <KernelPluginsSection />,
   },
   {
     id: 'dsh-runtime',

@@ -75,6 +75,7 @@ const bridge: PictorBridge = {
   setSessionPermission: (sessionId, mode) =>
     invoke('pictor:harness.setSessionPermission', sessionId, mode),
   listKernels: () => invoke('pictor:kernels.list'),
+  listKernelPlugins: () => invoke('pictor:kernels.plugins'),
   kernelStatuses: () => invoke('pictor:kernels.statuses'),
   piOwnConfig: () => invoke('pictor:pi.ownConfig'),
   setPiOwnConfig: (value) => invoke('pictor:pi.setOwnConfig', value),

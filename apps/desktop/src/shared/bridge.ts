@@ -151,6 +151,25 @@ export interface KernelModelState {
 export type KernelModelSource = 'pictor' | 'kernel' | null
 
 /** What one kernel looks like from the renderer's side. */
+/**
+ * One kernel plugin, as the settings page lists it.
+ *
+ * `services` is the trust sentence: these are the host services the plugin asked
+ * for, and a kernel cannot run a turn without reaching at least the model service.
+ */
+export interface KernelPluginInfo {
+  /** Kernel id once mounted; the directory or `builtin:<n>` when it failed. */
+  id: string
+  label: string
+  /** `builtin`, or the directory under the profile that holds it. */
+  source: string
+  /** Host services the plugin declared with `inject`. */
+  services: string[]
+  available: boolean
+  /** Why it could not be used, when it could not. */
+  failure: string | null
+}
+
 export interface KernelInfo {
   id: string
   label: string
@@ -274,6 +293,8 @@ export interface PictorBridge {
   setSessionPermission(sessionId: string, mode: PermissionMode): Promise<PermissionMode | null>
   /** Every kernel this build can drive, for the picker. */
   listKernels(): Promise<KernelInfo[]>
+  /** Every kernel plugin: mounted, installed but broken, or built in. */
+  listKernelPlugins(): Promise<KernelPluginInfo[]>
   /** Every kernel's status, by kernel id — one entry per kernel this build drives. */
   kernelStatuses(): Promise<Record<string, HarnessStatus>>
   /**

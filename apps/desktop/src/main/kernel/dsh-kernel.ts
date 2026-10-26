@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 
 import { DshDriver } from './dsh-driver.js'
-import { provideKernel, type KernelPlugin } from './host.js'
+import { hostService, provideKernel, type KernelPlugin } from './host.js'
 
 /**
  * dsh, mounted the way any other kernel is.
@@ -23,29 +23,13 @@ export const dshKernel: KernelPlugin = {
   ],
   apply(ctx: Context): void {
     const driver = new DshDriver({
-      model: service(ctx, 'pictor.models'),
-      rules: service(ctx, 'pictor.rules'),
-      guardEndpoint: service(ctx, 'pictor.guard'),
-      readPermissionMode: service(ctx, 'pictor.permission'),
-      resolveCwd: service(ctx, 'pictor.workspace'),
-      userData: service(ctx, 'pictor.userdata'),
+      model: hostService(ctx, 'pictor.models'),
+      rules: hostService(ctx, 'pictor.rules'),
+      guardEndpoint: hostService(ctx, 'pictor.guard'),
+      readPermissionMode: hostService(ctx, 'pictor.permission'),
+      resolveCwd: hostService(ctx, 'pictor.workspace'),
+      userData: hostService(ctx, 'pictor.userdata'),
     })
     provideKernel(ctx, driver)
   },
-}
-
-/**
- * A host service, which the `inject` declaration already promised exists.
- *
- * Cordis types a lookup as possibly undefined because a service can be unloaded
- * while a plugin is still running; here the fiber only starts once every injected
- * service is available, so a missing one means the host itself is broken.
- */
-function service<K extends Parameters<Context['get']>[0] & keyof Context>(
-  ctx: Context,
-  name: K,
-): Context[K] {
-  const value = ctx.get(name)
-  if (value === undefined) throw new Error(`宿主服务 ${String(name)} 不可用`)
-  return value
 }
