@@ -3,7 +3,6 @@ import {
   BookOpen,
   Cpu,
   Info,
-  Network,
   Settings2,
   ShieldCheck,
   Terminal,
@@ -15,7 +14,6 @@ import { AboutSection } from './AboutSection.js'
 import { AgentModelPage } from './AgentModelPage.js'
 import { DefaultPermissionSection } from './DefaultPermissionSection.js'
 import { GeneralSection } from './GeneralSection.js'
-import { KernelPluginsSection } from './KernelPluginsSection.js'
 import { PluginsSection } from './PluginsSection.js'
 import { RuntimePage } from './RuntimePage.js'
 import { SkillsSection } from './SkillsSection.js'
@@ -120,23 +118,13 @@ const PAGES = [
   },
   {
     id: 'plugins',
-    label: '拓展',
+    label: '插件',
     icon: Blocks,
-    description: '插件与面板的启用状态',
-    keywords: '插件 plugin 拓展 面板',
+    description: '面板、工具守卫、技能，以及插件带来的内核',
+    keywords: '插件 plugin 拓展 面板 内核 kernel cordis 安装 卸载 启停 权限',
     category: CATEGORIES.general,
     order: 4,
     render: () => <PluginsSection />,
-  },
-  {
-    id: 'kernels',
-    label: '内核插件',
-    icon: Network,
-    description: '哪些内核可以跑会话，以及每个内核能读取什么',
-    keywords: '内核 kernel cordis 插件 plugin 第三方 安装 挂载 失败 服务',
-    category: CATEGORIES.general,
-    order: 5,
-    render: () => <KernelPluginsSection />,
   },
   {
     id: 'skills',

@@ -76,6 +76,7 @@ const bridge: PictorBridge = {
     invoke('pictor:harness.setSessionPermission', sessionId, mode),
   listKernels: () => invoke('pictor:kernels.list'),
   listKernelPlugins: () => invoke('pictor:kernels.plugins'),
+  listPluginOverview: () => invoke('pictor:plugins.overview'),
   chooseKernelFolder: () => invoke('pictor:kernels.chooseFolder'),
   installKernelFolder: (path) => invoke('pictor:kernels.installFolder', path),
   installKernelPackage: (spec) => invoke('pictor:kernels.installPackage', spec),

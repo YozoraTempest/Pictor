@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict'
 
+/** Polls until `check` holds; the sidebar redraws after a page switch. */
+async function eventually(check, message, timeout = 15_000) {
+  const deadline = Date.now() + timeout
+  for (;;) {
+    if (await check()) return
+    if (Date.now() > deadline) assert.fail(message)
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+}
+
 /**
  * The kernel a conversation runs on, as the interface shows it.
  *
@@ -128,9 +138,8 @@ export default {
     // rows were created above, so each page must show exactly one of them.
     await rail.getByRole('button', { name: 'PI', exact: true }).click()
     await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
-    assert.equal(
-      await page.getByRole('button', { name: 'e2e 内核绑定' }).count(),
-      0,
+    await eventually(
+      async () => (await page.getByRole('button', { name: 'e2e 内核绑定' }).count()) === 0,
       'the Pi page does not list a dsh conversation',
     )
     // The open conversation is a Pi one too: selection survives a view switch, and
@@ -170,14 +179,17 @@ export default {
 
     await rail.getByRole('button', { name: 'PI', exact: true }).click()
     await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
-    assert.ok(
-      !(await headings()).includes('置顶'),
+    await eventually(
+      async () => !(await headings()).includes('置顶'),
       'a section with nothing of this kernel in it is not drawn',
     )
 
     await rail.getByRole('button', { name: 'DSH', exact: true }).click()
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
-    assert.ok((await headings()).includes('置顶'), 'the same section is there where it has a body')
+    await eventually(
+      async () => (await headings()).includes('置顶'),
+      'the same section is there where it has a body',
+    )
     await page.evaluate((id) => window.pictor.setSessionPinned(id, false), created.id)
 
     // Home spans both, and is the only page that offers the choice.

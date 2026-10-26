@@ -71,7 +71,7 @@ packages/model-config/ Provider records, auth storage, endpoint probing
 packages/plugin-sdk/   Manifest, Module and Contribution contract
 packages/plugin-host/  Discovery, SemVer resolution, lifecycle, installer
 packages/harness/      dsh transport: unary calls, session stream, follow frames
-plugins/               Bundled plugins, and a sample kernel plugin
+plugins/               Bundled plugins, a sample kernel plugin, and how to write one
 ```
 
 ## How it fits together
@@ -281,10 +281,13 @@ Override discovery for tests with `PICTOR_CCSWITCH_DB` (database path),
 Settings is three columns: one owner per row of icons, then the owner's pages, then the
 page itself.
 
-- **通用** — 常规 (sidebar grouping), 模型, 工具规则, 拓展 (UI plugins), 内核插件.
-- **DSH** — 运行时 (status, version, install, start/stop), 默认权限, 技能.
+- **通用** — 偏好 (常规, 权限), 智能体 (模型, 技能), 插件.
+- **DSH** — 运行时 (status, version, install, start/stop).
 - **Pi** — 运行时 (status, binary, isolation switch, session data).
 - **关于** — version, data directory, licence.
+
+Everything a plugin can add — panels, guards, skills, a whole kernel — is one page,
+because a plugin is one installation. How to write one: [`plugins/README.md`](plugins/README.md).
 
 Three save behaviours, and the page says which one it uses: live settings apply on
 change, forms are saved with a button, and anything destructive asks first.

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@pictor/application'
@@ -44,6 +44,7 @@ import {
 
 import type {
   AppInfo,
+  PluginOverview,
   HarnessStatus,
   HostSnapshot,
   KernelChangeResult,
@@ -161,6 +162,8 @@ interface Workspace {
   kernels: KernelHost
   /** Installs and removes plugins under the profile. */
   installer: PluginInstaller
+  /** Every plugin directory found at launch, bundled first. */
+  pluginDirectories: () => readonly string[]
   /** Whether Pi keeps its own configuration directory; see `setPiOwnConfig`. */
   piOwnConfig: () => boolean
   setPiOwnConfig: (value: boolean) => Promise<boolean>
@@ -593,6 +596,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     pi,
     kernels,
     installer,
+    pluginDirectories: () => candidateRoots,
     piOwnConfig: piKernel.ownConfig,
     setPiOwnConfig: async (value) => {
       piOwnConfig = value
@@ -1485,6 +1489,55 @@ function registerIpc(workspace: Workspace): void {
       return { ok: true, id, message: '' }
     },
   )
+
+  /**
+   * Every installed plugin, in the shape the settings page draws.
+   *
+   * Recomputed on every call rather than cached: installing or removing a plugin
+   * changes the answer, and a snapshot taken at launch would keep showing the old one.
+   */
+  ipcMain.handle('pictor:plugins.overview', async (): Promise<PluginOverview[]> => {
+    const records = await workspace.client.listPlugins()
+    // The workspace already holds expanded plugin directories, not parents.
+    const found = discoverPlugins([...workspace.pluginDirectories()])
+    const kernels = workspace.kernels.plugins()
+
+    // `kernel` is not counted here: a kernel is a cordis service, not a contribution
+    // the plugin host recorded, and the row lists it separately with its services.
+    const points = ['commands', 'panels', 'toolGuards', 'toolViews', 'skills'] as const
+    return found.plugins.map((plugin) => {
+      const name = basename(plugin.root)
+      const record = records.find((entry) => entry.id === plugin.id)
+      const contributions = points
+        .map((point) => ({
+          point,
+          count: workspace.pluginHost
+            .contributionsWithSource(point)
+            .filter((entry) => entry.pluginId === plugin.id).length,
+        }))
+        .filter((entry) => entry.count > 0)
+      const mounted = kernels.filter((kernel) => kernel.source === name && kernel.failure === null)
+
+      return {
+        name,
+        id: plugin.id,
+        label: plugin.manifest.name,
+        version: plugin.manifest.version,
+        source: name === 'plugins' ? 'builtin' : name,
+        enabled: record?.enabled ?? true,
+        contributions,
+        kernels: mounted.map((kernel) => ({
+          id: kernel.id,
+          label: kernel.label,
+          services: [...kernel.services],
+          available: kernel.available,
+        })),
+        failure:
+          kernels.find((kernel) => kernel.source === name && kernel.failure !== null)?.failure ??
+          null,
+      }
+    })
+  })
 
   ipcMain.handle('pictor:kernels.plugins', async (): Promise<KernelPluginInfo[]> => {
     return workspace.kernels.plugins().map((entry) => ({

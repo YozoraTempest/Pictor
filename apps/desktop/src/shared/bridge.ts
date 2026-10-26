@@ -176,6 +176,31 @@ export interface KernelNotice {
   level: 'info' | 'error'
 }
 
+/**
+ * One installed plugin, as the settings page shows it.
+ *
+ * A plugin is one installation that may contribute several things: panels, guards,
+ * skills, a kernel. The page lists installations rather than contributions, because
+ * that is what a person installed and what they would remove.
+ */
+export interface PluginOverview {
+  /** Installation name: the directory or package this came from. */
+  name: string
+  /** The plugin's own id, from its manifest. */
+  id: string
+  label: string
+  version: string
+  /** `builtin` for what ships with the app. */
+  source: string
+  enabled: boolean
+  /** How many contributions it made, per point. */
+  contributions: Array<{ point: string; count: number }>
+  /** Kernels it mounted, with the host services each declared. */
+  kernels: Array<{ id: string; label: string; services: string[]; available: boolean }>
+  /** Why it is not running, when it is not. */
+  failure: string | null
+}
+
 /** What an install or removal did, in one line the page can show. */
 export interface KernelChangeResult {
   ok: boolean
@@ -312,6 +337,8 @@ export interface PictorBridge {
   onKernelNotice(callback: (notice: KernelNotice) => void): () => void
   /** Every kernel plugin: mounted, installed but broken, or built in. */
   listKernelPlugins(): Promise<KernelPluginInfo[]>
+  /** Every installed plugin, with what it contributes and what it can reach. */
+  listPluginOverview(): Promise<PluginOverview[]>
   /** Ask for a directory; null when the person cancelled. */
   chooseKernelFolder(): Promise<string | null>
   /** Install a directory as a kernel. */
