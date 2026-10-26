@@ -64,6 +64,29 @@ export interface KernelModel {
   efforts: ModelEffort[] | null
 }
 
+/**
+ * What one background job printed, as far as a read could see.
+ *
+ * `segments` keeps the stream each chunk came from (`stdout`, `stderr`, or the producer's
+ * own `log` narration): a failure is readable only if the reader can tell which of them
+ * said it. `text` is the same content joined, for copying.
+ */
+export interface KernelJobOutput {
+  /** Every chunk in arrival order, grouped by stream. */
+  segments: { channel: string | null; text: string }[]
+  /** All segments joined; what a person would paste somewhere else. */
+  text: string
+  /**
+   * True when the stream was still open when the read stopped.
+   *
+   * A running job's output never "ends", so a reader must be able to say "so far" instead
+   * of implying the job finished.
+   */
+  partial: boolean
+  /** True when the runtime said earlier output is gone (evicted or never kept). */
+  lossy: boolean
+}
+
 /** One conversation's model state, in the kernel's own words. */
 export interface KernelModelState {
   models: KernelModel[]

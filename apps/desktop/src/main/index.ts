@@ -1784,6 +1784,17 @@ function registerIpc(workspace: Workspace): void {
     },
   )
 
+  /** One background job's output so far; `partial` says whether it is still running. */
+  ipcMain.handle('pictor:kernel.jobOutput', async (_event, sessionId: unknown, jobId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof jobId !== 'string' || jobId.length === 0) {
+      throw new Error('jobId must be a non-empty string')
+    }
+    return workspace.harness.kernelJobOutput(sessionId, jobId)
+  })
+
   ipcMain.handle('pictor:kernel.selectModel', async (_event, sessionId: unknown, id: unknown) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
       throw new Error('sessionId must be a non-empty string')

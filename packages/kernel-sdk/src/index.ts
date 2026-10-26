@@ -42,6 +42,7 @@ export type {
   KernelCapabilities,
   KernelCommand,
   KernelInfo,
+  KernelJobOutput,
   KernelModel,
   KernelModelSource,
   KernelModelState,

@@ -10,7 +10,13 @@ import type {
   ModelEffort,
 } from '@pictor/shared'
 
-import type { HarnessStatus, KernelCapabilities, KernelCommand, PermissionMode } from './kinds.js'
+import type {
+  HarnessStatus,
+  KernelCapabilities,
+  KernelCommand,
+  KernelJobOutput,
+  PermissionMode,
+} from './kinds.js'
 
 /**
  * One agent kernel, as the main process needs it.
@@ -127,6 +133,14 @@ export interface KernelDriver {
   jobs?(sessionId: string): Promise<ChatJob[]>
   /** Asks the kernel to stop one background job. */
   killJob?(sessionId: string, jobId: string): Promise<void>
+  /**
+   * What one background job has printed so far.
+   *
+   * Read rather than tailed: a live stream per row would cost a socket for something
+   * nobody is looking at until they ask. `partial` says whether the job was still running
+   * when the read stopped, so the window can say "so far" instead of implying an end.
+   */
+  jobOutput?(sessionId: string, jobId: string): Promise<KernelJobOutput>
 
   // ---- subagents -----------------------------------------------------------
   /**

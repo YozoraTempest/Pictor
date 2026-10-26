@@ -5,6 +5,7 @@ import type {
   HarnessStatus,
   KernelCommand,
   KernelInfo,
+  KernelJobOutput,
   KernelModelState,
   PermissionMode,
 } from '@pictor/kernel-sdk/types'
@@ -15,6 +16,7 @@ export type {
   KernelCapabilities,
   KernelCommand,
   KernelInfo,
+  KernelJobOutput,
   KernelModel,
   KernelModelSource,
   KernelModelState,
@@ -344,6 +346,8 @@ export interface PictorBridge {
   kernelJobs(sessionId: string): Promise<ChatJob[]>
   /** Asks the owning kernel to stop one background job. */
   killKernelJob(sessionId: string, jobId: string): Promise<void>
+  /** One background job's output so far; `partial` says whether it is still running. */
+  kernelJobOutput(sessionId: string, jobId: string): Promise<KernelJobOutput>
   /** One child agent's stored transcript, read from its own session. */
   childTranscript(sessionId: string, childId: string, mode: string): Promise<ChatMessage[]>
   /** The models a kernel offers for one conversation. */

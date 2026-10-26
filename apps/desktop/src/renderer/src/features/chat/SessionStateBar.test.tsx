@@ -175,3 +175,20 @@ describe('the subagent chip', () => {
     expect(screen.queryByRole('button', { name: '查看 远端 的记录' })).toBeNull()
   })
 })
+
+/** Output is read on demand: the ring holds what a job printed, running or not. */
+describe('the job output control', () => {
+  it('offers to read the output of a running job and of a finished one', async () => {
+    seed(true)
+    show({
+      jobs: [job({ id: 'j1' }), job({ id: 'j2', status: 'completed' })],
+    })
+    render(<SessionStateBar sessionId="s1" />)
+
+    await userEvent.click(screen.getByRole('button', { name: /后台任务 1 个运行中/ }))
+
+    // Both, because a finished job's output is exactly what someone wants to read last.
+    expect(screen.getByRole('button', { name: '查看 j1 的输出' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '查看 j2 的输出' })).toBeTruthy()
+  })
+})

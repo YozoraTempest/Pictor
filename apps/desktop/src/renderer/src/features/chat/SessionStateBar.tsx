@@ -17,6 +17,7 @@ import { cn } from '../../lib/cn.js'
 import { Button, Spinner } from '../../components/ui/index.js'
 import { useChatStore } from './chat-store.js'
 import { liveJobs, todoSummary } from './session-state.js'
+import { JobOutputDialog } from './JobOutputDialog.js'
 import { SubagentDialog } from './SubagentDialog.js'
 
 /**
@@ -42,6 +43,8 @@ export function SessionStateBar({ sessionId }: { sessionId: string }): React.JSX
   const [openChildren, setOpenChildren] = useState(false)
   /** The child whose transcript is on screen, if any. */
   const [reading, setReading] = useState<string | null>(null)
+  /** The job whose output is on screen, if any. */
+  const [readingJob, setReadingJob] = useState<string | null>(null)
 
   const running = liveJobs(jobs)
   const summary = todos === null ? null : todoSummary(todos)
@@ -164,21 +167,42 @@ export function SessionStateBar({ sessionId }: { sessionId: string }): React.JSX
                   </div>
                   <p className="mt-0.5 text-faint">{jobStatusText(job)}</p>
                 </div>
-                {live && capabilities.jobs && job.status === 'running' && (
+                <div className="flex shrink-0 items-center gap-1">
+                  {/* Readable while running too: the ring holds what it printed so far. */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label={`停止 ${job.label}`}
-                    onClick={() => void killJob(job.id)}
+                    aria-label={`查看 ${job.label} 的输出`}
+                    onClick={() => setReadingJob(job.id)}
                   >
-                    <Square className="size-3" />
+                    输出
                   </Button>
-                )}
+                  {live && capabilities.jobs && job.status === 'running' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`停止 ${job.label}`}
+                      onClick={() => void killJob(job.id)}
+                    >
+                      <Square className="size-3" />
+                    </Button>
+                  )}
+                </div>
               </li>
             )
           })}
         </ul>
       )}
+      {readingJob !== null && (
+        <JobOutputDialog
+          sessionId={sessionId}
+          jobId={readingJob}
+          // Only ever opened from a row of this list.
+          label={jobs.find((job) => job.id === readingJob)?.label ?? readingJob}
+          onClose={() => setReadingJob(null)}
+        />
+      )}
+
       {reading !== null && (
         <SubagentDialog
           sessionId={sessionId}

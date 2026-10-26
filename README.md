@@ -274,6 +274,11 @@ Selecting a session opens its transcript and a composer:
   turn the result into a failure that still carries the tool's output. Hooks fail open
   (they cannot grant or deny); guards keep failing closed. Whatever a hook adds is
   attributed to it, so the transcript never reads as if the tool said it.
+- **A background job's output is one click away**: 输出 in the job row reads what it has
+  printed — while it runs that is "so far", after it settles it is the whole thing — and
+  `stderr` is marked apart from `stdout` instead of merged, because that is the part
+  someone reads when something failed. If the runtime dropped earlier output, the dialog
+  says so rather than presenting a tail as the beginning.
 - **Delegation is visible**: when a kernel starts a subagent, a `子代理 N 个` chip appears
   above the composer with the labels it was given. 查看步骤 reads that child's own session
   and shows it in a dialog — a child is a conversation of its own, so its steps are shown

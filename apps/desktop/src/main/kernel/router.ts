@@ -15,6 +15,7 @@ import type {
   HarnessStatus,
   KernelCapabilities,
   KernelInfo,
+  KernelJobOutput,
   KernelModelState,
   PermissionMode,
 } from '../../shared/bridge.js'
@@ -431,6 +432,21 @@ export class KernelRouter implements KernelDriver {
     const driver = await this.#for(sessionId)
     if (driver.jobs === undefined) return []
     return driver.jobs(sessionId)
+  }
+
+  /**
+   * What one background job printed, read on demand.
+   *
+   * Like the roster, this needs no capability gate: a kernel with no jobs never reported
+   * one, so nothing offers the control. Only a kernel that has jobs but no read is a
+   * wiring mistake, and it says so by name.
+   */
+  async kernelJobOutput(sessionId: string, jobId: string): Promise<KernelJobOutput> {
+    const driver = await this.#for(sessionId)
+    if (driver.jobOutput === undefined) {
+      throw new Error(`这个会话的内核「${driver.id}」不提供任务输出`)
+    }
+    return driver.jobOutput(sessionId, jobId)
   }
 
   /** Asks the kernel that owns the conversation to stop one background job. */

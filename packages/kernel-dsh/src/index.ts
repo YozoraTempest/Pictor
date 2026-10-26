@@ -9,6 +9,7 @@
  */
 export { dshKernel } from './dsh-kernel.js'
 export { DshDriver } from './dsh-driver.js'
+export { jobOutputOf } from './harness-job-output.js'
 export {
   jobOf,
   planActiveOf,

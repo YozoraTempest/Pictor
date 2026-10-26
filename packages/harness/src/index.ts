@@ -32,6 +32,7 @@ export {
 } from './follow.js'
 export { HarnessRemote, type HarnessRemoteOptions } from './remote.js'
 export { streamOnce, type OnceStreamOptions } from './once.js'
+export { streamCollect, type CollectedStream, type CollectStreamOptions } from './collect.js'
 export type {
   PromptContentPart,
   SessionAddress,

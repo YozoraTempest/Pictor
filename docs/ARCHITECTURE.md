@@ -320,6 +320,14 @@ why a Pi conversation draws no bar at all).
   roster is still drawn, because the runtime said the job is running and hiding it would
   be the lie. `job/kill` is fenced on the session that can see the job, and it answers
   `requested` or `already-finished` — a second click is not an error.
+- **Job output is read, not tailed.** `jobOutput()` opens `job/follow`, which answers with
+  an `opened` anchor, a run of `output` batches, and — only once the job settles and its
+  ring drains — a terminal `status`. A running job's stream never ends, so the read takes
+  what arrives within a budget (`streamCollect`) and reports `partial`: "so far" is a
+  different answer from "finished", and the window says which. Chunks keep the stream they
+  came from (`stdout`, `stderr`, the producer's `log`), because merging them would erase
+  the one distinction a reader needs after a failure; a non-zero start offset, a `lossy`
+  batch or a marked gap all set `lossy`, so a tail is never presented as the beginning.
 - **A subagent is a link, not a row.** The runtime records a delegation in the _parent_
   as a `subagent/catalog` discovery fact — `{childId, label, mode}` — and the child is a
   session of its own. So the bar lists who was started, and the steps are read from that

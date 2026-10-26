@@ -9,6 +9,7 @@ import {
   EventStream,
   FollowStream,
   HarnessRemote,
+  streamCollect,
   streamOnce,
   type PromptContentPart,
   type HarnessNotification,
@@ -37,8 +38,11 @@ import {
   enabledMcpServers,
 } from '@pictor/shared'
 
+import type { KernelJobOutput } from '@pictor/kernel-sdk'
+
 import { commandTextOf, parseCommands } from './harness-commands.js'
 import { loadHarnessHistory, projectHarnessEvents } from './harness-history.js'
+import { jobOutputOf } from './harness-job-output.js'
 import { jobOf, sessionStates } from './harness-session-state.js'
 import { DEFAULT_PERMISSION_MODE, isPermissionMode } from '@pictor/shared'
 import { sessionTitleOf } from '@pictor/harness'
@@ -123,6 +127,9 @@ const PROFILE_NAME = 'pictor'
 const BOOT_TIMEOUT = 120_000
 
 /** Messages the opening snapshot carries; the transcript pages back through it. */
+/** How long one read of a job's output keeps listening for more. */
+const JOB_OUTPUT_BUDGET = 3_000
+
 /** How much of a child agent's log one read brings back; a page, not the world. */
 const CHILD_MESSAGES = 120
 
@@ -712,6 +719,35 @@ export class DshDriver implements KernelDriver {
         return job === null ? [] : [job]
       })
       .sort((left, right) => left.startedAt - right.startedAt)
+  }
+
+  /**
+   * What one background job has printed, read on demand.
+   *
+   * `job/follow` is a stream that stays open while the job runs and closes after a
+   * terminal `status` once it settles, so this reads until it ends or until the budget
+   * says enough — and the reader reports which, because "still running" and "finished"
+   * are different answers to the same question.
+   */
+  async jobOutput(sessionId: string, jobId: string): Promise<KernelJobOutput> {
+    const remote = this.#remote
+    const socket = this.#socket
+    const cookie = remote?.cookie
+    if (remote === null || socket === null || cookie === undefined || cookie === null) {
+      throw new Error('agent 运行时尚未启动')
+    }
+    const harnessId = await this.#sessionFor(sessionId)
+    const stream = await streamCollect({
+      url: `${remote.baseUrl.replace(/^http/, 'ws')}/api/remote.mux`,
+      cookie,
+      endpoint: 'job/follow',
+      // No `from`: the runtime starts at the oldest byte it still keeps, which is the
+      // most a read can honestly claim to show.
+      request: { sessionId: harnessId, jobId },
+      WebSocket: socket,
+      budgetMs: JOB_OUTPUT_BUDGET,
+    })
+    return jobOutputOf(stream.items)
   }
 
   /**
