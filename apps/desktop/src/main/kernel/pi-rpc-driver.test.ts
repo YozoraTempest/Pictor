@@ -306,7 +306,10 @@ function commands(fake: { log: string }): Record<string, unknown>[] {
   }
 }
 
-describe('PiRpcDriver', () => {
+// Every test here starts a real child process, and a busy CI runner can take
+// seconds to do that: the 5s default would fail the run for being loaded rather
+// than for being wrong, and a genuine hang still fails, just later.
+describe('PiRpcDriver', { timeout: 20_000 }, () => {
   it('runs a prompt as one turn and closes it when Pi settles', async () => {
     const fake = fakePi({ input: 'text' })
     const driver = driverFor(fake)
