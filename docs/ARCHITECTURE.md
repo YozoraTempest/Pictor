@@ -199,8 +199,15 @@ catalogue. The composer draws one picker or the other, never both — a list tha
 is not the conversation's list is the same lie as a control the kernel cannot
 honour.
 
-The rail carries one destination per kernel (`app/kernel-scope.ts` maps a view id
-to its kernel). A kernel page lists only that kernel's conversations, filters the
+The rail is **derived** from `kernels.list()`, not written by hand: `viewsFor()`
+(`app/views.tsx`) builds home, one page per mounted kernel, and settings, and a page
+is named after the kernel it holds (`kernel:<id>`, `app/kernel-scope.ts`). Turning a
+kernel off takes its page away and installing one adds a page, both without an edit; a
+kernel the build has never heard of still gets a page, an icon it borrows and a number
+(`Ctrl+2…`), which is what makes "adding a kernel is adding a directory" true in the
+window and not only in the container.
+
+A kernel page lists only that kernel's conversations, filters the
 project rows to the ones that hold one, draws only the sections that hold one,
 opens a conversation of its own kernel instead of keeping the previous one, and
 draws the kernel picker only for an open conversation — moving it to another kernel

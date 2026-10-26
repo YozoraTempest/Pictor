@@ -52,7 +52,7 @@ export default {
       await page.evaluate((cwd) => window.pictor.harnessStart(cwd), join(app.workdir, 'rules'))
       await page.reload()
       await page.waitForSelector('header', { timeout: 30_000 })
-      await openKernel(page, 'DSH')
+      await openKernel(page, 'DeepSeek Harness')
       await page.keyboard.press('Control+n')
 
       const input = page.getByLabel('消息输入')

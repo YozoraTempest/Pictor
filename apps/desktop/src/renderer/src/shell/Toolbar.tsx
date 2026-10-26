@@ -33,7 +33,8 @@ function useAppMenu(): MenuEntry[] {
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
   const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
 
-  const views = sortedViews()
+  const kernels = useWorkspaceStore((state) => state.kernels)
+  const views = sortedViews(kernels)
   const info = useWorkspaceStore((state) => state.info)
   const createSession = useWorkspaceStore((state) => state.createSession)
   const addProject = useWorkspaceStore((state) => state.addProject)

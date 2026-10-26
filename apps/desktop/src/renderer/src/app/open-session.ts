@@ -1,4 +1,4 @@
-import { KERNEL_VIEWS } from './kernel-scope.js'
+import { kernelViewId } from './kernel-scope.js'
 import { openView } from './open-view.js'
 import { useUiStore } from './ui-store.js'
 import { useWorkspaceStore } from './workspace-store.js'
@@ -22,10 +22,11 @@ export function openSession(sessionId: string): boolean {
   const session = state.sessions.find((entry) => entry.id === sessionId)
   if (session === undefined) return false
 
-  // A kernel page when this build has one for it, and the overview otherwise — that
-  // page also lists conversations, so the conversation is still reachable.
-  const view: AppView =
-    KERNEL_VIEWS.find((entry) => entry.kernelId === session.kernelId)?.id ?? 'home'
+  // The page of the kernel that ran it — every mounted kernel has one — or home when
+  // this build no longer has that kernel: home can always be drawn, and its composer
+  // is a place to go on from.
+  const mounted = state.kernels.some((kernel) => kernel.id === session.kernelId)
+  const view: AppView = mounted ? kernelViewId(session.kernelId) : 'home'
 
   if (useUiStore.getState().view !== view) openView(view)
   state.selectSession(sessionId)

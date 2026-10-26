@@ -73,7 +73,7 @@ export default {
 
       await page.reload()
       await page.waitForSelector('header', { timeout: 30_000 })
-      await openKernel(page, 'DSH')
+      await openKernel(page, 'DeepSeek Harness')
 
       // A conversation the way the shortcut makes one: Pictor writes its
       // placeholder title, which is what lets the runtime's own title replace it.
@@ -137,7 +137,7 @@ export default {
       // that used to pass against an empty history.
       await page.reload()
       await page.waitForSelector('header', { timeout: 30_000 })
-      await openKernel(page, 'DSH')
+      await openKernel(page, 'DeepSeek Harness')
       await page.getByRole('button', { name: title }).first().click({ timeout: 15_000 })
       await page.getByText(reply).first().waitFor({ timeout: 30_000 })
 

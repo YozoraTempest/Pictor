@@ -84,7 +84,7 @@ export default {
       // fork needs.
       await page.reload()
       await page.waitForSelector('header', { timeout: 30_000 })
-      await openKernel(page, 'DSH')
+      await openKernel(page, 'DeepSeek Harness')
       await page.getByRole('button', { name: 'e2e 分叉源' }).first().click({ timeout: 15_000 })
       await page.getByText(second).first().waitFor({ timeout: 30_000 })
 

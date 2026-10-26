@@ -20,6 +20,7 @@ vi.hoisted(() => {
 
 import type { Session } from '@pictor/shared'
 
+import type { KernelInfo } from '../../../shared/bridge.js'
 import { openSession } from './open-session.js'
 import { useUiStore } from './ui-store.js'
 import { useWorkspaceStore } from './workspace-store.js'
@@ -42,10 +43,23 @@ function session(id: string, kernelId: string): Session {
   }
 }
 
+/** What `kernels.list()` reports, near enough for the page lookup. */
+function kernel(id: string): KernelInfo {
+  return {
+    id,
+    label: id,
+    default: false,
+    available: true,
+    capabilities: { permission: false, approval: false, model: false, skills: false, fork: false },
+    modelSource: null,
+  }
+}
+
 beforeEach(() => {
   useUiStore.setState({ view: 'home' })
   useWorkspaceStore.setState({
     sessions: [session('pi-1', 'pi'), session('dsh-1', 'dsh')],
+    kernels: [kernel('dsh'), kernel('pi')],
     selectedSessionId: null,
     selectedProjectId: null,
   })
@@ -57,17 +71,30 @@ describe('openSession', () => {
     // two moves — and the page has to come first, or it opens somewhere that does
     // not list it.
     expect(openSession('pi-1')).toBe(true)
-    expect(useUiStore.getState().view).toBe('pi')
+    expect(useUiStore.getState().view).toBe('kernel:pi')
     expect(useWorkspaceStore.getState().selectedSessionId).toBe('pi-1')
 
     expect(openSession('dsh-1')).toBe(true)
-    expect(useUiStore.getState().view).toBe('dsh')
+    expect(useUiStore.getState().view).toBe('kernel:dsh')
     expect(useWorkspaceStore.getState().selectedSessionId).toBe('dsh-1')
   })
 
-  it('falls back to the overview for a kernel without a page', () => {
-    // A conversation filed under a kernel this build has no page for is still
-    // listed on the overview, so that is where the reader can reach it.
+  it('opens the page of a kernel this build has never heard of', () => {
+    // Every mounted kernel has a page, so an installed kernel's conversations are
+    // not stranded — the page is named after the id it reports.
+    useWorkspaceStore.setState({
+      sessions: [session('fake-1', 'fake')],
+      kernels: [kernel('dsh'), kernel('fake')],
+    })
+
+    expect(openSession('fake-1')).toBe(true)
+    expect(useUiStore.getState().view).toBe('kernel:fake')
+    expect(useWorkspaceStore.getState().selectedSessionId).toBe('fake-1')
+  })
+
+  it('falls back to home for a kernel that is no longer mounted', () => {
+    // The kernel was uninstalled or turned off: its page is gone, so the conversation
+    // opens on the one page that always exists.
     useWorkspaceStore.setState({ sessions: [session('codex-1', 'codex')] })
 
     expect(openSession('codex-1')).toBe(true)

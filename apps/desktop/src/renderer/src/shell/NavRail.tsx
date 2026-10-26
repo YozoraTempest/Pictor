@@ -1,6 +1,7 @@
 import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
-import { sortedViews, type AppView, type AppViewDescriptor } from '../app/views.js'
+import { useWorkspaceStore } from '../app/workspace-store.js'
+import { sortedViews, type AppViewDescriptor } from '../app/views.js'
 import { cn } from '../lib/cn.js'
 import { Tooltip } from '../components/ui/index.js'
 
@@ -8,7 +9,7 @@ function RailButton({
   view,
   active,
 }: {
-  view: AppViewDescriptor<AppView>
+  view: AppViewDescriptor
   active: boolean
 }): React.JSX.Element {
   const Icon = view.icon
@@ -38,13 +39,14 @@ function RailButton({
 /**
  * The global rail.
  *
- * It renders whatever the view registry declares, grouped and ordered by the
- * descriptors themselves: adding a destination never means editing this file.
+ * It renders whatever the view registry derives, grouped and ordered by the
+ * descriptors themselves: a kernel that gets installed appears here without an edit.
  */
 export function NavRail(): React.JSX.Element {
   const view = useUiStore((state) => state.view)
+  const kernels = useWorkspaceStore((state) => state.kernels)
 
-  const sorted = sortedViews()
+  const sorted = sortedViews(kernels)
   const primary = sorted.filter((entry) => entry.group === 'primary')
   const secondary = sorted.filter((entry) => entry.group === 'secondary')
 

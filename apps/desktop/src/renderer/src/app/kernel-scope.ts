@@ -1,19 +1,25 @@
 /**
- * Which kernel's conversations a view shows.
+ * Which page a kernel's conversations live on.
  *
- * The rail has one destination per kernel, and a destination is not just a filter
- * over the same list: a conversation belongs to the kernel that produced its
- * transcript, so "the Pi page" is the only place Pi conversations are created and
- * the only place they are listed. Keeping the mapping here — in a module with no
- * imports — is what lets the store ask "what kernel is this view about" without
- * importing the view registry (which imports the views, which import the store).
+ * The rail used to carry a hand-written list — dsh, pi — so a kernel installed from a
+ * plugin had no page at all: its conversations were reachable only through the search
+ * palette. A page is now named after the kernel it holds (`kernel:<id>`), which makes
+ * the rail a function of what is mounted. This module deliberately imports nothing:
+ * the store, the view registry and the shortcuts all ask it, and a cycle between them
+ * would be resolved by whichever one happened to load first.
  */
-export const KERNEL_VIEWS = [
-  { id: 'dsh', kernelId: 'dsh' },
-  { id: 'pi', kernelId: 'pi' },
-] as const
 
-/** The kernel a view is scoped to, or null for a view that spans every kernel. */
-export function kernelScopeOf(view: string): string | null {
-  return KERNEL_VIEWS.find((entry) => entry.id === view)?.kernelId ?? null
+/** Prefix that keeps a kernel page distinct from `home` and `settings`. */
+export const KERNEL_VIEW_PREFIX = 'kernel:'
+
+/** The view id that lists one kernel's conversations. */
+export function kernelViewId(kernelId: string): string {
+  return `${KERNEL_VIEW_PREFIX}${kernelId}`
+}
+
+/** The kernel a view is about, or null for a view that is not one kernel's. */
+export function kernelOfView(view: string): string | null {
+  if (!view.startsWith(KERNEL_VIEW_PREFIX)) return null
+  const id = view.slice(KERNEL_VIEW_PREFIX.length)
+  return id.length === 0 ? null : id
 }

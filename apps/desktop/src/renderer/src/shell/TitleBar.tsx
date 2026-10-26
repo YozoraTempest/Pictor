@@ -1,7 +1,7 @@
 import { Minus, Square, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-
 import { useUiStore } from '../app/ui-store.js'
+import { useWorkspaceStore } from '../app/workspace-store.js'
 import { findView } from '../app/views.js'
 import { cn } from '../lib/cn.js'
 import { GlobalTools, useWindowCommand } from './Toolbar.js'
@@ -15,7 +15,8 @@ import { GlobalTools, useWindowCommand } from './Toolbar.js'
  */
 export function TitleBar(): React.JSX.Element {
   const view = useUiStore((state) => state.view)
-  const active = findView(view)
+  const kernels = useWorkspaceStore((state) => state.kernels)
+  const active = findView(view, kernels)
 
   const [maximized, setMaximized] = useState(false)
   const command = useWindowCommand()

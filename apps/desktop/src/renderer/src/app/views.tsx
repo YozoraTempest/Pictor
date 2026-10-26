@@ -1,5 +1,7 @@
 import { Boxes, House, Settings2, Terminal, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
+import type { KernelInfo } from '../../../shared/bridge.js'
+import { kernelViewId } from './kernel-scope.js'
 
 import { SettingsView } from '../features/settings/SettingsView.js'
 import {
@@ -47,82 +49,97 @@ export interface AppViewDescriptor<Id extends string = string> {
   command?: string
 }
 
-const VIEWS = [
-  {
-    id: 'home',
-    label: '首页',
-    description: '开始一个新话题',
-    icon: House,
-    group: 'primary',
-    order: 0,
-    /**
-     * No sessions and no kernel: a conversation starts here, and once it has a kernel
-     * it lives on that kernel's page. One list for every kernel would have to describe
-     * runtimes that disagree about almost everything.
-     */
-    render: () => <WorkspaceView />,
-    title: () => <WorkspaceTitle />,
-    leading: () => <WorkspaceLeading />,
-    trailing: () => <WorkspaceTrailing />,
-    shortcut: 'Ctrl+1',
-  },
-  {
-    id: 'dsh',
-    label: 'DSH',
-    description: 'DeepSeek Harness 的会话',
-    icon: Boxes,
-    group: 'primary',
-    order: 1,
-    render: () => <WorkspaceView kernelId="dsh" />,
-    title: () => <WorkspaceTitle />,
-    leading: () => <WorkspaceLeading />,
-    trailing: () => <WorkspaceTrailing />,
-    shortcut: 'Ctrl+2',
-  },
-  {
-    id: 'pi',
-    label: 'PI',
-    description: 'Pi 的会话',
-    icon: Terminal,
-    group: 'primary',
-    order: 2,
-    render: () => <WorkspaceView kernelId="pi" />,
-    title: () => <WorkspaceTitle />,
-    leading: () => <WorkspaceLeading />,
-    trailing: () => <WorkspaceTrailing />,
-    shortcut: 'Ctrl+3',
-  },
-  {
-    id: 'settings',
-    label: '设置',
-    description: '偏好与模型服务',
-    icon: Settings2,
-    group: 'secondary',
-    order: 0,
-    render: () => <SettingsView />,
-    title: () => '设置',
-    shortcut: 'Ctrl+,',
-  },
-] as const satisfies readonly AppViewDescriptor[]
-
-export type AppView = (typeof VIEWS)[number]['id']
-
-export const APP_VIEWS: ReadonlyArray<AppViewDescriptor<AppView>> = VIEWS
-
-/** Views in declared order; every consumer renders this list, never its own. */
-export function sortedViews(): ReadonlyArray<AppViewDescriptor<AppView>> {
-  return [...APP_VIEWS].sort((a, b) => a.order - b.order)
-}
+/**
+ * A view id, as `ui-store` holds it.
+ *
+ * Kernel pages are named after the kernel they hold (`kernel:pi`), so the set of
+ * destinations is a function of what is mounted rather than a list written here.
+ */
+export type AppView = string
 
 /** Where the app starts when nothing else is known. */
 export const DEFAULT_VIEW: AppView = 'home'
 
+/** Every conversation starts here, whatever kernel ends up running it. */
+const HOME_VIEW: AppViewDescriptor = {
+  id: DEFAULT_VIEW,
+  label: '首页',
+  description: '开始一个新话题',
+  icon: House,
+  group: 'primary',
+  order: 0,
+  /**
+   * No sessions and no kernel: a conversation starts here, and once it has a kernel
+   * it lives on that kernel's page. One list for every kernel would have to describe
+   * runtimes that disagree about almost everything.
+   */
+  render: () => <WorkspaceView />,
+  title: () => <WorkspaceTitle />,
+  leading: () => <WorkspaceLeading />,
+  trailing: () => <WorkspaceTrailing />,
+  shortcut: 'Ctrl+1',
+}
+
+/** Preferences are not about kernels, so the entry is not either. */
+const SETTINGS_VIEW: AppViewDescriptor = {
+  id: 'settings',
+  label: '设置',
+  description: '偏好与模型服务',
+  icon: Settings2,
+  group: 'secondary',
+  order: 0,
+  render: () => <SettingsView />,
+  title: () => '设置',
+  shortcut: 'Ctrl+,',
+}
+
 /**
- * The descriptor for `id`, falling back to the first declared view.
+ * Icons for the kernels this build ships, by id.
  *
- * Callers render a frame on every frame; an unknown id should still produce a
- * view rather than an empty window, so the fallback is part of the contract.
+ * An installed kernel has no such entry and gets the generic one: the rail is drawn
+ * from what is mounted, and a kernel the app has never heard of must still appear.
  */
-export function findView(id: string): AppViewDescriptor<AppView> {
-  return APP_VIEWS.find((entry) => entry.id === id) ?? APP_VIEWS[0] ?? VIEWS[0]
+const KERNEL_ICONS: Readonly<Record<string, LucideIcon>> = {
+  dsh: Boxes,
+  pi: Terminal,
+}
+
+/**
+ * Every destination, given what this machine can run.
+ *
+ * Home first, one page per mounted kernel after it, settings pinned to the bottom.
+ * The list is built on demand because the kernels are: turning a kernel off takes its
+ * page away, and installing one adds a page without an edit here.
+ */
+export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
+  const pages = kernels.map((kernel, index): AppViewDescriptor => ({
+    id: kernelViewId(kernel.id),
+    label: kernel.label,
+    description: `${kernel.label} 的会话`,
+    icon: KERNEL_ICONS[kernel.id] ?? Boxes,
+    group: 'primary',
+    order: index + 1,
+    render: () => <WorkspaceView kernelId={kernel.id} />,
+    title: () => <WorkspaceTitle />,
+    leading: () => <WorkspaceLeading />,
+    trailing: () => <WorkspaceTrailing />,
+    shortcut: `Ctrl+${String(index + 2)}`,
+  }))
+  return [HOME_VIEW, ...pages, SETTINGS_VIEW]
+}
+
+/** The destinations in the order the rail shows them. */
+export function sortedViews(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
+  return viewsFor(kernels).sort((a, b) => a.order - b.order)
+}
+
+/**
+ * The descriptor for `id`, falling back to home.
+ *
+ * Callers render a frame on every frame; an id whose kernel is no longer mounted has
+ * to produce a view rather than an empty window, and home is the one that can always
+ * be shown.
+ */
+export function findView(id: string, kernels: readonly KernelInfo[]): AppViewDescriptor {
+  return viewsFor(kernels).find((entry) => entry.id === id) ?? HOME_VIEW
 }

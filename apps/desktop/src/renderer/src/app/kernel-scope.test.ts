@@ -1,18 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
-import { kernelScopeOf } from './kernel-scope.js'
+import { KERNEL_VIEW_PREFIX, kernelOfView, kernelViewId } from './kernel-scope.js'
 
-describe('kernelScopeOf', () => {
-  it('answers with the kernel of a kernel page', () => {
-    expect(kernelScopeOf('dsh')).toBe('dsh')
-    expect(kernelScopeOf('pi')).toBe('pi')
+describe('kernel view ids', () => {
+  it('names a page after the kernel it holds', () => {
+    expect(kernelViewId('pi')).toBe(`${KERNEL_VIEW_PREFIX}pi`)
+    expect(kernelOfView(kernelViewId('pi'))).toBe('pi')
   })
 
-  it('scopes nothing else', () => {
-    // Home is the page that spans every kernel; settings is not about kernels at
-    // all. A new view has to opt in by appearing in the rail's kernel list.
-    expect(kernelScopeOf('home')).toBeNull()
-    expect(kernelScopeOf('settings')).toBeNull()
-    expect(kernelScopeOf('nonsense')).toBeNull()
+  it('round-trips a kernel id this build has never heard of', () => {
+    // An installed kernel names itself, and the page follows: nothing here keeps a
+    // list of the known ones.
+    expect(kernelOfView(kernelViewId('plugin:weird id'))).toBe('plugin:weird id')
+  })
+
+  it('answers null for every view that is not one kernel’s', () => {
+    expect(kernelOfView('home')).toBeNull()
+    expect(kernelOfView('settings')).toBeNull()
+    expect(kernelOfView('nonsense')).toBeNull()
+    // A bare prefix names nobody, so it must not resolve to a kernel called "".
+    expect(kernelOfView(KERNEL_VIEW_PREFIX)).toBeNull()
   })
 })

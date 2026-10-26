@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 
+import { openKernel } from '../harness.mjs'
+
 /**
  * A kernel that was installed rather than compiled in.
  *
@@ -38,12 +40,11 @@ export default {
 
     await page.reload()
     await page.waitForSelector('header', { timeout: 30_000 })
-    // An installed kernel has no rail page of its own yet, so its conversation is
-    // opened the way a person reaches anything not in front of them: the search
-    // palette, which spans every kernel and jumps to the one that holds the match.
-    await page.getByRole('button', { name: '搜索会话' }).first().click()
-    await page.getByPlaceholder('按标题或项目名搜索').fill('e2e 内核插件')
-    await page.getByPlaceholder('按标题或项目名搜索').press('Enter')
+    // The installed kernel gets a page of its own, named by the label it reports —
+    // that is what makes "adding a kernel is adding a directory" true in the window
+    // too, and not only in the container.
+    await openKernel(page, '回声（示例）')
+    await page.getByRole('button', { name: 'e2e 内核插件' }).first().click({ timeout: 15_000 })
     await page.getByLabel('消息输入').waitFor({ timeout: 20_000 })
 
     // A turn through the installed kernel, observed the way a person would: the

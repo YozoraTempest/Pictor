@@ -99,11 +99,12 @@ kernel that never produced it would be a lie about where it came from.
 A conversation records its kernel when it is created. Choosing another kernel is a
 **branch**: the new conversation names the new kernel and points back at the one it
 came from, so a conversation never silently changes what ran it. The rail carries
-one page per kernel; home is where a conversation starts, and the only place the
-choice of kernel is offered. Home deliberately lists no conversations — a single
-column of them would have to describe runtimes that disagree about almost
-everything — so a conversation is found again on the page of the kernel that ran it,
-or through the search palette.
+one page per **mounted** kernel — built from `kernels.list()`, so an installed kernel
+appears there and a disabled one disappears, neither an edit in the window. Home is
+where a conversation starts, and the only place the choice of kernel is offered. Home
+deliberately lists no conversations — a single column of them would have to describe
+runtimes that disagree about almost everything — so a conversation is found again on
+the page of the kernel that ran it, or through the search palette.
 
 ### Two built-in kernels
 

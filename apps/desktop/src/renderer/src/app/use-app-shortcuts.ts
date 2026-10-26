@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 
-import { KERNEL_VIEWS, kernelScopeOf } from './kernel-scope.js'
+import { kernelOfView } from './kernel-scope.js'
+import { viewsFor } from './views.js'
 import { openView } from './open-view.js'
 import { useUiStore } from './ui-store.js'
 import { useWorkspaceStore } from './workspace-store.js'
@@ -29,13 +30,9 @@ export function useAppShortcuts(): void {
       switch (event.key.toLowerCase()) {
         case 'n':
           event.preventDefault()
-          // The open page decides the kernel, the same way its own 新聊天 does.
-          void createSession(newSessionTitle(), null, kernelScopeOf(useUiStore.getState().view))
-          return
-        // The rail's accelerators, in its own order: home, then one per kernel.
-        case '1':
-          event.preventDefault()
-          openView('home')
+          // The open page decides the kernel, the same way its own 新聊天 does. Home
+          // names none, and the server picks the default.
+          void createSession(newSessionTitle(), null, kernelOfView(useUiStore.getState().view))
           return
         case ',':
           event.preventDefault()
@@ -63,10 +60,13 @@ export function useAppShortcuts(): void {
           void window.pictor.windowCommand('zoomReset')
           return
         default: {
-          // A kernel page's accelerator is derived, so adding a kernel to the rail
-          // does not leave its number unbound.
-          const index = Number(event.key) - 2
-          const target = KERNEL_VIEWS[index]
+          // Ctrl+1 is home and Ctrl+2… are the mounted kernels, in the rail's own
+          // order: the numbers follow what is installed, so a third kernel is
+          // reachable without a new binding.
+          const destinations = viewsFor(useWorkspaceStore.getState().kernels).filter(
+            (entry) => entry.group === 'primary',
+          )
+          const target = destinations[Number(event.key) - 1]
           if (target === undefined) return
           event.preventDefault()
           openView(target.id)

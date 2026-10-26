@@ -69,7 +69,7 @@ export default {
     assert.equal(await triggers.count(), 1, 'the picker is drawn once, in the composer')
 
     // Each row lives on its own kernel's page, so the pi branch is opened from PI.
-    await openKernel(page, 'PI')
+    await openKernel(page, 'Pi')
 
     // Selecting the branch shows the kernel that branch runs on, which is the
     // whole point of binding it to the conversation.
@@ -125,7 +125,7 @@ export default {
     })
 
     // Now the other side: a dsh conversation is on the DSH page.
-    await openKernel(page, 'DSH')
+    await openKernel(page, 'DeepSeek Harness')
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().click({ timeout: 15_000 })
     await page.locator('[aria-label="内核：DeepSeek Harness"]').waitFor({ timeout: 20_000 })
     await page.locator('[aria-label^="会话权限："]').waitFor({ timeout: 20_000 })
@@ -134,18 +134,21 @@ export default {
     // dsh runs Pictor's models, so the kernel control is gone and Pictor's is back.
     assert.equal(await page.locator('[aria-label="选择内核模型"]').count(), 0)
 
-    // The rail has one destination per kernel, in a fixed order.
+    // One destination per mounted kernel, in the order the host mounted them — a
+    // kernel this build has never heard of included, which is the point of deriving
+    // the rail from `kernels.list()`.
     const rail = page.getByRole('navigation', { name: '主导航' })
+    const listed = await page.evaluate(() => window.pictor.listKernels())
     assert.deepEqual(
       await rail
         .locator('button')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label'))),
-      ['首页', 'DSH', 'PI', '设置'],
+      ['首页', ...listed.map((kernel) => kernel.label), '设置'],
     )
 
     // A kernel's page lists that kernel's conversations and nobody else's. Both
     // rows were created above, so each page must show exactly one of them.
-    await rail.getByRole('button', { name: 'PI', exact: true }).click()
+    await rail.getByRole('button', { name: 'Pi', exact: true }).click()
     await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
     await eventually(
       async () => (await page.getByRole('button', { name: 'e2e 内核绑定' }).count()) === 0,
@@ -162,7 +165,7 @@ export default {
     // to another kernel makes a branch rather than a switch.
     await page.locator('[aria-label="内核：Pi"]').waitFor({ timeout: 20_000 })
 
-    await rail.getByRole('button', { name: 'DSH', exact: true }).click()
+    await rail.getByRole('button', { name: 'DeepSeek Harness', exact: true }).click()
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
     assert.equal(
       await page.getByRole('button', { name: 'e2e 内核分支' }).count(),
@@ -183,14 +186,14 @@ export default {
     await page.reload()
     await page.waitForSelector('header', { timeout: 30_000 })
 
-    await rail.getByRole('button', { name: 'PI', exact: true }).click()
+    await rail.getByRole('button', { name: 'Pi', exact: true }).click()
     await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
     await eventually(
       async () => !(await headings()).includes('置顶'),
       'a section with nothing of this kernel in it is not drawn',
     )
 
-    await rail.getByRole('button', { name: 'DSH', exact: true }).click()
+    await rail.getByRole('button', { name: 'DeepSeek Harness', exact: true }).click()
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
     await eventually(
       async () => (await headings()).includes('置顶'),

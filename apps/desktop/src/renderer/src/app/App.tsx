@@ -7,6 +7,7 @@ import { useApprovalStore } from './approval-store.js'
 import { useQuestionStore } from './question-store.js'
 import { useRuntimeStore } from './runtime-store.js'
 import { useUiStore } from './ui-store.js'
+import { openView } from './open-view.js'
 import { findView } from './views.js'
 import { useAppShortcuts } from './use-app-shortcuts.js'
 import { useWorkspaceStore } from './workspace-store.js'
@@ -15,7 +16,14 @@ export function App(): React.JSX.Element {
   useAppShortcuts()
 
   const view = useUiStore((state) => state.view)
-  const active = findView(view)
+  const kernels = useWorkspaceStore((state) => state.kernels)
+  const active = findView(view, kernels)
+
+  // A kernel page stops existing when that kernel is turned off or uninstalled. Land
+  // on home instead of a frame nobody draws.
+  useEffect(() => {
+    if (active.id !== view) openView(active.id)
+  }, [active.id, view])
 
   const refresh = useWorkspaceStore((state) => state.refresh)
   const error = useWorkspaceStore((state) => state.error)
