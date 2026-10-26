@@ -63,7 +63,9 @@ export function SessionApprovalPicker(): React.JSX.Element | null {
   const menuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    if (sessionId.length === 0) {
+    // A kernel that decides for itself never answers this, so asking would only fill the
+    // main process log with a question it cannot take.
+    if (sessionId.length === 0 || !canSwitch) {
       setMode(null)
       return
     }
@@ -81,7 +83,7 @@ export function SessionApprovalPicker(): React.JSX.Element | null {
     return () => {
       alive = false
     }
-  }, [sessionId])
+  }, [sessionId, canSwitch])
 
   // Read on open as well: the approval card can add an allow between two openings.
   useEffect(() => {
