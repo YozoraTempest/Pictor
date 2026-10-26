@@ -35,8 +35,11 @@ export function App(): React.JSX.Element {
       window.pictor.onChatEvent((event) => {
         useChatStore.getState().handleEvent(event)
         // A conversation that ends cannot still be waiting on a person: the kernel
-        // cancels the dialog, and the card has to go with it.
-        if (event.type === 'run.finished') useApprovalStore.getState().clearOf(event.sessionId)
+        // cancels the dialog, and both the card and the sidebar badge have to go.
+        if (event.type === 'run.finished') {
+          useApprovalStore.getState().clearOf(event.sessionId)
+          useQuestionStore.getState().clearOf(event.sessionId)
+        }
       }),
     [],
   )

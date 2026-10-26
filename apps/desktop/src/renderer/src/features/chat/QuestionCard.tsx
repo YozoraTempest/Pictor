@@ -151,7 +151,7 @@ export function QuestionCard({
     setError(null)
     try {
       await window.pictor.answerQuestions(request.eventId, list)
-      useQuestionStore.getState().clear()
+      useQuestionStore.getState().clear(request.eventId)
     } catch (reason) {
       setSending(false)
       setError(reason instanceof Error ? reason.message : String(reason))

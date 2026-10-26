@@ -2,39 +2,34 @@ import { create } from 'zustand'
 
 import type { ApprovalRequest } from '@pictor/shared'
 
+import { dropPending, dropPendingOf, putPending } from './pending.js'
+
 /**
- * The decision the runtime is currently waiting for.
+ * The decisions kernels are currently waiting for.
  *
- * One slot on purpose: the runtime asks one question at a time per client, and a
- * queue would hide the fact that a tool call is blocked behind a list nobody
- * scrolls. A newer request replaces an older one, exactly as the wire does.
+ * One per conversation, because that is what a kernel can hold: Pi keeps one child
+ * per conversation and blocks one call in it, dsh blocks one agent. Several
+ * conversations can be blocked at once, so the list is what the sidebar badges and
+ * the window draws the entry for the conversation on screen.
  */
 interface ApprovalState {
-  pending: ApprovalRequest | null
+  pending: ApprovalRequest[]
   show: (request: ApprovalRequest) => void
-  clear: () => void
-  /**
-   * Drops a request that a conversation no longer needs answered.
-   *
-   * A kernel that names the conversation can end a run with its dialog cancelled on
-   * the other side; the card must go with it rather than sit there looking unanswered.
-   * A request with no conversation (dsh) is left alone: nothing here can tell whether
-   * an unrelated turn finishing means its answer is moot.
-   */
+  /** Drops one settled decision, by the event the kernel is holding. */
+  clear: (eventId: string) => void
+  /** Drops whatever one conversation was waiting on; a finished run cannot still wait. */
   clearOf: (sessionId: string) => void
 }
 
 export const useApprovalStore = create<ApprovalState>()((set) => ({
-  pending: null,
+  pending: [],
   show: (request) => {
-    set({ pending: request })
+    set((state) => ({ pending: putPending(state.pending, request) }))
   },
-  clear: () => {
-    set({ pending: null })
+  clear: (eventId) => {
+    set((state) => ({ pending: dropPending(state.pending, eventId) }))
   },
   clearOf: (sessionId) => {
-    set((state) =>
-      state.pending !== null && state.pending.sessionId === sessionId ? { pending: null } : state,
-    )
+    set((state) => ({ pending: dropPendingOf(state.pending, sessionId) }))
   },
 }))

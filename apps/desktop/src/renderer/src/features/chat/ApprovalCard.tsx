@@ -37,7 +37,7 @@ export function ApprovalCard({
     setError(null)
     try {
       await window.pictor.answerApproval(request.eventId, allow)
-      useApprovalStore.getState().clear()
+      useApprovalStore.getState().clear(request.eventId)
     } catch (reason) {
       setSending(false)
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -58,7 +58,7 @@ export function ApprovalCard({
     try {
       await window.pictor.grantKernelTool(request.sessionId, request.tool)
       await window.pictor.answerApproval(request.eventId, true)
-      useApprovalStore.getState().clear()
+      useApprovalStore.getState().clear(request.eventId)
     } catch (reason) {
       setSending(false)
       setError(reason instanceof Error ? reason.message : String(reason))

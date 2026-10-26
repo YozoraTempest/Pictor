@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ChatImage, ForkPoint } from '@pictor/shared'
 
+import { pendingFor } from '../../app/pending.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Badge, Banner, Button, EmptyState } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
@@ -38,13 +39,23 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
   const createSession = useWorkspaceStore((state) => state.createSession)
   const setSessionSections = useWorkspaceStore((state) => state.setSessionSections)
   const draft = useWorkspaceStore((state) => state.draft)
-  const approval = useApprovalStore((state) => state.pending)
-  const question = useQuestionStore((state) => state.pending)
+  const approvals = useApprovalStore((state) => state.pending)
+  const questions = useQuestionStore((state) => state.pending)
   const startDraft = useWorkspaceStore((state) => state.startDraft)
   const clearDraft = useWorkspaceStore((state) => state.clearDraft)
   const forkSession = useWorkspaceStore((state) => state.forkSession)
   // A kernel without a message-level fork offers no branch button: the affordance
   // would only explain, on click, that this conversation cannot be cut there.
+  // The card for this conversation when one is held here, otherwise the newest one
+  // held anywhere — a blocked call elsewhere is still news the window has to show.
+  const approval = useMemo(
+    () => pendingFor(approvals, selectedSessionId),
+    [approvals, selectedSessionId],
+  )
+  const question = useMemo(
+    () => pendingFor(questions, selectedSessionId),
+    [questions, selectedSessionId],
+  )
   const canFork = useKernelCapabilities(selectedSessionId).fork
   const setDraftProject = useWorkspaceStore((state) => state.setDraftProject)
   const messages = useChatStore((state) => state.current.messages)
@@ -324,20 +335,10 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
               footer={
                 <div className="flex flex-col gap-2">
                   {approval !== null && (
-                    <ApprovalCard
-                      request={approval}
-                      foreign={
-                        approval.sessionId !== undefined && approval.sessionId !== selectedSessionId
-                      }
-                    />
+                    <ApprovalCard request={approval.request} foreign={approval.foreign} />
                   )}
                   {question !== null && (
-                    <QuestionCard
-                      request={question}
-                      foreign={
-                        question.sessionId !== undefined && question.sessionId !== selectedSessionId
-                      }
-                    />
+                    <QuestionCard request={question.request} foreign={question.foreign} />
                   )}
                   {status}
                   {draft !== null && (

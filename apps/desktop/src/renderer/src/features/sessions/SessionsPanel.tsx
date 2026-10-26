@@ -22,6 +22,8 @@ import type { Project, Session } from '@pictor/shared'
 
 import { useUiStore } from '../../app/ui-store.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
+import { useApprovalStore } from '../../app/approval-store.js'
+import { useQuestionStore } from '../../app/question-store.js'
 import { useChatStore } from '../chat/chat-store.js'
 import { useKernelCapabilities } from '../kernels/capabilities.js'
 import {
@@ -1212,6 +1214,19 @@ function SessionRow({
   onDropSession: (draggedId: string, gap: GapRef) => void
 }): React.JSX.Element {
   const running = useChatStore((state) => state.chats[session.id]?.running === true)
+  // A kernel is holding this conversation's turn open until someone answers. The
+  // badge is the only way to see that without the row being open, which is exactly
+  // the case where a card alone would leave the reader hunting.
+  // Both hooks run on every render: `a() || b()` would skip the second one whenever
+  // the first was true, which is a different number of hooks per render and takes
+  // the whole window down with it.
+  const approvalWaiting = useApprovalStore((state) =>
+    state.pending.some((request) => request.sessionId === session.id),
+  )
+  const questionWaiting = useQuestionStore((state) =>
+    state.pending.some((request) => request.sessionId === session.id),
+  )
+  const waiting = approvalWaiting || questionWaiting
   const forkSession = useWorkspaceStore((state) => state.forkSession)
   // The kernel decides whether a conversation can be cut at a message; a row for
   // one that cannot must not offer the menu item that would only fail.
@@ -1294,6 +1309,18 @@ function SessionRow({
           <span className="truncate">{session.title}</span>
         </button>
       </Tooltip>
+
+      {waiting && (
+        // It sits over the end of the title on purpose: the row is narrow, and a
+        // title that is half-covered still reads better than a badge nobody notices.
+        // The hover controls take the same corner, so the badge yields to them.
+        <span
+          className="pointer-events-none absolute top-1/2 right-1 -translate-y-1/2 rounded-full bg-warn/15 px-1.5 py-0.5 text-2xs leading-none text-warn group-hover/row:opacity-0"
+          aria-label="等待答复"
+        >
+          等待答复
+        </span>
+      )}
 
       <div className="absolute top-0.5 right-0.5 flex items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100">
         <IconButton
