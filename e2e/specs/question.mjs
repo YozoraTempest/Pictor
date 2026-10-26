@@ -64,18 +64,14 @@ export default {
       await page.getByLabel('消息输入').press('Enter')
 
       // The card is the only visible sign that the turn is held on a question.
-      const card = page.getByText('模型在等你回答')
+      const card = page.getByText('在等你回答')
       for (let attempt = 0; attempt < 120; attempt += 1) {
         if ((await card.count()) > 0) break
         await sleep(250)
       }
       assert.equal(await card.count(), 1, 'the question card appeared')
 
-      const body = await page
-        .getByText('模型在等你回答')
-        .first()
-        .locator('xpath=../../..')
-        .innerText()
+      const body = await page.getByText('在等你回答').first().locator('xpath=../../..').innerText()
       assert.match(body, /你要哪一种蓝色/, 'the card shows what the model asked')
       assert.match(body, /选个颜色/, 'and the header it sent')
 
@@ -90,11 +86,7 @@ export default {
       assert.ok(forwarded !== null, 'the model was called again after the answer')
       assert.ok(forwarded.roles.includes('tool'), 'the answer arrived as a tool message')
       assert.match(forwarded.toolText, new RegExp(answer), 'the answer reached the model')
-      assert.equal(
-        await page.getByText('模型在等你回答').count(),
-        0,
-        'the card closes on an answer',
-      )
+      assert.equal(await page.getByText('在等你回答').count(), 0, 'the card closes on an answer')
     } finally {
       await model.close()
     }

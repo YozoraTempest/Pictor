@@ -427,10 +427,19 @@ async function startWorkspace(): Promise<Workspace | null> {
       }
     }
     if (notification.method === 'question.request') {
-      const params = (notification.params ?? {}) as { eventId?: unknown; questions?: unknown }
+      const params = (notification.params ?? {}) as {
+        eventId?: unknown
+        questions?: unknown
+        sessionId?: unknown
+      }
       if (typeof params.eventId === 'string' && Array.isArray(params.questions)) {
         const request: ChatQuestionRequest = {
           eventId: params.eventId,
+          // Same as an approval: a kernel that names the conversation lets the card
+          // stay in it.
+          ...(typeof params.sessionId === 'string' && params.sessionId.length > 0
+            ? { sessionId: params.sessionId }
+            : {}),
           questions: params.questions as ChatQuestion[],
         }
         for (const win of BrowserWindow.getAllWindows()) {

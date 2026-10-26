@@ -18,6 +18,12 @@ import type { GuardEndpoint } from './tool-guard-server.js'
  * call until the window answers. That dialog is the reason this extension says it
  * can `hold` a call — a caller that cannot wait is never told to ask.
  *
+ * It also registers the one tool Pi does not ship: a way for the model to ask. dsh
+ * has `ask_user_question`; without the same tool here, a Pi conversation could be
+ * asked things by extensions but never by the model that is doing the work. The tool
+ * asks through `ctx.ui.select` / `ctx.ui.input`, so the window sees the same card
+ * either way.
+ *
  * A guard that cannot be consulted fails closed: the bridge exists precisely
  * because someone decided these calls need watching.
  */
@@ -77,7 +83,70 @@ function ask(tool, args, changes) {
   })
 }
 
+/** The tool the model asks through, named as dsh names it so one habit covers both. */
+const ASK_TOOL = 'ask_user_question'
+
+/**
+ * The model-facing tool.
+ *
+ * Registered from inside the extension function, because that is where Pi hands over
+ * its API — the file is a module, and the API arrives as the default export's argument.
+ * the file is a module, and Pi hands the API to the default export.
+ */
+const askTool = {
+  name: ASK_TOOL,
+  label: 'Ask the person',
+  description:
+    'Ask the person a question and wait for the answer. Use it when a choice cannot be inferred from the code, the request or the conversation — an ambiguity that guessing would turn into wrong work. Pass options when the answer is one of a few choices; omit them for free text.',
+  // Read-only on purpose: asking is not doing, and a session that asks before every
+  // mutating call must not have to approve the question first.
+  annotations: { readOnlyHint: true },
+  parameters: {
+    type: 'object',
+    properties: {
+      question: { type: 'string', description: 'What you need to know.' },
+      options: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Answer choices, if the answer is one of them. Omit for free text.',
+      },
+      detail: {
+        type: 'string',
+        description: 'Context shown with the question: paths, snippets, what you tried.',
+      },
+    },
+    required: ['question'],
+  },
+  async execute(_id, params, _signal, _update, ctx) {
+    const question = String(params && params.question ? params.question : '').trim()
+    if (question.length === 0) throw new Error('question must not be empty')
+    const detail = params && typeof params.detail === 'string' ? params.detail : ''
+    const text = detail.length === 0 ? question : question + String.fromCharCode(10, 10) + detail
+    const offered = Array.isArray(params && params.options)
+      ? params.options.filter((option) => typeof option === 'string' && option.trim().length > 0)
+      : []
+    const answer = offered.length > 0 ? await ctx.ui.select(text, offered) : await ctx.ui.input(text)
+    const value = answer === undefined || answer === null ? '' : String(answer).trim()
+    // A declined question is an answer too: the model has to decide what to do next
+    // instead of treating silence as permission.
+    return {
+      content: [
+        {
+          type: 'text',
+          text:
+            value.length === 0
+              ? 'The person did not answer. Do not assume an answer; say what you need and stop.'
+              : 'The person answered: ' + value,
+        },
+      ],
+      details: undefined,
+    }
+  },
+}
+
 export default function pictorGuard(pi) {
+  pi.registerTool(askTool)
+
   pi.on('tool_call', async (event, ctx) => {
     const tool = String(event.toolName || 'tool')
     // No endpoint means Pictor started this child before the bridge was listening.

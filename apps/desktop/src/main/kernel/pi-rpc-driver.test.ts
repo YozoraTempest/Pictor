@@ -25,14 +25,16 @@ afterEach(() => {
 
 /**
  * A fake Pi: `input` decides what `get_state` claims the model accepts, and `ask`
- * makes a turn hold a tool call on a dialog instead of finishing by itself.
+ * makes a turn hold a tool call on a dialog instead of finishing by itself. The
+ * dialog it opens is the one named, which is how the two shapes Pi can ask in —
+ * `confirm` for a call, `select`/`input` for a question — are both reachable.
  */
 function fakePi(
   options: {
     input: string
     reply?: string
     settle?: 'immediately' | 'onAbort'
-    ask?: boolean
+    ask?: 'confirm' | 'select' | 'input'
   } = {
     input: 'text',
   },
@@ -54,7 +56,7 @@ const log = ${JSON.stringify(log)}
 const reply = ${JSON.stringify(options.reply ?? '等于 2')}
 const input = ${JSON.stringify(options.input)}.split(',')
 const settle = ${JSON.stringify(options.settle ?? 'immediately')}
-const ask = ${JSON.stringify(options.ask === true)}
+const ask = ${JSON.stringify(options.ask ?? null)}
 let sessionId = 'pi-fake-1'
 let level = 'high'
 let modelId = 'fake-1'
@@ -152,10 +154,20 @@ function handle(command) {
     }
     send({ type: 'turn_end', message: { role: 'assistant', content: [{ type: 'text', text: reply }],
       usage: { input: 7, output: 3, totalTokens: 10 } } })
-    if (ask) {
+    if (ask === 'confirm') {
       // A held tool call: Pi asks the client and waits for the answer.
       send({ type: 'extension_ui_request', id: 'dlg-1', method: 'confirm',
         title: 'bash', message: '这个会话设置为「改动型工具先问我」' })
+      return
+    }
+    if (ask === 'select') {
+      send({ type: 'extension_ui_request', id: 'dlg-2', method: 'select',
+        title: '用哪个分支？', options: ['main', 'release'] })
+      return
+    }
+    if (ask === 'input') {
+      send({ type: 'extension_ui_request', id: 'dlg-3', method: 'input',
+        title: '提交说明写什么？', placeholder: '一句话' })
       return
     }
     if (settle === 'immediately') {
@@ -165,13 +177,16 @@ function handle(command) {
     return
   }
   if (command.type === 'extension_ui_response') {
-    if (command.confirmed === true) {
-      send({ type: 'tool_execution_start', toolCallId: 'c9', toolName: 'bash', args: { command: 'ls' } })
-      send({ type: 'tool_execution_end', toolCallId: 'c9', isError: false,
-        result: { content: [{ type: 'text', text: 'a.txt' }] } })
-    }
+    // Whatever the client answered is echoed into a tool row, so a test can see the
+    // value that reached Pi instead of only that something was written.
+    const shown = command.cancelled === true
+      ? 'cancelled'
+      : String(command.value ?? String(command.confirmed === true))
+    send({ type: 'tool_execution_start', toolCallId: 'c9', toolName: 'bash', args: { command: 'ls' } })
+    send({ type: 'tool_execution_end', toolCallId: 'c9', isError: false,
+      result: { content: [{ type: 'text', text: shown }] } })
     send({ type: 'agent_end', messages: [] })
-    send({ type: 'agent_settled', aborted: command.confirmed !== true })
+    send({ type: 'agent_settled', aborted: false })
     return
   }
   if (command.type === 'abort') {
@@ -233,6 +248,15 @@ async function collect(
   await act(finish)
   await closed
   return { frames }
+}
+
+/** The output of each tool call a turn reported, in order. */
+function toolOutputs(collected: Collected): string[] {
+  return collected.frames.flatMap((frame) => {
+    if (frame.type !== 'tool/result') return []
+    const data = frame.data as { message?: { content?: { text?: string }[] } }
+    return (data.message?.content ?? []).map((block) => block.text ?? '')
+  })
 }
 
 function typesOf(collected: Collected): string[] {
@@ -546,7 +570,7 @@ describe('PiRpcDriver', () => {
   })
 
   it('turns one of Pi’s dialogs into an approval and answers it', async () => {
-    const fake = fakePi({ input: 'text', ask: true })
+    const fake = fakePi({ input: 'text', ask: 'confirm' })
     const driver = driverFor(fake)
     const approvals: Record<string, unknown>[] = []
     let shown: () => void = () => undefined
@@ -586,6 +610,131 @@ describe('PiRpcDriver', () => {
         confirmed: true,
       },
     )
+    await driver.stop()
+  })
+
+  it('turns a select into a question and sends the picked option back', async () => {
+    const fake = fakePi({ input: 'text', ask: 'select' })
+    const driver = driverFor(fake)
+    const asked: Record<string, unknown>[] = []
+    let shown: () => void = () => undefined
+    const offered = new Promise<void>((resolve) => {
+      shown = resolve
+    })
+    driver.onNotification((notification: HarnessNotification) => {
+      if (notification.method !== 'question.request') return
+      asked.push(notification.params as Record<string, unknown>)
+      shown()
+    })
+
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+      await offered
+      // Pi's list is what the extension branches on, so the options are shown as
+      // given and the card belongs to the conversation that is blocked.
+      expect(asked).toEqual([
+        {
+          eventId: 'dlg-2',
+          agentId: null,
+          questions: [
+            {
+              id: 'dlg-2',
+              question: '用哪个分支？',
+              options: [{ label: 'main' }, { label: 'release' }],
+            },
+          ],
+          sessionId: 's1',
+        },
+      ])
+      await driver.answerQuestions('dlg-2', [{ id: 'dlg-2', selected: ['release'] }])
+    })
+
+    // The answer reached Pi as the option it offered, not as a free-form string.
+    expect(commands(fake).find((entry) => entry['type'] === 'extension_ui_response')).toMatchObject(
+      {
+        id: 'dlg-2',
+        value: 'release',
+      },
+    )
+    expect(toolOutputs(collected).at(-1)).toBe('release')
+    await driver.stop()
+  })
+
+  it('turns an input into a text question and sends what was typed', async () => {
+    const fake = fakePi({ input: 'text', ask: 'input' })
+    const driver = driverFor(fake)
+    let shown: () => void = () => undefined
+    const offered = new Promise<void>((resolve) => {
+      shown = resolve
+    })
+    driver.onNotification((notification: HarnessNotification) => {
+      if (notification.method === 'question.request') shown()
+    })
+
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+      await offered
+      await driver.answerQuestions('dlg-3', [{ id: 'dlg-3', selected: [], custom: '修好了登录页' }])
+    })
+
+    expect(commands(fake).find((entry) => entry['type'] === 'extension_ui_response')).toMatchObject(
+      {
+        id: 'dlg-3',
+        value: '修好了登录页',
+      },
+    )
+    expect(toolOutputs(collected).at(-1)).toBe('修好了登录页')
+    await driver.stop()
+  })
+
+  it('tells Pi the dialog was cancelled when nobody answers', async () => {
+    const fake = fakePi({ input: 'text', ask: 'select' })
+    const driver = driverFor(fake)
+    let shown: () => void = () => undefined
+    const offered = new Promise<void>((resolve) => {
+      shown = resolve
+    })
+    driver.onNotification((notification: HarnessNotification) => {
+      if (notification.method === 'question.request') shown()
+    })
+
+    const collected = await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+      await offered
+      // Dismissing the card is a deliberate "no answer", which is exactly where the
+      // terminal UI leaves an extension too.
+      await driver.answerQuestions('dlg-2', null)
+    })
+
+    expect(commands(fake).find((entry) => entry['type'] === 'extension_ui_response')).toMatchObject(
+      {
+        id: 'dlg-2',
+        cancelled: true,
+      },
+    )
+    expect(toolOutputs(collected).at(-1)).toBe('cancelled')
+    await driver.stop()
+  })
+
+  it('refuses an answer aimed at the other shape of dialog', async () => {
+    const fake = fakePi({ input: 'text', ask: 'confirm' })
+    const driver = driverFor(fake)
+    let shown: () => void = () => undefined
+    const asked = new Promise<void>((resolve) => {
+      shown = resolve
+    })
+    driver.onNotification((notification: HarnessNotification) => {
+      if (notification.method === 'approval.request') shown()
+    })
+
+    await collect(driver, async () => {
+      await driver.prompt('s1', '你好')
+      await asked
+      // A confirm wants `confirmed`, a question wants `value`: answering one with the
+      // other's payload would settle the dialog with a shape Pi cannot read.
+      await expect(driver.answerQuestions('dlg-1', null)).rejects.toThrow(/不属于 Pi 内核/)
+      await driver.answerApproval('dlg-1', true)
+    })
     await driver.stop()
   })
 

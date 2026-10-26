@@ -15,6 +15,7 @@ import { MODEL_EFFORTS } from '@pictor/shared'
 import type {
   ApprovalMode,
   CatalogSkill,
+  ChatAnswer,
   ChatHistoryPage,
   ChatImage,
   ForkPoint,
@@ -86,6 +87,17 @@ interface Kid {
   ready: Promise<void> | null
 }
 
+/**
+ * One dialog Pi is holding open, waiting for this client.
+ *
+ * `kind` is the method Pi used, because the answer has a different shape for each:
+ * `confirm` wants `confirmed`, the other two want `value`.
+ */
+interface Dialog {
+  sessionId: string
+  kind: 'confirm' | 'select' | 'input'
+}
+
 interface RpcResponse {
   id?: unknown
   type?: unknown
@@ -154,8 +166,8 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   readonly #approval = new Map<string, ApprovalMode>()
   /** The mode a conversation starts in: the last one a person chose. */
   #approvalDefault: ApprovalMode = 'never'
-  /** Dialogs Pi is holding open, by the id it minted: event id → Pictor session. */
-  readonly #approvals = new Map<string, string>()
+  /** Dialogs Pi is holding open, by the id it minted. */
+  readonly #dialogs = new Map<string, Dialog>()
   /** Pictor session id → tools this conversation no longer asks about; persisted. */
   readonly #grants = new Map<string, Set<string>>()
   /** Pi's catalogue, read once per app run: it changes when Pi does. */
@@ -607,16 +619,49 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
    * kernel, so it is refused rather than swallowed.
    */
   async answerApproval(eventId: string, allow: boolean): Promise<void> {
-    const sessionId = this.#approvals.get(eventId)
-    if (sessionId === undefined) throw new Error('这次审批不属于 Pi 内核')
-    this.#approvals.delete(eventId)
-    const kid = this.#kids.get(sessionId)
+    const dialog = this.#dialogs.get(eventId)
+    if (dialog === undefined || dialog.kind !== 'confirm') {
+      throw new Error('这次审批不属于 Pi 内核')
+    }
+    this.#dialogs.delete(eventId)
+    const kid = this.#kids.get(dialog.sessionId)
     if (kid === undefined) throw new Error('这个会话的 pi 进程已经结束')
     this.#respond(kid, { type: 'extension_ui_response', id: eventId, confirmed: allow })
   }
 
-  async answerQuestions(): Promise<void> {
-    throw new Error('Pi 内核不能在对话中途提问')
+  /**
+   * Answers a `select` or `input` dialog.
+   *
+   * Pi asked one thing, so the batch Pictor sends is the one answer that settles it:
+   * the picked label when there is one, else the text the person typed. Nothing at
+   * all means they dismissed it, which Pi reads as a cancelled dialog — the same
+   * place the TUI leaves an extension, so extensions keep the code path they test.
+   */
+  async answerQuestions(eventId: string, answers: readonly ChatAnswer[] | null): Promise<void> {
+    const dialog = this.#dialogs.get(eventId)
+    if (dialog === undefined || dialog.kind === 'confirm') {
+      throw new Error('这个提问不属于 Pi 内核')
+    }
+    this.#dialogs.delete(eventId)
+    const kid = this.#kids.get(dialog.sessionId)
+    if (kid === undefined) throw new Error('这个会话的 pi 进程已经结束')
+
+    const answer = answers?.[0]
+    const value =
+      answer === undefined
+        ? null
+        : dialog.kind === 'select'
+          ? // Pi's own list is the only thing its extension can branch on, so a picked
+            // option wins; text the person typed themselves is passed on when it is
+            // all they gave, which is the closest honest reading of their answer.
+            (answer.selected[0] ?? answer.custom ?? null)
+          : (answer.custom ?? answer.selected[0] ?? null)
+
+    if (value === null || value.trim().length === 0) {
+      this.#respond(kid, { type: 'extension_ui_response', id: eventId, cancelled: true })
+      return
+    }
+    this.#respond(kid, { type: 'extension_ui_response', id: eventId, value })
   }
 
   /** One throwaway run, for the diagnosis button. */
@@ -793,32 +838,67 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
   /**
    * Turns one of Pi's dialogs into something the window can settle.
    *
-   * Only `confirm` has a surface here: it is the shape a held tool call takes, and
-   * its title and message are what the card shows. The other dialog methods would
-   * need input boxes Pictor does not draw, so they are cancelled rather than left
-   * waiting — an unanswered dialog is a hung turn, not a missing nicety.
+   * Pi's `confirm` is a held tool call, so it becomes an approval card. `select` and
+   * `input` are a question, and the question card already draws both shapes — an
+   * extension asking is the same interaction as a model asking, so it lands in the
+   * same place instead of being refused.
+   *
+   * `editor` is the one that stays unanswered: it is a multi-line editor, and a
+   * single-line field that cannot show the draft would replace what the person was
+   * asked to edit. Cancelling says so honestly, and the extension's own "cancelled"
+   * branch runs.
    */
   #ask(kid: Kid, record: Record<string, unknown>): void {
     const id = typeof record['id'] === 'string' ? record['id'] : null
     if (id === null) return
 
-    if (record['method'] !== 'confirm') {
+    const method = typeof record['method'] === 'string' ? record['method'] : ''
+    if (method !== 'confirm' && method !== 'select' && method !== 'input') {
       this.#respond(kid, { type: 'extension_ui_response', id, cancelled: true })
       return
     }
 
     const sessionId = this.#pictorIdOf(kid)
     if (sessionId === null) return
-    this.#approvals.set(id, sessionId)
+    const title = typeof record['title'] === 'string' ? record['title'] : ''
+
+    if (method === 'confirm') {
+      this.#dialogs.set(id, { sessionId, kind: 'confirm' })
+      this.#emit({
+        method: 'approval.request',
+        params: {
+          eventId: id,
+          agentId: null,
+          tool: title.length === 0 ? null : title,
+          reason: typeof record['message'] === 'string' ? record['message'] : null,
+          // Pi keeps one process per conversation, so this conversation is the one
+          // the card belongs to.
+          sessionId,
+        },
+      })
+      return
+    }
+
+    // Pi hands `select` a list of strings; the card shows each as an option. `input`
+    // offers none, which the card reads as free text.
+    const options =
+      method === 'select'
+        ? optionsOf(record['options']).map((label): { label: string } => ({ label }))
+        : []
+    this.#dialogs.set(id, { sessionId, kind: method })
     this.#emit({
-      method: 'approval.request',
+      method: 'question.request',
       params: {
         eventId: id,
         agentId: null,
-        tool: typeof record['title'] === 'string' ? record['title'] : null,
-        reason: typeof record['message'] === 'string' ? record['message'] : null,
-        // Pi keeps one process per conversation, so this conversation is the one
-        // the card belongs to.
+        questions: [
+          {
+            id,
+            question: title.length === 0 ? 'Pi 想问你一件事' : title,
+            ...(options.length === 0 ? {} : { options }),
+          },
+        ],
+        // Same reason as the approval: the card belongs to this conversation.
         sessionId,
       },
     })
@@ -840,9 +920,9 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
 
   /** Drops the dialogs of one conversation, telling Pi nobody will answer them. */
   #cancelAsks(sessionId: string): void {
-    for (const [eventId, owner] of [...this.#approvals]) {
-      if (owner !== sessionId) continue
-      this.#approvals.delete(eventId)
+    for (const [eventId, dialog] of [...this.#dialogs]) {
+      if (dialog.sessionId !== sessionId) continue
+      this.#dialogs.delete(eventId)
       const kid = this.#kids.get(sessionId)
       if (kid !== undefined) {
         this.#respond(kid, { type: 'extension_ui_response', id: eventId, cancelled: true })
@@ -1393,6 +1473,14 @@ export class PiRpcDriver implements KernelDriver, KernelModelSource {
       // A read-only profile only costs a resumed conversation, never the turn.
     }
   }
+}
+
+/** The option labels Pi sent, in its order; anything else is not an option. */
+function optionsOf(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry): string[] =>
+    typeof entry === 'string' && entry.length > 0 ? [entry] : [],
+  )
 }
 
 /** One of the approval modes Pictor knows, or null for anything else. */

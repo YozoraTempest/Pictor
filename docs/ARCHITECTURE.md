@@ -82,16 +82,26 @@ rpc` speaks JSONL commands on stdin and streams the same events over stdout,
   through the same guard chain as dsh's: Pictor writes a Pi extension
   (`pi-guard-extension.ts`) that asks the loopback bridge about every call and
   blocks it when a rule or a plugin guard says so, failing closed when the bridge
-  cannot be reached. What it still cannot express is an _interactive_ approval
-  held open until someone clicks, and a per-conversation sandbox; it throws for
-  each instead of faking them. Its transcript is read back from Pi's own session file
-  (`kernel/pi-history.ts`), because Pictor keeps none.
+  cannot be reached. It has no sandbox of its own, so _when_ a call waits for a
+  person is Pictor's decision there (`KernelApprovalSource`): a per-conversation
+  mode plus `ask` rules in the tool policy, carried out through Pi's own dialog
+  (`ctx.ui.confirm`), which is what keeps timeouts, cancellation and parallel
+  calls Pi's business. A conversation can also remember "not this tool again",
+  which it can forget again from the same switch. Pi's other dialogs (`select`,
+  `input`) become the question card, and since Pi ships no model-facing asking
+  tool, that extension registers `ask_user_question` under dsh's name — so a Pi
+  conversation can ask, not only answer. What it still cannot express is a
+  per-conversation sandbox; it declares none instead of faking one. Its
+  transcript is read back from Pi's own session file (`kernel/pi-history.ts`),
+  because Pictor keeps none.
 
-Each driver also declares what it can do (`KernelCapabilities`: sandbox, model,
-skills, fork), and that declaration reaches the renderer with `kernels.list`. The
-composer draws a control only where the conversation's kernel says it exists: a
-CLI kernel gets no sandbox switch and no model picker, instead of a control that
-throws when pressed.
+Each driver also declares what it can do (`KernelCapabilities`: sandbox, approval,
+model, skills, fork), and that declaration reaches the renderer with
+`kernels.list`. The composer draws a control only where the conversation's kernel
+says it exists: a CLI kernel gets no sandbox switch and no model picker, instead
+of a control that throws when pressed. The approval switch follows the same rule:
+dsh decides for itself when to ask, so it draws no such switch, and a kernel that
+hands the decision over draws one.
 
 A kernel that brings its own models declares it (`KernelModelSource`), and
 `kernels.list` says whose list the picker should show: `pictor` for a kernel

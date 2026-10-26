@@ -233,6 +233,14 @@ export interface ChatQuestion {
 /** A batch of questions one tool call is waiting on. */
 export interface ChatQuestionRequest {
   eventId: string
+  /**
+   * Conversation the question belongs to, when the kernel can say.
+   *
+   * dsh's request carries no session, so its card follows whichever conversation is
+   * open. A kernel that asks per process names it, and the card can say when the
+   * question came from somewhere else.
+   */
+  sessionId?: string
   questions: ChatQuestion[]
 }
 

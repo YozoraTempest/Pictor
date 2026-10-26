@@ -331,7 +331,14 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
                       }
                     />
                   )}
-                  {question !== null && <QuestionCard request={question} />}
+                  {question !== null && (
+                    <QuestionCard
+                      request={question}
+                      foreign={
+                        question.sessionId !== undefined && question.sessionId !== selectedSessionId
+                      }
+                    />
+                  )}
                   {status}
                   {draft !== null && (
                     <ProjectPicker projectId={draft.projectId} onChange={setDraftProject} />

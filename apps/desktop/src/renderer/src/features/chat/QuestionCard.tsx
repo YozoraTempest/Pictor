@@ -102,7 +102,14 @@ function QuestionRow({
  * blocks nothing else: dismissing it fails the call deliberately rather than
  * leaving the turn waiting for an answer that will never come.
  */
-export function QuestionCard({ request }: { request: ChatQuestionRequest }): React.JSX.Element {
+export function QuestionCard({
+  request,
+  foreign = false,
+}: {
+  request: ChatQuestionRequest
+  /** True when the question belongs to a conversation other than the one on screen. */
+  foreign?: boolean
+}): React.JSX.Element {
   const [answers, setAnswers] = useState<Record<string, ChatAnswer>>({})
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -130,8 +137,14 @@ export function QuestionCard({ request }: { request: ChatQuestionRequest }): Rea
     <div className="flex flex-col gap-2 rounded-lg border border-accent/40 bg-accent/5 px-3 py-2">
       <div className="flex items-center gap-2">
         <MessageCircleQuestion className="size-3.5 shrink-0 text-accent" aria-hidden />
-        <span className="text-xs text-text">模型在等你回答</span>
+        {/* Not "the model": a kernel can also pause for a question its own tooling
+            asked, and the card is the same card either way. */}
+        <span className="text-xs text-text">在等你回答</span>
       </div>
+
+      {foreign && (
+        <p className="text-2xs text-faint">这个提问来自另一个会话，回答之后那边才会继续。</p>
+      )}
 
       {request.questions.map((question) => (
         <QuestionRow

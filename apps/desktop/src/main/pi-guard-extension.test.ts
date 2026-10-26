@@ -24,8 +24,8 @@ afterEach(async () => {
 })
 
 /** A bridge that answers every call with one fixed verdict. */
-function bridge(answer: unknown): Promise<{ port: number; asked: unknown[] }> {
-  const asked: unknown[] = []
+function bridge(answer: unknown): Promise<{ port: number; asked: Record<string, unknown>[] }> {
+  const asked: Record<string, unknown>[] = []
   const server = createServer((socket) => {
     let buffer = ''
     socket.setEncoding('utf8')
@@ -58,10 +58,18 @@ function bridge(answer: unknown): Promise<{ port: number; asked: unknown[] }> {
  */
 async function loadExtension(
   endpoint: { port: number; token: string } | null,
-  options: { annotations?: Record<string, unknown>; confirm?: boolean } = {},
+  options: {
+    annotations?: Record<string, unknown>
+    confirm?: boolean
+    answer?: string
+  } = {},
 ): Promise<{
   call: (event: { toolName: string; input: unknown }) => Promise<unknown>
+  ask: (params: Record<string, unknown>) => Promise<unknown>
   confirms: { title: string; message: string }[]
+  asks: { title: string; options: string[] }[]
+  typings: { title: string }[]
+  tools: Record<string, unknown>[]
 }> {
   const dir = mkdtempSync(join(tmpdir(), 'pictor-pi-guard-'))
   dirs.push(dir)
@@ -71,30 +79,63 @@ async function loadExtension(
   }
 
   let handler: ((event: unknown, ctx: unknown) => Promise<unknown>) | null = null
+  const tools: Record<string, unknown>[] = []
   const api = {
     on: (name: string, fn: (event: unknown, ctx: unknown) => Promise<unknown>) => {
       if (name === 'tool_call') handler = fn
       return () => undefined
     },
-    getAllTools: () => [{ name: 'bash', annotations: options.annotations ?? {} }],
+    registerTool: (tool: Record<string, unknown>) => {
+      tools.push(tool)
+    },
+    getAllTools: () => [...tools, { name: 'bash', annotations: options.annotations ?? {} }],
   }
   module.default(api)
 
   const confirms: { title: string; message: string }[] = []
+  const asks: { title: string; options: string[] }[] = []
+  const typings: { title: string }[] = []
   const ctx = {
     ui: {
       confirm: async (title: string, message: string) => {
         confirms.push({ title, message })
         return options.confirm ?? false
       },
+      select: async (title: string, list: string[]) => {
+        asks.push({ title, options: [...list] })
+        return options.answer
+      },
+      input: async (title: string) => {
+        typings.push({ title })
+        return options.answer
+      },
     },
   }
 
   return {
     confirms,
+    asks,
+    typings,
+    tools,
     call: async (event) => {
       if (handler === null) throw new Error('the extension registered no tool_call handler')
       return handler(event, ctx)
+    },
+    /** Runs the asking tool the extension registered, as Pi would. */
+    ask: async (params: Record<string, unknown>) => {
+      const tool = tools.find((entry) => entry['name'] === 'ask_user_question') as
+        | {
+            execute: (
+              id: string,
+              p: unknown,
+              s: unknown,
+              u: unknown,
+              c: unknown,
+            ) => Promise<unknown>
+          }
+        | undefined
+      if (tool === undefined) throw new Error('the extension registered no asking tool')
+      return tool.execute('call-1', params, undefined, undefined, ctx)
     },
   }
 }
@@ -181,6 +222,64 @@ describe('guardExtensionSource', () => {
     } finally {
       delete process.env['PICTOR_SESSION']
     }
+  })
+
+  it('registers the asking tool the model uses, and passes options to Pi', async () => {
+    const port = await bridge({ block: false })
+    const extension = await loadExtension({ port: port.port, token: 'secret' }, { answer: 'beta' })
+
+    expect(extension.tools.map((tool) => tool['name'])).toEqual(['ask_user_question'])
+    // Read-only, because asking is not doing: a session that asks before every
+    // mutating call must not have to approve the question first.
+    expect(extension.tools[0]).toMatchObject({ annotations: { readOnlyHint: true } })
+
+    const result = (await extension.ask({
+      question: '用哪个分支？',
+      options: ['alpha', 'beta'],
+    })) as { content: { text: string }[] }
+    expect(extension.asks).toEqual([{ title: '用哪个分支？', options: ['alpha', 'beta'] }])
+    expect(result.content[0]?.text).toBe('The person answered: beta')
+  })
+
+  it('asks for free text when no options were offered', async () => {
+    const port = await bridge({ block: false })
+    const extension = await loadExtension(
+      { port: port.port, token: 'secret' },
+      { answer: '修好了' },
+    )
+
+    const result = (await extension.ask({
+      question: '提交说明写什么？',
+      detail: '改了登录页',
+    })) as { content: { text: string }[] }
+
+    // The detail rides with the question rather than being dropped: it is the part
+    // the person needs to answer at all.
+    expect(extension.typings[0]?.title).toContain('改了登录页')
+    expect(result.content[0]?.text).toBe('The person answered: 修好了')
+  })
+
+  it('says the person did not answer instead of inventing one', async () => {
+    const port = await bridge({ block: false })
+    const extension = await loadExtension({ port: port.port, token: 'secret' })
+
+    const result = (await extension.ask({ question: '继续吗？' })) as {
+      content: { text: string }[]
+    }
+
+    expect(result.content[0]?.text).toContain('did not answer')
+  })
+
+  it('asks before a mutating call but not before its own question', async () => {
+    const port = await bridge({ block: false, ask: { tool: 'bash', reason: '先问一句' } })
+    const extension = await loadExtension({ port: port.port, token: 'secret' }, { confirm: true })
+
+    await extension.call({ toolName: 'bash', input: { command: 'ls' } })
+    // The asking tool declares itself read-only, so Pi's hints say it cannot change
+    // anything and the session never has to approve a question.
+    await extension.call({ toolName: 'ask_user_question', input: { question: '继续吗？' } })
+
+    expect(port.asked.map((entry) => entry['mutating'])).toEqual([true, false])
   })
 
   it('fails closed when Pictor cannot be reached', async () => {
