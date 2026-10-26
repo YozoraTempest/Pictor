@@ -24,11 +24,13 @@ function clamp(value: number, min: number, max: number): number {
 
 export interface WorkspaceViewProps {
   /**
-   * The kernel this page is about, when it is one kernel's page.
+   * The kernel this page is about.
    *
-   * `null`/absent is the home page: every conversation, and a composer that can
-   * start on either kernel. Set, it narrows the list and the new-conversation
-   * kernel, and the page stops offering a choice it has already made.
+   * A kernel page lists that kernel's conversations and starts new ones on it. The
+   * home page has no kernel and, for now, no list either: it is where a task begins,
+   * and where it lives afterwards is the page of whatever kernel ran it. Merging every
+   * kernel's conversations into one column is the thing this avoids — the same list
+   * would have to describe two very different runtimes.
    */
   kernelId?: string | null
 }
@@ -63,6 +65,18 @@ export function WorkspaceView({ kernelId = null }: WorkspaceViewProps): React.JS
   const sessions = useWorkspaceStore((state) => state.sessions)
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
   const selectSession = useWorkspaceStore((state) => state.selectSession)
+  const draft = useWorkspaceStore((state) => state.draft)
+  const startDraft = useWorkspaceStore((state) => state.startDraft)
+
+  /**
+   * Home opens on a draft: the composer is the only control this page has, and an
+   * empty state pointing at a conversation list would point at nothing.
+   */
+  useEffect(() => {
+    if (kernelId !== null) return
+    if (selectedSessionId !== null || draft !== null) return
+    startDraft({ sectionId: null })
+  }, [kernelId, selectedSessionId, draft, startDraft])
 
   /**
    * A kernel page opens a conversation of its own kernel.
@@ -76,14 +90,24 @@ export function WorkspaceView({ kernelId = null }: WorkspaceViewProps): React.JS
   useEffect(() => {
     if (kernelId === null || selectedSessionId === null) return
     const selected = sessions.find((session) => session.id === selectedSessionId)
-    if (selected !== undefined && selected.kernelId === kernelId) return
+    // Not in the list yet: a fork or a new conversation is selected before the refresh
+    // lands, and picking "the newest of this kernel" now would undo that choice.
+    if (selected === undefined) return
+    if (selected.kernelId === kernelId) return
     const next = sessions
       .filter((session) => session.kernelId === kernelId && !session.archived)
       .sort((a, b) => b.updatedAt - a.updatedAt)[0]
     selectSession(next?.id ?? null)
   }, [kernelId, selectedSessionId, sessions, selectSession])
 
-  const sidebarVisible = leftPanelOpen || peeking
+  /**
+   * The list belongs to a kernel, not to the app.
+   *
+   * Home starts conversations and shows the open one; it does not pretend to hold a
+   * list of everything, because that list would be a merge of several runtimes.
+   */
+  const showSessions = kernelId !== null
+  const sidebarVisible = showSessions && (leftPanelOpen || peeking)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -96,53 +120,60 @@ export function WorkspaceView({ kernelId = null }: WorkspaceViewProps): React.JS
         </div>
       )}
       <div className="relative flex min-h-0 flex-1">
-        {/*
-        The sidebar is a drawer. Pinned, it takes layout space and the workspace
-        narrows; hovered, it floats over the content so nothing else moves — the
-        title bar and its tools stay put either way.
-      */}
-        <div
-          className={cn(
-            'flex flex-col overflow-hidden bg-bg',
-            leftPanelOpen
-              ? 'relative shrink-0 border-r border-border'
-              : 'absolute inset-y-0 left-0 z-30',
-            !leftPanelOpen && sidebarVisible && 'shadow-panel',
-            dragging === null && 'transition-[width] duration-300 ease-out',
-          )}
-          style={{ width: sidebarVisible ? sidebarWidth : 0 }}
-          onPointerEnter={() => peekSidebar(true)}
-          onPointerLeave={() => peekSidebar(false)}
-        >
-          {/* The content keeps its width while the drawer narrows, so a collapsing
-            panel clips its labels instead of wrapping them. */}
-          <div className="flex min-h-0 flex-1 flex-col" style={{ width: sidebarWidth }}>
-            <aside className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface/30">
-              <SessionsPanel kernelId={kernelId} />
-            </aside>
-          </div>
-        </div>
+        {/* A kernel page owns a session list; home has none, so it draws no drawer. */}
+        {showSessions && (
+          <>
+            {/*
+              The sidebar is a drawer. Pinned, it takes layout space and the workspace
+              narrows; hovered, it floats over the content so nothing else moves — the
+              title bar and its tools stay put either way.
+            */}
+            <div
+              className={cn(
+                'flex flex-col overflow-hidden bg-bg',
+                leftPanelOpen
+                  ? 'relative shrink-0 border-r border-border'
+                  : 'absolute inset-y-0 left-0 z-30',
+                !leftPanelOpen && sidebarVisible && 'shadow-panel',
+                dragging === null && 'transition-[width] duration-300 ease-out',
+              )}
+              style={{ width: sidebarVisible ? sidebarWidth : 0 }}
+              onPointerEnter={() => peekSidebar(true)}
+              onPointerLeave={() => peekSidebar(false)}
+            >
+              {/* The content keeps its width while the drawer narrows, so a collapsing
+                panel clips its labels instead of wrapping them. */}
+              <div className="flex min-h-0 flex-1 flex-col" style={{ width: sidebarWidth }}>
+                <aside className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface/30">
+                  <SessionsPanel kernelId={kernelId} />
+                </aside>
+              </div>
+            </div>
 
-        {/* Outside the drawer so clipping never eats the handle. */}
-        {sidebarVisible && (
-          <PanelResizer
-            attach="end"
-            style={{ left: sidebarWidth }}
-            label="调整侧栏宽度"
-            onStart={() => {
-              dragStart.current.sidebar = sidebarWidth
-              setDragging('sidebar')
-              setResizing(true)
-            }}
-            onMove={(deltaX) =>
-              setSidebarWidth(clamp(dragStart.current.sidebar + deltaX, SIDEBAR_MIN, SIDEBAR_MAX))
-            }
-            onEnd={() => {
-              setDragging(null)
-              setResizing(false)
-            }}
-            onReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
-          />
+            {/* Outside the drawer so clipping never eats the handle. */}
+            {sidebarVisible && (
+              <PanelResizer
+                attach="end"
+                style={{ left: sidebarWidth }}
+                label="调整侧栏宽度"
+                onStart={() => {
+                  dragStart.current.sidebar = sidebarWidth
+                  setDragging('sidebar')
+                  setResizing(true)
+                }}
+                onMove={(deltaX) =>
+                  setSidebarWidth(
+                    clamp(dragStart.current.sidebar + deltaX, SIDEBAR_MIN, SIDEBAR_MAX),
+                  )
+                }
+                onEnd={() => {
+                  setDragging(null)
+                  setResizing(false)
+                }}
+                onReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
+              />
+            )}
+          </>
         )}
 
         <div

@@ -163,11 +163,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         ? currentProject
         : (snapshot.projects[0]?.id ?? null)
 
+    // The selection is not restored from the profile. A kernel's page opens one of its
+    // own conversations; nothing else should conjure a transcript the page never asked
+    // for — least of all home, which keeps no list to explain where it came from.
     const currentSession = get().selectedSessionId
     const sessionId =
       currentSession !== null && snapshot.sessions.some((session) => session.id === currentSession)
         ? currentSession
-        : (snapshot.sessions.find((session) => session.projectId === projectId)?.id ?? null)
+        : null
 
     set({
       projects: snapshot.projects,
@@ -279,7 +282,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
     await guard(set, async () => {
       created = await window.pictor.createSession(target, title, kernelId ?? undefined)
-      set({ selectedSessionId: created.id })
+      // The conversation exists now, so any draft that was open has been spent.
+      set({ selectedSessionId: created.id, draft: null })
       await get().refresh()
     })
 

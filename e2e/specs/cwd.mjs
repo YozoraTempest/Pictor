@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { openKernel } from '../harness.mjs'
 import { startStubModel } from '../stub-model.mjs'
 
 /**
@@ -82,6 +83,7 @@ export default {
         )
         await page.reload()
         await page.waitForSelector('header', { timeout: 30_000 })
+        await openKernel(page, 'DSH')
         await page.getByRole('button', { name: title }).first().click({ timeout: 15_000 })
 
         const input = page.getByLabel('消息输入')

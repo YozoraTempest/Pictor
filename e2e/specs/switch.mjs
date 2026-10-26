@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { startStubModel } from '../stub-model.mjs'
+import { openKernel } from '../harness.mjs'
 
 /**
  * Changing the service must change what the next message uses.
@@ -96,6 +97,7 @@ export default {
       //    which is what a reader picking a row there means.
       await page.reload()
       await page.waitForSelector('header', { timeout: 30_000 })
+      await openKernel(page, 'DSH')
       await page.getByRole('button', { name: 'e2e 切换服务' }).first().click({ timeout: 15_000 })
       await page.getByRole('button', { name: '选择模型' }).click({ timeout: 15_000 })
 

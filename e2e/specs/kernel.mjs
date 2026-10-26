@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 
+import { openKernel } from '../harness.mjs'
+
 /** Polls until `check` holds; the sidebar redraws after a page switch. */
 async function eventually(check, message, timeout = 15_000) {
   const deadline = Date.now() + timeout
@@ -60,9 +62,14 @@ export default {
     await page.reload()
     await page.waitForSelector('header', { timeout: 30_000 })
 
-    // Two kernels is a choice, so the control is drawn.
+    // Two kernels is a choice, and home is where it is offered: a kernel page has
+    // already made that choice, so its composer names the conversation's kernel
+    // instead of asking again.
     const triggers = page.locator('[aria-label^="内核："]')
     assert.equal(await triggers.count(), 1, 'the picker is drawn once, in the composer')
+
+    // Each row lives on its own kernel's page, so the pi branch is opened from PI.
+    await openKernel(page, 'PI')
 
     // Selecting the branch shows the kernel that branch runs on, which is the
     // whole point of binding it to the conversation.
@@ -117,6 +124,8 @@ export default {
       timeout: 20_000,
     })
 
+    // Now the other side: a dsh conversation is on the DSH page.
+    await openKernel(page, 'DSH')
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().click({ timeout: 15_000 })
     await page.locator('[aria-label="内核：DeepSeek Harness"]').waitFor({ timeout: 20_000 })
     await page.locator('[aria-label^="会话权限："]').waitFor({ timeout: 20_000 })
@@ -149,12 +158,9 @@ export default {
       0,
       'the Pi page does not keep a dsh conversation open',
     )
-    // The page has already answered "which kernel", so it offers no picker.
-    assert.equal(
-      await page.locator('[aria-label^="内核："]').count(),
-      0,
-      'a scoped page draws no kernel picker',
-    )
+    // The page named the kernel; the picker is about the conversation, and moving it
+    // to another kernel makes a branch rather than a switch.
+    await page.locator('[aria-label="内核：Pi"]').waitFor({ timeout: 20_000 })
 
     await rail.getByRole('button', { name: 'DSH', exact: true }).click()
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
@@ -192,10 +198,19 @@ export default {
     )
     await page.evaluate((id) => window.pictor.setSessionPinned(id, false), created.id)
 
-    // Home spans both, and is the only page that offers the choice.
+    // Home is where a conversation starts and where the kernel choice lives; it holds
+    // no list, so neither kernel's rows appear there.
     await rail.getByRole('button', { name: '首页' }).click()
-    await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
-    await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
     await page.locator('[aria-label^="内核："]').first().waitFor({ timeout: 20_000 })
+    assert.equal(
+      await page.getByRole('button', { name: 'e2e 内核分支' }).count(),
+      0,
+      'home lists no conversations of any kernel',
+    )
+    assert.equal(
+      await page.getByRole('button', { name: 'e2e 内核绑定' }).count(),
+      0,
+      'and none of the other kernel either',
+    )
   },
 }

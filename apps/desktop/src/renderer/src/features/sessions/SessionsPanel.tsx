@@ -157,11 +157,16 @@ type PendingAction =
   | { kind: 'archive'; ids: string[]; title: string }
 
 export interface SessionsPanelProps {
-  /** Only this kernel's conversations; `null`/absent lists every one of them. */
-  kernelId?: string | null
+  /**
+   * The kernel whose conversations this list holds.
+   *
+   * Required: a list of everything would be a merge of several runtimes. Home has no
+   * list at all, so no caller needs "all kernels".
+   */
+  kernelId: string
 }
 
-export function SessionsPanel({ kernelId = null }: SessionsPanelProps): React.JSX.Element {
+export function SessionsPanel({ kernelId }: SessionsPanelProps): React.JSX.Element {
   const allSessions = useWorkspaceStore((state) => state.sessions)
   const allProjects = useWorkspaceStore((state) => state.projects)
   const kernels = useWorkspaceStore((state) => state.kernels)
@@ -209,7 +214,6 @@ export function SessionsPanel({ kernelId = null }: SessionsPanelProps): React.JS
    * rows are kept: hiding them would make restoring one impossible from here.
    */
   const { sessions, projects } = useMemo(() => {
-    if (kernelId === null) return { sessions: allSessions, projects: allProjects }
     const scoped = allSessions.filter((session) => session.kernelId === kernelId)
     const known = new Set(
       scoped.flatMap((session): string[] =>
@@ -222,7 +226,7 @@ export function SessionsPanel({ kernelId = null }: SessionsPanelProps): React.JS
     }
   }, [allSessions, allProjects, kernelId])
 
-  const kernelLabel = kernels.find((entry) => entry.id === kernelId)?.label ?? kernelId ?? ''
+  const kernelLabel = kernels.find((entry) => entry.id === kernelId)?.label ?? kernelId
 
   const nodes = useMemo(
     () =>
@@ -340,13 +344,13 @@ export function SessionsPanel({ kernelId = null }: SessionsPanelProps): React.JS
   /**
    * What the list draws.
    *
-   * A kernel page hides sections that hold nothing of that kernel. An empty
-   * heading reads as "this failed to load" rather than "nothing is filed here",
-   * and the section is still there on the home page — with every conversation in
-   * it — so nothing becomes unreachable. Reordering keeps using `nodes`: hiding a
-   * section must not shift the positions the drag math is based on.
+   * Sections that hold nothing of this kernel are hidden: an empty heading reads as
+   * "this failed to load" rather than "nothing is filed here", and the conversations
+   * themselves are still reachable from their own kernel's page. Reordering keeps
+   * using `nodes`: hiding a section must not shift the positions the drag math is
+   * based on.
    */
-  const visibleNodes = kernelId === null ? nodes : nodes.filter((node) => node.children.length > 0)
+  const visibleNodes = nodes.filter((node) => node.children.length > 0)
 
   /** Sections the user can reorder; 已归档 is pinned to the bottom. */
   const movableSections = nodes.filter((node) => node.kind !== 'archived')
@@ -604,9 +608,9 @@ export function SessionsPanel({ kernelId = null }: SessionsPanelProps): React.JS
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-        {/* A page that is one kernel's workspace can be empty on purpose; saying so
-            is better than a column with nothing in it. */}
-        {kernelId !== null && sessions.length === 0 && (
+        {/* An empty page is on purpose here; saying so is better than a column with
+            nothing in it. */}
+        {sessions.length === 0 && (
           <p className="px-2 py-3 text-2xs leading-relaxed text-faint">
             这里还没有 {kernelLabel}{' '}
             的会话。点上方的「新聊天」或者在下方描述任务，第一条消息会建立它。

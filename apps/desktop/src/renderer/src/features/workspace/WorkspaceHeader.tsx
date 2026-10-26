@@ -9,12 +9,19 @@ import { familySize } from '../sessions/family.js'
 import { SessionSearchDialog } from '../sessions/SessionSearchDialog.js'
 import { cn } from '../../lib/cn.js'
 
-/** Left toolbar: the switch for the sessions column. */
+/**
+ * Left toolbar: the switch for the sessions column.
+ *
+ * Home has no sessions column, so it gets no switch: a button that folds a panel which
+ * is not there is worse than no button.
+ */
 export function WorkspaceLeading(): React.JSX.Element {
+  const view = useUiStore((state) => state.view)
   const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
   const toggleLeftPanel = useUiStore((state) => state.toggleLeftPanel)
   const peekSidebar = useUiStore((state) => state.peekSidebar)
 
+  if (view === 'home') return <></>
   return (
     <Tooltip
       label={leftPanelOpen ? '收起侧栏' : '悬停预览，点击展开侧栏'}

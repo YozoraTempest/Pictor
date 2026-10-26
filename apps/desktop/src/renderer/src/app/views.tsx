@@ -51,12 +51,15 @@ const VIEWS = [
   {
     id: 'home',
     label: '首页',
-    description: '会话与项目',
+    description: '开始一个新话题',
     icon: House,
     group: 'primary',
     order: 0,
-    // Every conversation, whatever kernel produced it: this is the only place the
-    // rail's destinations are compared side by side.
+    /**
+     * No sessions and no kernel: a conversation starts here, and once it has a kernel
+     * it lives on that kernel's page. One list for every kernel would have to describe
+     * runtimes that disagree about almost everything.
+     */
     render: () => <WorkspaceView />,
     title: () => <WorkspaceTitle />,
     leading: () => <WorkspaceLeading />,

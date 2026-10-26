@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { openKernel } from '../harness.mjs'
 import { startStubModel } from '../stub-model.mjs'
 
 /**
@@ -72,6 +73,7 @@ export default {
 
       await page.reload()
       await page.waitForSelector('header', { timeout: 30_000 })
+      await openKernel(page, 'DSH')
 
       // A conversation the way the shortcut makes one: Pictor writes its
       // placeholder title, which is what lets the runtime's own title replace it.
@@ -135,6 +137,7 @@ export default {
       // that used to pass against an empty history.
       await page.reload()
       await page.waitForSelector('header', { timeout: 30_000 })
+      await openKernel(page, 'DSH')
       await page.getByRole('button', { name: title }).first().click({ timeout: 15_000 })
       await page.getByText(reply).first().waitFor({ timeout: 30_000 })
 

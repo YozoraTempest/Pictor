@@ -99,7 +99,11 @@ kernel that never produced it would be a lie about where it came from.
 A conversation records its kernel when it is created. Choosing another kernel is a
 **branch**: the new conversation names the new kernel and points back at the one it
 came from, so a conversation never silently changes what ran it. The rail carries
-one page per kernel; the home page is the only place the choice is offered.
+one page per kernel; home is where a conversation starts, and the only place the
+choice of kernel is offered. Home deliberately lists no conversations — a single
+column of them would have to describe runtimes that disagree about almost
+everything — so a conversation is found again on the page of the kernel that ran it,
+or through the search palette.
 
 ### Two built-in kernels
 
@@ -217,9 +221,11 @@ Selecting a session opens its transcript and a composer:
   messages** prepends earlier pages. The opening stream window holds 200 messages.
 - Several conversations can run at once; each keeps its own transcript and event
   stream.
-- **Search** (the magnifier in the title bar, or Ctrl/Cmd+K) opens a palette over the
-  home view: it matches conversation titles and project names, opens the pick on
-  Enter, and includes archived conversations labelled as such.
+- **Search** (the magnifier in the title bar, or Ctrl/Cmd+K) opens a palette over
+  every kernel's conversations — the way to reach one that is not on the page in
+  front of you. It matches conversation titles and project names, opens the pick on
+  Enter on the page of the kernel that ran it, and includes archived conversations
+  labelled as such.
 - **Branching** works from the menu (latest completed turn) and from any message:
   hovering an answer offers 从这条回答分叉, hovering a question offers 在这一问之前分叉.
   The branch records where it came from — the row carries a branch mark and the title

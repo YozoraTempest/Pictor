@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 
+import { openKernel } from '../harness.mjs'
+
 /**
  * Archiving must be undoable, and sweeping archives must ask first.
  *
@@ -25,6 +27,7 @@ export default {
 
     await page.reload()
     await page.waitForSelector('header', { timeout: 30_000 })
+    await openKernel(page, 'DSH')
 
     const row = page.locator(`button[aria-label="${created.title} 更多操作"]`).first()
     await row.waitFor({ timeout: 10_000 })

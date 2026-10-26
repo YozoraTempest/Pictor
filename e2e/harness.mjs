@@ -199,3 +199,18 @@ export async function launch() {
     },
   }
 }
+
+/**
+ * Opens one kernel's page.
+ *
+ * The session list belongs to a kernel, not to the app: home starts a conversation and
+ * shows the open one, while rows, folders and the list's own 新聊天 live on `DSH` or
+ * `PI`. A spec that drives any of those has to be standing on that page first.
+ *
+ * @param {import('playwright-core').Page} page
+ * @param {string} label the rail's aria-label, e.g. `DSH`
+ */
+export async function openKernel(page, label) {
+  await page.locator(`nav[aria-label="主导航"] button[aria-label="${label}"]`).click()
+  await page.getByRole('button', { name: '新聊天' }).first().waitFor({ timeout: 15_000 })
+}

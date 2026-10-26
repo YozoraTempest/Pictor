@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 
+import { openKernel } from '../harness.mjs'
 import { startStubModel } from '../stub-model.mjs'
 
 /**
@@ -51,6 +52,7 @@ export default {
       await page.evaluate((cwd) => window.pictor.harnessStart(cwd), join(app.workdir, 'rules'))
       await page.reload()
       await page.waitForSelector('header', { timeout: 30_000 })
+      await openKernel(page, 'DSH')
       await page.keyboard.press('Control+n')
 
       const input = page.getByLabel('消息输入')

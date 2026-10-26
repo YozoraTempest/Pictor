@@ -203,8 +203,11 @@ The rail carries one destination per kernel (`app/kernel-scope.ts` maps a view i
 to its kernel). A kernel page lists only that kernel's conversations, filters the
 project rows to the ones that hold one, draws only the sections that hold one,
 opens a conversation of its own kernel instead of keeping the previous one, and
-does not draw the kernel picker — the page already answered that question. The
-home page spans every kernel and is the only place the choice is offered.
+draws the kernel picker only for an open conversation — moving it to another kernel
+is a branch, so the control is the branch. Home draws no list at all: it opens on a
+draft, offers the choice of kernel, and is where a conversation starts. A list of
+every kernel's conversations would have to describe runtimes that disagree about
+almost everything, so the list belongs to the page that has one answer.
 
 The kernel is fixed when a conversation is created (`sessions.kernel_id`), so the
 picker opens a branch on the other kernel rather than rewriting one in place.

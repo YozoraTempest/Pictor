@@ -49,7 +49,6 @@ export default {
       await page.reload()
       await page.waitForSelector('header', { timeout: 30_000 })
       await page.keyboard.press('Control+n')
-
       const trigger = page.getByLabel(/会话权限/)
       await trigger.waitFor({ timeout: 20_000 })
       assert.match(

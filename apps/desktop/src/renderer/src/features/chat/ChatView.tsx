@@ -344,9 +344,12 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
                   {draft !== null && (
                     <ProjectPicker projectId={draft.projectId} onChange={setDraftProject} />
                   )}
+                  {/* A kernel page answered "which kernel" for anything new there; an
+                      open conversation can still move to another one, and that is a
+                      branch rather than a switch. */}
                   <Composer
                     disabled={false}
-                    showKernelPicker={kernelId === null}
+                    showKernelPicker={kernelId === null || session !== null}
                     onModelChanged={() => void handleModelChanged()}
                     running={running}
                     onSend={(prompt, images) => void submit(prompt, images)}
