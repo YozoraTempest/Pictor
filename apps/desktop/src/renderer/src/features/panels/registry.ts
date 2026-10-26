@@ -20,6 +20,8 @@ export interface PanelEntry {
   description: string
   icon: LucideIcon
   source: 'builtin' | 'plugin'
+  /** For a plugin panel: the view it renders. Absent for the workbench's own panels. */
+  view?: string
   run: () => void
 }
 
@@ -71,10 +73,13 @@ export function createBuiltinPanels(options: {
  * Adapts plugin descriptors to entries. A plugin panel keeps its id, so a
  * contribution that collides with a built-in panel is dropped by the merge
  * instead of silently shadowing it.
+ *
+ * Opening one shows the view it names, inside this panel — a plugin panel is a frame, so
+ * `run` here means "display", not "go do something somewhere else".
  */
 export function pluginPanelEntries(
   descriptors: readonly PanelDescriptor[],
-  invoke: (id: string, title: string) => void,
+  open: (panel: PanelDescriptor) => void,
 ): PanelEntry[] {
   return descriptors.map((descriptor) => ({
     id: descriptor.id,
@@ -82,7 +87,8 @@ export function pluginPanelEntries(
     description: descriptor.description ?? '',
     icon: iconFor(descriptor.icon),
     source: 'plugin',
-    run: () => invoke(descriptor.id, descriptor.title),
+    ...(descriptor.view.length === 0 ? {} : { view: descriptor.view }),
+    run: () => open(descriptor),
   }))
 }
 

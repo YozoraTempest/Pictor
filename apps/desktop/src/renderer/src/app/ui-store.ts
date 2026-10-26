@@ -39,6 +39,16 @@ interface UiState {
   historyIndex: number
   /** Conversation whose family tree is open; `null` closes the dialog. */
   branchTreeFor: string | null
+  /**
+   * The plugin panel being shown, by panel id.
+   *
+   * Null means the panel column shows its launcher list: the buttons a person uses to
+   * pick one. Opening a panel replaces the list rather than pushing a route, because the
+   * column is small and going back is one button.
+   */
+  openPanel: string | null
+  openPanelNamed: (id: string) => void
+  closePanel: () => void
   setView: (view: AppView) => void
   toggleLeftPanel: () => void
   toggleRightPanel: () => void
@@ -75,6 +85,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   history: [],
   historyIndex: -1,
   branchTreeFor: null,
+  openPanel: null,
   setView: (view) => set({ view }),
   toggleLeftPanel: () =>
     set((state) => {
@@ -118,6 +129,8 @@ export const useUiStore = create<UiState>()((set, get) => ({
     }),
   showBranchTree: (sessionId) => set({ branchTreeFor: sessionId }),
   hideBranchTree: () => set({ branchTreeFor: null }),
+  openPanelNamed: (id) => set({ openPanel: id, rightPanelOpen: true }),
+  closePanel: () => set({ openPanel: null }),
   stepHistory: (direction) => {
     const { history, historyIndex } = get()
     const next = historyIndex + direction

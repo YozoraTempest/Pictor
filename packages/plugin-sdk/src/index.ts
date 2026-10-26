@@ -21,6 +21,20 @@ export {
   type PanelContribution,
   type PanelContributionFailure,
 } from './panels.js'
+export {
+  VIEW_LIMITS,
+  ViewContributionError,
+  ViewSpecError,
+  parseViewContribution,
+  parseViewContributions,
+  parseViewSpec,
+  type ViewBlock,
+  type ViewContext,
+  type ViewContribution,
+  type ViewContributionFailure,
+  type ViewSpec,
+  type ViewTone,
+} from './views.js'
 export { isToolPattern, matchesTool, toolPatternSpecificity } from './tool-pattern.js'
 export {
   HOOK_OUTPUT_LIMIT,

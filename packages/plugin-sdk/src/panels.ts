@@ -6,10 +6,9 @@
  * itself — never to `tools`, which is the agent-facing capability surface: an
  * agent tool may open a panel, but a tool is not what a panel is made of.
  *
- * The payload stays data-only: a panel names a command to run when it opens, so
- * plugins never ship renderer code and the renderer never trusts a plugin with a
- * component. Built-in panels are declared through the same registry on the
- * renderer side, which keeps one list and one rendering path.
+ * A panel **is** a view: opening it renders the `views` contribution it names. That is
+ * the whole relation — a panel is a frame and a title, the view is the content. Plugins
+ * still never ship renderer code, and the renderer never trusts a plugin with a component.
  */
 export interface PanelContribution {
   /** Panel id, unique across the workbench. Dots are conventional: `browser.open`. */
@@ -18,8 +17,13 @@ export interface PanelContribution {
   description?: string
   /** Lucide icon name. Unknown names fall back to a neutral icon. */
   icon?: string
-  /** Command id executed when the panel is opened. */
-  command: string
+  /**
+   * The `views` contribution this panel renders.
+   *
+   * A panel naming a view nobody contributed is reported and dropped when the plugin
+   * loads, so the launcher never offers a row that opens nothing.
+   */
+  view: string
 }
 
 export interface PanelContributionFailure {
@@ -61,10 +65,10 @@ export function parsePanelContribution(value: unknown): PanelContribution {
     throw new PanelContributionError(`panel.title is longer than ${MAX_TITLE} characters: ${id}`)
   }
 
-  const command = typeof record.command === 'string' ? record.command.trim() : ''
-  if (command.length === 0) throw new PanelContributionError(`panel.command is required: ${id}`)
-  if (!ID_PATTERN.test(command)) {
-    throw new PanelContributionError(`panel.command is not a valid command id: ${id}`)
+  const view = typeof record['view'] === 'string' ? record['view'].trim() : ''
+  if (view.length === 0) throw new PanelContributionError(`panel.view is required: ${id}`)
+  if (!ID_PATTERN.test(view)) {
+    throw new PanelContributionError(`panel.view is not a valid view id: ${id}`)
   }
 
   const description = record.description
@@ -91,7 +95,7 @@ export function parsePanelContribution(value: unknown): PanelContribution {
     title,
     ...(description === undefined || description.length === 0 ? {} : { description }),
     ...(icon === undefined ? {} : { icon }),
-    command,
+    view,
   }
 }
 

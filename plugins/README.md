@@ -1,7 +1,8 @@
 # Plugins
 
-A plugin is one npm package. It can contribute panels, tool guards, skills, a whole
-kernel, or several of those — and installing it is one act, not one per contribution.
+A plugin is one npm package. It can contribute panels and the views behind them, tool
+guards, skills, a whole kernel, or several of those — and installing it is one act, not
+one per contribution.
 
 This directory holds the example the tests install (`fake-kernel`). What ships with
 the app is discovered from here; what a person installs lives under
@@ -42,13 +43,59 @@ shows. `engines.pictor` is checked against the running app.
 
 | Point        | Payload                                   | What it does                                            |
 | ------------ | ----------------------------------------- | ------------------------------------------------------- |
-| `panels`     | `{ id, title, icon?, command }`           | A side-panel entry that runs a command                  |
-| `commands`   | `{ id, description?, result? }`           | Registers a command in the app's command engine         |
+| `panels`     | `{ id, title, icon?, view }`              | A side-panel entry that renders a view                  |
+| `views`      | `{ id, title, data(context), icon? }`     | What a panel draws: blocks, not renderer code           |
 | `toolGuards` | `{ id, title, tools?, decide(context) }`  | Decides allow/deny **before** a call runs               |
 | `toolHooks`  | `{ id, title?, tools?, after(context) }`  | Reacts **after** a call settled: note or fail           |
 | `toolViews`  | `{ id, tools, label?, icon? }`            | How a tool call is presented in the transcript          |
 | `skills`     | `{ name, description, body, whenToUse? }` | A skill the agent can load on demand                    |
 | `kernel`     | `{ main, label? }`                        | A cordis plugin that provides one `kernel.<id>` service |
+
+### A panel is a view
+
+A `panels` entry is a frame — an id, a title, an icon — and `view` names the `views`
+entry whose content it shows. A panel naming a view nobody contributed is reported and
+dropped when the plugin loads, so the launcher never offers a row that opens nothing.
+
+The view answers with **blocks**; the window draws them with components it owns:
+
+| Block      | Payload                                    |
+| ---------- | ------------------------------------------ |
+| `heading`  | `{ text }`                                 |
+| `text`     | `{ text }` — line breaks kept              |
+| `markdown` | `{ text }` — the transcript's renderer     |
+| `list`     | `{ items, ordered? }`                      |
+| `keyValue` | `{ rows: [{ label, value }] }`             |
+| `table`    | `{ columns, rows }` — every row same width |
+| `code`     | `{ text, language? }`                      |
+| `badge`    | `{ label, tone? }`                         |
+| `divider`  | —                                          |
+
+```js
+context.contribute('views', {
+  id: 'acme.today',
+  title: '今日',
+  // Called when the panel opens and when the reader asks for a refresh — never on a
+  // timer. `sessionId` is the conversation it was opened over, or null; `dataDirectory`
+  // is a folder of the plugin's own.
+  data: async ({ sessionId, dataDirectory }) => ({
+    blocks: [
+      { kind: 'heading', text: '今天要做的' },
+      { kind: 'list', items: ['读代码', '写补丁'], ordered: true },
+    ],
+    // Drawn under the blocks, where limitations belong.
+    note: `读取于 ${new Date().toLocaleTimeString('zh-CN')}`,
+  }),
+})
+context.contribute('panels', { id: 'acme.today.panel', title: '今日', view: 'acme.today' })
+```
+
+**Why a description and not a component.** The alternative is running a plugin's React
+inside the window with the app's own privileges, and making every plugin track the
+workbench's UI as it changes. Blocks are checked one at a time before anything is drawn,
+so a shape this build does not know is refused with the plugin's name in the message
+instead of quietly disappearing from the panel. A block the vocabulary cannot express is
+a request for a rendering engine — the honest answer is that this is not one.
 
 ### Naming a tool
 

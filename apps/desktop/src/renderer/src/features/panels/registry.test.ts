@@ -24,22 +24,22 @@ describe('createBuiltinPanels', () => {
 })
 
 describe('pluginPanelEntries', () => {
-  it('adapts descriptors and invokes by id', () => {
-    const invoke = vi.fn()
-    const entries = pluginPanelEntries(
-      [{ id: 'browser.open', title: '浏览器', icon: 'globe', command: 'browser.open' }],
-      invoke,
-    )
+  it('adapts a descriptor and opens it as the view it names', () => {
+    const open = vi.fn()
+    const panel = { id: 'browser.open', title: '浏览器', icon: 'globe', view: 'browser.state' }
+    const entries = pluginPanelEntries([panel], open)
 
     expect(entries[0]).toMatchObject({
       id: 'browser.open',
       title: '浏览器',
       description: '',
       source: 'plugin',
+      // The view travels with the entry: that is what the column renders.
+      view: 'browser.state',
     })
 
     entries[0]?.run()
-    expect(invoke).toHaveBeenCalledWith('browser.open', '浏览器')
+    expect(open).toHaveBeenCalledWith(panel)
   })
 })
 
@@ -47,7 +47,7 @@ describe('mergePanels', () => {
   it('keeps built-ins first and appends plugin panels', () => {
     const builtin = createBuiltinPanels({ createSession: vi.fn(), openSettings: vi.fn() })
     const plugin = pluginPanelEntries(
-      [{ id: 'browser.open', title: '浏览器', command: 'browser.open' }],
+      [{ id: 'browser.open', title: '浏览器', view: 'browser.state' }],
       vi.fn(),
     )
 
@@ -61,7 +61,7 @@ describe('mergePanels', () => {
   it('lets a built-in win an id collision', () => {
     const builtin = createBuiltinPanels({ createSession: vi.fn(), openSettings: vi.fn() })
     const plugin = pluginPanelEntries(
-      [{ id: 'session.new', title: '假的新建会话', command: 'session.new' }],
+      [{ id: 'session.new', title: '假的新建会话', view: 'fake.view' }],
       vi.fn(),
     )
 

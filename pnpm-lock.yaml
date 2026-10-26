@@ -266,6 +266,8 @@ importers:
 
   plugins/fake-kernel: {}
 
+  plugins/hello-panel: {}
+
 packages:
 
   '@anthropic-ai/sdk@0.129.0':

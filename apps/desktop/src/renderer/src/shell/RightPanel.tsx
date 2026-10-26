@@ -11,6 +11,7 @@ import {
   pluginPanelEntries,
   type PanelEntry,
 } from '../features/panels/registry.js'
+import { PluginViewPanel } from '../features/panels/PluginViewPanel.js'
 
 function PanelRow({ panel }: { panel: PanelEntry }): React.JSX.Element {
   const Icon = panel.icon
@@ -43,13 +44,20 @@ function PanelRow({ panel }: { panel: PanelEntry }): React.JSX.Element {
  * The right panel is an extension surface: built-in panels and plugin panels are
  * merged into one list, so a plugin contribution renders exactly like a panel
  * that ships with the workbench.
+ *
+ * A plugin panel is a frame: opening one swaps the list for the view it names, which the
+ * renderer draws from a validated description. Going back is one button, because this
+ * column is one gesture deep — a second level of navigation here would compete with the
+ * conversation rather than serve it.
  */
 export function RightPanel(): React.JSX.Element {
   const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
-  const setView = useUiStore((state) => state.setView)
   const createSession = useWorkspaceStore((state) => state.createSession)
-  const invokePanel = useWorkspaceStore((state) => state.invokePanel)
   const pluginPanels = useWorkspaceStore((state) => state.panels)
+  const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
+  const openPanel = useUiStore((state) => state.openPanel)
+  const openPanelNamed = useUiStore((state) => state.openPanelNamed)
+  const closePanel = useUiStore((state) => state.closePanel)
 
   const panels = useMemo(
     () =>
@@ -62,12 +70,28 @@ export function RightPanel(): React.JSX.Element {
           },
           openSettings: () => openView('settings'),
         }),
-        pluginPanelEntries(pluginPanels, (id, title) => {
-          void invokePanel(id, title)
-        }),
+        pluginPanelEntries(pluginPanels, (panel) => openPanelNamed(panel.id)),
       ),
-    [createSession, invokePanel, pluginPanels, setView],
+    [createSession, openPanelNamed, pluginPanels],
   )
+
+  // The open panel can disappear while it is showing — a plugin was disabled, say. The
+  // list is then the only honest thing left to draw.
+  const shown = openPanel === null ? undefined : panels.find((panel) => panel.id === openPanel)
+
+  if (shown !== undefined && shown.view !== undefined) {
+    return (
+      <aside className="flex min-h-0 flex-col overflow-hidden border-l border-border bg-surface/30">
+        <PluginViewPanel
+          view={shown.view}
+          title={shown.title}
+          sessionId={selectedSessionId}
+          onBack={closePanel}
+          onClose={toggleRightPanel}
+        />
+      </aside>
+    )
+  }
 
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden border-l border-border bg-surface/30">

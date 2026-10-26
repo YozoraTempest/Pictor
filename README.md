@@ -220,6 +220,11 @@ Selecting a session opens its transcript and a composer:
 - **Tool executions** appear as rows with a presenter per tool (command and output for
   `bash`, file content for `read`, a diff for `edit`). Long output is collapsed; a
   plugin can add a presenter with a `toolViews` contribution.
+- The **right panel** lists what can be opened there. A plugin panel is a frame around a
+  `views` contribution: the plugin answers with blocks — headings, lists, tables, code —
+  and the window draws them with components it owns, so opening a panel never loads a
+  plugin's React into the window. A view is read on open and on refresh, never on a timer,
+  and states in its own `note` when it was read.
 - **Context usage** is the ring beside the model: used tokens against what the model
   reports. Clicking it opens the breakdown per message.
 - **Reasoning effort** shows only the levels the model declares, in the platform's own
@@ -354,7 +359,8 @@ page itself.
 - **Pi** — 运行时 (status, binary, isolation switch, session data).
 - **关于** — version, data directory, licence.
 
-Everything a plugin can add — panels, guards, skills, a whole kernel — is one page,
+Everything a plugin can add — panels and the views they show, guards, skills, a whole
+kernel — is one page,
 because a plugin is one installation. How to write one: [`plugins/README.md`](plugins/README.md).
 
 Three save behaviours, and the page says which one it uses: live settings apply on
@@ -363,7 +369,8 @@ change, forms are saved with a button, and anything destructive asks first.
 ## Current scope
 
 Implemented: profile locking, project/session metadata, plugin lifecycle with
-`panels` / `toolGuards` / `toolViews` / `skills` contributions, command dispatch,
+`panels` / `views` / `toolGuards` / `toolHooks` / `toolViews` / `skills` contributions,
+command dispatch,
 multi-service model settings with cc-switch import, endpoint discovery and connection
 test, three wire protocols, two kernels behind one contract, installable kernel
 plugins, tool rules and approvals, skills, streaming chat with kernel-owned

@@ -105,7 +105,6 @@ interface WorkspaceState {
   setGroupingMode: (mode: GroupingMode) => Promise<void>
   setSectionOrder: (order: string[]) => Promise<void>
   setPluginEnabled: (id: string, enabled: boolean) => Promise<void>
-  invokePanel: (id: string, title: string) => Promise<void>
   setNotice: (notice: string | null) => void
   setError: (error: string | null) => void
 }
@@ -188,13 +187,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       sorts: readSorts(snapshot.settings),
       groupingMode: readGroupingMode(snapshot.settings),
       sectionOrder: readSectionOrder(snapshot.settings),
-    })
-  },
-
-  async invokePanel(id, title) {
-    await guard(set, async () => {
-      await window.pictor.invokePanel(id)
-      set({ notice: `已打开 ${title}` })
     })
   },
 

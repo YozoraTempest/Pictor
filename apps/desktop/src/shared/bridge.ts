@@ -9,6 +9,7 @@ import type {
   KernelModelState,
   PermissionMode,
 } from '@pictor/kernel-sdk/types'
+import type { ViewSpec } from '@pictor/plugin-sdk'
 import type { McpServerSpec } from '@pictor/shared'
 
 export type {
@@ -96,8 +97,17 @@ export interface PanelDescriptor {
   title: string
   description?: string
   icon?: string
-  command: string
+  /** The plugin view this panel renders. */
+  view: string
 }
+
+/**
+ * What a plugin view returned.
+ *
+ * The block vocabulary belongs to the plugin SDK; this is the same type, re-exported for
+ * the window so the renderer imports one module.
+ */
+export type { ViewBlock, ViewSpec, ViewTone } from '@pictor/plugin-sdk'
 
 /**
  * Presentation for one agent tool, contributed by a plugin.
@@ -278,7 +288,12 @@ export interface PictorBridge {
   onWindowState(listener: (state: WindowState) => void): () => void
 
   listPanels(): Promise<PanelDescriptor[]>
-  invokePanel(id: string): Promise<unknown>
+  /**
+   * Renders a plugin view, by view id.
+   *
+   * The answer is a description, not markup: the window draws it with its own blocks.
+   */
+  renderPluginView(id: string, sessionId: string | null): Promise<ViewSpec>
   listToolViews(): Promise<ToolViewDescriptor[]>
 
   listPlugins(): Promise<PluginRecord[]>

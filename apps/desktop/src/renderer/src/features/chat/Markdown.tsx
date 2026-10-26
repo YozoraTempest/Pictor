@@ -1,6 +1,8 @@
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import { cn } from '../../lib/cn.js'
+
 import { CodeBlock } from './CodeBlock.js'
 
 const components: Components = {
@@ -55,9 +57,21 @@ const components: Components = {
   td: ({ children }) => <td className="border border-border px-2 py-1 align-top">{children}</td>,
 }
 
-export function Markdown({ text }: { text: string }): React.JSX.Element {
+/**
+ * Markdown, in the transcript's own renderer.
+ *
+ * `className` is for the container that is drawing it: a panel is denser than the
+ * transcript, and a block should not arrive at a size its neighbours do not share.
+ */
+export function Markdown({
+  text,
+  className,
+}: {
+  text: string
+  className?: string
+}): React.JSX.Element {
   return (
-    <div className="markdown text-sm leading-relaxed">
+    <div className={cn('markdown text-sm leading-relaxed', className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {text}
       </ReactMarkdown>

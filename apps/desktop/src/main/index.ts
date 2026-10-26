@@ -16,6 +16,7 @@ import {
 } from '@pictor/plugin-host'
 import {
   parsePanelContributions,
+  parseViewContributions,
   parseSkillContributions,
   parseToolGuardContributions,
   parseToolHookContributions,
@@ -69,6 +70,7 @@ import { resolveNodeBinary, resolveNpmCli } from '@pictor/kernel-sdk'
 import { openSettings } from './kernel/settings-store.js'
 
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
+import { PluginViews } from './plugin-views.js'
 import { ToolBridgeServer, type GuardAsk } from './tool-bridge-server.js'
 import { ModelService } from './model-service.js'
 import { RuleBook, describeAsk, describeRule } from './rule-book.js'
@@ -178,6 +180,8 @@ interface Workspace {
   readPermissionMode: () => Promise<PermissionMode>
   /** Panels contributed by plugins; built-in panels live in the renderer registry. */
   panels: PanelContribution[]
+  /** The views those panels render, run on demand. */
+  pluginViews: PluginViews
   /** Presentation for agent tools; the renderer applies them to its presenters. */
   toolViews: ToolViewContribution[]
   /** Skills Pictor owns, and the switches that apply to skills it does not. */
@@ -292,29 +296,32 @@ async function startWorkspace(): Promise<Workspace | null> {
 
   await pluginHost.start(resolution.ordered)
 
-  for (const contribution of pluginHost.contributions('commands')) {
-    const command = contribution as { id?: unknown; description?: unknown; result?: unknown }
-    if (typeof command.id !== 'string') continue
-
-    try {
-      appHost.commands.register({
-        id: command.id,
-        description:
-          typeof command.description === 'string' ? command.description : 'Plugin command',
-        handler: () => command.result ?? null,
-      })
-    } catch {
-      console.warn(`[plugin] duplicate command ignored: ${command.id}`)
-    }
+  // A panel is a frame around a view: it names the `views` contribution it renders, so a
+  // panel with no view behind it would be a row that opens nothing. Those are dropped
+  // here, with the reason, rather than drawn.
+  const parsedPanelViews = parseViewContributions(pluginHost.contributions('views'))
+  for (const failure of parsedPanelViews.failures) {
+    console.warn(`[plugin] view ignored: ${failure.reason}`)
   }
+  const viewOwners = new Map<string, string>()
+  for (const { pluginId, value } of pluginHost.contributionsWithSource('views')) {
+    const id = (value as { id?: unknown } | null)?.id
+    if (typeof id === 'string') viewOwners.set(id, pluginId)
+  }
+  const pluginViews = new PluginViews(parsedPanelViews.views, {
+    // A view's own scratch space, beside the plugin's other state.
+    dataDirectory: (pluginId) => join(userData, 'plugin-data', pluginId),
+  }).withOwners(viewOwners)
 
-  // Panels are data: a panel names a command to run when it opens. A broken
-  // contribution is reported and dropped instead of failing the host.
   const parsedPanels = parsePanelContributions(pluginHost.contributions('panels'))
   for (const failure of parsedPanels.failures) {
     console.warn(`[plugin] panel ignored: ${failure.reason}`)
   }
-  const panels: PanelContribution[] = parsedPanels.panels
+  const panels: PanelContribution[] = parsedPanels.panels.filter((panel) => {
+    if (pluginViews.has(panel.view)) return true
+    console.warn(`[plugin] panel ignored: 没有名为 ${panel.view} 的视图（${panel.id}）`)
+    return false
+  })
 
   // Tool views are presentation data: a plugin names the label and icon for its
   // tool. The renderer owns the components, so nothing here is executable.
@@ -649,6 +656,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     hostCore,
     database,
     panels,
+    pluginViews,
     toolViews,
     skills,
     rules,
@@ -1122,11 +1130,20 @@ function registerIpc(workspace: Workspace): void {
     return workspace.toolViews
   })
 
-  ipcMain.handle('pictor:panels.invoke', async (_event, id: unknown) => {
-    if (typeof id !== 'string') throw new Error('id must be a string')
-    const panel = workspace.panels.find((entry) => entry.id === id)
-    if (panel === undefined) throw new Error(`unknown panel: ${id}`)
-    return workspace.appHost.commands.execute(panel.command, {})
+  /**
+   * Renders the view a panel names.
+   *
+   * Asked by view id, not by panel id: a panel is a frame, and the frame is not what has
+   * content. `sessionId` lets a view speak about the conversation it was opened over.
+   */
+  ipcMain.handle('pictor:views.render', async (_event, id: unknown, sessionId: unknown) => {
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new Error('view id must be a non-empty string')
+    }
+    if (sessionId !== null && typeof sessionId !== 'string') {
+      throw new Error('sessionId must be a string or null')
+    }
+    return workspace.pluginViews.render(id, { sessionId })
   })
 
   ipcMain.handle('pictor:plugins.list', async (): Promise<PluginRecord[]> => {
@@ -1641,7 +1658,7 @@ function registerIpc(workspace: Workspace): void {
 
     // `kernel` is not counted here: a kernel is a cordis service, not a contribution
     // the plugin host recorded, and the row lists it separately with its services.
-    const points = ['commands', 'panels', 'toolGuards', 'toolHooks', 'toolViews', 'skills'] as const
+    const points = ['panels', 'views', 'toolGuards', 'toolHooks', 'toolViews', 'skills'] as const
     return found.plugins.map((plugin) => {
       const name = basename(plugin.root)
       const record = records.find((entry) => entry.id === plugin.id)

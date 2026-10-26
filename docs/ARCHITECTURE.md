@@ -49,13 +49,37 @@ carries frames only; diagnostics go to stderr. Method names are dotted
 
 ### Application and plugins
 
-`ApplicationHost` registers core commands and exposes `list()`/`execute()`.
-Plugin commands are registered into the same engine after activation, so callers
-do not distinguish their origin.
+`ApplicationHost` registers the workbench's own commands and exposes `list()`/`execute()`.
+A plugin does not add to that engine: plugin panels are views (below), and a plugin's
+capability surfaces are `toolGuards`, `toolHooks`, `toolViews`, `skills` and `kernel`.
 
 Plugin lifecycle: discovery -> manifest validation -> engine check -> dependency
 resolution -> topological order -> activation -> reverse disposal. Failures are
 isolated per plugin and surfaced in the plugin report.
+
+### Plugin views
+
+A plugin never ships a component. A `views` contribution answers with a **description** —
+`{ blocks: [...] }` — and the renderer draws it with components it owns
+(`apps/desktop/src/renderer/src/features/panels/PluginViewPanel.tsx`). A `panels` entry is
+therefore only a frame: an id, a title, an icon, and the `view` it shows. A panel naming a
+view nobody contributed is reported and dropped at load, so the launcher never offers a row
+that opens nothing.
+
+The work is split across the process boundary on purpose. `PluginViews`
+(`apps/desktop/src/main/plugin-views.ts`) calls the plugin's `data` in the main process —
+where the plugin already lives — under a timeout, and validates the answer with
+`parseViewSpec` before anything reaches the window. Two properties follow: a plugin cannot
+reach into the renderer, and a shape this build does not know fails the whole view with the
+plugin's name in the message rather than dropping a block — a panel that lost half its
+content looks like a plugin with less to say than it has.
+
+The vocabulary is closed (`packages/plugin-sdk/src/views.ts`): heading, text, markdown,
+list, keyValue, table, code, badge, divider, under `VIEW_LIMITS`. That is a deliberate
+ceiling — a contribution the blocks cannot express is a request for a rendering engine, and
+the honest answer is that this is not one. A view is read when the panel opens and when the
+reader asks for a refresh, never on a timer: freshness a plugin needs it states in `note`,
+which is drawn under the blocks, where limitations belong.
 
 ### Kernels
 
