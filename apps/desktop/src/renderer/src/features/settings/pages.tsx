@@ -67,9 +67,11 @@ export interface SettingsCategory {
 /**
  * The sidebar's top level: whose setting this is.
  *
- * 通用 is the shell — how the window behaves and where its data lives. DSH and Pi
- * are the kernels, and a setting that only means something inside one of them lives
- * in that one's category. 关于 is the page nobody looks for until they need it.
+ * 通用 is what the app decides, whatever kernel runs the conversation: the shell,
+ * the model services, the tool policy, the skills a session can load, the kernels
+ * themselves. DSH and Pi keep only their own runtime — a process, a version, an
+ * install — because that is the one thing that truly belongs to one kernel. 关于 is
+ * the page nobody looks for until they need it.
  */
 const CATEGORIES = {
   general: '通用',
@@ -118,7 +120,7 @@ const PAGES = [
     description: '插件与面板的启用状态',
     keywords: '插件 plugin 拓展 面板',
     category: CATEGORIES.general,
-    order: 3,
+    order: 5,
     render: () => <PluginsSection />,
   },
   {
@@ -128,8 +130,30 @@ const PAGES = [
     description: '哪些内核可以跑会话，以及每个内核能读取什么',
     keywords: '内核 kernel cordis 插件 plugin 第三方 安装 挂载 失败 服务',
     category: CATEGORIES.general,
-    order: 4,
+    order: 6,
     render: () => <KernelPluginsSection />,
+  },
+  {
+    id: 'permission',
+    label: '默认权限',
+    icon: Shield,
+    description: '带沙箱的内核用什么范围跑新会话',
+    keywords: '默认 权限 沙箱 只读 工作区 完全访问 permission dsh 审批',
+    category: CATEGORIES.general,
+    group: '智能体',
+    order: 3,
+    render: () => <DefaultPermissionSection />,
+  },
+  {
+    id: 'skills',
+    label: '技能',
+    icon: BookOpen,
+    description: '一个会话能加载哪些技能，以及它们来自哪里',
+    keywords: '技能 skill 技能目录 SKILL.md 提示 说明 dsh 启用 停用',
+    category: CATEGORIES.general,
+    group: '智能体',
+    order: 4,
+    render: () => <SkillsSection />,
   },
   {
     id: 'dsh-runtime',
@@ -140,26 +164,6 @@ const PAGES = [
     category: CATEGORIES.dsh,
     order: 0,
     render: () => <RuntimePage kernel="dsh" />,
-  },
-  {
-    id: 'permission',
-    label: '默认权限',
-    icon: Shield,
-    description: '新建的 DSH 会话用哪个沙箱范围',
-    keywords: '默认 权限 沙箱 只读 工作区 完全访问 permission dsh 审批',
-    category: CATEGORIES.dsh,
-    order: 1,
-    render: () => <DefaultPermissionSection />,
-  },
-  {
-    id: 'skills',
-    label: '技能',
-    icon: BookOpen,
-    description: 'DSH 能加载的技能，以及它们来自哪个文件',
-    keywords: '技能 skill 技能目录 SKILL.md 提示 说明 dsh 启用 停用',
-    category: CATEGORIES.dsh,
-    order: 2,
-    render: () => <SkillsSection />,
   },
   {
     id: 'pi-runtime',

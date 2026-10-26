@@ -49,7 +49,7 @@ describe('settings pages', () => {
       agent !== undefined && agent.kind === 'group'
         ? agent.group.pages.map((page) => page.label)
         : [],
-    ).toEqual(['模型', '工具规则'])
+    ).toEqual(['模型', '工具规则', '默认权限', '技能'])
 
     // A category of one page is a heading and a row, not a heading, a group, and a row.
     for (const category of tree) {

@@ -5,7 +5,7 @@ import type { SkillEntry, SkillOrigin } from '@pictor/shared'
 
 import { Badge, Button, Spinner, Switch } from '../../components/ui/index.js'
 import { useChatStore } from '../chat/chat-store.js'
-import { useKernelCapabilities } from '../kernels/capabilities.js'
+import { useKernelCapabilities, useKernelIdOf } from '../kernels/capabilities.js'
 import { Section } from './Section.js'
 import { SettingRow } from './SettingRow.js'
 
@@ -18,11 +18,12 @@ const ORIGIN_LABEL: Record<SkillOrigin, string> = {
 }
 
 /**
- * Where skills are looked for, in the order the runtime scans them.
+ * Where dsh looks for skills, in the order it scans them.
  *
- * Written out rather than discovered, because the point of showing it is to tell
- * a reader where to put a file: a root that does not exist yet is exactly the
- * one worth naming.
+ * Written out rather than discovered, because the point of showing it is to tell a
+ * reader where to put a file: a root that does not exist yet is exactly the one worth
+ * naming. Another kernel scans wherever it likes, so this list is only used when the
+ * conversation's kernel is dsh.
  */
 const ROOTS = [
   '<工作目录>/.dsh/skills',
@@ -49,6 +50,7 @@ export function SkillsSection(): React.JSX.Element {
   // A kernel that loads skills on its own has no catalog to show. Reading it
   // anyway would list nothing and blame the scan roots for it.
   const canList = useKernelCapabilities(sessionId.length === 0 ? null : sessionId).skills
+  const kernelId = useKernelIdOf(sessionId.length === 0 ? null : sessionId)
   const [skills, setSkills] = useState<SkillEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -145,7 +147,11 @@ export function SkillsSection(): React.JSX.Element {
       ) : skills !== null && skills.length === 0 ? (
         <SettingRow
           title="这个会话没有发现技能"
-          description={`把 <名字>/SKILL.md 或 <名字>.md 放进下列任一目录即可：${ROOTS.join('、')}`}
+          description={
+            kernelId === null || kernelId === 'dsh'
+              ? `把 <名字>/SKILL.md 或 <名字>.md 放进下列任一目录即可：${ROOTS.join('、')}`
+              : '这个内核自己决定从哪里扫技能，把文件放进它约定的目录即可。'
+          }
           control={null}
         />
       ) : (

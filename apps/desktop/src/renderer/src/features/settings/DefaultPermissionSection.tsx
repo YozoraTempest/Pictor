@@ -24,12 +24,13 @@ const MODES: Array<{ id: PermissionMode; label: string; description: string }> =
 ]
 
 /**
- * The sandbox default for conversations dsh creates from now on.
+ * The sandbox default for the conversations that have one.
  *
- * It sits in the kernel's own group rather than in the shell's: the runtime owns
- * this value and applies it live, and a kernel without a sandbox has nothing to set
- * here. A conversation that already exists keeps its own mode — the composer's
- * picker is where that one is changed.
+ * It sits with the rest of the agent policy rather than under a kernel, because it
+ * describes how a conversation should be allowed to run, not how a runtime is
+ * installed. Only a kernel with a sandbox executes it — dsh does, Pi has none — so the
+ * page says so instead of letting the choice look universal. A conversation that
+ * already exists keeps its own mode; the composer's picker is where that one changes.
  */
 export function DefaultPermissionSection(): React.JSX.Element {
   const [status, setStatus] = useState<HarnessStatus | null>(null)
@@ -68,7 +69,7 @@ export function DefaultPermissionSection(): React.JSX.Element {
   return (
     <Section
       title="默认权限模式"
-      description="新会话以这个模式开始；已经打开的会话各自保持自己的模式，可在输入框左下角单独调整。"
+      description="新会话以这个模式开始；已经打开的会话各自保持自己的模式，可在输入框左下角单独调整。只有带沙箱的内核（DSH）执行它，Pi 没有沙箱，靠工具规则和审批。"
     >
       <SettingRow
         stacked
