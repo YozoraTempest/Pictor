@@ -54,9 +54,9 @@ import type { ModelService } from '../model-service.js'
  * an environment variable, so a change to any of them is a change to what the
  * running kernel is doing — not a value it re-reads.
  *
- * The permission default is deliberately absent: it is a live setting the
- * runtime applies itself (see {@link HarnessService.applyPermission}), so moving
- * it must not be mistaken for a reason to restart.
+ * The permission default is deliberately absent: it is a live setting applied
+ * through `applyPermission`, so moving it must not be mistaken for a reason to
+ * restart.
  */
 function bootFingerprint(input: {
   baseUrl: string

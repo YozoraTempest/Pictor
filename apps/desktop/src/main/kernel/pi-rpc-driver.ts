@@ -128,10 +128,11 @@ interface RpcResponse {
  * desktop app cannot rely on the machine's default Node being that new.
  *
  * What it can do: send a message with images, stream the answer and its thinking,
- * run tools, report usage, cancel, resume a session, read a session back. What it
- * cannot yet: hold a tool call for an approval (Pi's extension hook would be the
- * seam), set a sandbox per conversation, or branch at a message — those arrive
- * with their own work, and until then the driver says so instead of faking it.
+ * run tools, report usage, cancel, resume a session, read a session back, hold a tool
+ * call for an approval (`ctx.ui.confirm` through `extension_ui_request`), ask its own
+ * questions, and branch at a message. What it cannot do: set a sandbox. Pi runs with
+ * the permissions of the account that started it, so `permission` is the one
+ * capability it does not claim — and the window therefore draws no sandbox switch.
  */
 export class PiRpcDriver implements KernelDriver, KernelModelSource {
   readonly id = 'pi'

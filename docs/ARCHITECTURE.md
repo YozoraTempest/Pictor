@@ -219,16 +219,19 @@ Lifecycle calls carry no session id and stay on the default kernel.
 
 ### Chat
 
-The runtime is the only owner of a transcript; the renderer does not care how it
-speaks:
+The kernel is the only owner of a transcript; Pictor keeps no second copy, and the
+renderer does not care how a kernel speaks:
 
 - `apps/desktop/src/main/harness-history.ts` projects runtime events into
   transcript rows and paginates from the newest message backwards.
-- Every conversation belongs to the runtime. `chat.open` always answers with a
-  `harness:` path, and an unready runtime yields an empty page the window explains
-  rather than a second engine: sending a message while it is down is refused, so a
-  turn can never land somewhere the next boot cannot read. `sessions.pi_session_id`
-  survives from the pre-runtime layout and is never written; nothing reads it.
+- Every conversation belongs to the kernel recorded on it. `chat.open`,
+  `chat.send`, `chat.stop` and `session.fork` ask `KernelRouter.statusOf(sessionId)`
+  for that kernel's state — lifecycle used to belong to one process, and asking the
+  default kernel instead would refuse a turn that could run. An unready kernel yields
+  an empty page the window explains rather than a second engine: sending a message
+  while it is down is refused, so a turn can never land somewhere the next boot
+  cannot read. `sessions.pi_session_id` survives from the pre-kernel layout and is
+  never written; nothing reads it.
 - The app keeps `pictorId -> runtimeId` in `<DSH_HOME>/pictor-sessions.json`. A
   miss means the runtime never created that conversation, so there is no history
   to subscribe to.

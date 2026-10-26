@@ -51,8 +51,9 @@ function parseArguments(value: unknown): unknown {
  *
  * The runtime speaks in durable session events (`turn/start`, `assistant/message`,
  * `turn/end`) plus a live model stream; the renderer speaks in runs and deltas.
- * Keeping the translation here means the UI did not have to learn a second
- * vocabulary, and swapping the runtime again would only change this file.
+ * Keeping the translation here means the UI never had to learn a second vocabulary.
+ * This is dsh's half of it: a kernel with a protocol of its own brings its own
+ * translation (`kernel/pi-events.ts`) and emits these same events.
  *
  * Streaming produces one subtlety: the live deltas and the committed
  * `assistant/message` describe the same text. Whichever arrives first wins — a
