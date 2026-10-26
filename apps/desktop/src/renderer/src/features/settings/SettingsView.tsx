@@ -1,12 +1,4 @@
-import {
-  Boxes,
-  ChevronRight,
-  Info,
-  Search,
-  Settings2,
-  Terminal,
-  type LucideIcon,
-} from 'lucide-react'
+import { Boxes, Info, Search, Settings2, Terminal, type LucideIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { Input, Tooltip } from '../../components/ui/index.js'
@@ -120,9 +112,6 @@ export function SettingsView(): React.JSX.Element {
 
   const hits = useMemo(() => search(query), [query])
   const tree = useMemo(() => settingsTree(), [])
-  // Groups start open; the tree is short enough that collapsing is a preference,
-  // not a necessity.
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const current = SETTINGS_PAGES.find((page) => page.id === active) ?? SETTINGS_PAGES[0]
   const category = current?.category ?? ''
   const shown = tree.find((entry) => entry.title === category) ?? tree[0]
@@ -245,47 +234,23 @@ export function SettingsView(): React.JSX.Element {
               }
 
               const { title, pages } = entry.group
-              const shut = collapsed[`${category}/${title}`] === true
-              const holdsActive = pages.some((page) => page.id === active)
 
               return (
-                <div key={title} className="mb-px">
-                  <button
-                    type="button"
-                    aria-expanded={!shut}
-                    onClick={() =>
-                      setCollapsed((current) => ({
-                        ...current,
-                        [`${category}/${title}`]: !shut,
-                      }))
-                    }
-                    className={cn(
-                      'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-2xs transition-colors duration-150 hover:bg-surface-hover',
-                      holdsActive && shut ? 'text-text' : 'text-faint',
-                    )}
-                  >
-                    <ChevronRight
-                      className={cn(
-                        'size-3 shrink-0 transition-transform duration-150',
-                        !shut && 'rotate-90',
-                      )}
-                      aria-hidden
+                <div key={title} className="mb-1">
+                  {/* A heading, not a fold: the whole tree is four categories deep,
+                      and hiding pages behind a chevron made the list shorter than the
+                      time it took to reopen it. */}
+                  <h3 className="px-2 pt-2 pb-1 text-2xs font-semibold tracking-wider text-faint">
+                    {title}
+                  </h3>
+                  {pages.map((page) => (
+                    <PageItem
+                      key={page.id}
+                      page={page}
+                      active={page.id === active}
+                      onOpen={() => setActive(page.id)}
                     />
-                    <span className="truncate">{title}</span>
-                  </button>
-
-                  {!shut && (
-                    <div className="pl-2">
-                      {pages.map((page) => (
-                        <PageItem
-                          key={page.id}
-                          page={page}
-                          active={page.id === active}
-                          onOpen={() => setActive(page.id)}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  ))}
                 </div>
               )
             })
