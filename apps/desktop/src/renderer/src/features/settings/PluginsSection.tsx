@@ -6,6 +6,7 @@ import { Dialog } from '../../components/ui/Dialog.js'
 import { Input } from '../../components/ui/Input.js'
 import { Switch } from '../../components/ui/Switch.js'
 import { cn } from '../../lib/cn.js'
+import { Section } from './Section.js'
 
 /** Contribution points, in the words the page uses for them. */
 const POINT_LABEL: Record<string, string> = {
@@ -157,19 +158,15 @@ export function PluginsSection(): React.JSX.Element {
   const broken = all.filter((plugin) => plugin.failure !== null)
 
   return (
-    // No section header: the page already carries the title and the one description.
-    // A second 「插件」 heading with a second sentence saying the same thing is the page
-    // saying it twice, and the card-around-cards that came with it drew the boundary twice.
-    <div className="flex min-h-0 flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-2xs text-faint">
-          {overview === null
-            ? '读取中…'
-            : all.length === 0
-              ? '还没有插件'
-              : `${String(enabled)} / ${String(all.length)} 已启用`}
-        </p>
-        <div className="flex items-center gap-2">
+    // No heading of its own: the extensions panel names this tab, and the card is the
+    // content. What is left of a header is the sentence a reader needs and the two ways
+    // to add something — one row, right where the eye lands.
+    <Section
+      // The rows are cards themselves, so this section draws no card of its own.
+      bare
+      description="插件可以给应用加面板、工具守卫、技能，或者一整个内核。装完不用重启。"
+      actions={
+        <>
           <Button size="sm" variant="secondary" onClick={() => setPending({ kind: 'folder' })}>
             从目录安装
           </Button>
@@ -180,9 +177,9 @@ export function PluginsSection(): React.JSX.Element {
           >
             从 npm 安装
           </Button>
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {overview !== null && all.length === 0 && (
         <p className="text-xs text-faint">
           还没有安装插件。装一个，它会出现在这里和首页的内核选择里。
@@ -324,6 +321,12 @@ export function PluginsSection(): React.JSX.Element {
         插件在主进程里运行，能读写这台机器上的文件与网络；插件贡献的内核还会拿到含密钥的模型服务配置。
       </p>
 
+      {all.length > 0 && (
+        <p className="text-2xs text-faint">
+          {String(enabled)} / {String(all.length)} 已启用
+        </p>
+      )}
+
       {notice !== null && <p className="text-2xs leading-relaxed text-muted">{notice}</p>}
 
       {error !== null && (
@@ -389,6 +392,6 @@ export function PluginsSection(): React.JSX.Element {
           </div>
         )}
       </Dialog>
-    </div>
+    </Section>
   )
 }

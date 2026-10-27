@@ -86,6 +86,16 @@ describe('view registry', () => {
     expect(primary.map((entry) => entry.label)).toEqual(['首页', 'DeepSeek Harness', 'Pi'])
   })
 
+  it('puts extensions above settings in the rail', () => {
+    // The rail's bottom group is what a person reaches for when the conversation is not
+    // in front of them: adding something first, then settings.
+    const secondary = viewsFor(BUILTINS)
+      .filter((entry) => entry.group === 'secondary')
+      .sort((a, b) => a.order - b.order)
+
+    expect(secondary.map((entry) => entry.label)).toEqual(['拓展', '设置'])
+  })
+
   it('draws a page for a kernel this build has never heard of', () => {
     // The point of deriving the rail: installing a kernel adds a destination, and
     // turning one off takes it away — neither is an edit here.

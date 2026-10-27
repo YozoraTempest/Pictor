@@ -57,20 +57,31 @@ export function SkillsSection(): React.JSX.Element {
   const [busy, setBusy] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
+  // With no conversation open there is no runtime catalog to ask for — but Pictor's own
+  // root and what plugins contributed do not need one. That is the difference between a
+  // panel that says "open a conversation first" and a panel that can be read.
+  const libraryOnly = sessionId.length === 0
+
   useEffect(() => {
-    if (sessionId.length === 0 || !canList) {
+    // A kernel that loads skills on its own has no catalog to show; with no conversation
+    // at all there is no catalog to ask for either — but Pictor's own root does not need
+    // one. One effect, two sources, because everything after it is the same list.
+    if (!libraryOnly && !canList) {
       setSkills(null)
       setError(null)
       return
     }
+
     let alive = true
     setLoading(true)
     setError(null)
-    void window.pictor
-      .listSkills(sessionId)
+    const load = libraryOnly
+      ? (): Promise<SkillEntry[]> => window.pictor.listLibrarySkills()
+      : (): Promise<SkillEntry[]> => window.pictor.listSkills(sessionId)
+
+    void load()
       .then((next) => {
-        if (!alive) return
-        setSkills(next)
+        if (alive) setSkills(next)
       })
       .catch((reason: unknown) => {
         if (!alive) return
@@ -80,10 +91,11 @@ export function SkillsSection(): React.JSX.Element {
       .finally(() => {
         if (alive) setLoading(false)
       })
+
     return () => {
       alive = false
     }
-  }, [sessionId, attempt, canList])
+  }, [sessionId, attempt, canList, libraryOnly])
 
   const found = skills?.length ?? 0
   const enabled = skills?.filter((skill) => skill.enabled).length ?? 0
@@ -92,7 +104,11 @@ export function SkillsSection(): React.JSX.Element {
     setBusy(skill.name)
     setError(null)
     try {
-      setSkills(await window.pictor.setSkillEnabled(sessionId, skill.name, next))
+      setSkills(
+        libraryOnly
+          ? await window.pictor.setLibrarySkillEnabled(skill.name, next)
+          : await window.pictor.setSkillEnabled(sessionId, skill.name, next),
+      )
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -102,26 +118,29 @@ export function SkillsSection(): React.JSX.Element {
 
   return (
     <Section
-      title="技能目录"
-      description="一段按需加载的说明文档。模型用它自己的 skill 工具加载，你在输入框里打 / 直接调用。"
+      // No heading: the extensions panel names this tab. The sentence stays because it
+      // is what a reader needs to know before the list makes sense.
+      description={
+        libraryOnly
+          ? '没有打开的会话，所以这里只列出 Pictor 拥有和插件带来的技能；打开会话后还会包含文件与项目里的。'
+          : '一段按需加载的说明文档。模型用它自己的 skill 工具加载，你在输入框里打 / 直接调用。'
+      }
       actions={
         <>
           {loading ? (
             <Spinner className="size-3.5" />
           ) : (
             <Badge tone="neutral">
-              {sessionId.length === 0
-                ? '无会话'
-                : canList
-                  ? `${String(enabled)} / ${String(found)} 启用`
-                  : '内核不支持'}
+              {!libraryOnly && !canList
+                ? '内核不支持'
+                : `${String(enabled)} / ${String(found)} 启用`}
             </Badge>
           )}
           <Button
             size="icon"
             variant="ghost"
             aria-label="刷新技能列表"
-            disabled={sessionId.length === 0 || loading}
+            disabled={loading || (!libraryOnly && !canList)}
             onClick={() => setAttempt((value) => value + 1)}
           >
             <RefreshCw className="size-3.5" />
@@ -130,13 +149,7 @@ export function SkillsSection(): React.JSX.Element {
       }
       padded={false}
     >
-      {sessionId.length === 0 ? (
-        <SettingRow
-          title="先打开一个会话"
-          description="技能按会话的工作目录解析，没有会话就无从知道该扫哪些目录。"
-          control={null}
-        />
-      ) : !canList ? (
+      {!libraryOnly && !canList ? (
         <SettingRow
           title="这个内核不提供技能目录"
           description="它自己决定加载哪些技能，Pictor 看不到那份清单，所以这里没有可列的条目。"
@@ -146,11 +159,13 @@ export function SkillsSection(): React.JSX.Element {
         <SettingRow title="读取失败" description={error} control={null} />
       ) : skills !== null && skills.length === 0 ? (
         <SettingRow
-          title="这个会话没有发现技能"
+          title={libraryOnly ? 'Pictor 还没有自己的技能' : '这个会话没有发现技能'}
           description={
-            kernelId === null || kernelId === 'dsh'
-              ? `把 <名字>/SKILL.md 或 <名字>.md 放进下列任一目录即可：${ROOTS.join('、')}`
-              : '这个内核自己决定从哪里扫技能，把文件放进它约定的目录即可。'
+            libraryOnly
+              ? '装一个带技能的插件就会出现在这里；也可以把 <名字>/SKILL.md 放进应用数据目录下的 harness/skills。'
+              : kernelId === null || kernelId === 'dsh'
+                ? `把 <名字>/SKILL.md 或 <名字>.md 放进下列任一目录即可：${ROOTS.join('、')}`
+                : '这个内核自己决定从哪里扫技能，把文件放进它约定的目录即可。'
           }
           control={null}
         />

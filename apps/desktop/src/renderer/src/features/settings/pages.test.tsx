@@ -40,15 +40,19 @@ describe('settings pages', () => {
   it('grows a third level only where a group has something to hold', () => {
     const tree = settingsTree()
 
-    // 通用 holds two groups: how you like the app, then how a conversation runs.
+    // What is left of 通用 is one group (how you like the app) and two pages that stand
+    // on their own. 技能 and MCP moved to the extensions panel, and 模型 no longer shares
+    // a group with anything, so it does not get a heading of its own.
     const general = tree.find((category) => category.title === '通用')
     const groups = (general?.entries ?? []).flatMap((entry) =>
       entry.kind === 'group' ? [[entry.group.title, entry.group.pages.map((p) => p.label)]] : [],
     )
-    expect(groups).toEqual([
-      ['偏好', ['常规', '权限']],
-      ['智能体', ['模型', '技能', 'MCP']],
-    ])
+    expect(groups).toEqual([['偏好', ['常规', '权限']]])
+    expect(
+      (general?.entries ?? []).flatMap((entry) =>
+        entry.kind === 'page' ? [entry.page.label] : [],
+      ),
+    ).toEqual(['模型'])
 
     // A category of one page is a heading and a row, not a heading, a group, and a row.
     for (const category of tree) {

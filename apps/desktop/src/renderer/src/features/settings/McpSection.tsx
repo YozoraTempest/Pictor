@@ -84,7 +84,6 @@ export function McpSection(): React.JSX.Element {
 
   return (
     <Section
-      title="MCP 服务器"
       description="让 agent 用上外部的工具：数据库、浏览器、内部接口。列表对两个内核都生效。"
       actions={
         <Button

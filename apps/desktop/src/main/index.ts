@@ -1491,6 +1491,37 @@ function registerIpc(workspace: Workspace): void {
     },
   )
 
+  /**
+   * The skills Pictor owns, listed without a conversation.
+   *
+   * Skills are resolved per session by the runtime, which makes them invisible from a
+   * page nobody opened a conversation from. The extensions panel needs to be browsable
+   * before that, so the library answers for itself: what Pictor wrote, what a plugin
+   * brought, and which of those are switched off.
+   */
+  ipcMain.handle('pictor:skills.library', async (): Promise<SkillEntry[]> => {
+    return workspace.skills.entries()
+  })
+
+  ipcMain.handle(
+    'pictor:skills.setLibraryEnabled',
+    async (_event, name: unknown, enabled: unknown): Promise<SkillEntry[]> => {
+      if (typeof name !== 'string' || name.length === 0) throw new Error('skill name is required')
+      if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean')
+      const entry = workspace.skills.entries().find((skill) => skill.name === name)
+      if (entry === undefined) throw new Error(`没有这个技能：${name}`)
+
+      workspace.skills.setEnabled(name, enabled, {
+        name: entry.name,
+        description: entry.description,
+        whenToUse: entry.whenToUse,
+        path: entry.path,
+        origin: entry.origin,
+      })
+      return workspace.skills.entries()
+    },
+  )
+
   ipcMain.handle('pictor:kernels.list', async (): Promise<KernelInfo[]> => {
     return workspace.harness.list()
   })

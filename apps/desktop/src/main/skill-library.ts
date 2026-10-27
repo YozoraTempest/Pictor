@@ -10,7 +10,7 @@ import {
 import { dirname, join } from 'node:path'
 
 import type { SkillContribution } from '@pictor/plugin-sdk'
-import type { SkillLibraryView, SkillOrigin } from '@pictor/shared'
+import type { SkillEntry, SkillLibraryView, SkillOrigin } from '@pictor/shared'
 
 /** Marker written beside every file Pictor owns, so a later run knows it may move it. */
 const MARKER = '.pictor.json'
@@ -126,6 +126,53 @@ export class SkillLibrary {
     }))
 
     return { root: this.#options.root, managed, stashed, disabled: this.#state().disabled }
+  }
+
+  /**
+   * The skills Pictor owns, without a conversation.
+   *
+   * The runtime resolves a catalog per session, so a person who has not opened one sees
+   * nothing. These entries do not depend on that: they are the files in Pictor's own
+   * root plus whatever a plugin contributed, with the switches beside them. Filesystem
+   * and project skills are absent on purpose — neither can be listed without knowing
+   * which directories a conversation would scan.
+   */
+  entries(): SkillEntry[] {
+    const live: SkillEntry[] = []
+    for (const entry of this.#entries(this.#options.root)) {
+      if (entry.marker.owner === 'placeholder') continue
+      live.push({
+        name: entry.marker.name,
+        description: entry.marker.description,
+        whenToUse: entry.marker.whenToUse ?? null,
+        path: join(entry.directory, 'SKILL.md'),
+        modelInvocable: true,
+        origin: entry.marker.owner === 'plugin' ? 'plugin' : 'library',
+        enabled: true,
+        source: entry.marker.owner === 'plugin' ? (entry.marker.pluginId ?? null) : null,
+      })
+    }
+
+    const off: SkillEntry[] = this.#entries(this.#options.stash).map((entry) => ({
+      name: entry.marker.name,
+      description: entry.marker.description,
+      whenToUse: entry.marker.whenToUse ?? null,
+      path: join(entry.directory, 'SKILL.md'),
+      modelInvocable: true,
+      origin: entry.marker.owner === 'plugin' ? 'plugin' : 'library',
+      enabled: false,
+      source: entry.marker.owner === 'plugin' ? (entry.marker.pluginId ?? null) : null,
+    }))
+
+    // A skill the user wrote and switched off lives where it always did; only the
+    // placeholder here remembers it, and that snapshot is the whole of what is known.
+    const known = new Set(live.map((entry) => entry.name))
+    for (const record of this.#state().disabled) {
+      if (known.has(record.name)) continue
+      off.push({ ...record, modelInvocable: true, enabled: false, source: null })
+    }
+
+    return [...live, ...off]
   }
 
   /**

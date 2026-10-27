@@ -1,8 +1,9 @@
-import { Boxes, House, Settings2, Terminal, type LucideIcon } from 'lucide-react'
+import { Blocks, Boxes, House, Settings2, Terminal, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { KernelInfo } from '../../../shared/bridge.js'
 import { kernelViewId } from './kernel-scope.js'
 
+import { ExtensionsView } from '../features/extensions/ExtensionsView.js'
 import { SettingsView } from '../features/settings/SettingsView.js'
 import {
   WorkspaceLeading,
@@ -80,6 +81,25 @@ const HOME_VIEW: AppViewDescriptor = {
   shortcut: 'Ctrl+1',
 }
 
+/**
+ * What can be added to the app.
+ *
+ * Above settings, and separate from it: a plugin, a skill or an MCP server is something
+ * you install and switch on, not a preference you set once. Three surfaces that answer
+ * the same question — 「还能加什么？」 — belong on one page.
+ */
+const EXTENSIONS_VIEW: AppViewDescriptor = {
+  id: 'extensions',
+  label: '拓展',
+  description: '插件、技能与 MCP',
+  icon: Blocks,
+  group: 'secondary',
+  order: 0,
+  render: () => <ExtensionsView />,
+  // No title-bar text: the page's own heading names it, and two 「拓展」 on screen would
+  // be the same word twice — the exact thing this page was made to avoid.
+}
+
 /** Preferences are not about kernels, so the entry is not either. */
 const SETTINGS_VIEW: AppViewDescriptor = {
   id: 'settings',
@@ -87,7 +107,7 @@ const SETTINGS_VIEW: AppViewDescriptor = {
   description: '偏好与模型服务',
   icon: Settings2,
   group: 'secondary',
-  order: 0,
+  order: 1,
   render: () => <SettingsView />,
   title: () => '设置',
   shortcut: 'Ctrl+,',
@@ -125,7 +145,7 @@ export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
     trailing: () => <WorkspaceTrailing />,
     shortcut: `Ctrl+${String(index + 2)}`,
   }))
-  return [HOME_VIEW, ...pages, SETTINGS_VIEW]
+  return [HOME_VIEW, ...pages, EXTENSIONS_VIEW, SETTINGS_VIEW]
 }
 
 /** The destinations in the order the rail shows them. */

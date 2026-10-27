@@ -16,8 +16,16 @@ export function Section({
   actions,
   footer,
   padded = true,
+  bare = false,
 }: {
-  title: string
+  /**
+   * Omit it where the surrounding view already names this block — a tab, say.
+   *
+   * The header then carries only what the block has to say and what can be done to
+   * it, which is the difference between a section under a heading and a section that
+   * *is* the heading.
+   */
+  title?: string
   description?: string
   children: ReactNode
   actions?: ReactNode
@@ -25,24 +33,51 @@ export function Section({
   footer?: ReactNode
   /** `false` lets `SettingRow` children own the padding and draw dividers. */
   padded?: boolean
+  /**
+   * Draw no card around the body.
+   *
+   * For a section whose children are cards already: a border around borders is the same
+   * boundary drawn twice, and it makes the inner cards look like they are inside
+   * something rather than being the list.
+   */
+  bare?: boolean
 }): React.JSX.Element {
   return (
     <section className="flex min-h-0 flex-col gap-2.5">
-      <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-0.5">
-        <div className="min-w-0 flex-1 basis-56">
-          <h2 className="text-sm font-medium text-text">{title}</h2>
-          {description !== undefined && <p className="mt-0.5 text-xs text-faint">{description}</p>}
-        </div>
-        {actions !== undefined && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-      </header>
+      {(title !== undefined || description !== undefined || actions !== undefined) && (
+        <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-0.5">
+          <div className="min-w-0 flex-1 basis-56">
+            {title !== undefined && <h2 className="text-sm font-medium text-text">{title}</h2>}
+            {description !== undefined && (
+              <p
+                className={cn(
+                  'text-xs leading-relaxed text-faint',
+                  title !== undefined && 'mt-0.5',
+                )}
+              >
+                {description}
+              </p>
+            )}
+          </div>
+          {actions !== undefined && (
+            <div className="flex shrink-0 items-center gap-2">{actions}</div>
+          )}
+        </header>
+      )}
 
-      <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface">
-        <div className={cn('flex flex-col', padded ? 'gap-4 px-4 py-4' : 'divide-y divide-border')}>
-          {children}
-        </div>
+      {bare ? (
+        <div className="flex flex-col gap-2">{children}</div>
+      ) : (
+        <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface">
+          <div
+            className={cn('flex flex-col', padded ? 'gap-4 px-4 py-4' : 'divide-y divide-border')}
+          >
+            {children}
+          </div>
 
-        {footer !== undefined && <div className="border-t border-border">{footer}</div>}
-      </div>
+          {footer !== undefined && <div className="border-t border-border">{footer}</div>}
+        </div>
+      )}
     </section>
   )
 }

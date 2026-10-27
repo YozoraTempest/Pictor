@@ -110,6 +110,9 @@ const bridge: PictorBridge = {
   listToolRules: () => invoke('pictor:rules.list'),
   saveToolRules: (rules) => invoke('pictor:rules.save', rules),
   listSkills: (sessionId) => invoke('pictor:harness.skills', sessionId),
+  listLibrarySkills: () => invoke('pictor:skills.library'),
+  setLibrarySkillEnabled: (name, enabled) =>
+    invoke('pictor:skills.setLibraryEnabled', name, enabled),
   setSkillEnabled: (sessionId, name, enabled) =>
     invoke('pictor:harness.skillEnabled', sessionId, name, enabled),
   showInFolder: (path) => invoke('pictor:shell.showItem', path),

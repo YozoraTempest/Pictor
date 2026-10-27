@@ -247,12 +247,19 @@ is not the conversation's list is the same lie as a control the kernel cannot
 honour.
 
 The rail is **derived** from `kernels.list()`, not written by hand: `viewsFor()`
-(`app/views.tsx`) builds home, one page per mounted kernel, and settings, and a page
-is named after the kernel it holds (`kernel:<id>`, `app/kernel-scope.ts`). Turning a
-kernel off takes its page away and installing one adds a page, both without an edit; a
-kernel the build has never heard of still gets a page, an icon it borrows and a number
-(`Ctrl+2…`), which is what makes "adding a kernel is adding a directory" true in the
-window and not only in the container.
+(`app/views.tsx`) builds home, one page per mounted kernel, then the two destinations at
+the bottom — 拓展 and 设置 — and a page is named after the kernel it holds
+(`kernel:<id>`, `app/kernel-scope.ts`). Turning a kernel off takes its page away and
+installing one adds a page, both without an edit; a kernel the build has never heard of
+still gets a page, an icon it borrows and a number (`Ctrl+2…`), which is what makes
+"adding a kernel is adding a directory" true in the window and not only in the container.
+
+**拓展** is one page with three tabs (`features/extensions/ExtensionsView.tsx`): plugins,
+skills, MCP. They are not settings — a plugin is something you install, not a preference
+you set — and they are not three pages either, because they answer one question. The tabs
+are the whole navigation: three entries do not need a column, and the panels behind them
+therefore carry no heading of their own, only the sentence a reader needs and the actions
+that belong to that panel.
 
 A kernel page lists only that kernel's conversations, filters the
 project rows to the ones that hold one, draws only the sections that hold one,

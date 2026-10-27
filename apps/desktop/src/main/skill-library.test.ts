@@ -123,6 +123,39 @@ describe('SkillLibrary', () => {
     ])
   })
 
+  it('lists what it owns without a conversation, switches included', () => {
+    // The extensions panel is read before anyone opens a conversation, and a runtime
+    // catalog needs one. These entries do not: they are files in Pictor's own root.
+    const { skills, root } = library()
+    skills.syncPlugin('hello', [
+      { name: 'greet', description: '打招呼', body: '说你好' },
+      { name: 'goodbye', description: '道别', body: '说再见' },
+    ])
+
+    // Order comes from the filesystem, so compare by name.
+    const sorted = (): string[] =>
+      skills
+        .entries()
+        .map(
+          (entry) => `${entry.name}:${entry.origin}:${String(entry.enabled)}:${entry.source ?? ''}`,
+        )
+        .sort()
+
+    expect(sorted()).toEqual(['goodbye:plugin:true:hello', 'greet:plugin:true:hello'])
+
+    skills.setEnabled('greet', false, {
+      name: 'greet',
+      description: '打招呼',
+      whenToUse: null,
+      path: join(root, 'greet', 'SKILL.md'),
+      origin: 'plugin',
+    })
+
+    // Switched off, still listed — a list that hid it would look like a plugin that
+    // stopped contributing rather than a skill somebody turned off.
+    expect(sorted()).toEqual(['goodbye:plugin:true:hello', 'greet:plugin:false:hello'])
+  })
+
   it('keeps a switched-off plugin skill off when the plugin syncs again', () => {
     const { skills, root, stash } = library()
     skills.syncPlugin('hello', [{ name: 'greet', description: '打招呼', body: '第一版' }])

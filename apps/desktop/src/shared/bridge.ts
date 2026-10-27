@@ -388,6 +388,17 @@ export interface PictorBridge {
   listSkills(sessionId: string): Promise<SkillEntry[]>
   /** Switches one skill on or off and answers with the new list. */
   setSkillEnabled(sessionId: string, name: string, enabled: boolean): Promise<SkillEntry[]>
+  /**
+   * The skills Pictor owns, without a conversation.
+   *
+   * A runtime resolves its catalog per session; this answers from Pictor's own root and
+   * whatever plugins contributed, so the extensions panel can be read before a
+   * conversation exists. Filesystem and project skills are absent — both need a working
+   * directory to know what to scan.
+   */
+  listLibrarySkills(): Promise<SkillEntry[]>
+  /** Switches one library skill on or off and answers with the new list. */
+  setLibrarySkillEnabled(name: string, enabled: boolean): Promise<SkillEntry[]>
   /** Reveals a file in the OS file manager; no-op when the path is unknown. */
   showInFolder(path: string): Promise<void>
 

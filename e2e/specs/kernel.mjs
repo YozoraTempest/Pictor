@@ -151,7 +151,8 @@ export default {
       await rail
         .locator('button')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label'))),
-      ['首页', ...listed.map((kernel) => kernel.label), '设置'],
+      // 拓展 sits above settings: what can be added, then what can be configured.
+      ['首页', ...listed.map((kernel) => kernel.label), '拓展', '设置'],
     )
 
     // A kernel's page lists that kernel's conversations and nobody else's. Both

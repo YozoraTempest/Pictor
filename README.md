@@ -351,19 +351,32 @@ Storage rules:
 Override discovery for tests with `PICTOR_CCSWITCH_DB` (database path),
 `PICTOR_USER_DATA` (profile directory), `PICTOR_DSH_BIN` and `PICTOR_PI_BIN`.
 
+## Extensions
+
+What can be added to the app has its own destination, one icon above settings: **拓展**,
+one page with three tabs — 插件, 技能, MCP. They are not preferences, so they are not in
+settings; they are also not three separate pages, because they answer one question.
+
+- **插件** — what is installed, what it contributes, what it may reach, and the switch
+  that turns it off. Everything a plugin can add — panels and the views they show, guards,
+  skills, a whole kernel — is one installation, so it is one row. How to write one:
+  [`plugins/README.md`](plugins/README.md).
+- **技能** — the skills a conversation can load, with the switch that hides one. With no
+  conversation open the tab lists what Pictor owns and what plugins brought; a
+  conversation adds the filesystem and project ones the runtime finds in its working
+  directory, which is why the copy changes with the mode.
+- **MCP** — external tool servers, one list for both kernels, each translating it its own
+  way.
+
 ## Settings
 
 Settings is three columns: one owner per row of icons, then the owner's pages, then the
 page itself.
 
-- **通用** — 偏好 (常规, 权限), 智能体 (模型, 技能, MCP), 插件.
+- **通用** — 偏好 (常规, 权限), then 模型.
 - **DSH** — 运行时 (status, version, install, start/stop).
 - **Pi** — 运行时 (status, binary, isolation switch, session data).
 - **关于** — version, data directory, licence.
-
-Everything a plugin can add — panels and the views they show, guards, skills, a whole
-kernel — is one page,
-because a plugin is one installation. How to write one: [`plugins/README.md`](plugins/README.md).
 
 Three save behaviours, and the page says which one it uses: live settings apply on
 change, forms are saved with a button, and anything destructive asks first.

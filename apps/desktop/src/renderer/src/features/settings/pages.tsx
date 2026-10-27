@@ -1,24 +1,11 @@
-import {
-  Blocks,
-  BookOpen,
-  Cpu,
-  Info,
-  Server,
-  Settings2,
-  ShieldCheck,
-  Terminal,
-  type LucideIcon,
-} from 'lucide-react'
+import { Cpu, Info, Settings2, ShieldCheck, Terminal, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { AboutSection } from './AboutSection.js'
 import { AgentModelPage } from './AgentModelPage.js'
 import { DefaultPermissionSection } from './DefaultPermissionSection.js'
 import { GeneralSection } from './GeneralSection.js'
-import { McpSection } from './McpSection.js'
-import { PluginsSection } from './PluginsSection.js'
 import { RuntimePage } from './RuntimePage.js'
-import { SkillsSection } from './SkillsSection.js'
 import { ToolRulesSection } from './ToolRulesSection.js'
 
 /** One page in the settings sidebar. */
@@ -98,7 +85,6 @@ const PAGES = [
     description: 'AI 服务：地址、密钥、模型与试运行。DSH 用这些服务跑会话。',
     keywords: '模型 api key base url 端点 连接 导入 cc-switch 试运行 agent 服务 provider',
     category: CATEGORIES.general,
-    group: '智能体',
     order: 2,
     render: () => <AgentModelPage />,
   },
@@ -117,38 +103,6 @@ const PAGES = [
         <DefaultPermissionSection />
       </>
     ),
-  },
-  {
-    id: 'plugins',
-    label: '插件',
-    icon: Blocks,
-    description: '面板、工具守卫、技能，以及插件带来的内核',
-    keywords: '插件 plugin 拓展 面板 内核 kernel cordis 安装 卸载 启停 权限',
-    category: CATEGORIES.general,
-    order: 5,
-    render: () => <PluginsSection />,
-  },
-  {
-    id: 'skills',
-    label: '技能',
-    icon: BookOpen,
-    description: '一个会话能加载哪些技能，以及它们来自哪里',
-    keywords: '技能 skill 技能目录 SKILL.md 提示 说明 dsh 启用 停用',
-    category: CATEGORIES.general,
-    group: '智能体',
-    order: 3,
-    render: () => <SkillsSection />,
-  },
-  {
-    id: 'mcp',
-    label: 'MCP',
-    icon: Server,
-    description: '外部的工具服务器：数据库、浏览器、内部接口',
-    keywords: 'mcp model context protocol 服务器 server stdio http 工具 外部 接口 数据库',
-    category: CATEGORIES.general,
-    group: '智能体',
-    order: 4,
-    render: () => <McpSection />,
   },
   {
     id: 'dsh-runtime',
