@@ -4,9 +4,10 @@ This document only records the structure and dependency rules a contributor must
 follow. Product direction and decision history live in the maintainer's Trilium
 knowledge base.
 
-What Pictor is — a shell that assembles software as plugins, where a kernel is one
-service among them — is in [`COMPOSITION.md`](COMPOSITION.md). Read that first: it draws
-the line this document then enforces.
+What Pictor is — an all-in-one that assembles software as plugins through cordis, where an
+**ars** is one such piece of software and a harness is just one kind of ars — is in
+[`COMPOSITION.md`](COMPOSITION.md). Read that first: it draws the line this document then
+enforces.
 
 ## Principles
 
