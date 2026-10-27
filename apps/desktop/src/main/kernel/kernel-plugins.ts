@@ -118,6 +118,8 @@ export function isBundlePackage(root: string): boolean {
 
 export interface KernelPluginInstallResult {
   plugin: KernelPluginSpec
+  /** Where the package's files are, so the caller can read what else it declares. */
+  root: string
   /** `bundle` when the package carried its own patch; `entry` when Pictor added one. */
   mount: 'bundle' | 'entry'
   /** Lines the package manager printed, for the dialog to show behind 「详情」. */
@@ -134,6 +136,11 @@ export class KernelPluginInstaller {
   /** Where the kernel's packages live, for the page that explains it. */
   get profile(): string {
     return this.#options.profile
+  }
+
+  /** The kernel installation: the packages it ships are the kernel's, not the profile's. */
+  get installation(): string | undefined {
+    return this.#options.installation
   }
 
   /**
@@ -168,7 +175,12 @@ export class KernelPluginInstaller {
         version: shipped.version,
       }
       await this.#options.write([...current, plugin])
-      return { plugin, mount: isBundlePackage(shipped.root) ? 'bundle' : 'entry', log: [] }
+      return {
+        plugin,
+        root: shipped.root,
+        mount: isBundlePackage(shipped.root) ? 'bundle' : 'entry',
+        log: [],
+      }
     }
 
     const npm = this.#options.npm
@@ -216,7 +228,7 @@ export class KernelPluginInstaller {
     }
 
     await this.#options.write([...this.#options.read(), plugin])
-    return { plugin, mount: bundle ? 'bundle' : 'entry', log }
+    return { plugin, root, mount: bundle ? 'bundle' : 'entry', log }
   }
 
   /**

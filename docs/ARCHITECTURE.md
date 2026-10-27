@@ -161,13 +161,35 @@ engine, and the honest answer is that this is not one. A view is read when the p
 and when the reader asks for a refresh, never on a timer: freshness a plugin needs it
 states in `note`, which is drawn under the blocks, where limitations belong.
 
-### The kernel's plugins
+### Two trees, one list
 
 Pictor mounts its own plugins into a cordis tree in the main process. The kernel is a
 _separate_ cordis tree, in a separate process, with a different service surface — and the
-plugins written for it are the dsh ecosystem. Both are "plugins", so the page lists both;
-the split is stated rather than hidden, because a plugin that reaches the editor is not the
-same thing as one that reaches the model's tools.
+plugins written for it are the dsh ecosystem.
+
+Both are cordis: `name`, `inject`, `apply`, `ctx.effect`, registered with `ctx.plugin()`. So
+"which kind of plugin is this" was never a taxonomy worth teaching, and the page that showed
+two separate lists exposed an implementation detail as a decision. It is one list now, one
+row per package, and the row says where the package runs.
+
+Where it goes is read from the package, in `apps/desktop/src/main/plugin-target.ts`:
+
+| Signal                                           | Tree   |
+| ------------------------------------------------ | ------ |
+| a `pictor` block                                 | window |
+| `dsh.bundle` or `dsh.client`                     | kernel |
+| a dependency on `@deepseek-ai/dsh-*` or `cordis` | kernel |
+| ships with the kernel installation               | kernel |
+| none of the above                                | window |
+
+The third row is the one that mattered: **most dsh plugins are plain cordis plugins** with no
+`dsh` block at all — only `peerDependencies` naming the packages they expect to find in the
+kernel. Detection that looked for a `dsh` block sent a terminal tool into the window tree,
+where it installed happily and could never work.
+
+A package carrying both is mounted in both trees and appears as one row with two switches. A
+package with neither is a plain cordis plugin, and the window tree is where it belongs: it
+mounts, and a missing service is reported as _waiting_ rather than taking the kernel down.
 
 A kernel plugin is a package in the kernel's profile (`<dsh home>/profiles/pictor`), mounted
 by an `insert` entry in the `cordis.patch.yml` Pictor regenerates on every boot. That is the

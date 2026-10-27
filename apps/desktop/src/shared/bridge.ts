@@ -210,6 +210,23 @@ export interface KernelPlugin {
   version: string | null
 }
 
+/**
+ * What one press of 「安装」 did.
+ *
+ * One entry, one or two trees: `targets` says where the package declared it belongs, and
+ * `window` / `kernel` say which halves actually arrived. A failure names what is in place,
+ * because a kernel half that installed stays installed when the window half cannot.
+ */
+export interface PluginInstallSummary {
+  ok: boolean
+  message: string
+  /** Plugin name in the window tree, when that half installed. */
+  window?: string | null
+  /** Package name in the kernel tree, when that half installed. */
+  kernel?: string | null
+  targets?: Array<'window' | 'kernel'>
+}
+
 export interface KernelPluginHomes {
   /** The kernel's profile directory; packages live in its `node_modules`. */
   profile: string
@@ -415,6 +432,15 @@ export interface PictorBridge {
   listDshPlugins(): Promise<KernelPlugin[]>
   /** Installs one dsh plugin into the kernel's profile; a restart mounts it. */
   installDshPlugin(spec: string): Promise<{ plugin: KernelPlugin; mount: 'bundle' | 'entry' }>
+  /**
+   * One install for both trees.
+   *
+   * The target is read from the package's manifest: a `pictor` block means the window, a
+   * `dsh` block means the kernel, and a package with both is mounted in both.
+   */
+  installPlugin(spec: string): Promise<PluginInstallSummary>
+  /** The same declaration, without installing anything — for the dialog to explain itself. */
+  inspectPlugin(spec: string): Promise<Array<'window' | 'kernel'>>
   setDshPluginEnabled(id: string, enabled: boolean): Promise<KernelPlugin[]>
   removeDshPlugin(id: string): Promise<void>
   /** Where the kernel's packages live. */

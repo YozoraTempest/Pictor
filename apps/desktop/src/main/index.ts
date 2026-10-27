@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -21,6 +21,7 @@ import {
   type KernelPluginInstallResult,
 } from './kernel/kernel-plugins.js'
 import { developmentPluginsDirectory } from './plugin-roots.js'
+import { declarationFor, declarationOf, targetsOf, type PluginTarget } from './plugin-target.js'
 import { SLOT_SPECS } from '@pictor/plugin-sdk'
 import type {
   PanelContribution,
@@ -64,6 +65,7 @@ import type {
   KernelPluginInfo,
   PermissionMode,
   PluginReport,
+  PluginInstallSummary,
   SlotDescriptor,
 } from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
@@ -841,6 +843,15 @@ const runtimeTitles = new Map<string, Set<string>>()
  * for the things it draws. A plugin installed, removed or switched off lands here
  * because the panel list, the tool presenters and the kernels all move together.
  */
+/** A manifest at an absolute path, or null when it cannot be read. */
+function readManifest(path: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as unknown
+  } catch {
+    return null
+  }
+}
+
 function announceWorkspaceChanged(): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('pictor:workspace.changed')
@@ -1831,6 +1842,131 @@ function registerIpc(workspace: Workspace): void {
         return { ok: false, id: null, message: '需要一个包名' }
       }
       return mountAfterInstall(() => workspace.installer.installPackage(spec))
+    },
+  )
+
+  /**
+   * One install entry for both trees.
+   *
+   * The target is not a choice: it is what the package declares. A `pictor` block means the
+   * window tree, `dsh.bundle` / `dsh.client` means the kernel's, and a package carrying both
+   * is mounted in both — which the two trees have always supported, even while the page made
+   * a person pick one of two lists.
+   *
+   * A plain cordis plugin (neither field) goes to the window tree, where it mounts and
+   * reports what it is waiting for. That is today's behaviour and it stays.
+   */
+  /**
+   * Enough for a manifest lookup: npm to ask the registry, and the kernel installation to
+   * recognise its own packages — which is the only signal a plain dsh plugin offers.
+   */
+  const declarationLookup = (): Parameters<typeof declarationFor>[1] => ({
+    npm: () => {
+      const node = resolveNodeBinary()
+      if (node === null) throw new Error('没有找到可用的 Node')
+      const cli = resolveNpmCli(node)
+      if (cli === null) throw new Error('没有找到 npm')
+      return { node, cli }
+    },
+    installation: workspace.kernelPlugins.installation,
+  })
+
+  /**
+   * What a spec declares, before anything is installed.
+   *
+   * The dialog says 「会装在：窗口」 or 「窗口 + 内核」 while the person is still typing, so the
+   * two trees stop being a decision they have to make. A spec that cannot be read answers
+   * with nothing rather than guessing.
+   */
+  ipcMain.handle(
+    'pictor:plugins.inspect',
+    async (_event, spec: unknown): Promise<PluginTarget[]> => {
+      if (typeof spec !== 'string' || spec.trim().length === 0) return []
+      const declaration = await declarationFor(spec.trim(), declarationLookup())
+      // Nothing rather than a guess: a package no registry answers for has no manifest to
+      // read, and the dialog says so instead of promising a tree.
+      if (declaration === null || declaration === 'unknown') return []
+      return targetsOf(declaration)
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:plugins.installAny',
+    async (_event, spec: unknown): Promise<PluginInstallSummary> => {
+      if (typeof spec !== 'string' || spec.trim().length === 0) {
+        return { ok: false, message: '要装什么？用包名、file: 路径，或 git/tarball 地址' }
+      }
+      const value = spec.trim()
+
+      const declaration = await declarationFor(value, declarationLookup())
+      if (declaration === null) {
+        return { ok: false, message: `装不了这个地址：${value}` }
+      }
+
+      // A git or tarball URL, or a name no registry answers for, has no manifest to read.
+      // It goes to the kernel tree first — the only tree that resolves arbitrary specs —
+      // and what arrives decides where it actually belongs.
+      let targets: PluginTarget[] = declaration === 'unknown' ? ['kernel'] : targetsOf(declaration)
+
+      const messages: string[] = []
+      let windowName: string | null = null
+      let kernelName: string | null = null
+
+      // The kernel half first: it is the one that can refuse for a reason worth reading
+      // (a version range, a missing package), and a failure there should not leave the
+      // window half half-installed and unexplained.
+      if (targets.includes('kernel')) {
+        try {
+          const installed = await workspace.kernelPlugins.install(value)
+          kernelName = installed.plugin.name
+          // Now that its files are here, the manifest can say whether the window half is
+          // also meant to exist.
+          if (declaration === 'unknown') {
+            const arrived = declarationOf(readManifest(join(installed.root, 'package.json')), {
+              shipped: installed.plugin.source === 'bundled',
+            })
+            targets = targetsOf(arrived)
+            // It turned out to be a window plugin. Its entry goes back off; the files stay,
+            // because removing a package under a running kernel is worse than an unused one.
+            if (!targets.includes('kernel')) {
+              await workspace.kernelPlugins.remove(installed.plugin.id)
+              kernelName = null
+              messages.push('这个包是窗口插件，没有进内核')
+            }
+          }
+          messages.push(
+            `内核：${installed.plugin.name}（${installed.mount === 'bundle' ? '自带 patch' : installed.mount === 'entry' ? '条目已写' : '已装'}）· 重启内核后生效`,
+          )
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? error.message : String(error) }
+        }
+      }
+
+      if (targets.includes('window')) {
+        const fromDirectory = /^(?:file|link):/.test(value)
+        const result = fromDirectory
+          ? await mountAfterInstall(() =>
+              workspace.installer.installFolder(value.replace(/^(?:file|link):/, '')),
+            )
+          : await mountAfterInstall(() => workspace.installer.installPackage(value))
+        if (!result.ok) {
+          // A kernel half that did install stays: it is a separate tree, and removing it
+          // because the other half failed would undo something that works.
+          messages.push(`窗口：${result.message}`)
+          return { ok: false, message: messages.join(' · '), window: null, kernel: kernelName }
+        }
+        windowName = result.id
+        messages.push(`窗口：${result.id ?? '已安装'}`)
+      }
+
+      announceWorkspaceChanged()
+      return {
+        ok: true,
+        message: messages.join(' · '),
+        window: windowName,
+        kernel: kernelName,
+        targets,
+      }
     },
   )
 

@@ -98,8 +98,8 @@ registers a tool — runs in both.
 ### …or just run it in the kernel
 
 A dsh plugin that needs dsh's services belongs in dsh, and Pictor runs one. **拓展 → 插件 →
-内核插件** installs a package into the kernel's own profile and mounts it with a patch entry,
-so `inject: ['tools']` works there rather than waiting here:
+安装插件** with its package name installs it into the kernel's own profile and mounts it with
+a patch entry, so `inject: ['tools']` works there rather than waiting here:
 
 ```
 @deepseek-ai/dsh-tool-terminal     a terminal tool for the model
@@ -107,7 +107,16 @@ so `inject: ['tools']` works there rather than waiting here:
 @deepseek-ai/dsh-terminal-bash     a shell backend for it
 ```
 
-Two paths, decided by the package's own manifest:
+The page does not ask which tree: it reads the package.
+
+| The package declares                                                                                                    | It goes to                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| a `pictor` block                                                                                                        | the window (panels, seats, guards)                                               |
+| `dsh.bundle` / `dsh.client`, a dependency on `@deepseek-ai/dsh-*` or `@deepseek-ai/cordis`, or it ships with the kernel | the kernel (tools, behaviour)                                                    |
+| both                                                                                                                    | both, as one row with two switches                                               |
+| neither — a plain cordis plugin                                                                                         | the window, where a waiting plugin is reported instead of taking the kernel down |
+
+Two paths from there, decided by the package's own manifest:
 
 - **Bundled with dsh** (already in the kernel installation): no install at all. Pictor writes
   the entry and the kernel resolves the package it already has. Installing it into the
