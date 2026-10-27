@@ -1,5 +1,5 @@
 {
-  "name": "@vulonlok/pictor",
+  "name": "@vulonlok/workspace",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,9 +11,9 @@
   },
   "packageManager": "pnpm@11.24.0",
   "scripts": {
-    "dev": "pnpm build:host:debug && pnpm --filter @vulonlok/harness dev",
+    "dev": "pnpm build:host:debug && pnpm --filter @vulonlok/pictor dev",
     "build": "pnpm build:js && pnpm build:host",
-    "build:js": "pnpm --filter @vulonlok/harness build",
+    "build:js": "pnpm --filter @vulonlok/pictor build",
     "build:host": "cargo build --release -p pictor-host-core",
     "build:host:debug": "cargo build -p pictor-host-core",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
