@@ -77,10 +77,9 @@ const bridge: PictorBridge = {
   harnessStart: (cwd) => invoke('pictor:harness.start', cwd),
   harnessStop: () => invoke('pictor:harness.stop'),
   installHarness: () => invoke('pictor:harness.install'),
-  setHarnessPermissionMode: (mode) => invoke('pictor:harness.setPermissionMode', mode),
-  getSessionPermission: (sessionId) => invoke('pictor:harness.sessionPermission', sessionId),
-  setSessionPermission: (sessionId, mode) =>
-    invoke('pictor:harness.setSessionPermission', sessionId, mode),
+  setHarnessPermissionMode: (mode, sessionId) =>
+    invoke('pictor:harness.setPermissionMode', mode, sessionId),
+  permission: () => invoke('pictor:harness.permission'),
   listKernels: () => invoke('pictor:kernels.list'),
   listPluginOverview: () => invoke('pictor:plugins.overview'),
   pluginHomes: () => invoke('pictor:plugins.homes'),

@@ -391,11 +391,9 @@ export interface PictorBridge {
   /** Install the pinned runtime into the profile; resolves when npm exits. */
   installHarness(): Promise<HarnessStatus>
   /** Default sandbox mode for conversations created later; applied live. */
-  setHarnessPermissionMode(mode: PermissionMode): Promise<HarnessStatus>
-  /** Sandbox mode the conversation behind `sessionId` is running under. */
-  getSessionPermission(sessionId: string): Promise<PermissionMode | null>
-  /** Switches one conversation's sandbox mode, without a restart. */
-  setSessionPermission(sessionId: string, mode: PermissionMode): Promise<PermissionMode | null>
+  setHarnessPermissionMode(mode: PermissionMode, sessionId?: string): Promise<HarnessStatus>
+  /** The sandbox mode the runtime is running under; dsh keeps one per process. */
+  permission(): Promise<PermissionMode>
   /** Every kernel this build can drive, for the picker. */
   listKernels(): Promise<KernelInfo[]>
   /** Messages extensions asked to show, already trimmed by the main process. */

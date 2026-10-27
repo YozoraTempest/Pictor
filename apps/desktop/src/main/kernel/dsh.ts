@@ -218,12 +218,8 @@ export class DshHarness implements KernelDriver {
     return this.#engine().historyPage(sessionId, limit, offset)
   }
 
-  sessionPermission(sessionId: string): Promise<string | null> {
-    return this.#engine().sessionPermission(sessionId)
-  }
-
-  setSessionPermission(sessionId: string, mode: PermissionMode): Promise<void> {
-    return this.#engine().setSessionPermission(sessionId, mode)
+  applyPermissionToSession(sessionId: string, mode: PermissionMode): Promise<void> {
+    return this.#engine().applyPermissionToSession(sessionId, mode)
   }
 
   projectRootFor(sessionId: string): Promise<string | null> {

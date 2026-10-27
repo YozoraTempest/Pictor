@@ -132,7 +132,7 @@ export interface BuiltinKernel {
 const CAPABILITY_METHODS: Readonly<
   Record<keyof KernelCapabilities, readonly (keyof KernelDriver)[]>
 > = {
-  permission: ['setPermissionMode', 'applyPermission', 'sessionPermission', 'setSessionPermission'],
+  permission: ['setPermissionMode', 'applyPermission', 'applyPermissionToSession'],
   approval: ['answerApproval'],
   model: [],
   skills: ['listSkills'],

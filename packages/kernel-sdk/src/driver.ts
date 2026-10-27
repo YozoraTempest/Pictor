@@ -110,12 +110,18 @@ export interface KernelDriver {
   setPermissionMode(mode: PermissionMode): void
   /** Pushes the sandbox default into a running kernel. */
   applyPermission(mode: PermissionMode): Promise<void>
+  /**
+   * Applies a mode to one conversation that is already running.
+   *
+   * dsh keeps one permission namespace per process, so this is not a per-session setting
+   * being stored: it is how a live session is moved onto the runtime's current mode after
+   * the default changed.
+   */
+  applyPermissionToSession(sessionId: string, mode: PermissionMode): Promise<void>
   /** Re-applies whatever boot-time settings changed while the kernel ran. */
   applySettings(): Promise<void>
   /** Sandbox mode one conversation is actually running under. */
-  sessionPermission(sessionId: string): Promise<string | null>
   /** Switches one conversation's sandbox mode without a restart. */
-  setSessionPermission(sessionId: string, mode: PermissionMode): Promise<void>
   /** Nearest repository ancestor of a conversation's directory. */
   projectRootFor(sessionId: string): Promise<string | null>
   /** The skills one conversation can see. */

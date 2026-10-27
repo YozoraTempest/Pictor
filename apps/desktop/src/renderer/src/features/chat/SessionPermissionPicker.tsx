@@ -40,20 +40,21 @@ const VIEWPORT_MARGIN = 8
 const MENU_WIDTH = 240
 
 /**
- * Sandbox switch for the open conversation.
+ * Sandbox switch for the runtime.
  *
- * The runtime keeps one permission per session, folded from the preset it was
- * opened with and any later switch, so this is deliberately separate from the
- * default in settings: widening here must not widen every other conversation.
- * The switch runs the runtime's own `/permission` command, which is not a prompt
- * — nothing reaches the model and a turn in flight keeps streaming — and the
- * value is read back afterwards, because a runtime that ignored the command must
- * not leave the button claiming a mode that is not in effect.
+ * dsh keeps one permission namespace for the whole process — a session does not carry its
+ * own — so this is not a per-conversation setting and the label does not pretend to be
+ * one. Switching here changes what the runtime does next, and it writes the stored default
+ * at the same time, because those two answers are the same answer in this engine. It
+ * applies live: `permission/defaultPreset` is a namespace setting the runtime re-reads, so
+ * nothing restarts and a turn in flight keeps streaming. The value is read back afterwards,
+ * because a runtime that ignored it must not leave the button claiming a mode that is not
+ * in effect.
  */
 export function SessionPermissionPicker(): React.JSX.Element | null {
   const sessionId = useChatStore((state) => state.current.sessionId)
-  // A kernel that runs with the sandbox its own settings chose has nothing to
-  // switch here; the button would only fail when pressed.
+  // An engine whose sandbox is fixed by its own settings has nothing to switch here; the
+  // button would only fail when pressed.
   const canSwitch = useKernelCapabilities(sessionId.length === 0 ? null : sessionId).permission
   const [current, setCurrent] = useState<PermissionMode | null>(null)
   const [open, setOpen] = useState(false)
@@ -65,30 +66,20 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
   const menuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    // The answer belongs to a conversation, so switching conversations drops it: a button
-    // that kept the previous one's mode would claim, for as long as the read takes, that
-    // this new conversation is sandboxed the way the old one was.
+    // dsh keeps one permission namespace for the process, so the answer is the runtime's,
+    // not this conversation's: a new conversation shows whatever the runtime is running
+    // under, and switching here switches it for everything the runtime does next.
     setCurrent(null)
     if (sessionId.length === 0) return
     let alive = true
     void window.pictor
-      .getSessionPermission(sessionId)
-      .then(async (mode) => {
-        if (!alive) return
-        if (mode !== null) {
-          setCurrent(mode)
-          return
-        }
-        // A conversation that predates the permission service has no recorded
-        // value; the default is the closest true answer, and switching it once
-        // gives the conversation a value of its own.
-        const status = await window.pictor.harnessStatus().catch(() => null)
-        if (!alive) return
-        setCurrent(status?.permissionMode ?? null)
+      .permission()
+      .then((mode) => {
+        if (alive) setCurrent(mode)
       })
       .catch(() => {
-        // A runtime that is not up yet has no value to report; the control stays
-        // hidden rather than guessing a mode.
+        // A runtime that is not up yet has no value to report; the control stays hidden
+        // rather than guessing a mode.
         if (alive) setCurrent(null)
       })
     return () => {
@@ -156,8 +147,8 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
     setBusy(true)
     setError(null)
     try {
-      const next = await window.pictor.setSessionPermission(sessionId, mode)
-      setCurrent(next)
+      const status = await window.pictor.setHarnessPermissionMode(mode, sessionId)
+      setCurrent(status.permissionMode)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -187,7 +178,7 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`会话权限：${active?.label ?? current}`}
+        aria-label={`权限：${active?.label ?? current}`}
         disabled={busy}
         onClick={() => {
           if (open) close()
@@ -215,7 +206,7 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
           <div
             ref={menuRef}
             role="dialog"
-            aria-label="会话权限"
+            aria-label="权限"
             style={{
               left: position?.left ?? 0,
               bottom: position?.bottom ?? 0,
@@ -282,7 +273,7 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
         }
       >
         <p className="text-xs leading-relaxed text-muted">
-          这个会话将不再限制写入范围，也不再逐次请求审批。模型可以对工作目录之外的文件执行修改。
+          运行时将不再限制写入范围，也不再逐次请求审批。模型可以对工作目录之外的文件执行修改。
           只在你确信任务可信、并且能自行检查结果时使用。
         </p>
       </Dialog>

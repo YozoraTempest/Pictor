@@ -1604,15 +1604,27 @@ function registerIpc(workspace: Workspace): void {
     return workspace.harness.status()
   })
 
+  /**
+   * Moves the runtime onto a sandbox mode, now and for what it starts next.
+   *
+   * dsh keeps one permission namespace for the process, so there is one answer to write:
+   * the stored default (`defaultPreset`) and the running session must not disagree, or the
+   * composer would name a mode the next tool call does not run under. A `sessionId` is
+   * passed after a switch in an open conversation, so that conversation follows too; with
+   * none, only the default changes.
+   */
   ipcMain.handle(
     'pictor:harness.setPermissionMode',
-    async (_event, mode: unknown): Promise<HarnessStatus> => {
+    async (_event, mode: unknown, sessionId: unknown): Promise<HarnessStatus> => {
       if (!isPermissionMode(mode)) throw new Error('unknown permission mode')
       await workspace.writeSetting('harness.permissionMode', mode)
       workspace.harness.setPermissionMode(mode)
-      // A live namespace setting, not a boot flag: asking the runtime to apply it
-      // keeps the process (and every stream on it) alive.
+      // A live namespace setting, not a boot flag: asking the runtime to apply it keeps
+      // the process (and every stream on it) alive.
       await workspace.harness.applyPermission(mode)
+      if (typeof sessionId === 'string' && sessionId.length > 0) {
+        await workspace.harness.applyPermissionToSession(sessionId, mode)
+      }
       return workspace.harness.status()
     },
   )
@@ -2194,26 +2206,17 @@ function registerIpc(workspace: Workspace): void {
     return workspace.rules.save(parseToolRules(value))
   })
 
-  ipcMain.handle('pictor:harness.sessionPermission', async (_event, sessionId: unknown) => {
-    if (typeof sessionId !== 'string' || sessionId.length === 0)
-      throw new Error('sessionId is required')
-    const current = await workspace.harness.sessionPermission(sessionId)
-    return isPermissionMode(current) ? current : null
+  /**
+   * The sandbox mode the runtime is running under.
+   *
+   * dsh keeps one permission namespace for the whole process: a conversation does not
+   * carry its own. So this reads the runtime rather than a session, and the switch that
+   * writes it (`as above`) applies to everything the runtime does from then on — which is
+   * exactly what the row in the composer says.
+   */
+  ipcMain.handle('pictor:harness.permission', async (): Promise<PermissionMode> => {
+    return workspace.harness.status().permissionMode
   })
-
-  ipcMain.handle(
-    'pictor:harness.setSessionPermission',
-    async (_event, sessionId: unknown, mode: unknown) => {
-      if (typeof sessionId !== 'string' || sessionId.length === 0)
-        throw new Error('sessionId is required')
-      if (!isPermissionMode(mode)) throw new Error('unknown permission mode')
-      await workspace.harness.setSessionPermission(sessionId, mode)
-      // The command answers without the new value, so the state is read back:
-      // a runtime that ignored the switch must not leave the composer claiming it.
-      const current = await workspace.harness.sessionPermission(sessionId)
-      return isPermissionMode(current) ? current : null
-    },
-  )
 
   // A skill's instructions live in a file the runtime discovered; showing it in
   // the file manager is the shortest path from "what is this skill" to the text.
