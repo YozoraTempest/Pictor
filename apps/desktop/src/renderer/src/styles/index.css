@@ -1,3 +1,9 @@
 @import 'tailwindcss';
+
+/* The window's classes are not only in this folder: the UI kit and the harness pages are
+   packages now, and Tailwind only scans what it is told about. Without these two lines
+   every utility used there — a dialog's overlay, a button's padding — is missing. */
+@source '../../../../../packages/ui/src';
+@source '../../../../../packages/harness/src/renderer';
 @import './tokens.css';
 @import './base.css';

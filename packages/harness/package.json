@@ -24,8 +24,6 @@
     "@vulonlok/plugin-host": "workspace:*",
     "@vulonlok/application": "workspace:*",
     "zustand": "^5.0.15",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
     "lucide-react": "^1.59.0",
     "motion": "^14.4.0",
     "@vulonlok/ui": "workspace:*",
@@ -34,6 +32,7 @@
     "shiki": "^4.5.0"
   },
   "peerDependencies": {
-    "react": "^19.0.0"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   }
 }

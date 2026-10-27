@@ -1,8 +1,4 @@
-import type {
-  KernelCapabilities,
-  KernelInfo,
-  KernelModelSource,
-} from '../../../main/bridge.js'
+import type { KernelCapabilities, KernelInfo, KernelModelSource } from '../../../main/bridge.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 
 /**

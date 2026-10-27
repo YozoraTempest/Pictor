@@ -4,16 +4,7 @@ import { useEffect, useState } from 'react'
 import type { McpServerSpec } from '@vulonlok/shared'
 import { isMcpServerName } from '@vulonlok/shared'
 
-import {
-  Badge,
-  Banner,
-  Button,
-  Dialog,
-  Field,
-  Input,
-  Spinner,
-  Switch,
-} from '@vulonlok/ui'
+import { Badge, Banner, Button, Dialog, Field, Input, Spinner, Switch } from '@vulonlok/ui'
 import { Section } from './Section.js'
 
 /**

@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Menu as MenuIcon } from 'lucide-react'
 
-import type { WindowCommand } from '../../../shared/bridge.js'
+import type { WindowCommand } from '@vulonlok/harness/main/bridge'
 import { openView } from '@vulonlok/harness/renderer/app/open-view'
 import { useUiStore } from '@vulonlok/harness/renderer/app/ui-store'
 import { sortedViews } from '@vulonlok/harness/renderer/app/views'

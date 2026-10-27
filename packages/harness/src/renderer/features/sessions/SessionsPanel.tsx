@@ -26,15 +26,7 @@ import { useApprovalStore } from '../../approval-store.js'
 import { useQuestionStore } from '../../question-store.js'
 import { useChatStore } from '../chat/chat-store.js'
 import { useKernelCapabilities } from '../kernels/capabilities.js'
-import {
-  Button,
-  Dialog,
-  IconButton,
-  Input,
-  Menu,
-  type MenuEntry,
-  Tooltip,
-} from '@vulonlok/ui'
+import { Button, Dialog, IconButton, Input, Menu, type MenuEntry, Tooltip } from '@vulonlok/ui'
 import { cn } from '@vulonlok/ui/cn'
 import {
   collectSectionSessionIds,

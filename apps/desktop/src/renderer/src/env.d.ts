@@ -1,4 +1,4 @@
-import type { PictorBridge } from '../../shared/bridge.js'
+import type { PictorBridge } from '@vulonlok/harness/main/bridge'
 
 declare global {
   interface Window {

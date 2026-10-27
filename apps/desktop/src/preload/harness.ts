@@ -1,6 +1,6 @@
 import type { IpcRenderer } from 'electron'
 
-import type { PictorBridge } from '../shared/bridge.js'
+import type { PictorBridge } from '@vulonlok/harness/main/bridge'
 
 /**
  * Everything the window may ask the harness to do.

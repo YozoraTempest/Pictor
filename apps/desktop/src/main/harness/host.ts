@@ -70,7 +70,7 @@ import type {
   PluginReport,
   PluginInstallSummary,
   SlotDescriptor,
-} from '../../shared/bridge.js'
+} from '@vulonlok/harness/main/bridge'
 import { HarnessChatBridge } from '@vulonlok/harness/main/harness-chat'
 import { shouldAdoptTitle } from '@vulonlok/harness-dsh'
 
