@@ -118,24 +118,18 @@ export function SkillsSection(): React.JSX.Element {
 
   return (
     <Section
-      // No heading: the extensions panel names this tab. The sentence stays because it
-      // is what a reader needs to know before the list makes sense.
+      // The toolbar says the count; everything else is the list. Two numbers for the
+      // same fact (a badge and a line) is one number too many.
       description={
-        libraryOnly
-          ? '没有打开的会话，所以这里只列出 Pictor 拥有和插件带来的技能；打开会话后还会包含文件与项目里的。'
-          : '一段按需加载的说明文档。模型用它自己的 skill 工具加载，你在输入框里打 / 直接调用。'
+        !libraryOnly && !canList
+          ? '这个内核不提供技能目录'
+          : libraryOnly
+            ? `${String(found)} 个技能 · 没有打开的会话`
+            : `${String(found)} 个技能 · ${String(enabled)} 个启用`
       }
       actions={
         <>
-          {loading ? (
-            <Spinner className="size-3.5" />
-          ) : (
-            <Badge tone="neutral">
-              {!libraryOnly && !canList
-                ? '内核不支持'
-                : `${String(enabled)} / ${String(found)} 启用`}
-            </Badge>
-          )}
+          {loading && <Spinner className="size-3.5" />}
           <Button
             size="icon"
             variant="ghost"

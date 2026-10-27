@@ -15,7 +15,6 @@ import {
   Switch,
 } from '../../components/ui/index.js'
 import { Section } from './Section.js'
-import { SettingRow } from './SettingRow.js'
 
 /**
  * What the agent can reach outside this app.
@@ -84,7 +83,13 @@ export function McpSection(): React.JSX.Element {
 
   return (
     <Section
-      description="让 agent 用上外部的工具：数据库、浏览器、内部接口。列表对两个内核都生效。"
+      description={
+        servers === null
+          ? '读取中'
+          : list.length === 0
+            ? '还没有服务器'
+            : `${String(list.length)} 个服务器 · ${String(list.filter((one) => one.enabled).length)} 个启用`
+      }
       actions={
         <Button
           variant="secondary"
@@ -118,8 +123,7 @@ export function McpSection(): React.JSX.Element {
 
       {servers !== null && list.length === 0 && (
         <p className="px-4 py-4 text-2xs leading-relaxed text-faint">
-          还没有配置服务器。添加一个 stdio 服务器（一个命令，例如 npx）或一个 HTTP
-          服务器（一个地址）。
+          一个 stdio 服务器是一个命令（例如 npx），一个 HTTP 服务器是一个地址。
         </p>
       )}
 
@@ -139,7 +143,7 @@ export function McpSection(): React.JSX.Element {
                 ? server.url
                 : [server.command, ...server.args].join(' ')}
             </p>
-            <p className="mt-1 text-2xs text-faint">{whereItApplies(server)}</p>
+            {server.enabled ? null : <Badge tone="neutral">已停用</Badge>}
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
@@ -162,16 +166,10 @@ export function McpSection(): React.JSX.Element {
         </div>
       ))}
 
-      <SettingRow
-        title="什么时候生效"
-        description="DSH 从 profile 补丁挂载服务器，改动需要重启运行时（有回合在跑时会等到它结束）。Pi 在每次起会话时读 mcp.json。"
-        control={null}
-      />
-      <SettingRow
-        title="Pi 用自己的配置时"
-        description="打开「使用我自己的 Pi 配置」后，Pi 读的是 ~/.pi/agent/mcp.json；这份列表只作用于 DSH。"
-        control={null}
-      />
+      <p className="border-t border-border px-4 py-2.5 text-2xs leading-relaxed text-faint">
+        改动 dsh 需重启运行时（有回合在跑时等它结束）；Pi 每次起会话时读。Pi
+        使用自己的配置时不读这份列表。
+      </p>
 
       {editing !== null && (
         <ServerDialog
@@ -187,13 +185,6 @@ export function McpSection(): React.JSX.Element {
       )}
     </Section>
   )
-}
-
-/** What the list does for one server, in this kernel's terms. */
-function whereItApplies(server: McpServerSpec): string {
-  if (!server.enabled) return '已停用：两个内核都不会加载'
-  const target = server.transport === 'http' ? server.url : server.command
-  return `工具会以 mcp__${server.name}__* 出现在对话里（${target}）`
 }
 
 function blankServer(): McpServerSpec {

@@ -59,11 +59,8 @@ export function ExtensionsView(): React.JSX.Element {
   return (
     <section className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex max-w-3xl flex-col gap-4 px-8 py-7">
-        <header>
+        <header className="flex items-baseline">
           <h1 className="text-lg font-semibold">拓展</h1>
-          <p className="mt-0.5 text-xs text-faint">
-            给应用加东西的地方：插件、技能、外部工具服务器。装上就生效，不用重启。
-          </p>
         </header>
 
         {/* One level of navigation, drawn as tabs rather than a list: three entries do

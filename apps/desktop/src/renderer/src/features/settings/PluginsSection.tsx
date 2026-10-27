@@ -31,6 +31,65 @@ const SERVICE_LABEL: Record<string, string> = {
   'pictor.settings': '设置读写（含它自己的键）',
 }
 
+/**
+ * Where a plugin came from, what it adds, and — folded — what it can reach.
+ *
+ * Three facts on one line. They used to be three paragraphs under every row, which made
+ * a page of six plugins read like six explanations of the plugin system.
+ */
+function PluginMeta({ plugin }: { plugin: PluginOverview }): React.JSX.Element {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-2xs text-faint">
+      <span>{plugin.source === 'builtin' ? '随应用提供' : `已安装 · ${plugin.source}`}</span>
+
+      {plugin.contributions.length > 0 && (
+        <span>
+          {plugin.contributions
+            .map((entry) => `${POINT_LABEL[entry.point] ?? entry.point} ${String(entry.count)}`)
+            .join(' · ')}
+        </span>
+      )}
+
+      {plugin.kernels.map((kernel) => (
+        <span key={kernel.id} className="flex items-center gap-2">
+          内核 {kernel.label}
+          {kernel.available ? null : '（未安装）'}
+          <ServiceCount services={kernel.services} />
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * How much of the host a kernel can reach, closed by default.
+ *
+ * The list itself has to stay somewhere — it is what a person consents to when they
+ * install — but a line of eight service names under every row is a wall, not a fact.
+ */
+function ServiceCount({ services }: { services: readonly string[] }): React.JSX.Element {
+  if (services.length === 0) return <span>不读取宿主服务</span>
+
+  return (
+    <details className="inline-block">
+      <summary className="cursor-pointer select-none hover:text-muted">
+        可读 {String(services.length)} 项
+      </summary>
+      <ul className="mt-1 flex flex-col gap-0.5 border-l border-border pl-2">
+        {services.map((name) => (
+          <li key={name}>{serviceLabel(name)}</li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
+/** `~/config/pictor/plugins` reads better than a home directory spelled out. */
+function shortPath(path: string): string {
+  const home = path.match(/^\/(?:home|Users)\/[^/]+\//)
+  return home === null ? path : `~/${path.slice(home[0].length)}`
+}
+
 function serviceLabel(name: string): string {
   return SERVICE_LABEL[name] ?? name
 }
@@ -164,7 +223,13 @@ export function PluginsSection(): React.JSX.Element {
     <Section
       // The rows are cards themselves, so this section draws no card of its own.
       bare
-      description="插件可以给应用加面板、工具守卫、技能，或者一整个内核。装完不用重启。"
+      description={
+        overview === null
+          ? '读取中'
+          : all.length === 0
+            ? '还没有插件'
+            : `${String(all.length)} 个插件 · ${String(enabled)} 个启用`
+      }
       actions={
         <>
           <Button size="sm" variant="secondary" onClick={() => setPending({ kind: 'folder' })}>
@@ -209,37 +274,15 @@ export function PluginsSection(): React.JSX.Element {
                 </span>
               </div>
 
-              <p className="mt-1 text-2xs text-faint">
-                {plugin.source === 'builtin' ? '随应用提供' : `已安装：${plugin.source}`}
-              </p>
+              {/* One line of metadata instead of four paragraphs: where it came from,
+                  what it adds, and — folded — what it can reach. */}
+              <PluginMeta plugin={plugin} />
 
               {plugin.failure !== null && (
                 <p className="mt-1.5 text-2xs leading-relaxed text-danger" role="alert">
                   {plugin.failure}
                 </p>
               )}
-
-              {plugin.contributions.length > 0 && (
-                <p className="mt-1.5 text-2xs leading-relaxed text-muted">
-                  贡献：
-                  {plugin.contributions
-                    .map(
-                      (entry) =>
-                        `${POINT_LABEL[entry.point] ?? entry.point} ${String(entry.count)}`,
-                    )
-                    .join(' · ')}
-                </p>
-              )}
-
-              {plugin.kernels.map((kernel) => (
-                <p key={kernel.id} className="mt-1 text-2xs leading-relaxed text-muted">
-                  内核 {kernel.label}
-                  {kernel.available ? '' : '（未安装）'} ·{' '}
-                  {kernel.services.length === 0
-                    ? '不读取任何宿主服务'
-                    : `可以读取：${kernel.services.map(serviceLabel).join('、')}`}
-                </p>
-              ))}
 
               {plugin.source !== 'builtin' && (
                 <div className="mt-2 flex justify-end">
@@ -291,17 +334,15 @@ export function PluginsSection(): React.JSX.Element {
                   </span>
                 </div>
 
-                <p className="mt-1 text-2xs text-faint">
-                  随应用编译，不可卸载；关掉就不再用它跑会话
+                {/* The group heading already says 「随应用编译」; the row only adds what
+                    is specific to it. */}
+                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-2xs text-faint">
+                  {kernel.enabled ? (
+                    <ServiceCount services={kernel.services} />
+                  ) : (
+                    <span>已关闭</span>
+                  )}
                 </p>
-
-                {kernel.enabled && (
-                  <p className="mt-1 text-2xs leading-relaxed text-muted">
-                    {kernel.services.length === 0
-                      ? '不读取任何宿主服务'
-                      : `内核 ${kernel.id} · 可以读取：${kernel.services.map(serviceLabel).join('、')}`}
-                  </p>
-                )}
               </li>
             ))}
           </ul>
@@ -315,17 +356,9 @@ export function PluginsSection(): React.JSX.Element {
       )}
 
       <p className="text-2xs leading-relaxed text-faint">
-        {home === null
-          ? '插件装在应用数据目录下的 plugins/ 里。'
-          : `插件装在 ${home}/plugins/ 里：目录安装整份复制，包安装由 npm 装进它的 node_modules。`}
-        插件在主进程里运行，能读写这台机器上的文件与网络；插件贡献的内核还会拿到含密钥的模型服务配置。
+        主进程内运行，可读写本机文件与网络；带内核的还会拿到含密钥的模型服务。
+        {home !== null && <span className="ml-1 font-mono">{shortPath(`${home}/plugins`)}</span>}
       </p>
-
-      {all.length > 0 && (
-        <p className="text-2xs text-faint">
-          {String(enabled)} / {String(all.length)} 已启用
-        </p>
-      )}
 
       {notice !== null && <p className="text-2xs leading-relaxed text-muted">{notice}</p>}
 
