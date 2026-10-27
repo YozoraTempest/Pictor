@@ -208,6 +208,7 @@ export class KernelRouter implements KernelDriver {
     return [...this.#options.drivers.entries()].map(([id, driver]) => ({
       id,
       label: driver.label,
+      icon: typeof driver.icon === 'string' && driver.icon.length > 0 ? driver.icon : null,
       default: id === this.#fallback?.id,
       available: driver.status().binary !== null,
       // What this kernel can actually do travels with it: the window hides the

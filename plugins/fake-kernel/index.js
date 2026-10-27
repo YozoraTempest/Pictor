@@ -43,6 +43,8 @@ export function apply(ctx) {
   ctx.provide('kernel.fake', {
     id: 'fake',
     label: '回声（示例）',
+    // A kernel names its own icon: 回声 is not 回声-shaped, so it takes the radio.
+    icon: 'radio',
     capabilities: {
       permission: false,
       approval: false,

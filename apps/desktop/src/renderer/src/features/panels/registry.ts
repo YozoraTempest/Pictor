@@ -1,12 +1,8 @@
-import {
-  Globe,
-  MessagesSquare,
-  Plus,
-  Puzzle,
-  Settings2,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react'
+import { Plus, Settings2, type LucideIcon } from 'lucide-react'
+
+import { iconFor } from '../../lib/icons.js'
+
+export { iconFor }
 
 import type { PanelDescriptor } from '../../../../shared/bridge.js'
 
@@ -26,20 +22,6 @@ export interface PanelEntry {
 }
 
 /** Icon names a plugin may use; anything else falls back to a neutral glyph. */
-const ICONS: Record<string, LucideIcon> = {
-  globe: Globe,
-  'messages-square': MessagesSquare,
-  plus: Plus,
-  puzzle: Puzzle,
-  settings: Settings2,
-  wrench: Wrench,
-}
-
-export function iconFor(name: string | undefined): LucideIcon {
-  if (name === undefined) return Wrench
-  return ICONS[name] ?? Wrench
-}
-
 /**
  * Built-in panels are declared here with the same descriptor shape plugins use;
  * the only difference is that their `run` is a local closure instead of a

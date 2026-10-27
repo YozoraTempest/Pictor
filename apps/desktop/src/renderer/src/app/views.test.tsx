@@ -19,10 +19,11 @@ const { DEFAULT_VIEW, findView, viewsFor } = await import('./views.js')
 const { kernelOfView, kernelViewId } = await import('./kernel-scope.js')
 
 /** What `kernels.list()` reports, near enough for the rail to be built. */
-function kernel(id: string, label = id): KernelInfo {
+function kernel(id: string, label = id, icon: string | null = null): KernelInfo {
   return {
     id,
     label,
+    icon,
     default: false,
     available: true,
     capabilities: {
@@ -105,6 +106,23 @@ describe('view registry', () => {
     expect(page?.label).toBe('回声（示例）')
     expect(kernelOfView(page?.id ?? '')).toBe('fake')
     expect(installed.some((entry) => entry.id === kernelViewId('dsh'))).toBe(false)
+  })
+
+  it('takes the rail icon from the kernel that names it', async () => {
+    const { Radio } = await import('lucide-react')
+    // The rail used to keep a table of icons by kernel id, so an installed kernel could
+    // only borrow a generic one. Now the kernel says which icon it wants and the window
+    // maps the name — the same vocabulary plugin panels use.
+    const named = viewsFor([kernel('echo', '回声', 'radio')]).find(
+      (entry) => entry.id === 'kernel:echo',
+    )
+    expect(named?.icon).toBe(Radio)
+
+    // A name this build does not know still produces a button.
+    const unknown = viewsFor([kernel('odd', '奇怪', 'not-a-real-icon')]).find(
+      (entry) => entry.id === 'kernel:odd',
+    )
+    expect(unknown?.icon).toBeDefined()
   })
 
   it('scopes exactly the kernel pages to their kernel', () => {

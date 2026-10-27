@@ -7,6 +7,7 @@ function kernel(id: string, overrides: Partial<KernelInfo['capabilities']> = {})
   return {
     id,
     label: id,
+    icon: null,
     default: id === 'dsh',
     available: true,
     capabilities: {

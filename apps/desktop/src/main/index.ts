@@ -1729,6 +1729,10 @@ function registerIpc(workspace: Workspace): void {
       // The default may have just been turned off, or a newly mounted one may be the
       // only kernel left.
       workspace.harness.refreshDefault()
+      // Main has unmounted the kernel; the window still draws the rail from its own
+      // list. Without this the page stayed until something else refreshed — which is
+      // exactly what "turned it off and it is still there" feels like.
+      announceWorkspaceChanged()
       return enabled
     },
   )
@@ -1738,6 +1742,9 @@ function registerIpc(workspace: Workspace): void {
     if (typeof id !== 'string') throw new Error('id must be a string')
     if (!workspace.harness.setDefault(id)) return false
     await workspace.writeSetting(DefaultKernelKey, id)
+    // The composer names the kernel new conversations will use; moving the default has
+    // to reach it without a reload.
+    announceWorkspaceChanged()
     return true
   })
 

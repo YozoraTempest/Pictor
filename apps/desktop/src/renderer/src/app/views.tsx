@@ -1,9 +1,10 @@
-import { Blocks, Boxes, House, Settings2, Terminal, type LucideIcon } from 'lucide-react'
+import { Blocks, Boxes, House, Settings2, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { KernelInfo } from '../../../shared/bridge.js'
 import { kernelViewId } from './kernel-scope.js'
 
 import { ExtensionsView } from '../features/extensions/ExtensionsView.js'
+import { iconFor } from '../lib/icons.js'
 import { SettingsView } from '../features/settings/SettingsView.js'
 import {
   WorkspaceLeading,
@@ -114,17 +115,6 @@ const SETTINGS_VIEW: AppViewDescriptor = {
 }
 
 /**
- * Icons for the kernels this build ships, by id.
- *
- * An installed kernel has no such entry and gets the generic one: the rail is drawn
- * from what is mounted, and a kernel the app has never heard of must still appear.
- */
-const KERNEL_ICONS: Readonly<Record<string, LucideIcon>> = {
-  dsh: Boxes,
-  pi: Terminal,
-}
-
-/**
  * Every destination, given what this machine can run.
  *
  * Home first, one page per mounted kernel after it, settings pinned to the bottom.
@@ -136,7 +126,9 @@ export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
     id: kernelViewId(kernel.id),
     label: kernel.label,
     description: `${kernel.label} 的会话`,
-    icon: KERNEL_ICONS[kernel.id] ?? Boxes,
+    // The kernel names its icon; the window owns the vocabulary. An installed kernel
+    // the build has never heard of still gets a page, a generic icon and a number.
+    icon: iconFor(kernel.icon, Boxes),
     group: 'primary',
     order: index + 1,
     render: () => <WorkspaceView kernelId={kernel.id} />,

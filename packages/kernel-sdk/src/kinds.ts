@@ -109,6 +109,13 @@ export type KernelModelSource = 'pictor' | 'kernel' | null
 export interface KernelInfo {
   id: string
   label: string
+  /**
+   * Icon name the kernel asked for, or null when it did not say.
+   *
+   * A name, not a component: the window owns the vocabulary, so a kernel that names an
+   * icon this build does not know gets the generic one instead of a blank rail button.
+   */
+  icon: string | null
   default: boolean
   available: boolean
   capabilities: KernelCapabilities

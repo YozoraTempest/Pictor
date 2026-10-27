@@ -19,6 +19,7 @@ function kernel(jobs: boolean): KernelInfo {
   return {
     id: 'dsh',
     label: 'DeepSeek Harness',
+    icon: 'boxes',
     default: true,
     available: true,
     capabilities: {

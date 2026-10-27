@@ -31,6 +31,7 @@ function driver(
   return {
     id,
     label: id,
+    icon: `${id}-icon`,
     seen,
     capabilities: {
       permission: true,
@@ -165,6 +166,8 @@ describe('KernelRouter', () => {
       {
         id: 'dsh',
         label: 'dsh',
+        // The kernel's own icon name, carried through so the rail needs no table.
+        icon: 'dsh-icon',
         default: true,
         available: true,
         // What a kernel declares travels with it, so the window can hide a
@@ -177,6 +180,7 @@ describe('KernelRouter', () => {
       {
         id: 'other',
         label: 'other',
+        icon: 'other-icon',
         default: false,
         available: false,
         capabilities: everything,

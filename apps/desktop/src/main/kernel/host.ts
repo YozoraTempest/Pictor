@@ -65,6 +65,8 @@ export interface KernelPluginReport {
   /** Kernel id once mounted; the directory name or `builtin:<n>` otherwise. */
   id: string
   label: string
+  /** Icon name the kernel asked for, so the rail does not have to know its id. */
+  icon: string | null
   /** `builtin`, or the directory under the profile that holds it. */
   source: string
   /** Host services the plugin declared with `inject`. */
@@ -89,7 +91,7 @@ export interface KernelHost {
   /** Mount one installed plugin's kernel half without restarting the app. */
   mountInstalled(name: string): Promise<KernelMountResult>
   /** The kernels compiled into the app, and whether each is mounted right now. */
-  builtins(): Array<{ id: string; label: string; mounted: boolean }>
+  builtins(): Array<{ id: string; label: string; icon: string | null; mounted: boolean }>
   /**
    * Mount one built-in kernel that a person turned back on.
    *
@@ -216,6 +218,7 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
       const reports: KernelPluginReport[] = [...drivers].map(([id, driver]) => ({
         id,
         label: driver.label,
+        icon: typeof driver.icon === 'string' && driver.icon.length > 0 ? driver.icon : null,
         source: mounted.get(id)?.source ?? 'builtin',
         services: mounted.get(id)?.services ?? [],
         available: isAvailable(driver),
@@ -225,6 +228,7 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
         reports.push({
           id: failure.source,
           label: failure.source,
+          icon: null,
           source: failure.source,
           services: [],
           available: false,
@@ -233,10 +237,11 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
       }
       return reports
     },
-    builtins(): Array<{ id: string; label: string; mounted: boolean }> {
+    builtins(): Array<{ id: string; label: string; icon: string | null; mounted: boolean }> {
       return [...builtinById.values()].map((entry) => ({
         id: entry.id,
         label: entry.label,
+        icon: drivers.get(entry.id)?.icon ?? null,
         mounted: drivers.has(entry.id),
       }))
     },

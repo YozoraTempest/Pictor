@@ -48,6 +48,7 @@ function kernel(id: string): KernelInfo {
   return {
     id,
     label: id,
+    icon: null,
     default: false,
     available: true,
     capabilities: {

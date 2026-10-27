@@ -45,6 +45,14 @@ export interface KernelDriver {
   /** Human name for the picker; the kernel knows its own best. */
   readonly label: string
   /**
+   * Lucide icon name for the rail, e.g. `terminal`.
+   *
+   * The window maps the name to a component, so a kernel this build has never heard of
+   * can still name its own icon instead of borrowing a generic one. Unknown names fall
+   * back to that generic icon rather than drawing nothing.
+   */
+  readonly icon?: string
+  /**
    * What this kernel can actually do.
    *
    * The window draws a control only where the kernel behind the conversation says

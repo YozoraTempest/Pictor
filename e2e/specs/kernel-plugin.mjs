@@ -23,6 +23,9 @@ export default {
     assert.equal(fake.label, '回声（示例）', 'the kernel names itself')
     assert.equal(fake.default, false, 'dsh stays the default kernel')
     assert.equal(fake.available, true, 'an installed kernel reports itself available')
+    // The icon is the kernel's own declaration, not a table keyed by id: the rail maps
+    // the name, so a kernel the app has never seen can still look like itself.
+    assert.equal(fake.icon, 'radio', 'a kernel names its own icon')
     // Nothing it declares it cannot honour: the host refuses a kernel that claims a
     // capability with no method behind it, so reaching here means the check passed.
     assert.deepEqual(fake.capabilities, {

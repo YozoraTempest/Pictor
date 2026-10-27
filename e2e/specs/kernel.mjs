@@ -147,6 +147,9 @@ export default {
     // the rail from `kernels.list()`.
     const rail = page.getByRole('navigation', { name: '主导航' })
     const listed = await page.evaluate(() => window.pictor.listKernels())
+    for (const kernel of listed) {
+      assert.equal(typeof kernel.icon, 'string', `${kernel.id} 没有说明自己的图标`)
+    }
     assert.deepEqual(
       await rail
         .locator('button')

@@ -254,6 +254,13 @@ installing one adds a page, both without an edit; a kernel the build has never h
 still gets a page, an icon it borrows and a number (`Ctrl+2…`), which is what makes
 "adding a kernel is adding a directory" true in the window and not only in the container.
 
+A kernel page is derived, but what the page _looks like_ is the kernel's own answer:
+`KernelDriver.icon` is a name from the window's icon vocabulary (`lib/icons.ts`, the same
+table plugin panels use), carried through `kernels.list()` into `viewsFor()`. This used to
+be a table in `views.tsx` keyed by kernel id, which meant an installed kernel could only
+borrow a generic icon — and the rail knew something about DSH and Pi that a plugin could
+never say about itself.
+
 **拓展** is one page with three tabs (`features/extensions/ExtensionsView.tsx`): plugins,
 skills, MCP. They are not settings — a plugin is something you install, not a preference
 you set — and they are not three pages either, because they answer one question. The tabs

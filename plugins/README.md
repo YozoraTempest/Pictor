@@ -148,7 +148,12 @@ export class MyKernel extends Service {
   constructor(ctx) {
     super(ctx, 'kernel.mine')
   }
-  // …the KernelDriver contract: start, prompt, history, events, settings, diagnosis
+  readonly id = 'mine'
+  readonly label = '我的内核'
+  // A Lucide icon name for the rail; the window owns the vocabulary, and an unknown
+  // name falls back to the generic icon instead of a blank button.
+  readonly icon = 'radio'
+  // …the rest of the KernelDriver contract: start, prompt, history, events, settings
 }
 ```
 
