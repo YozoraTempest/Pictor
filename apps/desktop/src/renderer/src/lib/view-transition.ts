@@ -15,7 +15,13 @@ export function withViewTransition(update: () => void): void {
     return
   }
 
-  document.startViewTransition(() => {
+  const transition = document.startViewTransition(() => {
     flushSync(update)
   })
+  // A transition the browser abandons — a second view change arriving before the first
+  // cross-fade finished — rejects both of its promises. Nothing was lost: `flushSync` has
+  // already put the update in the DOM, and the only casualty is the animation. Caught here
+  // so a cross-fade that did not run is not reported as an application error.
+  transition.finished.catch(() => undefined)
+  transition.ready.catch(() => undefined)
 }
