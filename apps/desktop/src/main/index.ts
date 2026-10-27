@@ -68,8 +68,7 @@ import type {
   PluginInstallSummary,
   SlotDescriptor,
 } from '../shared/bridge.js'
-import { HarnessChatBridge } from './harness-chat.js'
-import { shouldAdoptTitle } from '@pictor/harness'
+import { HarnessChatBridge, shouldAdoptTitle } from '@pictor/harness'
 
 import type { KernelDriver } from '@pictor/kernel-sdk'
 import { startKernelHost, type KernelHost } from './kernel/host.js'

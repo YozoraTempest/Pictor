@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { jobOf, sessionStates, subagentOf, todosOf } from './harness-session-state.js'
+import { jobOf, sessionStates, subagentOf, todosOf } from './session-state.js'
 
 /**
  * These three states are what a conversation *is* right now, so the risk is the same
