@@ -78,6 +78,25 @@ The `pictor` block in `package.json` stays optional, and exists only so the app 
 describe a plugin before starting it: a stable id, an engine range to check, and the
 points it claims. A package with neither that block nor a `main` is not a plugin.
 
+### Hot reload, and why it is not dsh's HMR
+
+Editing a plugin reloads it (`packages/plugin-host/src/watcher.ts`): the directory is
+watched, a settled change unloads the plugin's fiber — which undoes every contribution
+cordis registered for it — and the entry is imported again. Since Node evaluates a module
+once per URL, the second import carries a version query string; that is the only way to
+read the edited file without restarting the process.
+
+`@deepseek-ai/cordis-plugin-hmr`, which dsh uses, is not used here, and the reason is
+mechanical rather than aesthetic: it requires `--expose-internals` to reach Node's module
+loader. Electron rejects that flag in `NODE_OPTIONS` (`--expose-internals is not allowed
+in NODE_OPTIONS`) and ignores it on the command line (`process.execArgv` stays empty and
+`require('internal/…')` still throws), so the package cannot construct itself in this
+process at all. Measured, not assumed.
+
+What that costs is stated where people will read it: every reload leaves the previous
+module in memory, and anything started outside `ctx.effect` survives the unload. The
+watcher is therefore a switch, and turning it off is a restart away from clean.
+
 ### The plugin tree and the kernel tree
 
 Plugins and kernels share **one** cordis `Context` (`PluginRuntime.ctx`, handed to

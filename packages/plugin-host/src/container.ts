@@ -71,6 +71,21 @@ export class PluginContainer {
   readonly #warn: (message: string) => void
   readonly #withOwner: (<T>(id: string, work: () => T) => T) | null
   readonly #mounted = new Map<string, { plugin: DiscoveredPlugin; fiber: Fiber }>()
+  /**
+   * How many times each plugin's entry has been loaded.
+   *
+   * Node evaluates a module once per URL, so re-importing the same path hands back the
+   * module it already has — the code people just edited would be ignored. Bumping the
+   * query string is the one way to ask for the file on disk without reaching into
+   * Node's cache, which is what dsh's own HMR does and what Electron cannot: it needs
+   * `--expose-internals`, and that flag is refused in `NODE_OPTIONS` and swallowed on
+   * the command line.
+   *
+   * First mount is version 0 — no query string — so a normal start leaves no extra
+   * module behind. Only a reload pays for the new module, and it is the price of not
+   * restarting the app.
+   */
+  readonly #generations = new Map<string, number>()
   readonly #failures: PluginFailure[] = []
 
   constructor(options: PluginContainerOptions) {
@@ -103,9 +118,15 @@ export class PluginContainer {
     if (main === undefined) throw new Error(`${plugin.id} 没有可挂载的入口`)
 
     const entry = join(plugin.root, main)
+    const generation = this.#generations.get(plugin.id) ?? 0
+    const url = pathToFileURL(entry).href
     let loaded: ModuleShape
     try {
-      loaded = (await import(pathToFileURL(entry).href)) as ModuleShape
+      // The query string is what makes a second load read the file again; see
+      // `#generations`.
+      loaded = (await import(
+        generation === 0 ? url : `${url}?v=${String(generation)}`
+      )) as ModuleShape
     } catch (error) {
       throw this.#record(plugin, `导入失败：${messageOf(error)}`)
     }
@@ -129,6 +150,24 @@ export class PluginContainer {
     if (mounted === undefined) return
     this.#mounted.delete(id)
     await mounted.fiber.dispose()
+  }
+
+  /**
+   * Unloads and mounts one plugin again, reading its files from disk.
+   *
+   * This is what a file change leads to. The order matters: the fiber goes first, so
+   * every contribution the old code registered is gone before the new code runs —
+   * otherwise two versions would register the same ids and the second would be refused
+   * as a duplicate.
+   */
+  async reload(id: string): Promise<MountedPlugin> {
+    const mounted = this.#mounted.get(id)
+    if (mounted === undefined) throw new Error(`没有挂载 ${id}`)
+
+    const plugin = mounted.plugin
+    await this.unmount(id)
+    this.#generations.set(id, (this.#generations.get(id) ?? 0) + 1)
+    return this.mount(plugin)
   }
 
   /** Everything mounted or refused right now. */

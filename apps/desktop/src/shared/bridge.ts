@@ -299,6 +299,8 @@ export interface PictorBridge {
   listPlugins(): Promise<PluginRecord[]>
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginRecord>
   pluginReport(): Promise<PluginReport>
+  /** Whether editing a plugin's files reloads it, or needs a restart. */
+  pluginsHotReload(): Promise<boolean>
 
   harnessStatus(): Promise<HarnessStatus>
   harnessStart(cwd: string): Promise<HarnessStatus>

@@ -293,11 +293,23 @@ async function startWorkspace(): Promise<Workspace | null> {
    * wait for `kernel.dsh`, a kernel can read `pictor.panels`, and neither has to be told
    * about the other's registry.
    */
+  // Read before the runtime exists: the watcher is created in its constructor, and a
+  // preference read afterwards could not take it back without a restart.
+  const hotReloadStored = (await running.client.listSettings())['plugins.hotReload']
   const plugins = new PluginRuntime({
     userData,
     // A view's own scratch space, beside the plugin's other state.
     dataDirectory: (pluginId) => join(userData, 'plugin-data', pluginId),
     warn: (message) => console.warn(`[plugin] ${message}`),
+    // Editing a plugin is the normal way to work on one, so reloading is on by default.
+    // It costs memory — every reload leaves the previous module behind — and the
+    // settings page says so. The stored choice is read further down, once the settings
+    // snapshot exists, and applied before any plugin is mounted.
+    hotReload: hotReloadStored !== false,
+    onReload: (id) => {
+      console.info(`[plugin] reloaded ${id}`)
+      announceWorkspaceChanged()
+    },
   })
 
   for (const plugin of resolution.ordered) {
@@ -621,6 +633,7 @@ async function startWorkspace(): Promise<Workspace | null> {
       if (disposed) return
       disposed = true
       await kernels.dispose()
+      plugins.dispose()
       await plugins.ctx.fiber.dispose()
       running.dispose()
       lock.release()
@@ -1195,6 +1208,16 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:plugins.report', async (): Promise<PluginReport> => {
     return workspace.plugins.report()
+  })
+
+  /**
+   * Whether edits are picked up without a restart.
+   *
+   * The answer is what the running runtime actually does, not what the setting says:
+   * turning it off needs a restart because the watchers belong to the process.
+   */
+  ipcMain.handle('pictor:plugins.hotReload', async (): Promise<boolean> => {
+    return workspace.plugins.hotReload
   })
 
   ipcMain.handle('pictor:model.get', async () => {

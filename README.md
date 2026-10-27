@@ -87,8 +87,12 @@ plugins/               Bundled plugins, a sample kernel plugin, and how to write
 - Plugins are discovered from `plugins/*`, validated against the SDK manifest,
   resolved with SemVer, activated in dependency order and disposed in reverse.
   A plugin that fails to activate is reported and does not block the others.
-  What a plugin contributes is re-derived whenever the set changes, so installing,
-  removing or switching one off is live: no restart, and the switch means what it says.
+  A plugin is a cordis plugin — `export const inject` plus `export function apply` — so
+  the same package installs into Pictor and into dsh, and one that injects a service this
+  host lacks stays mounted and waiting rather than being called broken. Installing,
+  removing, switching off and **editing** a plugin are all live: saving a file reloads it.
+  The one cost of the last is stated in 拓展 › 插件: a reload leaves the old module in
+  memory, so a restart is still the only clean slate.
 - The renderer only sees the narrow `window.pictor` bridge; no Node or Electron
   object crosses the context bridge, and the window runs with sandbox, context
   isolation, no Node integration and a restrictive CSP.

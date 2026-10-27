@@ -230,6 +230,26 @@ One consequence worth knowing: a conversation whose kernel half you switched off
 that kernel as missing until you switch it back. That is the same answer an uninstall
 gives, and the honest one — the log is still there, the runtime is not.
 
+## Editing without a restart
+
+The app watches each plugin's directory. Save a file and that plugin is unloaded and
+mounted again — its contributions disappear and the new code registers its own, so the
+panel you are looking at is the code you just wrote.
+
+Two things about how this works are worth knowing, because both are limits:
+
+- **It drops and re-mounts; it does not swap modules.** Node evaluates a module once per
+  URL, so the reload imports the file under a new URL (`?v=1`, `?v=2`, …). The previous
+  module stays in memory. Anything the old code started that was not registered through
+  `ctx.effect` keeps running. A restart is still the only clean slate.
+- **dsh's own HMR is not used.** `@deepseek-ai/cordis-plugin-hmr` needs
+  `--expose-internals` to reach Node's module loader; Electron refuses that flag in
+  `NODE_OPTIONS` and swallows it on the command line, so the package cannot start here.
+  What is left is the part that does not need Node internals.
+
+Turn it off in 拓展 › 插件 if you would rather have a restart-per-edit model. The switch
+lands on the next launch, because the watchers belong to the running process.
+
 ## Local development
 
 Point the app at an unpacked directory by copying it in:

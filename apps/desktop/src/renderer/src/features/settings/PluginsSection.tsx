@@ -7,6 +7,7 @@ import { Input } from '../../components/ui/Input.js'
 import { Switch } from '../../components/ui/Switch.js'
 import { cn } from '../../lib/cn.js'
 import { Section } from './Section.js'
+import { SettingRow } from './SettingRow.js'
 
 /** Contribution points, in the words the page uses for them. */
 const POINT_LABEL: Record<string, string> = {
@@ -117,6 +118,7 @@ export function PluginsSection(): React.JSX.Element {
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
   const [home, setHome] = useState<string | null>(null)
+  const [hotReload, setHotReload] = useState<boolean | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -133,6 +135,10 @@ export function PluginsSection(): React.JSX.Element {
 
   useEffect(() => {
     void load()
+    void window.pictor
+      .pluginsHotReload()
+      .then(setHotReload)
+      .catch(() => undefined)
     void window.pictor
       .getAppInfo()
       .then((info) => {
@@ -166,6 +172,22 @@ export function PluginsSection(): React.JSX.Element {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Turns file watching on or off.
+   *
+   * The watchers belong to the running process, so the new value lands on the next
+   * launch; the row says so instead of pretending it already did.
+   */
+  async function toggleHotReload(next: boolean): Promise<void> {
+    setError(null)
+    try {
+      await window.pictor.putSetting('plugins.hotReload', next)
+      setNotice(next ? '已开启热重载，下次启动生效。' : '已关闭热重载，下次启动生效。')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
     }
   }
 
@@ -354,6 +376,25 @@ export function PluginsSection(): React.JSX.Element {
           未挂载的插件不会出现在首页的内核选择里；修好它再重启即可，其余插件不受影响。
         </p>
       )}
+
+      <SettingRow
+        title="编辑后自动重载"
+        description={
+          hotReload === null
+            ? '读取中'
+            : hotReload
+              ? '插件文件一改就重新挂载。代价是旧模块留在内存里，改动要重启才彻底清干净。'
+              : '关掉了：改插件要重启应用。'
+        }
+        control={
+          <Switch
+            label="切换热重载"
+            checked={hotReload ?? false}
+            disabled={hotReload === null}
+            onChange={(next) => void toggleHotReload(next)}
+          />
+        }
+      />
 
       <p className="text-2xs leading-relaxed text-faint">
         主进程内运行，可读写本机文件与网络；带内核的还会拿到含密钥的模型服务。

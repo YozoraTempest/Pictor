@@ -66,6 +66,7 @@ const bridge: PictorBridge = {
   listPlugins: () => invoke('pictor:plugins.list'),
   setPluginEnabled: (id, enabled) => invoke('pictor:plugins.setEnabled', id, enabled),
   pluginReport: () => invoke('pictor:plugins.report'),
+  pluginsHotReload: () => invoke('pictor:plugins.hotReload'),
 
   harnessStatus: () => invoke('pictor:harness.status'),
   harnessStart: (cwd) => invoke('pictor:harness.start', cwd),

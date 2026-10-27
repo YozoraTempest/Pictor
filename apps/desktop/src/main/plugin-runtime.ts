@@ -1,7 +1,12 @@
 import { join } from 'node:path'
 
 import { Context } from '@deepseek-ai/cordis'
-import { PluginContainer, installedPackageRoots, type MountedPlugin } from '@pictor/plugin-host'
+import {
+  PluginContainer,
+  PluginWatcher,
+  installedPackageRoots,
+  type MountedPlugin,
+} from '@pictor/plugin-host'
 import {
   ContributionHost,
   type PanelContribution,
@@ -22,6 +27,15 @@ export interface PluginRuntimeOptions {
   dataDirectory?: (pluginId: string) => string
   /** Told about every plugin that could not start, and every refused contribution. */
   warn?: (message: string) => void
+  /**
+   * Reload a plugin when its files change.
+   *
+   * Off means an edit needs a restart; on means the plugin is unloaded and mounted
+   * again, which is what this app can do without touching Node's module cache.
+   */
+  hotReload?: boolean
+  /** Told after a plugin was reloaded, so the window can fetch its panels again. */
+  onReload?: (id: string) => void
   /**
    * Writes plugin skills to disk.
    *
@@ -48,6 +62,7 @@ export class PluginRuntime {
   readonly ctx: Context
   readonly contributions: ContributionHost
   readonly #container: PluginContainer
+  readonly #watcher: PluginWatcher | null
   readonly #options: PluginRuntimeOptions
   /** Plugins turned off by the person; they are discovered but not mounted. */
   readonly #disabled = new Set<string>()
@@ -69,6 +84,24 @@ export class PluginRuntime {
 
     // One service, so a plugin that wants a panel and a tool view declares one need.
     this.ctx.provide('pictor', this.contributions.service())
+
+    this.#watcher =
+      options.hotReload === false
+        ? null
+        : new PluginWatcher({
+            reload: async (id) => {
+              await this.#container.reload(id)
+              // Skills come from the file that just ran, so they follow it.
+              this.syncSkills()
+              this.#options.onReload?.(id)
+            },
+            warn: (message) => this.#warn(message),
+          })
+  }
+
+  /** Whether edits are being picked up without a restart. */
+  get hotReload(): boolean {
+    return this.#watcher !== null
   }
 
   /** Mounts everything that resolved, in dependency order; failures stay on the record. */
@@ -84,7 +117,8 @@ export class PluginRuntime {
   async add(plugin: DiscoveredPlugin): Promise<void> {
     this.#disabled.delete(plugin.id)
     try {
-      await this.#container.mount(plugin)
+      const mounted = await this.#container.mount(plugin)
+      this.#watcher?.watch(plugin.id, mounted.root)
     } catch (error) {
       this.#warn(messageOf(error))
     }
@@ -94,8 +128,14 @@ export class PluginRuntime {
   /** Unmounts one plugin: cordis runs its disposers, so its contributions go with it. */
   async remove(id: string): Promise<void> {
     this.#disabled.add(id)
+    this.#watcher?.unwatch(id)
     await this.#container.unmount(id)
     this.syncSkills()
+  }
+
+  /** Stops watching everything; called when the app closes. */
+  dispose(): void {
+    this.#watcher?.close()
   }
 
   /** Whether the person has this plugin on. */
