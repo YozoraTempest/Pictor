@@ -19,6 +19,8 @@
     "@vulonlok/host-client": "workspace:*",
     "@vulonlok/model-config": "workspace:*",
     "@vulonlok/plugin-sdk": "workspace:*",
-    "@deepseek-ai/cordis": "~4.0.5"
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@vulonlok/plugin-host": "workspace:*",
+    "@vulonlok/application": "workspace:*"
   }
 }

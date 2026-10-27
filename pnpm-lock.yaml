@@ -170,6 +170,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: ~4.0.5
         version: 4.0.5(@deepseek-ai/cordis-plugin-loader@1.0.6)
+      '@vulonlok/application':
+        specifier: workspace:*
+        version: link:../application
       '@vulonlok/harness-dsh':
         specifier: workspace:*
         version: link:../harness-dsh
@@ -185,6 +188,9 @@ importers:
       '@vulonlok/model-config':
         specifier: workspace:*
         version: link:../model-config
+      '@vulonlok/plugin-host':
+        specifier: workspace:*
+        version: link:../plugin-host
       '@vulonlok/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk

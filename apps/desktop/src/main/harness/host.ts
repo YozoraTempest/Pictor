@@ -20,8 +20,13 @@ import {
   isBundlePackage,
   type KernelPluginInstallResult,
 } from '@vulonlok/harness/main/kernel/kernel-plugins'
-import { developmentPluginsDirectory } from '../plugin-roots.js'
-import { declarationFor, declarationOf, targetsOf, type PluginTarget } from '../plugin-target.js'
+import { developmentPluginsDirectory } from '@vulonlok/harness/main/plugin-roots'
+import {
+  declarationFor,
+  declarationOf,
+  targetsOf,
+  type PluginTarget,
+} from '@vulonlok/harness/main/plugin-target'
 import { SLOT_SPECS } from '@vulonlok/plugin-sdk'
 import type {
   PanelContribution,
@@ -66,7 +71,7 @@ import type {
   PluginInstallSummary,
   SlotDescriptor,
 } from '../../shared/bridge.js'
-import { HarnessChatBridge } from '../harness-chat.js'
+import { HarnessChatBridge } from '@vulonlok/harness/main/harness-chat'
 import { shouldAdoptTitle } from '@vulonlok/harness-dsh'
 
 import type { KernelDriver } from '@vulonlok/kernel-sdk'
@@ -76,11 +81,11 @@ import { resolveNodeBinary, resolveNpmCli } from '@vulonlok/kernel-sdk'
 import { openSettings } from '@vulonlok/harness/main/kernel/settings-store'
 
 import { DshHarness, type KernelInfo } from '@vulonlok/harness/main/kernel/dsh'
-import { PluginRuntime } from '../plugin-runtime.js'
-import { ToolBridgeServer, type GuardAsk } from '../tool-bridge-server.js'
-import { ModelService } from '../model-service.js'
-import { RuleBook, describeAsk, describeRule } from '../rule-book.js'
-import { SkillLibrary } from '../skill-library.js'
+import { PluginRuntime } from '@vulonlok/harness/main/plugin-runtime'
+import { ToolBridgeServer, type GuardAsk } from '@vulonlok/harness/main/tool-bridge-server'
+import { ModelService } from '@vulonlok/harness/main/model-service'
+import { RuleBook, describeAsk, describeRule } from '@vulonlok/harness/main/rule-book'
+import { SkillLibrary } from '@vulonlok/harness/main/skill-library'
 
 /**
  * The services the mounted kernels want registered into them.
