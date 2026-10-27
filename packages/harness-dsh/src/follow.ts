@@ -1,3 +1,4 @@
+import { DSH } from './wire.js'
 import type { SessionFollowFrame, SessionFollowRequest } from './session.js'
 
 /** How long a subscription may take to prove itself before the prompt proceeds. */
@@ -91,7 +92,7 @@ export class FollowStream {
           JSON.stringify({
             type: 'open',
             streamId: this.#streamId,
-            endpoint: 'session/follow',
+            endpoint: DSH.session.follow,
             payload: { args: { request } },
           }),
         )

@@ -1,3 +1,4 @@
+import { DSH } from '@vulonlok/harness-dsh'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:net'
@@ -102,8 +103,8 @@ async function loadPlugin(endpoint: { port: number; token: string } | null): Pro
   }
   module.apply(ctx, endpoint === null ? {} : { port: endpoint.port, token: endpoint.token })
 
-  const before = handlers.get('tools/pre-execute')
-  const after = handlers.get('tools/post-execute')
+  const before = handlers.get(DSH.tools.preExecute)
+  const after = handlers.get(DSH.tools.postExecute)
   if (before === undefined || after === undefined) {
     throw new Error('the plugin did not register both halves')
   }

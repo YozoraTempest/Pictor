@@ -1,3 +1,4 @@
+import { DSH } from '@vulonlok/harness-dsh'
 import { jobOf, planActiveOf, subagentOf, todosOf } from '@vulonlok/kernel-dsh'
 import type { ChatEvent, ChatRole } from '@vulonlok/shared'
 import type {
@@ -240,7 +241,7 @@ export class HarnessChatBridge {
         return [{ type: 'message.delta', sessionId, runId, text }]
       }
 
-      case 'tool/call': {
+      case DSH.tool.call: {
         const tool = String(data['name'] ?? 'tool')
         const callId = typeof data['callId'] === 'string' ? data['callId'] : ''
         if (callId.length > 0) {
@@ -260,7 +261,7 @@ export class HarnessChatBridge {
         ]
       }
 
-      case 'tool/result': {
+      case DSH.tool.result: {
         // The result names the call, not the tool: the name comes from the call
         // that opened it, which also keeps parallel calls apart.
         const message = (data['message'] ?? {}) as {
@@ -334,8 +335,8 @@ export class HarnessChatBridge {
        * Sent as an upsert per job so the roster is a map, not a transcript: the panel
        * shows what is running now, and a settled job stays visible with its outcome.
        */
-      case 'job/registered':
-      case 'job/settled': {
+      case DSH.job.registered:
+      case DSH.job.settled: {
         const job = jobOf(data)
         return job === null ? [] : [{ type: 'job.updated', sessionId, job }]
       }

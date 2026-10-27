@@ -1,3 +1,4 @@
+import { DSH } from './wire.js'
 import type { SessionWireEvent } from '@vulonlok/harness-dsh'
 import { isAutoSessionTitle } from '@vulonlok/shared'
 
@@ -9,7 +10,7 @@ import { isAutoSessionTitle } from '@vulonlok/shared'
  * `session/title`; later ones are better, so the caller simply applies each.
  */
 export function sessionTitleOf(event: SessionWireEvent): string | null {
-  if (event.type !== 'session/title') return null
+  if (event.type !== DSH.session.title) return null
   const data = (event.data ?? {}) as Record<string, unknown>
   const title = typeof data['title'] === 'string' ? data['title'].trim() : ''
   // An empty title would wipe the row's name; a runtime that had nothing to say

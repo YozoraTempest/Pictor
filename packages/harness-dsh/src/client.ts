@@ -1,3 +1,4 @@
+import { DSH } from './wire.js'
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -168,17 +169,17 @@ export class HarnessClient {
 
   /** Queue one prompt. An unknown session id makes the runtime create it. */
   async prompt(sessionId: string, blocks: PromptContentBlock[]): Promise<void> {
-    await this.#request('session/prompt', { sessionId, contentBlocks: blocks })
+    await this.#request(DSH.session.prompt, { sessionId, contentBlocks: blocks })
   }
 
   /** Block until the session and its descendants are idle. */
   async waitForIdle(sessionId: string): Promise<void> {
-    await this.#request('session/wait', { sessionId })
+    await this.#request(DSH.session.wait, { sessionId })
   }
 
   /** Reattach a persisted session (after an app restart) without sending input. */
   async resume(sessionId: string): Promise<void> {
-    await this.#request('session/resume', { sessionId })
+    await this.#request(DSH.session.resume, { sessionId })
   }
 
   /** Ask the runtime to release agents, then close the process. */

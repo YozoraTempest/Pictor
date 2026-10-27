@@ -1,3 +1,4 @@
+import { DSH } from '@vulonlok/harness-dsh'
 import { describe, expect, it } from 'vitest'
 
 import { HarnessChatBridge } from './harness-chat.js'
@@ -49,7 +50,7 @@ describe('HarnessChatBridge', () => {
 
     expect(
       bridge.map(
-        sessionEvent('tool/call', {
+        sessionEvent(DSH.tool.call, {
           turn: 2,
           step: 1,
           callId: 'call-1',
@@ -70,7 +71,7 @@ describe('HarnessChatBridge', () => {
 
     expect(
       bridge.map(
-        sessionEvent('tool/result', {
+        sessionEvent(DSH.tool.result, {
           turn: 2,
           step: 1,
           message: {
@@ -278,9 +279,15 @@ describe('follow stream', () => {
   })
   describe('tools', () => {
     const call = (name: string, callId: string, args: unknown) =>
-      sessionEvent('tool/call', { turn: 1, step: 1, callId, name, arguments: JSON.stringify(args) })
+      sessionEvent(DSH.tool.call, {
+        turn: 1,
+        step: 1,
+        callId,
+        name,
+        arguments: JSON.stringify(args),
+      })
     const result = (callId: string, content: unknown[], extra: Record<string, unknown> = {}) =>
-      sessionEvent('tool/result', {
+      sessionEvent(DSH.tool.result, {
         turn: 1,
         step: 1,
         message: { role: 'tool', toolCallId: callId, content },
@@ -495,7 +502,7 @@ describe('HarnessChatBridge session state', () => {
 
     expect(
       bridge.map(
-        sessionEvent('job/registered', {
+        sessionEvent(DSH.job.registered, {
           jobId: 'j1',
           kind: 'bash',
           label: 'npm test',
@@ -519,7 +526,7 @@ describe('HarnessChatBridge session state', () => {
     ])
 
     const settled = bridge.map(
-      sessionEvent('job/settled', {
+      sessionEvent(DSH.job.settled, {
         jobId: 'j1',
         kind: 'bash',
         label: 'npm test',

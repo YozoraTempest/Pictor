@@ -1,3 +1,4 @@
+import { DSH } from '@vulonlok/harness-dsh'
 import { describe, expect, it } from 'vitest'
 
 import { jobOf, sessionStates, subagentOf, todosOf } from './harness-session-state.js'
@@ -134,17 +135,17 @@ describe('sessionStates', () => {
   it('keeps a settled job in the roster, with its outcome', () => {
     const states = sessionStates([
       {
-        type: 'job/registered',
+        type: DSH.job.registered,
         seq: 1,
         data: { jobId: 'j1', kind: 'bash', label: 'a', startedAt: 10 },
       },
       {
-        type: 'job/registered',
+        type: DSH.job.registered,
         seq: 2,
         data: { jobId: 'j2', kind: 'bash', label: 'b', startedAt: 20 },
       },
       {
-        type: 'job/settled',
+        type: DSH.job.settled,
         seq: 3,
         data: {
           jobId: 'j1',

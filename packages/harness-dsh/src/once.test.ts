@@ -1,3 +1,4 @@
+import { DSH } from './wire.js'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { WebSocketConstructor, WebSocketLike } from './follow.js'
@@ -41,7 +42,7 @@ function make(socket: FakeSocket) {
   return streamOnce({
     url: 'ws://127.0.0.1:1/api/remote.mux',
     cookie: 'c=1',
-    endpoint: 'job/list',
+    endpoint: DSH.job.list,
     request: { sessionId: 's1' },
     WebSocket,
     timeoutMs: 50,
@@ -57,7 +58,7 @@ describe('streamOnce', () => {
     expect(JSON.parse(socket.sent[0] ?? '{}')).toEqual({
       type: 'open',
       streamId: expect.any(String) as unknown as string,
-      endpoint: 'job/list',
+      endpoint: DSH.job.list,
       payload: { args: { request: { sessionId: 's1' } } },
     })
 

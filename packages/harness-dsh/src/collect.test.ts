@@ -1,3 +1,4 @@
+import { DSH } from './wire.js'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { WebSocketConstructor, WebSocketLike } from './follow.js'
@@ -38,7 +39,7 @@ function make(socket: FakeSocket, budgetMs = 50) {
   return streamCollect({
     url: 'ws://127.0.0.1:1/api/remote.mux',
     cookie: 'c=1',
-    endpoint: 'job/follow',
+    endpoint: DSH.job.follow,
     request: { jobId: 'j1' },
     WebSocket,
     budgetMs,
@@ -52,7 +53,7 @@ describe('streamCollect', () => {
     socket.emit('open')
     expect(JSON.parse(socket.sent[0] ?? '{}')).toMatchObject({
       type: 'open',
-      endpoint: 'job/follow',
+      endpoint: DSH.job.follow,
       payload: { args: { request: { jobId: 'j1' } } },
     })
 

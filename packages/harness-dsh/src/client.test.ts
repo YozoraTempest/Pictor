@@ -1,3 +1,4 @@
+import { DSH } from './wire.js'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -131,8 +132,8 @@ describe('HarnessClient', () => {
 
     expect(runtime.writes.map((entry) => entry.method)).toEqual([
       'initialize',
-      'session/prompt',
-      'session/wait',
+      DSH.session.prompt,
+      DSH.session.wait,
     ])
     expect(runtime.writes[1]?.params).toEqual({
       sessionId: 's1',
@@ -151,7 +152,7 @@ describe('HarnessClient', () => {
 
     runtime.notify({
       jsonrpc: '2.0',
-      method: 'session/event',
+      method: DSH.session.event,
       params: { event: { type: 'turn/start' } },
     })
 
@@ -198,7 +199,7 @@ describe('HarnessClient', () => {
     await client.prompt('s1', [{ type: 'text', text: 'still works' }])
 
     expect(seen.some((entry) => entry.method === 'runtime.malformed')).toBe(true)
-    expect(runtime.writes.at(-1)?.method).toBe('session/prompt')
+    expect(runtime.writes.at(-1)?.method).toBe(DSH.session.prompt)
   })
 
   it('asks the runtime to shut down before signalling it', async () => {

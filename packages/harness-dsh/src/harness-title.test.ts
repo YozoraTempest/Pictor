@@ -1,3 +1,4 @@
+import { DSH } from './wire.js'
 import { describe, expect, it } from 'vitest'
 
 import type { SessionWireEvent } from '@vulonlok/harness-dsh'
@@ -5,7 +6,7 @@ import type { SessionWireEvent } from '@vulonlok/harness-dsh'
 import { sessionTitleOf, shouldAdoptTitle } from './harness-title.js'
 
 function event(data: unknown): SessionWireEvent {
-  return { type: 'session/title', seq: 1, time: 0, data } as SessionWireEvent
+  return { type: DSH.session.title, seq: 1, time: 0, data } as SessionWireEvent
 }
 
 describe('sessionTitleOf', () => {

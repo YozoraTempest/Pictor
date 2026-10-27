@@ -1,3 +1,4 @@
+import { DSH } from '@vulonlok/harness-dsh'
 import type { ChatHistoryPage, ChatMessage, ChatUsage } from '@vulonlok/shared'
 
 interface SessionEvent {
@@ -124,7 +125,7 @@ export function projectHarnessEvents(events: readonly unknown[]): ChatMessage[] 
         break
       }
 
-      case 'tool/call': {
+      case DSH.tool.call: {
         const callId = String(data['callId'] ?? data['id'] ?? id)
         if (toolRows.has(callId)) continue
         toolRows.set(callId, messages.length)
@@ -140,7 +141,7 @@ export function projectHarnessEvents(events: readonly unknown[]): ChatMessage[] 
         break
       }
 
-      case 'tool/result': {
+      case DSH.tool.result: {
         // The call id is on the event; the answer is inside the message it carries,
         // which is where the runtime files both the content and the error flag.
         const message = data['message'] as

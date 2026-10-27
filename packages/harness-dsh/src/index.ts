@@ -1,3 +1,4 @@
+export { DSH } from './wire.js'
 export {
   HarnessClient,
   NOTIFICATION,

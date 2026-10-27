@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { loadHarnessHistory, projectHarnessEvents } from './harness-history.js'
+import { DSH } from '@vulonlok/harness-dsh'
 
 const userMessage = (id: string, text: string, kind = 'user') => ({
   type: 'user/message',
@@ -63,13 +64,13 @@ describe('projectHarnessEvents', () => {
     const messages = projectHarnessEvents([
       userMessage('m1', 'read the file'),
       {
-        type: 'tool/call',
+        type: DSH.tool.call,
         seq: 3,
         time: 3000,
         data: { callId: 'c1', name: 'read', arguments: { path: 'a.ts' } },
       },
       {
-        type: 'tool/result',
+        type: DSH.tool.result,
         seq: 4,
         time: 4000,
         data: { callId: 'c1', name: 'read', output: 'body' },
@@ -166,13 +167,13 @@ describe('tool/result as the runtime writes it', () => {
     const messages = projectHarnessEvents([
       userMessage('m1', 'run it'),
       {
-        type: 'tool/call',
+        type: DSH.tool.call,
         seq: 3,
         time: 3000,
         data: { callId: 'c1', name: 'bash', arguments: '{"command":"echo hi"}' },
       },
       {
-        type: 'tool/result',
+        type: DSH.tool.result,
         seq: 4,
         time: 4000,
         data: {
@@ -198,13 +199,13 @@ describe('tool/result as the runtime writes it', () => {
   it('keeps a failure a failure when the message says so', () => {
     const messages = projectHarnessEvents([
       {
-        type: 'tool/call',
+        type: DSH.tool.call,
         seq: 3,
         time: 3000,
         data: { callId: 'c1', name: 'bash', arguments: '{}' },
       },
       {
-        type: 'tool/result',
+        type: DSH.tool.result,
         seq: 4,
         time: 4000,
         data: {

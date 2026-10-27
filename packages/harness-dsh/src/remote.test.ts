@@ -1,3 +1,4 @@
+import { DSH } from './wire.js'
 import { describe, expect, it } from 'vitest'
 
 import { HarnessRemote } from './remote.js'
@@ -66,7 +67,7 @@ describe('HarnessRemote', () => {
     ])
     const remote = new HarnessRemote({ baseUrl: 'http://127.0.0.1:4242', token: 'tok', fetch })
     await remote.connect()
-    const value = await remote.call<{ accepted: true }>('session/prompt', {
+    const value = await remote.call<{ accepted: true }>(DSH.session.prompt, {
       request: { sessionId: 's' },
     })
 
@@ -80,7 +81,7 @@ describe('HarnessRemote', () => {
       payload: unknown
     }
     expect(body.type).toBe('client-request')
-    expect(body.method).toBe('session/prompt')
+    expect(body.method).toBe(DSH.session.prompt)
     expect(body.payload).toEqual({ args: { request: { sessionId: 's' } } })
   })
 
@@ -110,13 +111,13 @@ describe('HarnessRemote', () => {
     const remote = new HarnessRemote({ baseUrl: 'http://127.0.0.1:4242', token: 'tok', fetch })
     await remote.connect()
 
-    await expect(remote.call('session/create', {})).rejects.toThrow(
+    await expect(remote.call(DSH.session.create, {})).rejects.toThrow(
       'gateway/arguments-invalid: args fields do not match the descriptor',
     )
   })
 
   it('refuses to call before connecting', async () => {
     const remote = new HarnessRemote({ baseUrl: 'http://127.0.0.1:4242', token: 'tok' })
-    await expect(remote.call('session/create', {})).rejects.toThrow('尚未完成认证')
+    await expect(remote.call(DSH.session.create, {})).rejects.toThrow('尚未完成认证')
   })
 })

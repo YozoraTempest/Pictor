@@ -1,3 +1,4 @@
+import { DSH } from '@vulonlok/harness-dsh'
 import type { ChatJob, ChatPlanState, ChatSubagent, ChatTodoItem } from '@vulonlok/shared'
 
 /**
@@ -175,7 +176,7 @@ export function sessionStates(events: readonly unknown[]): SessionStates {
       continue
     }
 
-    if ((type === 'job/registered' || type === 'job/settled') && data !== null) {
+    if ((type === DSH.job.registered || type === DSH.job.settled) && data !== null) {
       const job = jobOf(data)
       // Later records win: settlement repeats the registration fields.
       if (job !== null) jobs.set(job.id, job)

@@ -1,3 +1,4 @@
+import { DSH } from './wire.js'
 import { describe, expect, it, vi } from 'vitest'
 
 import { FollowStream, type WebSocketConstructor, type WebSocketLike } from './follow.js'
@@ -75,7 +76,7 @@ describe('FollowStream', () => {
       payload: unknown
     }
     expect(sent.type).toBe('open')
-    expect(sent.endpoint).toBe('session/follow')
+    expect(sent.endpoint).toBe(DSH.session.follow)
     expect(sent.payload).toEqual({
       args: {
         request: { address: { kind: 'session', sessionId: 's1' }, assistantStream: true },

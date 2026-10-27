@@ -1,3 +1,4 @@
+import { DSH } from '@vulonlok/harness-dsh'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -466,7 +467,7 @@ export class DshDriver implements KernelDriver {
   async applyPermission(mode: PermissionMode): Promise<void> {
     const remote = this.#remote
     if (remote === null) return
-    await remote.call('settings/mutate', {
+    await remote.call(DSH.settings.mutate, {
       ns: 'permission',
       ops: [{ op: 'set', path: ['defaultPreset'], value: mode }],
     })
@@ -492,7 +493,7 @@ export class DshDriver implements KernelDriver {
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
     const harnessId = await this.#sessionFor(sessionId)
-    await remote.call('commands/execute', {
+    await remote.call(DSH.commands.execute, {
       agentId: harnessId,
       line: `/permission ${mode}`,
       submittedAttachments: [],
@@ -568,7 +569,7 @@ export class DshDriver implements KernelDriver {
         ...(image.name === undefined ? {} : { name: image.name }),
       })),
     ]
-    await remote.call<SessionPromptValue>('session/prompt', {
+    await remote.call<SessionPromptValue>(DSH.session.prompt, {
       request: {
         requestId: randomUUID(),
         sessionId: harnessId,
@@ -599,7 +600,7 @@ export class DshDriver implements KernelDriver {
     const declared = settings.models.find((entry) => entry.id === model)?.efforts ?? []
     if (!declared.includes(effort)) return
     try {
-      await remote.call('session/selectModel', {
+      await remote.call(DSH.session.selectModel, {
         request: { sessionId, provider: ROUTE, model, reasoningEffort: effort },
       })
     } catch (error) {
@@ -661,7 +662,7 @@ export class DshDriver implements KernelDriver {
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
     const harnessId = await this.#sessionFor(sessionId)
-    const listed = await remote.call<unknown>('commands/list', { agentId: harnessId })
+    const listed = await remote.call<unknown>(DSH.commands.list, { agentId: harnessId })
     return parseCommands(listed)
   }
 
@@ -677,7 +678,7 @@ export class DshDriver implements KernelDriver {
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
     const harnessId = await this.#sessionFor(sessionId)
-    const executed = await remote.call<unknown>('commands/execute', {
+    const executed = await remote.call<unknown>(DSH.commands.execute, {
       agentId: harnessId,
       line,
       submittedAttachments: [],
@@ -704,7 +705,7 @@ export class DshDriver implements KernelDriver {
     const frame = await streamOnce({
       url: `${remote.baseUrl.replace(/^http/, 'ws')}/api/remote.mux`,
       cookie,
-      endpoint: 'job/list',
+      endpoint: DSH.job.list,
       request: { sessionId: harnessId },
       WebSocket: socket,
     })
@@ -742,7 +743,7 @@ export class DshDriver implements KernelDriver {
     const stream = await streamCollect({
       url: `${remote.baseUrl.replace(/^http/, 'ws')}/api/remote.mux`,
       cookie,
-      endpoint: 'job/follow',
+      endpoint: DSH.job.follow,
       // No `from`: the runtime starts at the oldest byte it still keeps, which is the
       // most a read can honestly claim to show.
       request: { sessionId: harnessId, jobId },
@@ -763,7 +764,7 @@ export class DshDriver implements KernelDriver {
     const remote = this.#remote
     if (remote === null) throw new Error('agent 运行时尚未启动')
     const harnessId = await this.#sessionFor(sessionId)
-    await remote.call('job/kill', { request: { sessionId: harnessId, jobId } })
+    await remote.call(DSH.job.kill, { request: { sessionId: harnessId, jobId } })
   }
 
   /** Stop the turn the runtime is running for one session. */
@@ -771,7 +772,7 @@ export class DshDriver implements KernelDriver {
     const remote = this.#remote
     if (remote === null) return
     const harnessId = this.#sessions.get(sessionId) ?? sessionId
-    await remote.call('session/cancel', { request: { sessionId: harnessId } })
+    await remote.call(DSH.session.cancel, { request: { sessionId: harnessId } })
   }
 
   /**
@@ -791,7 +792,7 @@ export class DshDriver implements KernelDriver {
       throw new Error('agent 运行时尚未启动')
     }
 
-    const created = await remote.call<SessionCreateValue>('session/create', {
+    const created = await remote.call<SessionCreateValue>(DSH.session.create, {
       request: { cwd: cwd.length > 0 ? cwd : (this.#cwd ?? homedir()), sessionId: randomUUID() },
     })
 
@@ -835,7 +836,7 @@ export class DshDriver implements KernelDriver {
         address: { kind: 'session', sessionId: created.sessionId },
         assistantStream: true,
       })
-      await remote.call<SessionPromptValue>('session/prompt', {
+      await remote.call<SessionPromptValue>(DSH.session.prompt, {
         request: {
           requestId: randomUUID(),
           sessionId: created.sessionId,
@@ -1131,7 +1132,7 @@ export class DshDriver implements KernelDriver {
       resolved !== null && resolved !== undefined && resolved.length > 0
         ? resolved
         : (this.#cwd ?? homedir())
-    const created = await remote.call<SessionCreateValue>('session/create', {
+    const created = await remote.call<SessionCreateValue>(DSH.session.create, {
       request: { cwd, sessionId: pictorId },
     })
     this.#sessions.set(pictorId, created.sessionId)
@@ -1296,7 +1297,7 @@ export class DshDriver implements KernelDriver {
     const frame = await streamOnce({
       url: `${remote.baseUrl.replace(/^http/, 'ws')}/api/remote.mux`,
       cookie,
-      endpoint: 'session/follow',
+      endpoint: DSH.session.follow,
       request: {
         address: {
           kind: 'subagent',
@@ -1425,7 +1426,7 @@ export class DshDriver implements KernelDriver {
       throw new Error('这个内核按事件序号分叉，不认消息 id')
     }
 
-    const created = await remote.call<SessionForkValue>('session/fork', {
+    const created = await remote.call<SessionForkValue>(DSH.session.fork, {
       // The boundary is inclusive: omitting it copies the latest completed turn,
       // which is what "branch from here" means when no message was picked.
       request: { sessionId: harnessId, ...(at?.seq === undefined ? {} : { atSeq: at.seq }) },
