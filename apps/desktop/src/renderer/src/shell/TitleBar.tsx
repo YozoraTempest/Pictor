@@ -4,6 +4,7 @@ import { useUiStore } from '../app/ui-store.js'
 import { useWorkspaceStore } from '../app/workspace-store.js'
 import { findView } from '../app/views.js'
 import { cn } from '../lib/cn.js'
+import { SlotOutlet } from '../features/slots/SlotOutlet.js'
 import { GlobalTools, useWindowCommand } from './Toolbar.js'
 
 /**
@@ -16,6 +17,8 @@ import { GlobalTools, useWindowCommand } from './Toolbar.js'
 export function TitleBar(): React.JSX.Element {
   const view = useUiStore((state) => state.view)
   const kernels = useWorkspaceStore((state) => state.kernels)
+  const slots = useWorkspaceStore((state) => state.slots)
+  const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
   const active = findView(view, kernels)
 
   const [maximized, setMaximized] = useState(false)
@@ -34,6 +37,17 @@ export function TitleBar(): React.JSX.Element {
           with the view's own controls after them. */}
       <div className="flex min-w-0 flex-1 items-center gap-0.5 pl-1.5">
         {tools !== 'trailing' && tools !== 'none' && <GlobalTools />}
+        {/* `shell.leading`: a plugin seat beside the window controls, before the view's
+            own buttons. Empty reserves nothing, so this costs no width when unoccupied. */}
+        <div className="app-no-drag flex min-w-0 items-center gap-1">
+          <SlotOutlet
+            slot="shell.leading"
+            seats={slots}
+            sessionId={selectedSessionId}
+            chrome="bare"
+            className="flex-row items-center gap-1.5 [&_p]:whitespace-nowrap"
+          />
+        </div>
         <div className="app-no-drag flex min-w-0 items-center gap-0.5">{active.leading?.()}</div>
       </div>
 

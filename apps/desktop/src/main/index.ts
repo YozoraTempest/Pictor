@@ -14,6 +14,7 @@ import {
   expandPluginRoots,
   resolveActivationOrder,
 } from '@pictor/plugin-host'
+import { SLOT_SPECS } from '@pictor/plugin-sdk'
 import type {
   PanelContribution,
   ToolGuardContribution,
@@ -53,6 +54,7 @@ import type {
   KernelPluginInfo,
   PermissionMode,
   PluginReport,
+  SlotDescriptor,
 } from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
 import { shouldAdoptTitle } from '@pictor/harness'
@@ -1141,6 +1143,18 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:toolViews.list', async (): Promise<ToolViewContribution[]> => {
     return [...workspace.plugins.toolViews()]
+  })
+
+  ipcMain.handle('pictor:slots.list', async (): Promise<SlotDescriptor[]> => {
+    return workspace.plugins.allSlots().map((seat) => ({
+      slot: seat.slot,
+      kind: SLOT_SPECS[seat.slot].kind,
+      ...(seat.key === undefined ? {} : { key: seat.key }),
+      title: seat.title,
+      ...(seat.description === undefined ? {} : { description: seat.description }),
+      ...(seat.icon === undefined ? {} : { icon: seat.icon }),
+      view: seat.view,
+    }))
   })
 
   /**

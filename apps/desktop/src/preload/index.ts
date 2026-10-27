@@ -62,6 +62,7 @@ const bridge: PictorBridge = {
   listPanels: () => invoke('pictor:panels.list'),
   renderPluginView: (id, sessionId) => invoke('pictor:views.render', id, sessionId),
   listToolViews: () => invoke('pictor:toolViews.list'),
+  listSlots: () => invoke('pictor:slots.list'),
 
   listPlugins: () => invoke('pictor:plugins.list'),
   setPluginEnabled: (id, enabled) => invoke('pictor:plugins.setEnabled', id, enabled),

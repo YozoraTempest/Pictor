@@ -9,7 +9,7 @@ import type {
   KernelModelState,
   PermissionMode,
 } from '@pictor/kernel-sdk/types'
-import type { ViewSpec } from '@pictor/plugin-sdk'
+import type { SlotKey, SlotKind, ViewSpec } from '@pictor/plugin-sdk'
 import type { McpServerSpec } from '@pictor/shared'
 
 export type {
@@ -98,6 +98,24 @@ export interface PanelDescriptor {
   description?: string
   icon?: string
   /** The plugin view this panel renders. */
+  view: string
+}
+
+/**
+ * One seat a plugin took in the window.
+ *
+ * `slot` and `key` are the address; `view` is what to draw there. The window decides how
+ * each slot looks, so the same description lands as a strip, a page or a floating layer
+ * depending on where it was put.
+ */
+export interface SlotDescriptor {
+  slot: SlotKey
+  kind: SlotKind
+  /** Cell inside a keyed or list slot; absent for a single one. */
+  key?: string
+  title: string
+  description?: string
+  icon?: string
   view: string
 }
 
@@ -295,6 +313,8 @@ export interface PictorBridge {
    */
   renderPluginView(id: string, sessionId: string | null): Promise<ViewSpec>
   listToolViews(): Promise<ToolViewDescriptor[]>
+  /** Every seat plugins took, in registration order. */
+  listSlots(): Promise<SlotDescriptor[]>
 
   listPlugins(): Promise<PluginRecord[]>
   setPluginEnabled(id: string, enabled: boolean): Promise<PluginRecord>

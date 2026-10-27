@@ -6,6 +6,23 @@ export {
   type KernelContributionFailure,
 } from './kernel.js'
 export {
+  CONVERSATION_CELL,
+  SLOT_KEYS,
+  SLOT_LIMITS,
+  SLOT_SPECS,
+  SlotContributionError,
+  isSlotKey,
+  parseSlotContribution,
+  parseSlotContributions,
+  slotCellOf,
+  type SlotContribution,
+  type SlotContributionFailure,
+  type SlotKey,
+  type SlotKind,
+  type SlotScope,
+  type SlotSpec,
+} from './slots.js'
+export {
   CONTRIBUTION_ERRORS,
   ContributionHost,
   ContributionRegistry,

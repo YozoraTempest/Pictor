@@ -10,6 +10,8 @@ import {
 import {
   ContributionHost,
   type PanelContribution,
+  type SlotContribution,
+  type SlotKey,
   type SkillContribution,
   type ToolGuardContribution,
   type ToolHookContribution,
@@ -218,6 +220,24 @@ export class PluginRuntime {
 
   views(): readonly ViewContribution[] {
     return this.contributions.views.list()
+  }
+
+  /**
+   * The seats a plugin took, for one slot.
+   *
+   * A seat whose view nobody registered is dropped here, for the same reason a panel is:
+   * rendering it would draw an empty frame with a title, and the person cannot tell that
+   * from a plugin with nothing to say.
+   */
+  slots(key: SlotKey): readonly SlotContribution[] {
+    return this.contributions.slots
+      .list()
+      .filter((seat) => seat.slot === key && this.contributions.views.has(seat.view))
+  }
+
+  /** Every seat, grouped by slot — what the window asks for once per refresh. */
+  allSlots(): readonly SlotContribution[] {
+    return this.contributions.slots.list().filter((seat) => this.contributions.views.has(seat.view))
   }
 
   /** Skills per plugin, for the library that writes their files. */

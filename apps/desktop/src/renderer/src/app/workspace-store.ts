@@ -10,7 +10,13 @@ import {
 
 import type { ForkPoint, PluginRecord, Project, Section, Session } from '@pictor/shared'
 
-import type { AppInfo, KernelInfo, PanelDescriptor, PluginReport } from '../../../shared/bridge.js'
+import type {
+  AppInfo,
+  KernelInfo,
+  PanelDescriptor,
+  PluginReport,
+  SlotDescriptor,
+} from '../../../shared/bridge.js'
 import { applyToolViews } from '../features/chat/tool-views.js'
 import type { GroupingMode, SectionSort } from '../features/sessions/grouping.js'
 
@@ -29,6 +35,8 @@ interface WorkspaceState {
   sections: Section[]
   plugins: PluginRecord[]
   panels: PanelDescriptor[]
+  /** Seats plugins took in the window; the same refresh that fetched `panels` fetched these. */
+  slots: SlotDescriptor[]
   /**
    * Every kernel this build can drive, with what each one can do.
    *
@@ -129,6 +137,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   sections: [],
   plugins: [],
   panels: [],
+  slots: [],
   kernels: [],
   report: null,
   info: null,
@@ -143,10 +152,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   notice: null,
 
   async refresh() {
-    const [snapshot, plugins, panels, toolViews, report, info, kernels] = await Promise.all([
+    const [snapshot, plugins, panels, slots, toolViews, report, info, kernels] = await Promise.all([
       window.pictor.getSnapshot(),
       window.pictor.listPlugins(),
       window.pictor.listPanels(),
+      window.pictor.listSlots(),
       window.pictor.listToolViews(),
       window.pictor.pluginReport(),
       window.pictor.getAppInfo(),
@@ -179,6 +189,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       sections: snapshot.sections,
       plugins,
       panels,
+      slots,
       kernels,
       report,
       info,

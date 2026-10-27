@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { X } from 'lucide-react'
+import { LayoutTemplate, X } from 'lucide-react'
 
 import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
@@ -12,6 +12,7 @@ import {
   type PanelEntry,
 } from '../features/panels/registry.js'
 import { PluginViewPanel } from '../features/panels/PluginViewPanel.js'
+import { SlotOutlet } from '../features/slots/SlotOutlet.js'
 
 function PanelRow({ panel }: { panel: PanelEntry }): React.JSX.Element {
   const Icon = panel.icon
@@ -55,6 +56,8 @@ export function RightPanel(): React.JSX.Element {
   const createSession = useWorkspaceStore((state) => state.createSession)
   const pluginPanels = useWorkspaceStore((state) => state.panels)
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
+  const slots = useWorkspaceStore((state) => state.slots)
+  const openMainPage = useUiStore((state) => state.openMainPage)
   const openPanel = useUiStore((state) => state.openPanel)
   const openPanelNamed = useUiStore((state) => state.openPanelNamed)
   const closePanel = useUiStore((state) => state.closePanel)
@@ -74,6 +77,8 @@ export function RightPanel(): React.JSX.Element {
       ),
     [createSession, openPanelNamed, pluginPanels],
   )
+
+  const pages = slots.filter((seat) => seat.slot === 'main')
 
   // The open panel can disappear while it is showing — a plugin was disabled, say. The
   // list is then the only honest thing left to draw.
@@ -102,12 +107,53 @@ export function RightPanel(): React.JSX.Element {
         </IconButton>
       </div>
 
+      {/* `rightbar` is this column's own seat, drawn above the launcher rather than over
+          it. dsh lets an occupant replace the right column; here that column is where every
+          other panel is found, so a takeover would hide them — the seat is a header, not a
+          landlord. */}
+      {slots.some((seat) => seat.slot === 'rightbar') && (
+        <div className="shrink-0 border-b border-border px-2.5 py-2">
+          <SlotOutlet slot="rightbar" seats={slots} sessionId={selectedSessionId} chrome="bare" />
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
         <ul className="flex flex-col gap-1.5">
           {panels.map((panel) => (
             <PanelRow key={panel.id} panel={panel} />
           ))}
         </ul>
+
+        {/* `main` pages: the centre is a keyed slot, and a plugin can take a key of it.
+            Listed here because this column is where the app says what can be opened. */}
+        {pages.length > 0 && (
+          <>
+            <h3 className="px-0.5 pt-3 pb-1.5 text-2xs font-semibold tracking-wider text-faint uppercase">
+              页面
+            </h3>
+            <ul className="flex flex-col gap-1.5">
+              {pages.map((page) => (
+                <li key={page.key ?? page.title}>
+                  <button
+                    type="button"
+                    onClick={() => openMainPage(page.key ?? page.title)}
+                    className="group flex w-full items-center gap-2.5 rounded-md border border-border bg-surface px-2.5 py-2 text-left transition-colors duration-150 hover:border-border-strong hover:bg-surface-hover"
+                  >
+                    <LayoutTemplate className="size-3.5 shrink-0 text-muted group-hover:text-text" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs text-text">{page.title}</span>
+                      {page.description !== undefined && (
+                        <span className="block truncate text-2xs text-faint">
+                          {page.description}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
     </aside>
   )

@@ -106,6 +106,35 @@ things depending on which half asked: a kernel provides `kernel.<id>` and reads
 makes those the same relation, and it is the reason the two containers are two views of
 one scope rather than two registries that have to be kept in step.
 
+### Plugin slots
+
+A plugin used to have one place to put things (`panels`, the right column). That held
+while the window had one launcher; it stops holding once there are several places. So the
+addressing is dsh's (`packages/plugin-sdk/src/slots.ts`): a contribution names a slot —
+`main`, `sidebar`, `rightbar`, `shell.bottom`, `shell.overlay`, `shell.leading` — plus a
+cell inside it when the slot is `keyed` or `list`.
+
+What is _not_ borrowed is the payload. A dsh seat holds a React component; a Pictor seat
+holds a `views` id, because the renderer owns every component. That keeps the earlier
+guarantee (a plugin never ships UI code) while giving contributions somewhere to sit other
+than one list, and it is why a dsh UI plugin still cannot install here.
+
+Every key in that table has a real place (`features/slots/SlotOutlet.tsx`, wired in the
+shell, the title bar, the workspace and the right column). A slot nobody draws would be a
+contribution that quietly does nothing, which is worse than a refusal — so `root` is
+absent and asking for it throws.
+
+Two deliberate departures from dsh:
+
+- **Duplicate cells are refused, not shadowed.** dsh elects a winner by priority; here the
+  second registration fails and the first keeps working. Shadowing turns "why did my panel
+  change" into an investigation, and there is no author here who needs it.
+- **`rightbar` does not replace the column.** In dsh it does. Here the right column is
+  where every panel is found, so the occupant is drawn above the launcher instead.
+
+`views` blocks are display-only, so the floating layer is click-through _including its own
+seats_: a seat that could take a click would eventually cover a button that matters.
+
 ### Plugin views
 
 A plugin never ships a component. A `views` contribution answers with a **description** —

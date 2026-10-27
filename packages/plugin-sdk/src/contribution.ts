@@ -29,6 +29,12 @@ import {
   parseToolViewContribution,
   type ToolViewContribution,
 } from './tool-views.js'
+import {
+  SlotContributionError,
+  parseSlotContribution,
+  slotCellOf,
+  type SlotContribution,
+} from './slots.js'
 import { ViewContributionError, parseViewContribution, type ViewContribution } from './views.js'
 
 /** Every point a plugin may register, and what it holds. */
@@ -39,6 +45,7 @@ export interface ContributionMap {
   toolHooks: ToolHookContribution
   toolViews: ToolViewContribution
   skills: SkillContribution
+  slots: SlotContribution
 }
 
 export type ContributionPoint = keyof ContributionMap
@@ -156,6 +163,13 @@ export interface PictorContributions {
   toolViews(value: unknown): () => void
   /** A skill the runtime can load on demand; Pictor writes the file. */
   skills(value: unknown): () => void
+  /**
+   * A seat in the window, named with dsh's slot vocabulary.
+   *
+   * `slot` says where and `key` picks a cell inside a keyed or list slot; the content is
+   * still a `views` id, so a seat holds a description rather than a component.
+   */
+  slots(value: unknown): () => void
 }
 
 export interface ContributionHostOptions {
@@ -188,6 +202,7 @@ export class ContributionHost {
   readonly toolHooks: ContributionRegistry<ToolHookContribution>
   readonly toolViews: ContributionRegistry<ToolViewContribution>
   readonly skills: ContributionRegistry<SkillContribution>
+  readonly slots: ContributionRegistry<SlotContribution>
 
   constructor(options: ContributionHostOptions = {}) {
     const warn = (message: string): void => {
@@ -230,6 +245,14 @@ export class ContributionHost {
       parse: (raw) => parseSkillContribution(raw),
       warn,
     })
+    this.slots = new ContributionRegistry({
+      point: 'slots',
+      // A seat is identified by where it sits, not by a name of its own: two plugins
+      // asking for the same cell is the mistake worth refusing.
+      keyOf: (value) => `${value.slot}:${slotCellOf(value)}`,
+      parse: (raw) => parseSlotContribution(raw),
+      warn,
+    })
   }
 
   /** Runs `work` as `id`, so anything it registers knows whose it is. */
@@ -253,6 +276,7 @@ export class ContributionHost {
       toolHooks: (value) => this.toolHooks.register(value, owner()),
       toolViews: (value) => this.toolViews.register(value, owner()),
       skills: (value) => this.skills.register(value, owner()),
+      slots: (value) => this.slots.register(value, owner()),
     }
   }
 
@@ -265,6 +289,7 @@ export class ContributionHost {
       ...this.toolHooks.failures(),
       ...this.toolViews.failures(),
       ...this.skills.failures(),
+      ...this.slots.failures(),
     ]
   }
 }
@@ -277,4 +302,5 @@ export const CONTRIBUTION_ERRORS = {
   toolHook: ToolHookContributionError,
   toolView: ToolViewContributionError,
   skill: SkillContributionError,
+  slot: SlotContributionError,
 } as const

@@ -84,13 +84,51 @@ inside `ctx.effect` are undone when the plugin unloads.
 
 | Call                          | Payload                                   | What it does                                   |
 | ----------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `ctx.pictor.panels(...)`      | `{ id, title, icon?, view }`              | A side-panel entry that renders a view         |
+| `ctx.pictor.panels(...)`      | `{ id, title, icon?, view }`              | A row in the right column's launcher           |
+| `ctx.pictor.slots(...)`       | `{ slot, key?, title, icon?, view }`      | A seat anywhere the window reserves one        |
 | `ctx.pictor.views(...)`       | `{ id, title, data(context), icon? }`     | What a panel draws: blocks, not renderer code  |
 | `ctx.pictor.toolGuards(...)`  | `{ id, title, tools?, decide(context) }`  | Decides allow/deny **before** a call runs      |
 | `ctx.pictor.toolHooks(...)`   | `{ id, title?, tools?, after(context) }`  | Reacts **after** a call settled: note or fail  |
 | `ctx.pictor.toolViews(...)`   | `{ id, tools, label?, icon? }`            | How a tool call is presented in the transcript |
 | `ctx.pictor.skills(...)`      | `{ name, description, body, whenToUse? }` | A skill the agent can load on demand           |
 | `pictor.contributes` `kernel` | `{ main, label? }`                        | A second entry that provides `kernel.<id>`     |
+
+### Slots: where a seat goes
+
+`panels` answers one question — which row appears in the right column. A window has more
+places than that, so they are named after dsh's slots and a contribution picks one:
+
+| Slot            | Kind     | Where it is drawn                                                                                                |
+| --------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `main`          | `keyed`  | The centre. `conversation` is reserved for the transcript; any other key is a page you open from the panel list. |
+| `sidebar`       | `single` | Top of the left column, above the conversation list.                                                             |
+| `rightbar`      | `single` | Above the right column's launcher (the launcher stays visible).                                                  |
+| `shell.bottom`  | `single` | Full-width strip under the three columns; takes no height when empty.                                            |
+| `shell.overlay` | `list`   | Floating layer at the top right, click-through.                                                                  |
+| `shell.leading` | `single` | Title bar, left of the view's own buttons.                                                                       |
+
+`root` is not on the list on purpose: it is the frame itself, and a second entry there
+would replace the application. Asking for it is an error, not a silent no-op.
+
+```js
+ctx.effect(() =>
+  ctx.pictor.slots({ slot: 'main', key: 'today', title: '今日', view: 'acme.today' }),
+)
+```
+
+Two rules make a seat safe to grant:
+
+- **One seat per cell.** A `single` slot takes no key; a `keyed` or `list` slot requires
+  one. Two plugins claiming the same cell is refused, and the first keeps working — dsh
+  lets a higher priority shadow the other, which turns "why did my panel change" into a
+  hunt.
+- **A seat cannot block the app.** `views` blocks are display-only, so nothing in a slot
+  needs a click; the floating layer and its seats are click-through. A badge that covers a
+  button is worse than no badge.
+
+`rightbar` is the one place Pictor and dsh differ in meaning: in dsh the occupant replaces
+the right column, here it sits above the launcher. That column is where every other panel
+is found, so a takeover would hide them.
 
 ### A panel is a view
 

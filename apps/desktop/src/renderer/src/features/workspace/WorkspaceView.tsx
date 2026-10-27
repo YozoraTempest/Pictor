@@ -12,6 +12,8 @@ import {
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Banner } from '../../components/ui/index.js'
+import type { SlotDescriptor } from '../../../../shared/bridge.js'
+import { SlotOutlet } from '../slots/SlotOutlet.js'
 import { ChatView } from '../chat/ChatView.js'
 import { SessionsPanel } from '../sessions/SessionsPanel.js'
 import { PanelResizer } from '../../shell/PanelResizer.js'
@@ -58,12 +60,15 @@ export function WorkspaceView({ kernelId = null }: WorkspaceViewProps): React.JS
   const dragStart = useRef({ sidebar: sidebarWidth, right: rightWidth })
   const [dragging, setDragging] = useState<'sidebar' | 'right' | null>(null)
 
+  const slots = useWorkspaceStore((state) => state.slots)
   const kernels = useWorkspaceStore((state) => state.kernels)
   const kernel = kernelId === null ? null : (kernels.find((entry) => entry.id === kernelId) ?? null)
   const unavailable = kernel !== null && !kernel.available
 
   const sessions = useWorkspaceStore((state) => state.sessions)
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
+  const mainPage = useUiStore((state) => state.mainPage)
+  const closeMainPage = useUiStore((state) => state.closeMainPage)
   const selectSession = useWorkspaceStore((state) => state.selectSession)
   const draft = useWorkspaceStore((state) => state.draft)
   const startDraft = useWorkspaceStore((state) => state.startDraft)
@@ -145,6 +150,14 @@ export function WorkspaceView({ kernelId = null }: WorkspaceViewProps): React.JS
                 panel clips its labels instead of wrapping them. */}
               <div className="flex min-h-0 flex-1 flex-col" style={{ width: sidebarWidth }}>
                 <aside className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface/30">
+                  {/* `sidebar`: a strip above the conversation list. It scrolls away
+                      with nothing — the list below it keeps its own box. */}
+                  <SlotOutlet
+                    slot="sidebar"
+                    seats={slots}
+                    sessionId={selectedSessionId}
+                    className="shrink-0 border-b border-border p-2"
+                  />
                   <SessionsPanel kernelId={kernelId} />
                 </aside>
               </div>
@@ -186,7 +199,16 @@ export function WorkspaceView({ kernelId = null }: WorkspaceViewProps): React.JS
           }}
         >
           <main className="view-main min-h-0 min-w-0 overflow-hidden">
-            <ChatView kernelId={kernelId} />
+            {mainPage === null ? (
+              <ChatView kernelId={kernelId} />
+            ) : (
+              <MainPage
+                cell={mainPage}
+                seats={slots}
+                sessionId={selectedSessionId}
+                onClose={closeMainPage}
+              />
+            )}
           </main>
 
           <RightPanel />
@@ -209,6 +231,75 @@ export function WorkspaceView({ kernelId = null }: WorkspaceViewProps): React.JS
             />
           )}
         </div>
+      </div>
+
+      {/* `shell.bottom`: full width below the three columns, inside the workspace. It
+          takes height only when occupied — an empty strip that still reserved space
+          would be a band of nothing under every conversation. */}
+      <SlotOutlet
+        slot="shell.bottom"
+        seats={slots}
+        sessionId={selectedSessionId}
+        chrome="bare"
+        className="shrink-0 border-t border-border px-3 py-1.5 [&_p]:whitespace-nowrap"
+      />
+    </div>
+  )
+}
+
+/**
+ * A plugin page in the centre.
+ *
+ * `main` is the same keyed slot the conversation occupies, so a page here is a sibling of
+ * the transcript rather than a dialog over it. The way back is the header's close button,
+ * which is why this needs no navigation stack.
+ */
+function MainPage({
+  cell,
+  seats,
+  sessionId,
+  onClose,
+}: {
+  cell: string
+  seats: readonly SlotDescriptor[]
+  sessionId: string | null
+  onClose: () => void
+}): React.JSX.Element {
+  const page = seats.find((seat) => seat.slot === 'main' && seat.key === cell)
+
+  if (page === undefined) {
+    // The plugin that owned this page went away while it was open. Saying so, with a way
+    // back, is better than silently swapping in the transcript under a stale title.
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-xs text-faint">这个页面已经没有了：提供它的插件被卸载或关闭了。</p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md border border-border px-2.5 py-1 text-xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+        >
+          回到会话
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+        <span className="min-w-0 flex-1 truncate text-2xs font-semibold tracking-wider text-faint uppercase">
+          {page.title}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-sm px-1.5 py-0.5 text-2xs text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+        >
+          回到会话
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <SlotOutlet slot="main" seats={[page]} sessionId={sessionId} chrome="bare" />
       </div>
     </div>
   )

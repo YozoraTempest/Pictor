@@ -49,6 +49,16 @@ interface UiState {
   openPanel: string | null
   openPanelNamed: (id: string) => void
   closePanel: () => void
+  /**
+   * The plugin page occupying the centre, by its `main` slot key.
+   *
+   * Null means the conversation. `main` is a keyed slot and `conversation` is its
+   * reserved key, so a plugin page is the same kind of thing as the transcript — which is
+   * why going back is one field, not a navigation stack.
+   */
+  mainPage: string | null
+  openMainPage: (key: string) => void
+  closeMainPage: () => void
   setView: (view: AppView) => void
   toggleLeftPanel: () => void
   toggleRightPanel: () => void
@@ -86,6 +96,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   historyIndex: -1,
   branchTreeFor: null,
   openPanel: null,
+  mainPage: null,
   setView: (view) => set({ view }),
   toggleLeftPanel: () =>
     set((state) => {
@@ -131,6 +142,8 @@ export const useUiStore = create<UiState>()((set, get) => ({
   hideBranchTree: () => set({ branchTreeFor: null }),
   openPanelNamed: (id) => set({ openPanel: id, rightPanelOpen: true }),
   closePanel: () => set({ openPanel: null }),
+  openMainPage: (key) => set({ mainPage: key, rightPanelOpen: true }),
+  closeMainPage: () => set({ mainPage: null }),
   stepHistory: (direction) => {
     const { history, historyIndex } = get()
     const next = historyIndex + direction

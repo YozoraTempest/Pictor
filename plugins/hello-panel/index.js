@@ -93,6 +93,93 @@ export function apply(ctx) {
     }),
   )
 
+  // A seat in the title bar: small enough that the bar keeps its height, and it says
+  // what the whole plugin is rather than repeating a panel.
+  ctx.effect(() =>
+    ctx.pictor.views({
+      id: 'pictor.example.hello.leading',
+      title: '标题栏座位',
+      data: () => ({ blocks: [{ kind: 'text', text: '示例插件已启用' }] }),
+    }),
+  )
+
+  // A seat under the columns: the strip exists only while something occupies it.
+  ctx.effect(() =>
+    ctx.pictor.views({
+      id: 'pictor.example.hello.bottom',
+      title: '底部横条',
+      data: () => ({
+        blocks: [
+          {
+            kind: 'text',
+            text: '这是 shell.bottom：三栏之下的一条，空着的时候不占高度。',
+          },
+        ],
+      }),
+    }),
+  )
+
+  // The left column's top strip, the right column, and the floating layer. Between them
+  // and the two above, every slot this app has is occupied by the example — which is how
+  // a person can see what each one looks like before writing their own.
+  ctx.effect(() =>
+    ctx.pictor.views({
+      id: 'pictor.example.hello.side',
+      title: '左栏座位',
+      data: () => ({ blocks: [{ kind: 'text', text: 'shell 的 sidebar：会话列表之上的一条。' }] }),
+    }),
+  )
+  ctx.effect(() =>
+    ctx.pictor.slots({
+      slot: 'sidebar',
+      title: '左栏座位',
+      icon: 'messages-square',
+      view: 'pictor.example.hello.side',
+    }),
+  )
+
+  ctx.effect(() =>
+    ctx.pictor.views({
+      id: 'pictor.example.hello.right',
+      title: '右栏座位',
+      data: () => ({
+        blocks: [
+          { kind: 'heading', text: 'rightbar' },
+          { kind: 'text', text: '占用右栏时，面板列表往里退一步，点「返回」还能回来。' },
+        ],
+      }),
+    }),
+  )
+  ctx.effect(() =>
+    ctx.pictor.slots({
+      slot: 'rightbar',
+      title: '右栏座位',
+      icon: 'settings',
+      view: 'pictor.example.hello.right',
+    }),
+  )
+
+  ctx.effect(() =>
+    ctx.pictor.views({
+      id: 'pictor.example.hello.float',
+      title: '浮动座位',
+      data: () => ({
+        blocks: [{ kind: 'text', text: 'shell.overlay：浮在所有栏之上，不挡点击。' }],
+      }),
+    }),
+  )
+  ctx.effect(() =>
+    ctx.pictor.slots({
+      slot: 'shell.overlay',
+      key: 'example',
+      title: '浮动座位',
+      icon: 'puzzle',
+      view: 'pictor.example.hello.float',
+    }),
+  )
+
+  // A panel is a seat in the right column; a page takes a key of the centre. Both are
+  // slots, named the way dsh names them.
   ctx.effect(() =>
     ctx.pictor.panels({
       id: 'pictor.example.hello.panel',
@@ -100,6 +187,35 @@ export function apply(ctx) {
       description: '一个视图能说什么',
       icon: 'puzzle',
       view: 'pictor.example.hello.today',
+    }),
+  )
+
+  ctx.effect(() =>
+    ctx.pictor.slots({
+      slot: 'main',
+      key: 'example',
+      title: '示例页面',
+      description: '中间那块也能被插件占一页',
+      icon: 'blocks',
+      view: 'pictor.example.hello.today',
+    }),
+  )
+
+  // Three of the smaller seats, so the strip, the title bar and the floating layer all
+  // have something in them the moment this plugin is on.
+  ctx.effect(() =>
+    ctx.pictor.slots({
+      slot: 'shell.leading',
+      title: '示例插件',
+      icon: 'puzzle',
+      view: 'pictor.example.hello.leading',
+    }),
+  )
+  ctx.effect(() =>
+    ctx.pictor.slots({
+      slot: 'shell.bottom',
+      title: '底部横条',
+      view: 'pictor.example.hello.bottom',
     }),
   )
 
