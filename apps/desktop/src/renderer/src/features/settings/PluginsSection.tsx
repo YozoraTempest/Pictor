@@ -6,7 +6,6 @@ import { Dialog } from '../../components/ui/Dialog.js'
 import { Input } from '../../components/ui/Input.js'
 import { Switch } from '../../components/ui/Switch.js'
 import { cn } from '../../lib/cn.js'
-import { Section } from './Section.js'
 
 /** Contribution points, in the words the page uses for them. */
 const POINT_LABEL: Record<string, string> = {
@@ -158,11 +157,19 @@ export function PluginsSection(): React.JSX.Element {
   const broken = all.filter((plugin) => plugin.failure !== null)
 
   return (
-    <Section
-      title="插件"
-      description="插件可以给应用加面板、工具守卫、技能，或者一整个内核。装完不用重启。"
-      actions={
-        <>
+    // No section header: the page already carries the title and the one description.
+    // A second 「插件」 heading with a second sentence saying the same thing is the page
+    // saying it twice, and the card-around-cards that came with it drew the boundary twice.
+    <div className="flex min-h-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-2xs text-faint">
+          {overview === null
+            ? '读取中…'
+            : all.length === 0
+              ? '还没有插件'
+              : `${String(enabled)} / ${String(all.length)} 已启用`}
+        </p>
+        <div className="flex items-center gap-2">
           <Button size="sm" variant="secondary" onClick={() => setPending({ kind: 'folder' })}>
             从目录安装
           </Button>
@@ -173,10 +180,8 @@ export function PluginsSection(): React.JSX.Element {
           >
             从 npm 安装
           </Button>
-        </>
-      }
-    >
-      {overview === null && error === null && <p className="text-xs text-faint">读取中…</p>}
+        </div>
+      </div>
 
       {overview !== null && all.length === 0 && (
         <p className="text-xs text-faint">
@@ -190,7 +195,7 @@ export function PluginsSection(): React.JSX.Element {
             <li
               key={`${plugin.source}/${plugin.id}`}
               className={cn(
-                'rounded-md border px-3 py-2.5',
+                'rounded-lg border bg-surface px-3 py-2.5',
                 plugin.failure === null ? 'border-border' : 'border-danger/40 bg-danger/5',
               )}
             >
@@ -262,7 +267,10 @@ export function PluginsSection(): React.JSX.Element {
           <h3 className="text-2xs font-semibold tracking-wider text-faint uppercase">随应用编译</h3>
           <ul className="flex flex-col gap-2" aria-label="内置内核">
             {builtins.map((kernel) => (
-              <li key={kernel.id} className="rounded-md border border-border px-3 py-2.5">
+              <li
+                key={kernel.id}
+                className="rounded-lg border border-border bg-surface px-3 py-2.5"
+              >
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span className="text-xs text-text">{kernel.label}</span>
                   <span className="font-mono text-2xs text-faint">{kernel.id}</span>
@@ -315,12 +323,6 @@ export function PluginsSection(): React.JSX.Element {
           : `插件装在 ${home}/plugins/ 里：目录安装整份复制，包安装由 npm 装进它的 node_modules。`}
         插件在主进程里运行，能读写这台机器上的文件与网络；插件贡献的内核还会拿到含密钥的模型服务配置。
       </p>
-
-      {all.length > 0 && (
-        <p className="text-2xs text-faint">
-          {enabled} / {all.length} 已启用
-        </p>
-      )}
 
       {notice !== null && <p className="text-2xs leading-relaxed text-muted">{notice}</p>}
 
@@ -387,6 +389,6 @@ export function PluginsSection(): React.JSX.Element {
           </div>
         )}
       </Dialog>
-    </Section>
+    </div>
   )
 }
