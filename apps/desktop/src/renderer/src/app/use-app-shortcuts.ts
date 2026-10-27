@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import { kernelOfView } from './kernel-scope.js'
+import { kernelOfView, kernelViewId } from './kernel-scope.js'
 import { viewsFor } from './views.js'
 import { openView } from './open-view.js'
 import { useUiStore } from './ui-store.js'
@@ -31,8 +31,15 @@ export function useAppShortcuts(): void {
         case 'n':
           event.preventDefault()
           // The open page decides the kernel, the same way its own 新聊天 does. Home
-          // names none, and the server picks the default.
-          void createSession(newSessionTitle(), null, kernelOfView(useUiStore.getState().view))
+          // names none, and the server picks the default — then the page follows the
+          // session, because home is empty and a session with nowhere to type is a bug.
+          void createSession(
+            newSessionTitle(),
+            null,
+            kernelOfView(useUiStore.getState().view),
+          ).then((session) => {
+            if (session !== null) openView(kernelViewId(session.kernelId))
+          })
           return
         case ',':
           event.preventDefault()

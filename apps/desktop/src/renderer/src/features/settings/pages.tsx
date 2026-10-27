@@ -1,11 +1,10 @@
-import { Cpu, Info, Settings2, ShieldCheck, Terminal, type LucideIcon } from 'lucide-react'
+import { Cpu, Info, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { AboutSection } from './AboutSection.js'
 import { AgentModelPage } from './AgentModelPage.js'
 import { DefaultPermissionSection } from './DefaultPermissionSection.js'
 import { GeneralSection } from './GeneralSection.js'
-import { RuntimePage } from './RuntimePage.js'
 import { ToolRulesSection } from './ToolRulesSection.js'
 
 /** One page in the settings sidebar. */
@@ -61,8 +60,6 @@ export interface SettingsCategory {
  */
 const CATEGORIES = {
   general: '通用',
-  dsh: 'DSH',
-  pi: 'Pi',
   about: '关于',
 } as const
 
@@ -103,26 +100,6 @@ const PAGES = [
         <DefaultPermissionSection />
       </>
     ),
-  },
-  {
-    id: 'dsh-runtime',
-    label: '运行时',
-    icon: Terminal,
-    description: 'DSH 的进程：状态、版本与启停',
-    keywords: '运行时 runtime 进程 启动 停止 版本 安装 会话数据 dsh harness 重装',
-    category: CATEGORIES.dsh,
-    order: 0,
-    render: () => <RuntimePage kernel="dsh" />,
-  },
-  {
-    id: 'pi-runtime',
-    label: '运行时',
-    icon: Terminal,
-    description: 'Pi 的安装状态、版本与可执行文件',
-    keywords: '运行时 runtime pi 安装 版本 可执行文件 PICTOR_PI_BIN 会话数据 重新检测',
-    category: CATEGORIES.pi,
-    order: 0,
-    render: () => <RuntimePage kernel="pi" />,
   },
   {
     id: 'about',

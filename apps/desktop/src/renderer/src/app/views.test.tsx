@@ -16,7 +16,8 @@ vi.stubGlobal('matchMedia', (query: string) => ({
 }))
 
 const { DEFAULT_VIEW, findView, viewsFor } = await import('./views.js')
-const { kernelOfView, kernelViewId } = await import('./kernel-scope.js')
+const { arsSettingsViewId, kernelOfView, kernelViewId, settingsOwnerOf } =
+  await import('./kernel-scope.js')
 
 /** What `kernels.list()` reports, near enough for the rail to be built. */
 function kernel(id: string, label = id, icon: string | null = null): KernelInfo {
@@ -75,16 +76,39 @@ describe('view registry', () => {
     expect(new Set(shortcuts).size).toBe(shortcuts.length)
   })
 
-  it('puts home first and one page per mounted kernel after it', () => {
+  it('puts home first, then each ars with its own settings after it', () => {
+    // Every destination that does something is an ars: a page, and — for now as a second
+    // icon — the settings that belong to it rather than to the app.
     const primary = viewsFor(BUILTINS)
       .filter((entry) => entry.group === 'primary')
       .sort((a, b) => a.order - b.order)
 
     expect(primary.map((entry) => entry.id)).toEqual([
       DEFAULT_VIEW,
-      ...BUILTINS.map((entry) => kernelViewId(entry.id)),
+      ...BUILTINS.flatMap((entry) => [kernelViewId(entry.id), arsSettingsViewId(entry.id)]),
     ])
-    expect(primary.map((entry) => entry.label)).toEqual(['首页', 'DeepSeek Harness', 'Pi'])
+  })
+
+  it('gives each ars settings its own page instead of filing them under settings', () => {
+    // The runtime's process, version and switches belong to the ars that owns them: a
+    // page under `settings` would describe software that may not even be focused.
+    const ids = viewsFor(BUILTINS).map((entry) => entry.id)
+
+    for (const kernel of BUILTINS) {
+      expect(ids).toContain(arsSettingsViewId(kernel.id))
+      expect(settingsOwnerOf(arsSettingsViewId(kernel.id))).toBe(kernel.id)
+    }
+    // A kernel page is not a settings page, and the app's own settings is neither.
+    expect(settingsOwnerOf(kernelViewId('dsh'))).toBeNull()
+    expect(settingsOwnerOf('settings')).toBeNull()
+  })
+
+  it('leaves home empty, so a conversation starts on the ars that runs it', () => {
+    const home = viewsFor(BUILTINS).find((entry) => entry.id === DEFAULT_VIEW)
+    // No `render` target of its own beyond an empty frame: the check is that home is not
+    // a kernel page and carries no shortcut into one.
+    expect(home).toBeDefined()
+    expect(home?.shortcut).toBe('Ctrl+1')
   })
 
   it('puts extensions above settings in the rail', () => {

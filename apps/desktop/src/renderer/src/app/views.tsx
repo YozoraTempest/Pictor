@@ -1,10 +1,11 @@
 import { Blocks, Boxes, House, Settings2, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { KernelInfo } from '../../../shared/bridge.js'
-import { kernelViewId } from './kernel-scope.js'
+import { arsSettingsViewId, kernelViewId } from './kernel-scope.js'
 
 import { ExtensionsView } from '../features/extensions/ExtensionsView.js'
 import { iconFor } from '../lib/icons.js'
+import { RuntimePage } from '../features/settings/RuntimePage.js'
 import { SettingsView } from '../features/settings/SettingsView.js'
 import {
   WorkspaceLeading,
@@ -71,11 +72,14 @@ const HOME_VIEW: AppViewDescriptor = {
   group: 'primary',
   order: 0,
   /**
-   * No sessions and no kernel: a conversation starts here, and once it has a kernel
-   * it lives on that kernel's page. One list for every kernel would have to describe
-   * runtimes that disagree about almost everything.
+   * Empty on purpose.
+   *
+   * Every destination that does something is an ars: a piece of software assembled in,
+   * with its own page and its own settings. Home is not one of them, so it holds no
+   * composer, no picker and no list — a conversation starts on the ars that will run it,
+   * and a page that offered to start one would have to ask which.
    */
-  render: () => <WorkspaceView />,
+  render: () => <div className="flex min-h-0 flex-1" />,
   title: () => <WorkspaceTitle />,
   leading: () => <WorkspaceLeading />,
   trailing: () => <WorkspaceTrailing />,
@@ -130,14 +134,37 @@ export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
     // the build has never heard of still gets a page, a generic icon and a number.
     icon: iconFor(kernel.icon, Boxes),
     group: 'primary',
-    order: index + 1,
+    // Two slots per ars: its page, then its settings. Interleaved so the gear sits with
+    // the software it belongs to instead of at the end of a list of gears.
+    order: index * 2 + 1,
     render: () => <WorkspaceView kernelId={kernel.id} />,
     title: () => <WorkspaceTitle />,
     leading: () => <WorkspaceLeading />,
     trailing: () => <WorkspaceTrailing />,
     shortcut: `Ctrl+${String(index + 2)}`,
   }))
-  return [HOME_VIEW, ...pages, EXTENSIONS_VIEW, SETTINGS_VIEW]
+  /**
+   * Each ars gets a settings destination beside its page.
+   *
+   * Temporarily a second icon: what these pages hold — the runtime's process, its
+   * version, its own switches — belongs to the ars that owns them, not to the app's
+   * preferences. Folding them into the ars page itself is the next step; keeping them
+   * as one icon per ars is already the right shape, and needs no special case for dsh.
+   */
+  const settings = kernels.map((kernel, index): AppViewDescriptor => ({
+    id: arsSettingsViewId(kernel.id),
+    label: `${kernel.label} 设置`,
+    description: `${kernel.label} 的运行时与开关`,
+    icon: Settings2,
+    group: 'primary',
+    order: index * 2 + 2,
+    render: () => <RuntimePage kernel={kernel.id} />,
+    title: () => `${kernel.label} 设置`,
+    // No shortcut: a settings page is visited, not cycled between.
+    tools: 'none',
+  }))
+
+  return [HOME_VIEW, ...pages, ...settings, EXTENSIONS_VIEW, SETTINGS_VIEW]
 }
 
 /** The destinations in the order the rail shows them. */

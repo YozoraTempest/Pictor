@@ -23,3 +23,23 @@ export function kernelOfView(view: string): string | null {
   const id = view.slice(KERNEL_VIEW_PREFIX.length)
   return id.length === 0 ? null : id
 }
+
+/** Prefix for the settings page that belongs to one kernel. */
+export const ARS_SETTINGS_VIEW_SUFFIX = ':settings'
+
+/**
+ * The view id of one ars's settings.
+ *
+ * A second icon in the rail, temporarily: what the page holds — the process, its version,
+ * switches the runtime owns — belongs to that ars, not to the app's preferences, so it
+ * must not be filed under `settings`. Folding it into the ars page is the next step.
+ */
+export function arsSettingsViewId(kernelId: string): string {
+  return `${kernelViewId(kernelId)}${ARS_SETTINGS_VIEW_SUFFIX}`
+}
+
+/** The kernel whose settings a view holds, or null. */
+export function settingsOwnerOf(view: string): string | null {
+  if (!view.endsWith(ARS_SETTINGS_VIEW_SUFFIX)) return null
+  return kernelOfView(view.slice(0, -ARS_SETTINGS_VIEW_SUFFIX.length))
+}
