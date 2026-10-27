@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { HarnessStatus } from '../../shared/bridge.js'
+import type { HarnessStatus } from '../bridge.js'
 import type { KernelDriver, KernelSetting } from '@vulonlok/kernel-sdk'
 import { DshHarness } from './dsh.js'
 

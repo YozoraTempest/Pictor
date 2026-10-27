@@ -18,7 +18,7 @@ import type {
   KernelJobOutput,
   KernelModelState,
   PermissionMode,
-} from '../../shared/bridge.js'
+} from '../bridge.js'
 import {
   isApprovalSource,
   isCommandSource,

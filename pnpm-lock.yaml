@@ -165,7 +165,32 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
-  packages/harness: {}
+  packages/harness:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.5
+        version: 4.0.5(@deepseek-ai/cordis-plugin-loader@1.0.6)
+      '@vulonlok/harness-dsh':
+        specifier: workspace:*
+        version: link:../harness-dsh
+      '@vulonlok/host-client':
+        specifier: workspace:*
+        version: link:../host-client
+      '@vulonlok/kernel-dsh':
+        specifier: workspace:*
+        version: link:../kernel-dsh
+      '@vulonlok/kernel-sdk':
+        specifier: workspace:*
+        version: link:../kernel-sdk
+      '@vulonlok/model-config':
+        specifier: workspace:*
+        version: link:../model-config
+      '@vulonlok/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      '@vulonlok/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/harness-dsh:
     dependencies:

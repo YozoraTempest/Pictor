@@ -18,6 +18,8 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
+      "@vulonlok/harness": ["./packages/harness/src/index.ts"],
+      "@vulonlok/harness/*": ["./packages/harness/src/*"],
       "@vulonlok/shared": ["./packages/shared/src/index.ts"],
       "@vulonlok/racp": ["./packages/racp/src/index.ts"],
       "@vulonlok/host-client": ["./packages/host-client/src/index.ts"],

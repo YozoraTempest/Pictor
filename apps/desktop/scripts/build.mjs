@@ -9,11 +9,30 @@ const appRoot = fileURLToPath(new URL('..', import.meta.url))
  * always inlined; Vite's SSR pipeline would otherwise externalise them because
  * they are listed as dependencies.
  */
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
+
+/**
+ * Resolves the harness package's subpaths for esbuild.
+ *
+ * The main and preload bundles inline workspace TypeScript, and esbuild does not read a
+ * package's `exports` map — so `@vulonlok/harness/main/...` is pointed at its source here,
+ * the same way a sibling package's index is.
+ */
+const harnessPackage = {
+  name: 'workspace-harness',
+  setup(build) {
+    build.onResolve({ filter: /^@vulonlok\/harness\// }, (args) => ({
+      path: `${repoRoot}/packages/harness/src/${args.path.slice('@vulonlok/harness/'.length)}.ts`,
+    }))
+  },
+}
+
 const shared = {
   bundle: true,
   platform: 'node',
   target: 'node22',
   external: ['electron', '@earendil-works/pi-coding-agent', 'ws'],
+  plugins: [harnessPackage],
   logLevel: 'info',
   sourcemap: false,
   minify: false,

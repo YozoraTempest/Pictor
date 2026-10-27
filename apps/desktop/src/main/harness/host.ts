@@ -19,7 +19,7 @@ import {
   addProfileBundle,
   isBundlePackage,
   type KernelPluginInstallResult,
-} from '../kernel/kernel-plugins.js'
+} from '@vulonlok/harness/main/kernel/kernel-plugins'
 import { developmentPluginsDirectory } from '../plugin-roots.js'
 import { declarationFor, declarationOf, targetsOf, type PluginTarget } from '../plugin-target.js'
 import { SLOT_SPECS } from '@vulonlok/plugin-sdk'
@@ -70,12 +70,12 @@ import { HarnessChatBridge } from '../harness-chat.js'
 import { shouldAdoptTitle } from '@vulonlok/harness-dsh'
 
 import type { KernelDriver } from '@vulonlok/kernel-sdk'
-import { startEngine, type EngineHost } from '../kernel/host.js'
+import { startEngine, type EngineHost } from '@vulonlok/harness/main/kernel/host'
 import { isProviderSource } from '@vulonlok/kernel-sdk'
 import { resolveNodeBinary, resolveNpmCli } from '@vulonlok/kernel-sdk'
-import { openSettings } from '../kernel/settings-store.js'
+import { openSettings } from '@vulonlok/harness/main/kernel/settings-store'
 
-import { DshHarness, type KernelInfo } from '../kernel/dsh.js'
+import { DshHarness, type KernelInfo } from '@vulonlok/harness/main/kernel/dsh'
 import { PluginRuntime } from '../plugin-runtime.js'
 import { ToolBridgeServer, type GuardAsk } from '../tool-bridge-server.js'
 import { ModelService } from '../model-service.js'

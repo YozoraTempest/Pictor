@@ -7,7 +7,18 @@
   "exports": {
     ".": "./src/index.ts",
     "./main": "./src/main/index.ts",
+    "./main/*": "./src/main/*.ts",
     "./preload": "./src/preload/index.ts",
     "./renderer": "./src/renderer/index.ts"
+  },
+  "dependencies": {
+    "@vulonlok/shared": "workspace:*",
+    "@vulonlok/kernel-sdk": "workspace:*",
+    "@vulonlok/kernel-dsh": "workspace:*",
+    "@vulonlok/harness-dsh": "workspace:*",
+    "@vulonlok/host-client": "workspace:*",
+    "@vulonlok/model-config": "workspace:*",
+    "@vulonlok/plugin-sdk": "workspace:*",
+    "@deepseek-ai/cordis": "~4.0.5"
   }
 }
