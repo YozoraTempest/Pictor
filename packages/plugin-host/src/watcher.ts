@@ -121,6 +121,98 @@ export class PluginWatcher {
   }
 }
 
+/**
+ * Watches the directories plugins live in, rather than the plugins themselves.
+ *
+ * `PluginWatcher` answers "someone edited this plugin"; this answers "a plugin appeared or
+ * went away". Together they close the loop a person actually wants: write a folder, it is
+ * running; delete it, it is gone. Before this, discovery ran once at startup, so a plugin
+ * written while the app was open needed a restart to exist.
+ *
+ * Non-recursive on purpose. Everything *inside* a plugin is the other watcher's business,
+ * and a recursive watch over a directory full of `node_modules` would wake this process
+ * for an install that changes no plugin directory.
+ */
+export interface PluginRootWatcherOptions {
+  /** Milliseconds to wait for a burst of directory entries to settle. */
+  debounceMs?: number
+  /** The parent directories to watch. Read on every sync, so it may change. */
+  directories: () => readonly string[]
+  /** Called once per burst, after which the caller re-reads the directories. */
+  changed: () => void
+  warn?: (message: string) => void
+}
+
+export class PluginRootWatcher {
+  readonly #options: PluginRootWatcherOptions
+  readonly #watchers = new Map<string, FSWatcher>()
+  #timer: ReturnType<typeof setTimeout> | undefined
+  #closed = false
+
+  constructor(options: PluginRootWatcherOptions) {
+    this.#options = options
+  }
+
+  /** Starts watching every listed directory, and stops watching ones no longer listed. */
+  sync(): void {
+    if (this.#closed) return
+    const wanted = new Set(this.#options.directories())
+
+    for (const [directory, watcher] of this.#watchers) {
+      if (wanted.has(directory)) continue
+      watcher.close()
+      this.#watchers.delete(directory)
+    }
+
+    for (const directory of wanted) {
+      if (this.#watchers.has(directory)) continue
+      try {
+        this.#watchers.set(
+          directory,
+          watch(directory, { recursive: false }, () => this.#schedule()),
+        )
+      } catch (error) {
+        // A directory that vanished between the caller creating it and this call is not
+        // worth a warning: the next sync either finds it or does not need it.
+        this.#options.warn?.(`监听插件目录 ${directory} 失败：${messageOf(error)}`)
+      }
+    }
+  }
+
+  close(): void {
+    this.#closed = true
+    if (this.#timer !== undefined) clearTimeout(this.#timer)
+    this.#timer = undefined
+    for (const watcher of this.#watchers.values()) watcher.close()
+    this.#watchers.clear()
+  }
+
+  /** Directories currently watched, for tests. */
+  watching(): string[] {
+    return [...this.#watchers.keys()]
+  }
+
+  /**
+   * One reconcile per burst.
+   *
+   * Copying a plugin directory in produces a create for every file inside it; reconciling
+   * per event would mount a half-copied plugin and report its missing entry as a failure.
+   */
+  #schedule(): void {
+    if (this.#closed) return
+    if (this.#timer !== undefined) clearTimeout(this.#timer)
+    this.#timer = setTimeout(() => {
+      this.#timer = undefined
+      if (this.#closed) return
+      try {
+        this.#options.changed()
+      } catch (error) {
+        this.#options.warn?.(`处理插件目录变化失败：${messageOf(error)}`)
+      }
+    }, this.#options.debounceMs ?? 200)
+  }
+}
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }

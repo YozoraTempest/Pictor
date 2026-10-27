@@ -84,6 +84,7 @@ const bridge: PictorBridge = {
   listKernels: () => invoke('pictor:kernels.list'),
   listKernelPlugins: () => invoke('pictor:kernels.plugins'),
   listPluginOverview: () => invoke('pictor:plugins.overview'),
+  pluginHomes: () => invoke('pictor:plugins.homes'),
   listBuiltinKernels: () => invoke('pictor:kernels.builtins'),
   setBuiltinKernelEnabled: (id, enabled) => invoke('pictor:kernels.setBuiltinEnabled', id, enabled),
   setDefaultKernel: (id) => invoke('pictor:kernels.setDefault', id),

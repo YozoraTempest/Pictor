@@ -4,9 +4,27 @@ A plugin is one npm package. It can contribute panels and the views behind them,
 guards, skills, a whole kernel, or several of those — and installing it is one act, not
 one per contribution.
 
-This directory holds the example the tests install (`fake-kernel`). What ships with
-the app is discovered from here; what a person installs lives under
-`<profile>/plugins/`.
+Three places, three purposes:
+
+| Where                | What                                                           |
+| -------------------- | -------------------------------------------------------------- |
+| this directory       | Examples that ship with the app (`fake-kernel`, `hello-panel`) |
+| `<profile>/plugins/` | What a person installed                                        |
+| `~/Pictor/plugins/`  | What a person is **writing** — see below                       |
+
+## Writing one
+
+Drop a folder into `~/Pictor/plugins/` and it is mounted. Delete it and it is gone. No
+install step and no restart: the app watches that directory (and the installed one) and
+reconciles what it finds — new folder, mount; vanished folder, unmount. Deleting a folder
+is not the same as switching a plugin off, so putting it back brings the plugin back.
+
+Set `PICTOR_DEVELOPMENT_PLUGINS` to use a different directory — a checkout of a plugins
+repository, say. Editing any file in a mounted plugin reloads it (the same switch the
+settings page has).
+
+The `pictor-guide` plugin ships a **skill** that tells the agent all of this, so "write me a
+plugin that shows X" works without a human reading this file first.
 
 ## The smallest plugin
 

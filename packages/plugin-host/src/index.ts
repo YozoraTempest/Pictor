@@ -8,7 +8,12 @@ export {
 
 export { resolveActivationOrder, type ResolutionResult } from './resolution.js'
 
-export { PluginWatcher, type PluginWatcherOptions } from './watcher.js'
+export {
+  PluginRootWatcher,
+  PluginWatcher,
+  type PluginRootWatcherOptions,
+  type PluginWatcherOptions,
+} from './watcher.js'
 
 export {
   INSTALLED_LIST,

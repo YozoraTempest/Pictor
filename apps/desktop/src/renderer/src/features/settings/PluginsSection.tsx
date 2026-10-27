@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { BuiltinKernelInfo, PluginOverview } from '../../../../shared/bridge.js'
+import type { BuiltinKernelInfo, PluginHomes, PluginOverview } from '../../../../shared/bridge.js'
 import { Button } from '../../components/ui/Button.js'
 import { Dialog } from '../../components/ui/Dialog.js'
 import { Input } from '../../components/ui/Input.js'
@@ -117,7 +117,7 @@ export function PluginsSection(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
-  const [home, setHome] = useState<string | null>(null)
+  const [homes, setHomes] = useState<PluginHomes | null>(null)
   const [hotReload, setHotReload] = useState<boolean | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
@@ -133,6 +133,10 @@ export function PluginsSection(): React.JSX.Element {
     }
   }, [])
 
+  // The list follows the disk: writing a plugin folder while this page is open adds a row
+  // without a reload, and deleting one takes it away.
+  useEffect(() => window.pictor.onWorkspaceChanged(() => void load()), [load])
+
   useEffect(() => {
     void load()
     void window.pictor
@@ -140,11 +144,8 @@ export function PluginsSection(): React.JSX.Element {
       .then(setHotReload)
       .catch(() => undefined)
     void window.pictor
-      .getAppInfo()
-      .then((info) => {
-        const index = Math.max(info.database.lastIndexOf('/'), info.database.lastIndexOf('\\'))
-        setHome(index > 0 ? info.database.slice(0, index) : null)
-      })
+      .pluginHomes()
+      .then(setHomes)
       .catch(() => undefined)
   }, [load])
 
@@ -398,8 +399,25 @@ export function PluginsSection(): React.JSX.Element {
 
       <p className="text-2xs leading-relaxed text-faint">
         主进程内运行，可读写本机文件与网络；带内核的还会拿到含密钥的模型服务。
-        {home !== null && <span className="ml-1 font-mono">{shortPath(`${home}/plugins`)}</span>}
       </p>
+
+      {/*
+        Two paths, because they answer two different questions: where an installed plugin
+        went, and where to write one. The second is the one a person needs to act on.
+      */}
+      {homes !== null && (
+        <dl className="flex flex-col gap-1 text-2xs leading-relaxed text-faint">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <dt>已安装</dt>
+            <dd className="font-mono">{shortPath(homes.installed)}</dd>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <dt>开发</dt>
+            <dd className="font-mono">{shortPath(homes.development)}</dd>
+            <dd>放进去就生效，删掉就卸载</dd>
+          </div>
+        </dl>
+      )}
 
       {notice !== null && <p className="text-2xs leading-relaxed text-muted">{notice}</p>}
 

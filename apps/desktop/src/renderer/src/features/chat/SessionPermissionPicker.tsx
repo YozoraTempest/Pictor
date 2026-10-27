@@ -65,10 +65,11 @@ export function SessionPermissionPicker(): React.JSX.Element | null {
   const menuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    if (sessionId.length === 0) {
-      setCurrent(null)
-      return
-    }
+    // The answer belongs to a conversation, so switching conversations drops it: a button
+    // that kept the previous one's mode would claim, for as long as the read takes, that
+    // this new conversation is sandboxed the way the old one was.
+    setCurrent(null)
+    if (sessionId.length === 0) return
     let alive = true
     void window.pictor
       .getSessionPermission(sessionId)

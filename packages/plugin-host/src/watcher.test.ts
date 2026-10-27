@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { PluginContainer } from './container.js'
 import type { DiscoveredPlugin } from './registry.js'
-import { PluginWatcher } from './watcher.js'
+import { PluginRootWatcher, PluginWatcher } from './watcher.js'
 
 /**
  * Reloading without a restart.
@@ -85,6 +85,84 @@ describe('PluginContainer.reload', () => {
     // One panel, not two: the old fiber was disposed before the new code ran, so the
     // second registration was not refused as a duplicate.
     expect(contributions.panels.list().map((panel) => panel.title)).toEqual(['第二版'])
+  })
+})
+
+describe('PluginRootWatcher', () => {
+  it('notices a plugin directory appearing and going away', async () => {
+    // This is the whole point: a folder written while the app runs becomes a plugin without
+    // a restart, and deleting it takes the plugin away again.
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-roots-'))
+    let changes = 0
+    const watcher = new PluginRootWatcher({
+      debounceMs: 20,
+      directories: () => [parent],
+      changed: () => {
+        changes += 1
+      },
+    })
+    watcher.sync()
+
+    try {
+      mkdirSync(join(parent, 'first-plugin'))
+
+      expect(await until(() => changes >= 1)).toBe(true)
+
+      const before = changes
+      rmSync(join(parent, 'first-plugin'), { recursive: true })
+      expect(await until(() => changes > before)).toBe(true)
+    } finally {
+      watcher.close()
+    }
+  })
+
+  it('reconciles one burst once, not once per file', async () => {
+    // Copying a plugin in creates a directory entry per file; reconciling per event would
+    // mount a half-copied plugin.
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-roots-'))
+    let changes = 0
+    const watcher = new PluginRootWatcher({
+      debounceMs: 120,
+      directories: () => [parent],
+      changed: () => {
+        changes += 1
+      },
+    })
+    watcher.sync()
+
+    try {
+      mkdirSync(join(parent, 'burst'))
+      for (let index = 0; index < 20; index += 1) {
+        writeFileSync(join(parent, 'burst', `file-${String(index)}.js`), 'export default 1\n')
+      }
+
+      expect(await until(() => changes >= 1)).toBe(true)
+      // One more settle window: a second reconcile would mean the burst was not coalesced.
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      expect(changes).toBe(1)
+    } finally {
+      watcher.close()
+    }
+  })
+
+  it('follows the directory list instead of fixing it at start', async () => {
+    const first = mkdtempSync(join(tmpdir(), 'pictor-roots-a-'))
+    const second = mkdtempSync(join(tmpdir(), 'pictor-roots-b-'))
+    let directories = [first]
+    const watcher = new PluginRootWatcher({
+      directories: () => directories,
+      changed: () => undefined,
+    })
+
+    watcher.sync()
+    expect(watcher.watching()).toEqual([first])
+
+    directories = [second]
+    watcher.sync()
+    expect(watcher.watching()).toEqual([second])
+
+    watcher.close()
+    expect(watcher.watching()).toEqual([])
   })
 })
 

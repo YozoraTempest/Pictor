@@ -186,6 +186,18 @@ export interface KernelNotice {
  * skills, a kernel. The page lists installations rather than contributions, because
  * that is what a person installed and what they would remove.
  */
+/**
+ * Where plugins live on disk.
+ *
+ * `installed` is app data, owned by the installer. `development` is the person's own
+ * directory, where a plugin being written goes — anything dropped there is mounted, and a
+ * watcher notices it appearing or going away, so writing files is the whole workflow.
+ */
+export interface PluginHomes {
+  installed: string
+  development: string
+}
+
 export interface PluginOverview {
   /** Installation name: the directory or package this came from. */
   name: string
@@ -377,6 +389,8 @@ export interface PictorBridge {
   listKernelPlugins(): Promise<KernelPluginInfo[]>
   /** Every installed plugin, with what it contributes and what it can reach. */
   listPluginOverview(): Promise<PluginOverview[]>
+  /** The two directories a plugin can live in. */
+  pluginHomes(): Promise<PluginHomes>
   /** Settings the mounted kernels declare; each names the kernel that owns it. */
   kernelSettings(): Promise<KernelSettingInfo[]>
   /** Writes one declared setting; false when no mounted kernel owns that key. */

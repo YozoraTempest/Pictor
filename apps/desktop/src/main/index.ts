@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -14,6 +14,7 @@ import {
   expandPluginRoots,
   resolveActivationOrder,
 } from '@pictor/plugin-host'
+import { developmentPluginsDirectory } from './plugin-roots.js'
 import { SLOT_SPECS } from '@pictor/plugin-sdk'
 import type {
   PanelContribution,
@@ -47,6 +48,7 @@ import {
 import type {
   AppInfo,
   BuiltinKernelInfo,
+  PluginHomes,
   PluginOverview,
   HarnessStatus,
   HostSnapshot,
@@ -167,6 +169,8 @@ interface Workspace {
   installer: PluginInstaller
   /** Every plugin directory on disk right now, bundled first; recomputed per call. */
   pluginDirectories: () => readonly string[]
+  /** Where installed plugins live, and where one being written does. */
+  pluginHomes: () => { installed: string; development: string }
   /** Writes one setting a kernel declared, and remembers it. */
   setKernelSetting: (key: string, value: boolean) => Promise<boolean>
   /** Writes one setting Pictor owns; kernels read the same snapshot afterwards. */
@@ -250,12 +254,26 @@ async function startWorkspace(): Promise<Workspace | null> {
     ? join(process.resourcesPath, 'plugins')
     : join(repositoryRoot, 'plugins')
   const pluginDirectory = join(userData, 'plugins')
+  // A plugin someone is writing, in a directory of their own rather than in profile data:
+  // it has to be a plain project — under version control, open in an editor, deleted when
+  // it was an experiment. Created on start so the place exists to be found before anyone
+  // writes into it.
+  const developmentDirectory = developmentPluginsDirectory()
+  for (const directory of [pluginDirectory, developmentDirectory]) {
+    try {
+      mkdirSync(directory, { recursive: true })
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      console.warn(`[plugin] 无法创建插件目录 ${directory}: ${reason}`)
+    }
+  }
+
   // Folders sit beside `installed.json`; a package installed by npm sits inside
   // `node_modules` and is named by that file. Both are plugins, so discovery asks for
   // both — otherwise a plugin installed as a package would only ever contribute its
   // kernel half, which is what used to happen.
   const candidateRoots = [
-    ...expandPluginRoots([pluginRoot, pluginDirectory]),
+    ...expandPluginRoots([pluginRoot, pluginDirectory, developmentDirectory]),
     ...installedPackageRoots(pluginDirectory),
   ]
 
@@ -295,10 +313,23 @@ async function startWorkspace(): Promise<Workspace | null> {
    * wait for `kernel.dsh`, a kernel can read `pictor.panels`, and neither has to be told
    * about the other's registry.
    */
+  // Skills live in one root the runtime already scans: a plugin contributes data and
+  // Pictor writes the file, so the plugin never touches the runtime's home. Created before
+  // the runtime because the runtime writes into it as plugins mount.
+  const skills = new SkillLibrary({
+    root: join(userData, 'harness', 'skills'),
+    stash: join(userData, 'skill-library', 'disabled'),
+    stateFile: join(userData, 'skill-library.json'),
+    logger: (message) => console.warn(`[skill] ${message}`),
+  })
+
   // Read before the runtime exists: the watcher is created in its constructor, and a
   // preference read afterwards could not take it back without a restart.
   const hotReloadStored = (await running.client.listSettings())['plugins.hotReload']
   const plugins = new PluginRuntime({
+    // Without this the runtime has nowhere to write a contributed skill, and every skill a
+    // plugin offers would exist only in memory.
+    skills,
     userData,
     // A view's own scratch space, beside the plugin's other state.
     dataDirectory: (pluginId) => join(userData, 'plugin-data', pluginId),
@@ -312,24 +343,24 @@ async function startWorkspace(): Promise<Workspace | null> {
       console.info(`[plugin] reloaded ${id}`)
       announceWorkspaceChanged()
     },
+    // The same parents discovery reads, so a folder written while the app runs is a plugin
+    // without a restart — and deleting it takes the plugin away again.
+    pluginParents: () => [pluginRoot, pluginDirectory, developmentDirectory],
+    onPluginsChanged: () => {
+      announceWorkspaceChanged()
+    },
   })
 
   for (const plugin of resolution.ordered) {
     if (enabled.get(plugin.id) === false) continue
     await plugins.add(plugin)
   }
+  // Mounting is done by the loop above, which already knows the on/off choices; this is
+  // what turns on the watcher that later notices a folder appearing or going away.
+  plugins.beginWatching()
   for (const failure of resolution.failures) {
     console.warn(`[plugin] ${failure.source}: ${failure.reason}`)
   }
-
-  // Skills live in one root the runtime already scans; a plugin contributes data
-  // and Pictor writes the file, so the plugin never touches the runtime's home.
-  const skills = new SkillLibrary({
-    root: join(userData, 'harness', 'skills'),
-    stash: join(userData, 'skill-library', 'disabled'),
-    stateFile: join(userData, 'skill-library.json'),
-    logger: (message) => console.warn(`[skill] ${message}`),
-  })
 
   // A plugin that is installed but not mounted owns no files: whatever an earlier run
   // wrote for it has to go, or its skills would outlive the switch. The runtime then
@@ -613,7 +644,9 @@ async function startWorkspace(): Promise<Workspace | null> {
     // Recomputed, not remembered: a plugin installed while the app runs is a directory
     // that did not exist when the app started, and every caller here — the settings page,
     // the on/off switch — is asking precisely because the set may have changed.
-    pluginDirectories: () => expandPluginRoots([pluginRoot, join(userData, 'plugins')]),
+    pluginDirectories: () =>
+      expandPluginRoots([pluginRoot, join(userData, 'plugins'), developmentDirectory]),
+    pluginHomes: () => ({ installed: pluginDirectory, development: developmentDirectory }),
     // The kernel that declared the key is the one that writes it, persistence
     // included; this only asks every catalogue to look again afterwards.
     setKernelSetting: async (key, value) => {
@@ -1236,6 +1269,16 @@ function registerIpc(workspace: Workspace): void {
 
   ipcMain.handle('pictor:plugins.list', async (): Promise<PluginRecord[]> => {
     return workspace.client.listPlugins()
+  })
+
+  /**
+   * Where plugins live, for the page that explains it.
+   *
+   * Two places rather than one sentence: an installed plugin is app data, one being written
+   * is the person's own directory — and the second is the one they need a path to.
+   */
+  ipcMain.handle('pictor:plugins.homes', async (): Promise<PluginHomes> => {
+    return workspace.pluginHomes()
   })
 
   /**

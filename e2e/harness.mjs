@@ -102,6 +102,9 @@ export async function launch() {
       env: {
         ...process.env,
         PICTOR_USER_DATA: profile,
+        // The development plugin directory is a real place in the person's home. A test run
+        // must not write into it, so it is pointed at this run's scratch profile instead.
+        PICTOR_DEVELOPMENT_PLUGINS: join(profile, 'development-plugins'),
         ELECTRON_ENABLE_LOGGING: '0',
         ...(dsh === null ? {} : { PICTOR_DSH_BIN: dsh }),
       },

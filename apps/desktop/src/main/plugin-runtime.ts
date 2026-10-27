@@ -1,9 +1,13 @@
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { Context } from '@deepseek-ai/cordis'
 import {
   PluginContainer,
+  PluginRootWatcher,
   PluginWatcher,
+  discoverPlugins,
+  expandPluginRoots,
   installedPackageRoots,
   type MountedPlugin,
 } from '@pictor/plugin-host'
@@ -40,6 +44,16 @@ export interface PluginRuntimeOptions {
   /** Told after a plugin was reloaded, so the window can fetch its panels again. */
   onReload?: (id: string) => void
   /**
+   * The directories plugins are kept in — parents, not plugins: `~/Pictor/plugins`, not
+   * `~/Pictor/plugins/my-thing`. Read fresh on every reconcile.
+   *
+   * Absent means the mounted set only changes when the app asks it to, which is what a
+   * caller that owns discovery itself wants.
+   */
+  pluginParents?: () => readonly string[]
+  /** Told when a plugin appeared or vanished on disk, so the window can catch up. */
+  onPluginsChanged?: () => void
+  /**
    * Writes plugin skills to disk.
    *
    * A skill is a file the runtime scans, so the sync happens after every change to the
@@ -73,6 +87,10 @@ export class PluginRuntime {
   #appliedSkills = new Set<string>()
   /** Serves the files of views that ship a front end instead of a description. */
   readonly #frames = new FrameHost({ warn: (message) => this.#warn(message) })
+  /** Notices a plugin directory appearing or going away under a plugin root. */
+  readonly #rootWatcher: PluginRootWatcher | null
+  /** Serialises reconciles: two of them interleaved would mount the same plugin twice. */
+  #reconciling: Promise<void> = Promise.resolve()
 
   constructor(options: PluginRuntimeOptions) {
     this.#options = options
@@ -102,6 +120,18 @@ export class PluginRuntime {
             },
             warn: (message) => this.#warn(message),
           })
+
+    // Same switch as the per-plugin watcher: one preference means "the plugin list follows
+    // the disk", and splitting it into two would ask a person to reason about which half of
+    // the same behaviour they want.
+    this.#rootWatcher =
+      options.hotReload === false || options.pluginParents === undefined
+        ? null
+        : new PluginRootWatcher({
+            directories: () => [...(options.pluginParents?.() ?? [])],
+            changed: () => void this.reconcile(),
+            warn: (message) => this.#warn(message),
+          })
   }
 
   /** Whether edits are being picked up without a restart. */
@@ -116,6 +146,81 @@ export class PluginRuntime {
       await this.add(plugin)
     }
     this.syncSkills()
+    this.beginWatching()
+  }
+
+  /**
+   * Starts noticing plugin directories appearing and going away.
+   *
+   * Separate from `start()` because the caller may mount plugins itself — the app filters
+   * by the person's on/off choices before any of them are added, and calling `start()` with
+   * that already-filtered list would mean mounting twice.
+   */
+  beginWatching(): void {
+    this.#rootWatcher?.sync()
+  }
+
+  /**
+   * Makes the mounted set match the directories again.
+   *
+   * Two questions, answered against one discovery pass: something appeared that is not
+   * mounted (mount it), and something mounted is no longer on disk (unmount it). A plugin
+   * the person switched off is left off — that is a decision, not a missing directory.
+   *
+   * Reconciles queue behind each other: a copy that produces twenty events must not mount
+   * the same directory five times over.
+   */
+  reconcile(): Promise<void> {
+    this.#reconciling = this.#reconciling.then(() => this.#reconcileNow()).catch(() => undefined)
+    return this.#reconciling
+  }
+
+  async #reconcileNow(): Promise<void> {
+    const parents = this.#options.pluginParents?.()
+    if (parents === undefined) return
+
+    // The same two sources discovery uses at startup: folders beside `installed.json`, and
+    // packages named by it. Asking either one alone would drop half the plugin list.
+    const roots = [
+      ...expandPluginRoots([...parents]),
+      ...parents.flatMap((parent) => installedPackageRoots(parent)),
+    ]
+    const mounted = new Map(this.#container.list().map((plugin) => [plugin.id, plugin]))
+    let changed = false
+
+    for (const plugin of discoverPlugins(roots).plugins) {
+      if (mounted.has(plugin.id) || this.#disabled.has(plugin.id)) continue
+      await this.add(plugin)
+      changed = true
+    }
+
+    for (const plugin of mounted.values()) {
+      if (existsSync(plugin.root)) continue
+      await this.#unmountGone(plugin.id)
+      changed = true
+    }
+
+    if (!changed) return
+    this.syncSkills()
+    this.#rootWatcher?.sync()
+    this.#options.onPluginsChanged?.()
+  }
+
+  /**
+   * Unmounts a plugin whose directory vanished.
+   *
+   * Deliberately not `remove()`: that records the person's decision to switch the plugin
+   * off, and a deleted directory is not a decision. Left as is, putting the folder back
+   * would bring the plugin back.
+   */
+  async #unmountGone(id: string): Promise<void> {
+    this.#watcher?.unwatch(id)
+    try {
+      await this.#container.unmount(id)
+      this.#warn(`插件目录不在了，已卸载：${id}`)
+    } catch (error) {
+      this.#warn(`卸载 ${id} 失败：${messageOf(error)}`)
+    }
   }
 
   /** Mounts one plugin. A failure is reported and does not stop the others. */
@@ -141,6 +246,7 @@ export class PluginRuntime {
   /** Stops watching everything, and stops answering frame URLs; called when the app closes. */
   dispose(): void {
     this.#watcher?.close()
+    this.#rootWatcher?.close()
     void this.#frames.close()
   }
 

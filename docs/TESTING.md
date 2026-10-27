@@ -71,17 +71,18 @@ download). Nothing is stubbed below the window.
 
 Each spec says what it is about:
 
-| Spec       | Proves                                                                                                                                             |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chat`     | A message typed into the composer reaches the runtime, streams back, the runtime's title is adopted, and the conversation survives a restart       |
-| `probe`    | 试运行 returns the runtime's answer and events, and with the runtime down a message is refused instead of being answered elsewhere                 |
-| `branch`   | Branching from an answer and before a question copies exactly the expected prefix, and the tree shows both conversations under their source        |
-| `approval` | A sandbox denial escalates into a question, and the answer decides whether the file exists                                                         |
-| `image`    | A pasted image reaches the model as an image part, survives into the bubble, and a non-image paste attaches nothing                                |
-| `archive`  | Archiving is undoable from the row that did it, and a sweeping archive asks first                                                                  |
-| `search`   | The palette narrows as you type, land on a conversation, open and close on the advertised keys                                                     |
-| `actions`  | A button's action id reaches the plugin in the main process, and the description it answers with replaces what was drawn                           |
-| `frame`    | A plugin's own bundle loads in a sandboxed frame with its stylesheet, its click reaches the plugin and comes back, and it cannot reach the network |
+| Spec       | Proves                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chat`     | A message typed into the composer reaches the runtime, streams back, the runtime's title is adopted, and the conversation survives a restart                        |
+| `probe`    | 试运行 returns the runtime's answer and events, and with the runtime down a message is refused instead of being answered elsewhere                                  |
+| `branch`   | Branching from an answer and before a question copies exactly the expected prefix, and the tree shows both conversations under their source                         |
+| `approval` | A sandbox denial escalates into a question, and the answer decides whether the file exists                                                                          |
+| `image`    | A pasted image reaches the model as an image part, survives into the bubble, and a non-image paste attaches nothing                                                 |
+| `archive`  | Archiving is undoable from the row that did it, and a sweeping archive asks first                                                                                   |
+| `search`   | The palette narrows as you type, land on a conversation, open and close on the advertised keys                                                                      |
+| `actions`  | A button's action id reaches the plugin in the main process, and the description it answers with replaces what was drawn                                            |
+| `frame`    | A plugin's own bundle loads in a sandboxed frame with its stylesheet, its click reaches the plugin and comes back, and it cannot reach the network                  |
+| `develop`  | A plugin folder written into the development directory appears in the list while the page is open, its panel works, and deleting the folder removes it — no restart |
 
 `e2e/stub-model.mjs` is a local OpenAI-compatible endpoint, so the chat spec
 asserts Pictor's behaviour and never a provider's output. It answers the runtime's

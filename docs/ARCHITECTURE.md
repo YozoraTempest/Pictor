@@ -177,6 +177,36 @@ avoids. And an action id is something the plugin itself can refuse: a view witho
 like a broken app. The same channel serves a panel and a seat, because both are a `views`
 id with a person in front of it.
 
+### Writing a plugin
+
+Discovery used to run once, at startup, over two directories: the bundled one and the
+profile's. That is right for installed plugins and wrong for one being written — the loop a
+person (or an agent) actually wants is "save the file, see it", and a restart is not part of
+it.
+
+So there is a third directory, `~/Pictor/plugins` (`PICTOR_DEVELOPMENT_PLUGINS` overrides it),
+and two watchers with one job each:
+
+- **`PluginRootWatcher`** (`packages/plugin-host/src/watcher.ts`) watches the _parents_ —
+  non-recursively, debounced — and says "something appeared or went away". The runtime then
+  reconciles: discovery over the same roots startup uses, mount what is new, unmount what
+  vanished.
+- **`PluginWatcher`** keeps doing what it did: a file inside a mounted plugin changed,
+  reload it.
+
+Two rules make reconciling safe. A folder that vanished is not a decision to switch the
+plugin off, so it is unmounted without being marked disabled — putting it back brings it
+back. And a plugin the person _did_ switch off stays off: reconcile skips it, because a
+switch is a decision and a reconciler that forgets one turns plugins on behind the person's
+back. Reconciles queue behind each other, so a copy that produces twenty events mounts once.
+
+Being able to write a plugin is not the same as knowing what to write, which is what the
+`pictor-guide` plugin is for: it contributes a **skill** (`pictor-plugin-development`)
+describing the block vocabulary, buttons, frames, slots and the rules — with the development
+directory filled in at mount time, and a test comparing that path with the one discovery
+computes. It ships as a plugin rather than as prose in the app so it follows the API, can be
+switched off, and disappears with its files when unloaded.
+
 ### Frames: a plugin's own front end
 
 Blocks are a closed vocabulary, which is the point — but a canvas or a board is not
