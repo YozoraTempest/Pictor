@@ -26,11 +26,11 @@ export default {
 
     // Open the page first: the row has to appear while it is on screen, which is the part
     // a restart-based discovery could not do.
-    // 拓展 lives inside the engine's settings now.
+    // 拓展 is a page in the engine's settings now, in the same column as 模型 and 运行时.
     await page
       .locator('nav[aria-label="主导航"] button[aria-label="DeepSeek Harness 设置"]')
       .click()
-    await page.getByRole('tab', { name: '拓展' }).click()
+    await page.getByRole('button', { name: /拓展/ }).first().click()
     await page.getByRole('tab', { name: /插件/ }).click()
     await page.getByText('编辑后自动重载').waitFor({ timeout: 30_000 })
 
@@ -87,11 +87,11 @@ export function apply(ctx) {
       .click()
       .catch(() => undefined)
 
-    // 拓展 lives inside the engine's settings now.
+    // 拓展 is a page in the engine's settings now, in the same column as 模型 and 运行时.
     await page
       .locator('nav[aria-label="主导航"] button[aria-label="DeepSeek Harness 设置"]')
       .click()
-    await page.getByRole('tab', { name: '拓展' }).click()
+    await page.getByRole('button', { name: /拓展/ }).first().click()
     await page.getByRole('tab', { name: /插件/ }).click()
     // The row goes without a restart, and it really goes: a poll, because a locator that
     // matches nothing is nothing to wait for.

@@ -47,6 +47,9 @@ export default {
 
       // 设置 → 模型 → 试运行，the way a user reaches the check.
       await page.keyboard.press('Control+,')
+      await page
+        .locator('nav[aria-label="主导航"] button[aria-label="DeepSeek Harness 设置"]')
+        .click()
       const sidebar = page.getByRole('navigation', { name: '设置分类' })
       await sidebar.getByRole('button', { name: '模型' }).click({ timeout: 15_000 })
       await page.getByRole('button', { name: '试运行', exact: true }).click({ timeout: 15_000 })
@@ -84,7 +87,7 @@ export default {
       // and waits for the home view to render before handing over.
       await page
         .getByRole('navigation', { name: '主导航' })
-        .getByRole('button', { name: 'DeepSeek Harness' })
+        .getByRole('button', { name: 'DeepSeek Harness', exact: true })
         .click()
       await page.getByRole('button', { name: '搜索会话' }).waitFor({ timeout: 15_000 })
     } finally {

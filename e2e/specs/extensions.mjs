@@ -14,10 +14,11 @@ export default {
     await page
       .locator('nav[aria-label="主导航"] button[aria-label="DeepSeek Harness 设置"]')
       .click()
-    await page.getByRole('tab', { name: '拓展' }).click()
+    await page.getByRole('button', { name: /拓展/ }).first().click()
 
-    // Named once: the page's own heading. The title bar stays quiet for this view.
-    await page.getByRole('heading', { name: '拓展' }).waitFor({ timeout: 20_000 })
+    // The page's own heading, and the row that opened it is the same word: the setting
+    // page title is drawn inside the page list as well, so the heading is the second.
+    await page.getByRole('heading', { name: '拓展' }).last().waitFor({ timeout: 20_000 })
 
     const tabs = page.getByRole('tab')
     assert.deepEqual(await tabs.allInnerTexts(), ['插件', '技能', 'MCP'])
@@ -38,16 +39,25 @@ export default {
     await page.getByRole('tab', { name: 'MCP' }).click()
     await page.getByRole('button', { name: '添加服务器' }).waitFor({ timeout: 20_000 })
 
-    // And the settings tree no longer offers them: the same thing in two places would be
-    // two places to keep in step.
-    await page.locator('nav[aria-label="主导航"] button[aria-label="设置"]').click()
-    await page.getByRole('button', { name: '通用' }).click()
+    // The settings tree has one row for all three, not one each: 拓展 is where they live,
+    // and a row per tab would be the same thing in two places to keep in step.
+    await page
+      .locator('nav[aria-label="主导航"] button[aria-label="DeepSeek Harness 设置"]')
+      .click()
     await page.locator('nav[aria-label="设置分类"]').waitFor({ timeout: 20_000 })
     const rows = (await page.locator('nav[aria-label="设置分类"] button').allInnerTexts()).map(
       (text) => text.trim(),
     )
+    assert.ok(
+      rows.some((text) => text.includes('拓展')),
+      `设置树里应该有一个「拓展」：${rows.join(' / ')}`,
+    )
     for (const gone of ['插件', '技能', 'MCP']) {
-      assert.equal(rows.includes(gone), false, `${gone} 还在设置里`)
+      assert.equal(
+        rows.some((text) => text === gone),
+        false,
+        `${gone} 不该在设置树里单独占一行`,
+      )
     }
   },
 }

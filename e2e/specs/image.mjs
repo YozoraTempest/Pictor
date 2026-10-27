@@ -47,6 +47,9 @@ export default {
       // a switch in the dialog, because the runtime refuses images for a model
       // that never declared them.
       await page.keyboard.press('Control+,')
+      await page
+        .locator('nav[aria-label="主导航"] button[aria-label="DeepSeek Harness 设置"]')
+        .click()
       const sidebar = page.getByRole('navigation', { name: '设置分类' })
       await sidebar.getByRole('button', { name: '模型' }).click({ timeout: 15_000 })
       await page.getByRole('button', { name: '添加服务' }).click({ timeout: 15_000 })

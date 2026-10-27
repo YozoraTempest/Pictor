@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 
+import { openKernel } from '../harness.mjs'
+
 /**
  * A panel contributed by a plugin, opened the way a person opens one.
  *
@@ -12,8 +14,9 @@ import assert from 'node:assert/strict'
 export default {
   name: '插件面板',
   async run(page) {
-    // The column is open by default on a wide window; a spec that collapsed it earlier
-    // in the run must not decide whether this one can start.
+    // Stand on the engine's page, and open the column: a spec that ran before this one may
+    // have left the app in settings or with the column collapsed.
+    await openKernel(page, 'DeepSeek Harness')
     const opener = page.getByRole('button', { name: '展开右侧面板' })
     if ((await opener.count()) > 0) await opener.click()
 
