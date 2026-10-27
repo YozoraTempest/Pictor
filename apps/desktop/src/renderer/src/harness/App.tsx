@@ -3,16 +3,16 @@ import { useEffect } from 'react'
 import { Banner } from '../components/ui/index.js'
 import { useChatStore } from '../features/chat/chat-store.js'
 import { AppShell } from '../shell/AppShell.js'
-import { useApprovalStore } from './approval-store.js'
-import { useQuestionStore } from './question-store.js'
-import { useRuntimeStore } from './runtime-store.js'
-import { useUiStore } from './ui-store.js'
-import { openView } from './open-view.js'
-import { findView } from './views.js'
-import { useAppShortcuts } from './use-app-shortcuts.js'
-import { useWorkspaceStore } from './workspace-store.js'
+import { useApprovalStore } from '../app/approval-store.js'
+import { useQuestionStore } from '../app/question-store.js'
+import { useRuntimeStore } from '../app/runtime-store.js'
+import { useUiStore } from '../app/ui-store.js'
+import { openView } from '../app/open-view.js'
+import { findView } from '../app/views.js'
+import { useAppShortcuts } from '../app/use-app-shortcuts.js'
+import { useWorkspaceStore } from '../app/workspace-store.js'
 
-export function App(): React.JSX.Element {
+export function HarnessApp(): React.JSX.Element {
   useAppShortcuts()
 
   const view = useUiStore((state) => state.view)

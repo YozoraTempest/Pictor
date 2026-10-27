@@ -4,7 +4,7 @@ import type { KernelInfo } from '../../../shared/bridge.js'
 import { arsSettingsViewId, kernelViewId } from './kernel-scope.js'
 
 import { iconFor } from '../lib/icons.js'
-import { ArsSettingsPage } from '../features/settings/ArsSettingsPage.js'
+import { SettingsView } from '../features/settings/SettingsView.js'
 import {
   WorkspaceLeading,
   WorkspaceTitle,
@@ -107,7 +107,7 @@ export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
     icon: Settings2,
     group: 'primary',
     order: index * 2 + 1,
-    render: () => <ArsSettingsPage kernel={kernel.id} label={kernel.label} />,
+    render: () => <SettingsView />,
     title: () => `${kernel.label} 设置`,
   }))
 

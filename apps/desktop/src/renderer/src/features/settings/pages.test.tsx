@@ -40,9 +40,9 @@ describe('settings pages', () => {
   it('grows a third level only where a group has something to hold', () => {
     const tree = settingsTree()
 
-    // What is left of 通用 is one group (how you like the app) and two pages that stand
-    // on their own. 技能 and MCP moved to the extensions panel, and 模型 no longer shares
-    // a group with anything, so it does not get a heading of its own.
+    // 通用 holds one group (how you like the app) and three pages that stand on their own:
+    // the model services, 拓展 — which is where plugins, skills and MCP live now — and the
+    // engine's runtime. A page alone under a heading of one reads worse than no heading.
     const general = tree.find((category) => category.title === '通用')
     const groups = (general?.entries ?? []).flatMap((entry) =>
       entry.kind === 'group' ? [[entry.group.title, entry.group.pages.map((p) => p.label)]] : [],
@@ -52,7 +52,7 @@ describe('settings pages', () => {
       (general?.entries ?? []).flatMap((entry) =>
         entry.kind === 'page' ? [entry.page.label] : [],
       ),
-    ).toEqual(['模型'])
+    ).toEqual(['模型', '拓展', '运行时'])
 
     // A category of one page is a heading and a row, not a heading, a group, and a row.
     for (const category of tree) {
