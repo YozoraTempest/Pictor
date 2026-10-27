@@ -1,12 +1,11 @@
+import { jobOf, planActiveOf, subagentOf, todosOf } from '@pictor/kernel-dsh'
 import type { ChatEvent, ChatRole } from '@pictor/shared'
-
-import type { HarnessNotification } from './client.js'
-import { jobOf, planActiveOf, subagentOf, todosOf } from './session-state.js'
 import type {
+  HarnessNotification,
   SessionAssistantStreamFrame,
   SessionFollowFrame,
   SessionWireEvent,
-} from './session.js'
+} from '@pictor/harness'
 
 /** The text of one message, from its content blocks. */
 function textOf(message: unknown): string {

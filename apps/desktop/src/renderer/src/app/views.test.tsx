@@ -15,9 +15,8 @@ vi.stubGlobal('matchMedia', (query: string) => ({
   dispatchEvent: () => false,
 }))
 
-const { DEFAULT_VIEW, findView, railViews, viewsFor } = await import('./views.js')
-const { arsSettingsViewId, kernelOfView, kernelViewId, settingsOwnerOf } =
-  await import('./kernel-scope.js')
+const { DEFAULT_VIEW, findView, viewsFor } = await import('./views.js')
+const { kernelOfView, kernelViewId } = await import('./kernel-scope.js')
 
 /** What `kernels.list()` reports, near enough for the rail to be built. */
 function kernel(id: string, label = id, icon: string | null = null): KernelInfo {
@@ -76,54 +75,16 @@ describe('view registry', () => {
     expect(new Set(shortcuts).size).toBe(shortcuts.length)
   })
 
-  it('puts home first, then one page per ars', () => {
-    // The rail lists what a person switches between: its top group is home and the ars
-    // pages, its bottom group what can be added and configured. An ars's own settings are
-    // not a destination up there — they are opened from the ars page's toolbar.
-    const rail = railViews(BUILTINS)
+  it('puts home first and one page per mounted kernel after it', () => {
+    const primary = viewsFor(BUILTINS)
+      .filter((entry) => entry.group === 'primary')
+      .sort((a, b) => a.order - b.order)
 
-    expect(rail.filter((entry) => entry.group === 'primary').map((entry) => entry.id)).toEqual([
+    expect(primary.map((entry) => entry.id)).toEqual([
       DEFAULT_VIEW,
       ...BUILTINS.map((entry) => kernelViewId(entry.id)),
     ])
-    expect(rail.filter((entry) => entry.group === 'secondary').map((entry) => entry.id)).toEqual([
-      'extensions',
-      'settings',
-    ])
-  })
-
-  it('keeps a settings page out of the rail but in the registry', () => {
-    const views = viewsFor(BUILTINS)
-
-    for (const kernel of BUILTINS) {
-      const settings = views.find((entry) => entry.id === arsSettingsViewId(kernel.id))
-      // Reachable — from the ars page — and drawn with a title of its own, because the
-      // rail does not light up for the page it was opened from.
-      expect(settings).toBeDefined()
-      expect(settings?.inRail).toBe(false)
-    }
-  })
-
-  it('gives each ars settings its own page instead of filing them under settings', () => {
-    // The runtime's process, version and switches belong to the ars that owns them: a
-    // page under `settings` would describe software that may not even be focused.
-    const ids = viewsFor(BUILTINS).map((entry) => entry.id)
-
-    for (const kernel of BUILTINS) {
-      expect(ids).toContain(arsSettingsViewId(kernel.id))
-      expect(settingsOwnerOf(arsSettingsViewId(kernel.id))).toBe(kernel.id)
-    }
-    // A kernel page is not a settings page, and the app's own settings is neither.
-    expect(settingsOwnerOf(kernelViewId('dsh'))).toBeNull()
-    expect(settingsOwnerOf('settings')).toBeNull()
-  })
-
-  it('leaves home empty, so a conversation starts on the ars that runs it', () => {
-    const home = viewsFor(BUILTINS).find((entry) => entry.id === DEFAULT_VIEW)
-    // No `render` target of its own beyond an empty frame: the check is that home is not
-    // a kernel page and carries no shortcut into one.
-    expect(home).toBeDefined()
-    expect(home?.shortcut).toBe('Ctrl+1')
+    expect(primary.map((entry) => entry.label)).toEqual(['首页', 'DeepSeek Harness', 'Pi'])
   })
 
   it('puts extensions above settings in the rail', () => {

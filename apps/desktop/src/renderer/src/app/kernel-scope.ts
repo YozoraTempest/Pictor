@@ -23,23 +23,3 @@ export function kernelOfView(view: string): string | null {
   const id = view.slice(KERNEL_VIEW_PREFIX.length)
   return id.length === 0 ? null : id
 }
-
-/** Prefix for the settings page that belongs to one kernel. */
-export const ARS_SETTINGS_VIEW_SUFFIX = ':settings'
-
-/**
- * The view id of one ars's settings.
- *
- * A page of its own — what it holds, the process and the switches the runtime declares,
- * belongs to that ars rather than to the app's preferences — but not a rail icon: it is
- * opened from the ars page's toolbar and left with the title bar's back button.
- */
-export function arsSettingsViewId(kernelId: string): string {
-  return `${kernelViewId(kernelId)}${ARS_SETTINGS_VIEW_SUFFIX}`
-}
-
-/** The kernel whose settings a view holds, or null. */
-export function settingsOwnerOf(view: string): string | null {
-  if (!view.endsWith(ARS_SETTINGS_VIEW_SUFFIX)) return null
-  return kernelOfView(view.slice(0, -ARS_SETTINGS_VIEW_SUFFIX.length))
-}

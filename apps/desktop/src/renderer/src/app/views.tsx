@@ -1,11 +1,10 @@
 import { Blocks, Boxes, House, Settings2, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { KernelInfo } from '../../../shared/bridge.js'
-import { arsSettingsViewId, kernelViewId } from './kernel-scope.js'
+import { kernelViewId } from './kernel-scope.js'
 
 import { ExtensionsView } from '../features/extensions/ExtensionsView.js'
 import { iconFor } from '../lib/icons.js'
-import { RuntimePage } from '../features/settings/RuntimePage.js'
 import { SettingsView } from '../features/settings/SettingsView.js'
 import {
   WorkspaceLeading,
@@ -31,14 +30,6 @@ export interface AppViewDescriptor<Id extends string = string> {
   /** `secondary` pins the entry to the bottom of the rail. */
   group: 'primary' | 'secondary'
   order: number
-  /**
-   * Whether this destination gets a place in the rail. Defaults to true.
-   *
-   * An ars's settings are opened from the ars page's own toolbar, so they take no icon:
-   * the rail lists what a person switches between, and a second gear per mounted ars
-   * would turn that list into two lists interleaved.
-   */
-  inRail?: boolean
   render: () => ReactNode
   /** Centred in the title bar; omit it to show no title. */
   title?: () => ReactNode
@@ -80,14 +71,11 @@ const HOME_VIEW: AppViewDescriptor = {
   group: 'primary',
   order: 0,
   /**
-   * Empty on purpose.
-   *
-   * Every destination that does something is an ars: a piece of software assembled in,
-   * with its own page and its own settings. Home is not one of them, so it holds no
-   * composer, no picker and no list — a conversation starts on the ars that will run it,
-   * and a page that offered to start one would have to ask which.
+   * No sessions and no kernel: a conversation starts here, and once it has a kernel
+   * it lives on that kernel's page. One list for every kernel would have to describe
+   * runtimes that disagree about almost everything.
    */
-  render: () => <div className="flex min-h-0 flex-1" />,
+  render: () => <WorkspaceView />,
   title: () => <WorkspaceTitle />,
   leading: () => <WorkspaceLeading />,
   trailing: () => <WorkspaceTrailing />,
@@ -142,55 +130,19 @@ export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
     // the build has never heard of still gets a page, a generic icon and a number.
     icon: iconFor(kernel.icon, Boxes),
     group: 'primary',
-    // Its page takes the odd slot and its settings the even one. The settings page has no
-    // icon, so nothing interleaves in the rail; the order only has to stay unique, because
-    // the sorted list is what every caller walks.
-    order: index * 2 + 1,
+    order: index + 1,
     render: () => <WorkspaceView kernelId={kernel.id} />,
     title: () => <WorkspaceTitle />,
     leading: () => <WorkspaceLeading />,
     trailing: () => <WorkspaceTrailing />,
     shortcut: `Ctrl+${String(index + 2)}`,
   }))
-  /**
-   * Each ars gets a settings destination, reachable from its own toolbar.
-   *
-   * What these pages hold — the runtime's process, its version, the switches the software
-   * itself declares — belongs to that ars rather than to the app's preferences, so they are
-   * a page of their own rather than a section under `settings`. They take no rail icon: a
-   * gear per mounted ars would make the rail two lists interleaved, and the page a person
-   * is looking at is the one whose settings they want.
-   */
-  const settings = kernels.map((kernel, index): AppViewDescriptor => ({
-    id: arsSettingsViewId(kernel.id),
-    label: `${kernel.label} 设置`,
-    description: `${kernel.label} 的运行时与开关`,
-    icon: Settings2,
-    group: 'primary',
-    order: index * 2 + 2,
-    inRail: false,
-    render: () => <RuntimePage kernel={kernel.id} />,
-    title: () => `${kernel.label} 设置`,
-    // No shortcut: a settings page is visited, not cycled between.
-    tools: 'none',
-  }))
-
-  return [HOME_VIEW, ...pages, ...settings, EXTENSIONS_VIEW, SETTINGS_VIEW]
+  return [HOME_VIEW, ...pages, EXTENSIONS_VIEW, SETTINGS_VIEW]
 }
 
-/** Every destination, in the order the rail shows them. */
+/** The destinations in the order the rail shows them. */
 export function sortedViews(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
   return viewsFor(kernels).sort((a, b) => a.order - b.order)
-}
-
-/**
- * The destinations that get a place in the rail and in 视图.
- *
- * One per thing a person switches between. A page reached from inside another one — an
- * ars's settings — is left out: it is a place to come back from, not a place to go to.
- */
-export function railViews(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
-  return sortedViews(kernels).filter((entry) => entry.inRail !== false)
 }
 
 /**

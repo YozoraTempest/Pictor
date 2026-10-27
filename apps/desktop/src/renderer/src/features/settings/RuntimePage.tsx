@@ -35,8 +35,7 @@ const PI_INSTALL = 'npm i -g @earendil-works/pi-coding-agent'
  * this component takes the kernel instead of rendering both.
  */
 export interface RuntimePageProps {
-  /** The ars whose runtime this page describes; any mounted one. */
-  kernel: string
+  kernel: 'dsh' | 'pi'
 }
 
 /**

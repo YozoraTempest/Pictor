@@ -1,7 +1,7 @@
 import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
 import { useWorkspaceStore } from '../app/workspace-store.js'
-import { railViews, type AppViewDescriptor } from '../app/views.js'
+import { sortedViews, type AppViewDescriptor } from '../app/views.js'
 import { cn } from '../lib/cn.js'
 import { Tooltip } from '../components/ui/index.js'
 
@@ -46,7 +46,7 @@ export function NavRail(): React.JSX.Element {
   const view = useUiStore((state) => state.view)
   const kernels = useWorkspaceStore((state) => state.kernels)
 
-  const sorted = railViews(kernels)
+  const sorted = sortedViews(kernels)
   const primary = sorted.filter((entry) => entry.group === 'primary')
   const secondary = sorted.filter((entry) => entry.group === 'secondary')
 

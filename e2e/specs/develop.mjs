@@ -2,8 +2,6 @@ import assert from 'node:assert/strict'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { openKernel } from '../harness.mjs'
-
 /**
  * Writing a plugin is the whole workflow.
  *
@@ -70,8 +68,11 @@ export function apply(ctx) {
     await rows.first().waitFor({ timeout: 30_000 })
 
     // And it is a working plugin, not just a row: its panel opens and draws. The panel
-    // column belongs to a page that holds a workspace, so this is where to look.
-    await openKernel(page, 'DeepSeek Harness')
+    // column belongs to the workspace, not to this page, so home is where to look.
+    await page
+      .getByRole('navigation', { name: '主导航' })
+      .getByRole('button', { name: '首页' })
+      .click()
     const opener = page.getByRole('button', { name: '展开右侧面板' })
     if ((await opener.count()) > 0) await opener.click()
     const panel = page.getByRole('button', { name: /刚写的面板/ })

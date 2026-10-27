@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { HarnessChatBridge } from './chat-events.js'
+import { HarnessChatBridge } from './harness-chat.js'
 
 /** Build the notification shape the runtime actually sends. */
 function sessionEvent(type: string, data: Record<string, unknown>, sessionId = 's1') {

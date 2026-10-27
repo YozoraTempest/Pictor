@@ -31,15 +31,6 @@ export {
   type WebSocketLike,
 } from './follow.js'
 export { HarnessRemote, type HarnessRemoteOptions } from './remote.js'
-export { HarnessChatBridge } from './chat-events.js'
-export {
-  jobOf,
-  planActiveOf,
-  sessionStates,
-  subagentOf,
-  todosOf,
-  type SessionStates,
-} from './session-state.js'
 export { streamOnce, type OnceStreamOptions } from './once.js'
 export { streamCollect, type CollectedStream, type CollectStreamOptions } from './collect.js'
 export type {

@@ -10,8 +10,6 @@
 export { dshKernel } from './dsh-kernel.js'
 export { DshDriver } from './dsh-driver.js'
 export { jobOutputOf } from './harness-job-output.js'
-// Session state is read from wire frames, not from dsh's protocol, so it lives with the
-// transport that carries those frames — Pi emits the same shapes.
 export {
   jobOf,
   planActiveOf,
@@ -19,4 +17,4 @@ export {
   subagentOf,
   todosOf,
   type SessionStates,
-} from '@pictor/harness'
+} from './harness-session-state.js'

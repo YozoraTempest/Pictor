@@ -13,48 +13,89 @@ async function eventually(check, message, timeout = 15_000) {
 }
 
 /**
- * The ars a conversation runs on, as the interface shows it.
+ * The kernel a conversation runs on, as the interface shows it.
  *
- * A conversation belongs to the ars that started it, because that software owns the
- * transcript. Two are mounted here: dsh, which ships with the app, and 回声（示例）, which
- * the harness installs as a directory — so the bookkeeping is exercised between a
- * built-in and a third-party one rather than between two halves of the same build.
+ * A conversation belongs to the kernel that started it, because the kernel owns
+ * the transcript. Two kernels are registered in this build (dsh and Pi), so the
+ * picker has a real choice to offer and must be drawn; what still has to hold is
+ * the bookkeeping: every conversation names its kernel, switching kernels is a
+ * branch that points back at the conversation it came from, and a conversation
+ * written before kernels existed is filed under the one that shipped first.
  *
- * Switching ars is a branch: the new conversation names the ars that was picked and
- * points back at the one it came from. Nothing here spends a model call.
+ * Nothing here boots Pi: a turn is a real model call on the user's own
+ * credentials, which is not something a test run should spend.
  */
 export default {
   name: '内核绑定',
   async run(page) {
     const kernels = await page.evaluate(() => window.pictor.listKernels())
-    assert.equal(kernels.length, 2, `装了两个 ars，实际 ${String(kernels.length)} 个`)
+    assert.ok(kernels.length >= 2, `two kernels are registered, got ${String(kernels.length)}`)
 
     const dsh = kernels.find((kernel) => kernel.id === 'dsh')
-    assert.ok(dsh !== undefined, 'dsh 是自带的那个')
-    assert.equal(dsh.default, true, 'dsh 是默认 ars')
-    assert.equal(typeof dsh.icon, 'string', 'ars 自己说用什么图标')
-    // Availability is the driver's own answer about this machine, so an environment
-    // without it installed is a valid state rather than a failure.
-    assert.equal(typeof dsh.available, 'boolean', '可用与否由驱动回答')
-
-    const fake = kernels.find((kernel) => kernel.id === 'fake')
-    assert.ok(fake !== undefined, '装进目录的那个 ars 也在')
-    assert.equal(fake.default, false, '装进来的不抢默认')
-    assert.equal(fake.label, '回声（示例）')
+    assert.ok(dsh !== undefined, 'dsh is registered')
+    assert.equal(dsh.default, true, 'dsh is the default kernel')
+    const pi = kernels.find((kernel) => kernel.id === 'pi')
+    assert.ok(pi !== undefined, 'Pi is registered as a second kernel')
+    assert.equal(pi.default, false, 'Pi is not the default')
+    // Availability is the driver's own answer about this machine, so a CI run
+    // without Pi installed is a valid state rather than a failure.
+    assert.equal(typeof pi.available, 'boolean', 'availability is reported')
 
     const created = await page.evaluate(() => window.pictor.createSession(null, 'e2e 内核绑定'))
-    assert.equal(created.kernelId, 'dsh', '新会话记下自己的 ars')
+    assert.equal(created.kernelId, 'dsh', 'a new conversation names its kernel')
 
     const stored = await page.evaluate(async (id) => {
       const snapshot = await window.pictor.getSnapshot()
       return snapshot.sessions.find((entry) => entry.id === id) ?? null
     }, created.id)
-    assert.equal(stored?.kernelId, 'dsh', '这个归属读回来还在')
+    assert.equal(stored?.kernelId, 'dsh', 'the kernel survives a read back')
 
-    // What the ars can do travels with it, so the window can stop promising things the
-    // software behind the conversation cannot deliver. These seven flags are the whole
-    // declaration: each one a control or a page that is drawn or withheld.
-    assert.deepEqual(dsh.capabilities, {
+    // Switching kernels is a branch: the new conversation names the new kernel and
+    // points at the one it was branched from.
+    const branch = await page.evaluate(
+      (parent) => window.pictor.createSession(null, 'e2e 内核分支', 'pi', parent),
+      created.id,
+    )
+    assert.equal(branch.kernelId, 'pi', 'the branch runs on the kernel that was picked')
+    assert.equal(branch.parentId, created.id, 'the branch points back at its source')
+
+    await page.reload()
+    await page.waitForSelector('header', { timeout: 30_000 })
+
+    // Two kernels is a choice, and home is where it is offered: a kernel page has
+    // already made that choice, so its composer names the conversation's kernel
+    // instead of asking again.
+    const triggers = page.locator('[aria-label^="内核："]')
+    assert.equal(await triggers.count(), 1, 'the picker is drawn once, in the composer')
+
+    // Each row lives on its own kernel's page, so the pi branch is opened from PI.
+    await openKernel(page, 'Pi')
+
+    // Selecting the branch shows the kernel that branch runs on, which is the
+    // whole point of binding it to the conversation.
+    await page.getByRole('button', { name: 'e2e 内核分支' }).first().click({ timeout: 15_000 })
+    await page.locator('[aria-label="内核：Pi"]').waitFor({ timeout: 20_000 })
+
+    // What each kernel can do travels with it, so the window can stop promising
+    // things the kernel behind the conversation cannot deliver.
+    const declared = await page.evaluate(() => window.pictor.listKernels())
+    assert.deepEqual(declared.find((kernel) => kernel.id === 'pi')?.capabilities, {
+      permission: false,
+      // No sandbox, but an extension can hold a call — so when to ask is Pictor's
+      // decision here, which is the one thing this flag promises.
+      approval: true,
+      // Pi brings its own model catalogue and branches its own conversations, so
+      // these two it can honour.
+      model: true,
+      skills: false,
+      fork: true,
+      // Pi's RPC surface offers exactly one command, and the menu lists it rather
+      // than pretending the terminal's other slashes exist.
+      commands: true,
+      // There is no registry of background jobs to list or stop.
+      jobs: false,
+    })
+    assert.deepEqual(declared.find((kernel) => kernel.id === 'dsh')?.capabilities, {
       permission: true,
       // dsh's own policy decides when it asks; a second switch would be a lie.
       approval: false,
@@ -66,137 +107,125 @@ export default {
       jobs: true,
     })
 
-    // The row exists on the page only after the window has read the snapshot again, and
-    // nothing pushes that from here: creating a conversation over IPC does not touch the
-    // renderer's store, so this opens the window it is about to look at.
-    await page.reload()
-    await page.waitForSelector('header', { timeout: 30_000 })
+    // Pi decides its own sandbox, so its composer draws no switch. The row still
+    // shows "工作区可写" without one on dsh, which is what makes this the kernel's
+    // answer rather than a composer that failed to render.
+    assert.equal(
+      await page.locator('[aria-label^="会话权限："]').count(),
+      0,
+      'a kernel without a sandbox offers no sandbox picker',
+    )
+
+    // What it offers instead sits in the same slot: a switch for when its calls
+    // wait for a person, which is the only lever a kernel without a sandbox has.
+    await page.locator('[aria-label^="会话审批："]').waitFor({ timeout: 20_000 })
+
+    // The model picker follows the same rule, with one more distinction: a kernel
+    // that keeps its own catalogue gets its own control, and Pictor's list — which
+    // is not its list — stays out of the way.
+    assert.equal(
+      await page.locator('[aria-label="选择模型"]').count(),
+      0,
+      "the Pi page does not draw Pictor's model picker",
+    )
+    await page.locator('[aria-label^="内核模型"], [aria-label="选择内核模型"]').first().waitFor({
+      timeout: 20_000,
+    })
+
+    // Now the other side: a dsh conversation is on the DSH page.
     await openKernel(page, 'DeepSeek Harness')
     await page.getByRole('button', { name: 'e2e 内核绑定' }).first().click({ timeout: 15_000 })
-
-    // The composer's row is the ars's own answers, not a fixed toolbar: the sandbox switch
-    // is there because dsh can hold a call, and the approval switch — which belongs to
-    // software that cannot decide for itself — is not.
+    await page.locator('[aria-label="内核：DeepSeek Harness"]').waitFor({ timeout: 20_000 })
     await page.locator('[aria-label^="会话权限："]').waitFor({ timeout: 20_000 })
+    // The approval switch belongs to the kernel that cannot decide for itself.
     assert.equal(await page.locator('[aria-label^="会话审批："]').count(), 0)
-
-    // dsh runs Pictor's models, so the ars-specific picker — the one for software that
-    // keeps its own catalogue — is not drawn. Pictor's own picker needs a configured
-    // provider and an e2e profile has none, so its absence here would say nothing; the
-    // claim under test is which of the two belongs to this ars.
+    // dsh runs Pictor's models, so the kernel control is gone and Pictor's is back.
     assert.equal(await page.locator('[aria-label="选择内核模型"]').count(), 0)
 
-    // Two ars is a choice, and the picker names the one this conversation is on.
-    const trigger = page.locator('[aria-label="内核：DeepSeek Harness"]')
-    await trigger.waitFor({ timeout: 20_000 })
-    await trigger.click()
-
-    // Picking the other one branches rather than rewriting: the row keeps its history and
-    // the new conversation is named after the ars it now runs on.
-    await page.getByRole('dialog', { name: '选择内核' }).waitFor({ timeout: 15_000 })
-    await page
-      .getByRole('dialog', { name: '选择内核' })
-      .getByRole('button', { name: /回声（示例）/ })
-      .click()
-
-    const branch = `e2e 内核绑定 · 回声（示例）`
-    await openKernel(page, '回声（示例）')
-    await page.getByRole('button', { name: branch }).first().click({ timeout: 15_000 })
-
-    const branched = await page.evaluate(async (title) => {
-      const snapshot = await window.pictor.getSnapshot()
-      return snapshot.sessions.find((entry) => entry.title === title) ?? null
-    }, branch)
-    assert.equal(branched?.kernelId, 'fake', '分支跑在被选中的 ars 上')
-    assert.equal(branched?.parentId, created.id, '分支指回它来的那个会话')
-
-    // The branch's own ars decides the row: it declared no sandbox and no say in when to
-    // ask, so neither switch is drawn — which is what makes the row above dsh's answer
-    // rather than a toolbar that failed to render.
-    await page.locator('[aria-label="内核：回声（示例）"]').waitFor({ timeout: 20_000 })
-    assert.equal(await page.locator('[aria-label^="会话权限："]').count(), 0)
-    assert.equal(await page.locator('[aria-label^="会话审批："]').count(), 0)
-
-    // One destination per mounted ars — its page, then its settings — in the order the
-    // host mounted them, derived from `kernels.list()`. That derivation is the point:
-    // installing another one adds two entries without an edit in this file.
+    // One destination per mounted kernel, in the order the host mounted them — a
+    // kernel this build has never heard of included, which is the point of deriving
+    // the rail from `kernels.list()`.
     const rail = page.getByRole('navigation', { name: '主导航' })
+    const listed = await page.evaluate(() => window.pictor.listKernels())
+    for (const kernel of listed) {
+      assert.equal(typeof kernel.icon, 'string', `${kernel.id} 没有说明自己的图标`)
+    }
     assert.deepEqual(
       await rail
         .locator('button')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label'))),
       // 拓展 sits above settings: what can be added, then what can be configured.
-      // 拓展 sits above settings: what can be added, then what can be configured. An ars's
-      // own settings are not here — they are opened from that ars's page.
-      ['首页', ...kernels.map((kernel) => kernel.label), '拓展', '设置'],
+      ['首页', ...listed.map((kernel) => kernel.label), '拓展', '设置'],
     )
 
-    // A page lists that ars's conversations and nobody else's: each row was created above,
-    // so each page must show exactly one of them.
+    // A kernel's page lists that kernel's conversations and nobody else's. Both
+    // rows were created above, so each page must show exactly one of them.
+    await rail.getByRole('button', { name: 'Pi', exact: true }).click()
+    await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
     await eventually(
-      async () =>
-        (await page.getByRole('button', { name: 'e2e 内核绑定', exact: true }).count()) === 0,
-      '回声（示例）的页面不列 dsh 的会话',
+      async () => (await page.getByRole('button', { name: 'e2e 内核绑定' }).count()) === 0,
+      'the Pi page does not list a dsh conversation',
     )
+    // The open conversation is a Pi one too: selection survives a view switch, and
+    // a dsh transcript under a page that says Pi would keep its sandbox control.
+    assert.equal(
+      await page.locator('[aria-label^="会话权限："]').count(),
+      0,
+      'the Pi page does not keep a dsh conversation open',
+    )
+    // The page named the kernel; the picker is about the conversation, and moving it
+    // to another kernel makes a branch rather than a switch.
+    await page.locator('[aria-label="内核：Pi"]').waitFor({ timeout: 20_000 })
+
     await rail.getByRole('button', { name: 'DeepSeek Harness', exact: true }).click()
-    await page.getByRole('button', { name: 'e2e 内核绑定', exact: true }).first().waitFor({
-      timeout: 15_000,
-    })
+    await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
     assert.equal(
-      await page.getByRole('button', { name: branch }).count(),
+      await page.getByRole('button', { name: 'e2e 内核分支' }).count(),
       0,
-      'dsh 的页面不列回声（示例）的会话',
-    )
-    // The ars's settings are not a rail destination: the gear on its own page is the way
-    // in, and the page it leads to is not a seat — nothing in the rail lights up, which is
-    // what tells a person this is the page they came from rather than a place they went.
-    await page.locator('[aria-label="DeepSeek Harness 设置"]').click()
-    await page.getByRole('heading', { name: '进程' }).waitFor({ timeout: 20_000 })
-    assert.equal(
-      await page.locator('nav[aria-label="主导航"] button[aria-current="page"]').count(),
-      0,
-      '设置的页面不在侧栏上占座位',
+      'the DSH page does not list a Pi conversation',
     )
 
-    // A heading with nothing under it reads as a failed load, so a page draws the sections
-    // that hold something of its own ars. 置顶 is the clean case: one pinned dsh
-    // conversation gives the section a body there and none on the other page.
+    // A heading with nothing under it reads as a failed load, so a kernel page only
+    // draws the sections that hold something of that kernel. 置顶 is the clean case:
+    // one pinned dsh conversation gives the section a body on the DSH page and none
+    // on the Pi page.
     //
-    // Section titles are read from their own nodes: every tooltip in the app lives in the
-    // body with `opacity-0`, so a text search would match those instead.
+    // Section titles are read from their own nodes: every tooltip in the app lives
+    // in the body with `opacity-0`, so a text search would match those instead.
     const headings = () => page.locator('span.uppercase').allTextContents()
 
     await page.evaluate((id) => window.pictor.setSessionPinned(id, true), created.id)
     await page.reload()
     await page.waitForSelector('header', { timeout: 30_000 })
 
-    await openKernel(page, '回声（示例）')
-    await page.getByRole('button', { name: branch }).first().waitFor({ timeout: 15_000 })
-    await eventually(async () => !(await headings()).includes('置顶'), '没有置顶会话就不画这一节')
+    await rail.getByRole('button', { name: 'Pi', exact: true }).click()
+    await page.getByRole('button', { name: 'e2e 内核分支' }).first().waitFor({ timeout: 15_000 })
+    await eventually(
+      async () => !(await headings()).includes('置顶'),
+      'a section with nothing of this kernel in it is not drawn',
+    )
 
     await rail.getByRole('button', { name: 'DeepSeek Harness', exact: true }).click()
-    await page.getByRole('button', { name: 'e2e 内核绑定', exact: true }).first().waitFor({
-      timeout: 15_000,
-    })
+    await page.getByRole('button', { name: 'e2e 内核绑定' }).first().waitFor({ timeout: 15_000 })
     await eventually(
       async () => (await headings()).includes('置顶'),
-      '有置顶会话的这一页上有这一节',
+      'the same section is there where it has a body',
     )
     await page.evaluate((id) => window.pictor.setSessionPinned(id, false), created.id)
 
-    // Home is not an ars: it runs nothing, so it holds no list and draws no composer. A
-    // page that offered to start a conversation would have to ask which ars runs it.
+    // Home is where a conversation starts and where the kernel choice lives; it holds
+    // no list, so neither kernel's rows appear there.
     await rail.getByRole('button', { name: '首页' }).click()
-    await page
-      .locator('nav[aria-label="主导航"] button[aria-current="page"][aria-label="首页"]')
-      .waitFor({ timeout: 15_000 })
+    await page.locator('[aria-label^="内核："]').first().waitFor({ timeout: 20_000 })
     assert.equal(
-      await page.getByRole('button', { name: 'e2e 内核绑定', exact: true }).count(),
+      await page.getByRole('button', { name: 'e2e 内核分支' }).count(),
       0,
-      '首页不列任何 ars 的会话',
+      'home lists no conversations of any kernel',
     )
-    assert.equal(await page.getByRole('button', { name: branch }).count(), 0, '另一个也一样')
-    assert.equal(await page.locator('[aria-label="选择模型"]').count(), 0, '首页没有输入框')
-    assert.equal(await page.locator('[aria-label^="内核："]').count(), 0, '也就不问哪个 ars')
+    assert.equal(
+      await page.getByRole('button', { name: 'e2e 内核绑定' }).count(),
+      0,
+      'and none of the other kernel either',
+    )
   },
 }
