@@ -128,6 +128,19 @@ export interface SlotDescriptor {
 export type { ViewBlock, ViewSpec, ViewTone } from '@pictor/plugin-sdk'
 
 /**
+ * What the window draws for one view.
+ *
+ * Two payloads, because a view has two: blocks the window draws itself, or a bundle it
+ * runs in a sandboxed frame. Making this a union means a host cannot forget the second
+ * one — it has to say which kind it got before it can draw anything.
+ */
+export type ViewRender =
+  { kind: 'blocks'; spec: ViewSpec } | { kind: 'frame'; url: string; title: string }
+
+/** The answer one frame message gets back, as the frame sees it. */
+export type FrameAnswer = { ok: true; data: unknown } | { ok: false; error: string }
+
+/**
  * Presentation for one agent tool, contributed by a plugin.
  *
  * Data only: the renderer maps `icon` to its own icon set, so a plugin never
@@ -311,7 +324,7 @@ export interface PictorBridge {
    *
    * The answer is a description, not markup: the window draws it with its own blocks.
    */
-  renderPluginView(id: string, sessionId: string | null): Promise<ViewSpec>
+  renderPluginView(id: string, sessionId: string | null): Promise<ViewRender>
   /**
    * A press on one of a view's `button` blocks.
    *
@@ -323,6 +336,18 @@ export interface PictorBridge {
     value: string | undefined,
     sessionId: string | null,
   ): Promise<ViewSpec | null>
+  /**
+   * One message from a frame view's front end.
+   *
+   * Always answers: a frame is a `postMessage` channel inside the plugin's own code, and
+   * the only useful reply is data or the plugin's own words.
+   */
+  requestPluginFrame(
+    id: string,
+    action: string,
+    value: string | undefined,
+    sessionId: string | null,
+  ): Promise<FrameAnswer>
   listToolViews(): Promise<ToolViewDescriptor[]>
   /** Every seat plugins took, in registration order. */
   listSlots(): Promise<SlotDescriptor[]>

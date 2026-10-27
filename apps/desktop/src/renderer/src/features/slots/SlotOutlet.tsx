@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 
-import type { SlotDescriptor, ViewSpec } from '../../../../shared/bridge.js'
+import type { SlotDescriptor, ViewRender } from '../../../../shared/bridge.js'
 import { iconFor } from '../../lib/icons.js'
 import { cn } from '../../lib/cn.js'
 import { Banner, Spinner } from '../../components/ui/index.js'
+import { FrameView } from '../panels/FrameView.js'
 import { ViewContent } from '../panels/ViewContent.js'
 
 /**
@@ -67,19 +68,19 @@ function Seat({
   sessionId: string | null
   chrome: 'bare' | 'inline' | 'panel'
 }): React.JSX.Element {
-  const [spec, setSpec] = useState<ViewSpec | null>(null)
+  const [render, setRender] = useState<ViewRender | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
   const Icon = iconFor(seat.icon)
 
   useEffect(() => {
     let alive = true
-    setSpec(null)
+    setRender(null)
     setError(null)
     void window.pictor
       .renderPluginView(seat.view, sessionId)
       .then((next) => {
-        if (alive) setSpec(next)
+        if (alive) setRender(next)
       })
       .catch((reason: unknown) => {
         if (alive) setError(reason instanceof Error ? reason.message : String(reason))
@@ -95,7 +96,7 @@ function Seat({
     void window.pictor
       .actPluginView(seat.view, action, value, sessionId)
       .then((next) => {
-        if (next !== null) setSpec(next)
+        if (next !== null) setRender({ kind: 'blocks', spec: next })
       })
       .catch((reason: unknown) => {
         setError(reason instanceof Error ? reason.message : String(reason))
@@ -103,16 +104,36 @@ function Seat({
       .finally(() => setPending(null))
   }
 
+  /**
+   * A frame in a seat takes the height the slot gives it: a strip gets a short box and the
+   * frame scrolls inside it, because a seat that grows with its content would push the
+   * conversation around whenever plugin code felt like it.
+   */
+  const frame = (size: string): React.JSX.Element | null =>
+    render?.kind === 'frame' ? (
+      <FrameView
+        url={render.url}
+        title={render.title}
+        view={seat.view}
+        sessionId={sessionId}
+        className={size}
+        onError={setError}
+      />
+    ) : null
+
   const body = (
     <>
       {error !== null && <Banner tone="error">{error}</Banner>}
-      {error === null && spec === null && (
+      {error === null && render === null && (
         <div className="flex items-center gap-2 text-2xs text-faint">
           <Spinner className="size-3" />
           {seat.title}
         </div>
       )}
-      {spec !== null && <ViewContent spec={spec} onAction={act} busy={pending} />}
+      {render?.kind === 'blocks' && (
+        <ViewContent spec={render.spec} onAction={act} busy={pending} />
+      )}
+      {frame(chrome === 'panel' ? 'min-h-0 flex-1' : 'h-32')}
     </>
   )
 

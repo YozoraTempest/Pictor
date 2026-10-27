@@ -35,6 +35,13 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   {
+    // A plugin may ship a frame: the front end the window runs in a sandboxed iframe. By
+    // the convention `plugins/README.md` documents it lives in `client*.js` or `client/`,
+    // and it is browser code — it has no Node and no access to the app.
+    files: ['plugins/**/client*.js', 'plugins/**/client/**/*.js'],
+    languageOptions: { globals: globals.browser },
+  },
+  {
     files: ['**/*.config.{ts,mts}', 'scripts/**/*.mjs', 'apps/**/scripts/**/*.mjs'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

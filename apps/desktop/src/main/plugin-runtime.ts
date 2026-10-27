@@ -20,6 +20,7 @@ import {
 } from '@pictor/plugin-sdk'
 import type { DiscoveredPlugin } from '@pictor/plugin-host'
 
+import { FrameHost } from './frame-host.js'
 import { PluginViews } from './plugin-views.js'
 import type { SkillLibrary } from './skill-library.js'
 
@@ -70,6 +71,8 @@ export class PluginRuntime {
   readonly #disabled = new Set<string>()
   /** Ids the person switched off before they were mounted, so `add` can honour it. */
   #appliedSkills = new Set<string>()
+  /** Serves the files of views that ship a front end instead of a description. */
+  readonly #frames = new FrameHost({ warn: (message) => this.#warn(message) })
 
   constructor(options: PluginRuntimeOptions) {
     this.#options = options
@@ -135,9 +138,20 @@ export class PluginRuntime {
     this.syncSkills()
   }
 
-  /** Stops watching everything; called when the app closes. */
+  /** Stops watching everything, and stops answering frame URLs; called when the app closes. */
   dispose(): void {
     this.#watcher?.close()
+    void this.#frames.close()
+  }
+
+  /** The server a frame view's files are served from. */
+  frames(): FrameHost {
+    return this.#frames
+  }
+
+  /** The directory a plugin was installed into, which is what a frame may read. */
+  #rootOf(pluginId: string): string | null {
+    return this.#container.list().find((plugin) => plugin.id === pluginId)?.root ?? null
   }
 
   /** Whether the person has this plugin on. */
@@ -264,6 +278,8 @@ export class PluginRuntime {
       dataDirectory:
         this.#options.dataDirectory ??
         ((pluginId) => join(this.#options.userData, 'plugin-data', pluginId)),
+      pluginRoot: (pluginId) => this.#rootOf(pluginId),
+      frames: this.#frames,
     }).withOwners(owners)
   }
 

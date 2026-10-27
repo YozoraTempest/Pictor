@@ -14,7 +14,11 @@ afterEach(() => {
 
 /** Stands in for the bridge; the panel only ever talks to this one method. */
 function bridge(answer: (id: string) => Promise<ViewSpec>): ReturnType<typeof vi.fn> {
-  const renderPluginView = vi.fn((id: string) => answer(id))
+  // The bridge answers with a payload kind now: blocks here, a frame elsewhere. Tests that
+  // only care about blocks say so once, in this helper.
+  const renderPluginView = vi.fn((id: string) =>
+    answer(id).then((spec) => ({ kind: 'blocks' as const, spec })),
+  )
   vi.stubGlobal('pictor', { renderPluginView })
   return renderPluginView
 }
@@ -31,7 +35,10 @@ function actions(
     (_id: string, action: string, value: string | undefined): Promise<ViewSpec | null> =>
       press(action, value),
   )
-  vi.stubGlobal('pictor', { renderPluginView: () => Promise.resolve(shown), actPluginView })
+  vi.stubGlobal('pictor', {
+    renderPluginView: () => Promise.resolve({ kind: 'blocks' as const, spec: shown }),
+    actPluginView,
+  })
   return actPluginView
 }
 
@@ -162,6 +169,21 @@ describe('PluginViewPanel', () => {
 
     expect(await screen.findByText(/没有处理按钮：recheck/)).toBeTruthy()
     expect(screen.getByRole('button', { name: '重新检查' })).toBeTruthy()
+  })
+
+  it('draws a front end in a sandbox when the view ships one', async () => {
+    // The second payload: no blocks at all, an iframe with scripts and nothing else.
+    const renderPluginView = vi.fn(() =>
+      Promise.resolve({ kind: 'frame' as const, url: 'http://127.0.0.1:9/f/t/', title: '看板' }),
+    )
+    vi.stubGlobal('pictor', { renderPluginView })
+    render(panel())
+
+    const frame = (await screen.findByTitle('看板')) as HTMLIFrameElement
+
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(frame.getAttribute('src')).toBe('http://127.0.0.1:9/f/t/')
+    expect(screen.queryByText('读取中')).toBeNull()
   })
 
   it('offers the two ways out of the column', async () => {

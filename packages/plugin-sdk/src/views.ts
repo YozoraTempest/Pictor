@@ -1,14 +1,19 @@
 /**
  * Contribution point `views`: what a plugin panel shows.
  *
- * The renderer draws these, not the plugin. A view is a **description** — headings, text,
- * lists, tables, code — validated block by block before anything is drawn. That is the
- * line this project drew when panels were first added ("plugins never ship renderer code
- * and the renderer never trusts a plugin with a component"), and it is the line that makes
- * a panel safe to open without loading a plugin's React into the window.
+ * Two payloads, one address. A view either **describes** its content as blocks — the
+ * renderer draws them with components it owns — or **ships a front end** (`frame`) that the
+ * window runs inside a sandboxed iframe. A panel names a view either way, so the launcher,
+ * the seats and the panel column never learn which kind they opened.
  *
- * The vocabulary is deliberately small. A plugin that needs something the blocks cannot
- * say is asking for a rendering engine, and the honest answer is that this is not one.
+ * The description came first and stays the default: it is the one that cannot load plugin
+ * code into the window at all. The frame is for what blocks cannot say — a canvas, a chart,
+ * a board with drag handles — and it pays for that with a boundary: no network, no storage,
+ * no Node, and one message channel back to the plugin.
+ *
+ * The block vocabulary stays deliberately small. A plugin that needs something the blocks
+ * cannot say either ships a frame or is asking for a rendering engine, and the honest
+ * answer to the second is that this is not one.
  */
 
 export type ViewTone = 'neutral' | 'accent' | 'danger' | 'success'
@@ -55,6 +60,20 @@ export interface ViewContext {
   pluginId: string
 }
 
+/** Where a frame view's files live, relative to the plugin's own root. */
+export interface ViewFrame {
+  /**
+   * The ES module the frame loads first.
+   *
+   * A relative path inside the plugin's directory: the window serves it from a loopback
+   * address and refuses anything resolving outside the plugin, so a view cannot read the
+   * rest of the disk by naming `../../…`.
+   */
+  entry: string
+  /** A stylesheet loaded before the entry, when the bundle has one. */
+  styles?: string
+}
+
 export interface ViewContribution {
   id: string
   title: string
@@ -63,22 +82,39 @@ export interface ViewContribution {
   /** Lucide icon name, mapped by the renderer. */
   icon?: string
   /**
-   * Produce the current content.
+   * Produce the current content as blocks.
    *
    * Called when the panel is opened and when the reader asks for a refresh — never on a
    * timer here: a view that needs polling can return a `note` saying when it was read, and
    * a plugin that must watch something can do that in its own process.
    */
-  data: (context: ViewContext) => ViewSpec | Promise<ViewSpec>
+  data?: (context: ViewContext) => ViewSpec | Promise<ViewSpec>
+  /**
+   * Ship a front end instead of a description.
+   *
+   * The window runs it in a sandboxed iframe with no network and no storage; everything it
+   * needs from the plugin comes back through `respond`. Exactly one of `data` and `frame`
+   * is set — a view with both would leave the window guessing which one is the panel.
+   */
+  frame?: ViewFrame
   /**
    * Handles a press on one of this view's `button` blocks.
    *
    * Return a fresh spec to redraw, or nothing when the click changed nothing the panel
    * shows — the window then leaves the content alone rather than flashing it. Absent
    * means the view has no buttons; a button without a handler reports that instead of
-   * doing nothing.
+   * doing nothing. Only meaningful with `data`.
    */
   onAction?: (request: ViewActionRequest) => ViewSpec | void | Promise<ViewSpec | void>
+  /**
+   * Answers one message from this view's frame.
+   *
+   * The answer has to be JSON — it travels through `postMessage` — and `undefined` means
+   * "nothing to say", which reaches the frame as `null`. A throw reaches the frame as a
+   * rejection carrying the message, so a frame can show the plugin's own words instead of
+   * a generic failure. Only meaningful with `frame`.
+   */
+  respond?: (request: FrameActionRequest) => unknown | Promise<unknown>
 }
 
 /** One press, as the plugin receives it. */
@@ -86,6 +122,14 @@ export interface ViewActionRequest extends ViewContext {
   /** The `action` id from the button block. */
   action: string
   /** The button's `value`, when it carried one. */
+  value?: string
+}
+
+/** One message from a frame, as the plugin receives it. */
+export interface FrameActionRequest extends ViewContext {
+  /** The id the frame passed to `request`. */
+  action: string
+  /** Whatever the frame sent along, as text. */
   value?: string
 }
 
@@ -124,10 +168,53 @@ export const VIEW_LIMITS = {
   /** A button's caption, and the value it carries back. */
   label: 60,
   action: 200,
+  /** A frame file's path, and the largest answer one message may carry back. */
+  framePath: 240,
+  answer: 65_536,
 } as const
 
 const ACTION_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/
 const TONES = new Set<ViewTone>(['neutral', 'accent', 'danger', 'success'])
+
+/**
+ * A path a frame may name.
+ *
+ * Deliberately strict: this is the only place a plugin says "read that file" and the
+ * window obeys without a second opinion, so anything a shell would parse — `..`, an
+ * absolute path, a backslash, a `~` — is refused here rather than resolved later.
+ */
+const FRAME_PATH = /^[A-Za-z0-9._/-]+$/
+
+function framePathOf(value: unknown, where: string, id: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new ViewContributionError(`${where} is required: ${id}`)
+  }
+  if (value.length > VIEW_LIMITS.framePath) {
+    throw new ViewContributionError(
+      `${where} is longer than ${String(VIEW_LIMITS.framePath)}: ${id}`,
+    )
+  }
+  const inside =
+    FRAME_PATH.test(value) &&
+    value.split('/').every((part) => part.length > 0 && part !== '.' && part !== '..')
+  if (!inside) {
+    throw new ViewContributionError(`${where} must be a path inside the plugin: ${value}`)
+  }
+  return value
+}
+
+function parseFrame(value: unknown, id: string): ViewFrame {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new ViewContributionError(`view.frame must be an object: ${id}`)
+  }
+  const record = value as Record<string, unknown>
+  return {
+    entry: framePathOf(record['entry'], 'view.frame.entry', id),
+    ...(record['styles'] === undefined
+      ? {}
+      : { styles: framePathOf(record['styles'], 'view.frame.styles', id) }),
+  }
+}
 
 function textOf(value: unknown, where: string, limit: number): string {
   if (typeof value !== 'string') throw new ViewSpecError(`${where} must be a string`)
@@ -334,8 +421,16 @@ export function parseViewContribution(value: unknown): ViewContribution {
     )
   }
 
-  if (typeof record['data'] !== 'function') {
+  const data = record['data']
+  if (data !== undefined && typeof data !== 'function') {
     throw new ViewContributionError(`view.data must be a function: ${id}`)
+  }
+
+  const frame = record['frame'] === undefined ? undefined : parseFrame(record['frame'], id)
+  if ((data === undefined) === (frame === undefined)) {
+    // A view with neither draws nothing; one with both leaves the window guessing which
+    // half of the plugin is the panel.
+    throw new ViewContributionError(`view needs exactly one of data or frame: ${id}`)
   }
 
   const description = record['description']
@@ -354,6 +449,17 @@ export function parseViewContribution(value: unknown): ViewContribution {
   if (onAction !== undefined && typeof onAction !== 'function') {
     throw new ViewContributionError(`view.onAction must be a function: ${id}`)
   }
+  if (onAction !== undefined && data === undefined) {
+    throw new ViewContributionError(`view.onAction needs data, not frame: ${id}`)
+  }
+
+  const respond = record['respond']
+  if (respond !== undefined && typeof respond !== 'function') {
+    throw new ViewContributionError(`view.respond must be a function: ${id}`)
+  }
+  if (respond !== undefined && frame === undefined) {
+    throw new ViewContributionError(`view.respond needs frame, not data: ${id}`)
+  }
 
   const icon = record['icon']
   if (icon !== undefined) {
@@ -367,8 +473,10 @@ export function parseViewContribution(value: unknown): ViewContribution {
     title,
     ...(description === undefined || description.length === 0 ? {} : { description }),
     ...(icon === undefined ? {} : { icon }),
-    data: record['data'] as ViewContribution['data'],
+    ...(data === undefined ? {} : { data: data as ViewContribution['data'] }),
+    ...(frame === undefined ? {} : { frame }),
     ...(onAction === undefined ? {} : { onAction: onAction as ViewContribution['onAction'] }),
+    ...(respond === undefined ? {} : { respond: respond as ViewContribution['respond'] }),
   }
 }
 

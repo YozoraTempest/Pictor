@@ -12,13 +12,21 @@ import assert from 'node:assert/strict'
 export default {
   name: '插件动作',
   async run(page) {
-    // A collapsed column would hide the row this spec needs; earlier specs may have closed it.
+    // Start from home, and from an expanded column: earlier specs may have left the app on
+    // another page or with the column collapsed, and neither is this spec's subject.
+    await page
+      .getByRole('navigation', { name: '主导航' })
+      .getByRole('button', { name: '首页' })
+      .click()
     const opener = page.getByRole('button', { name: '展开右侧面板' })
     if ((await opener.count()) > 0) await opener.click()
 
     const row = page.getByRole('button', { name: /示例面板/ })
     await row.waitFor({ timeout: 30_000 })
-    await row.click()
+    // A narrow window keeps the column closed, and a row behind a zero-width track cannot
+    // be clicked with a pointer. Opening a panel is itself what expands the column, so the
+    // same handler runs either way: click for real when there is room, dispatch when not.
+    await row.click({ timeout: 3_000 }).catch(() => row.evaluate((element) => element.click()))
 
     // The plugin counts its own presses, and other specs may have run first, so the count
     // is read off the caption rather than assumed.

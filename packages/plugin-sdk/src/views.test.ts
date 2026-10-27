@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { VIEW_LIMITS, parseViewContributions, parseViewSpec } from './views.js'
+import {
+  VIEW_LIMITS,
+  parseViewContribution,
+  parseViewContributions,
+  parseViewSpec,
+} from './views.js'
 
 /**
  * A view is drawn by the window, so this validator is the boundary: everything it lets
@@ -120,7 +125,7 @@ describe('parseViewContributions', () => {
       'acme.status',
       'acme.bad-icon',
     ])
-    expect(failures[0]?.reason).toMatch(/data must be a function/)
+    expect(failures[0]?.reason).toMatch(/needs exactly one of data or frame/)
   })
 
   it('keeps the handler a view hands back for its buttons', () => {
@@ -132,6 +137,69 @@ describe('parseViewContributions', () => {
     ])
 
     expect(views[0]?.onAction).toBe(onAction)
+  })
+
+  it('keeps a frame and its message handler', () => {
+    const respond = (): unknown => null
+    const { views } = parseViewContributions([
+      {
+        id: 'acme.board',
+        title: '看板',
+        frame: { entry: 'client/index.js', styles: 'client/index.css' },
+        respond,
+      },
+    ])
+
+    expect(views[0]?.frame).toEqual({ entry: 'client/index.js', styles: 'client/index.css' })
+    expect(views[0]?.respond).toBe(respond)
+    expect(views[0]?.data).toBeUndefined()
+  })
+
+  it('refuses a view with both payloads, or neither', () => {
+    expect(() =>
+      parseViewContribution({
+        id: 'acme.both',
+        title: '两个',
+        data: () => ({ blocks: [] }),
+        frame: { entry: 'client.js' },
+      }),
+    ).toThrow(/exactly one of data or frame/)
+    expect(() => parseViewContribution({ id: 'acme.none', title: '没有' })).toThrow(
+      /exactly one of data or frame/,
+    )
+  })
+
+  it('refuses a frame path that leaves the plugin', () => {
+    // The window serves whatever a frame names without asking twice, so this check is the
+    // whole containment: `..`, an absolute path and a backslash are all refused here.
+    const view = (entry: string): unknown => ({ id: 'acme.board', title: '看板', frame: { entry } })
+
+    expect(() => parseViewContribution(view('../secret.js'))).toThrow(/path inside the plugin/)
+    expect(() => parseViewContribution(view('/etc/passwd'))).toThrow(/path inside the plugin/)
+    expect(() => parseViewContribution(view('client\\..\\x.js'))).toThrow(/path inside the plugin/)
+    expect(() => parseViewContribution(view('client//x.js'))).toThrow(/path inside the plugin/)
+    expect(() => parseViewContribution(view('~/x.js'))).toThrow(/path inside the plugin/)
+  })
+
+  it('keeps the two handlers on their own payload', () => {
+    // A frame answers JSON, blocks answer a description: mixing them is a plugin bug that
+    // would otherwise surface as a runtime error nobody can place.
+    expect(() =>
+      parseViewContribution({
+        id: 'acme.frame.respond',
+        title: '帧',
+        data: () => ({ blocks: [] }),
+        respond: () => null,
+      }),
+    ).toThrow(/respond needs frame/)
+    expect(() =>
+      parseViewContribution({
+        id: 'acme.frame.action',
+        title: '帧',
+        frame: { entry: 'client.js' },
+        onAction: () => undefined,
+      }),
+    ).toThrow(/onAction needs data/)
   })
 
   it('refuses a handler that is not a function', () => {

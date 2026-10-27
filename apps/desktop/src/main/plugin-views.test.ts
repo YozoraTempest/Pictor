@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ViewContribution, ViewSpec } from '@pictor/plugin-sdk'
+import { VIEW_LIMITS, type ViewContribution, type ViewSpec } from '@pictor/plugin-sdk'
 
 import { PluginViews } from './plugin-views.js'
 
@@ -20,6 +20,24 @@ function view(
   }
 }
 
+/** A frame host that records what it was asked to serve. */
+function frames(): { mount: ReturnType<typeof vi.fn> } {
+  return { mount: vi.fn(async () => ({ url: 'http://127.0.0.1:9/f/token/' })) }
+}
+
+function framed(
+  views: ViewContribution[],
+  options: { root?: string | null; frames?: ReturnType<typeof frames> | null } = {},
+): PluginViews {
+  return new PluginViews(views, {
+    dataDirectory: (pluginId) => `/tmp/plugin-data/${pluginId}`,
+    pluginRoot: () => (options.root === undefined ? '/plugins/acme.demo' : options.root),
+    ...(options.frames === null
+      ? {}
+      : { frames: (options.frames ?? frames()) as unknown as never }),
+  }).withOwners(new Map(views.map((entry) => [entry.id, 'acme.demo'])))
+}
+
 function runner(views: ViewContribution[], timeoutMs = 50): PluginViews {
   return new PluginViews(views, {
     dataDirectory: (pluginId) => `/tmp/plugin-data/${pluginId}`,
@@ -35,10 +53,9 @@ describe('PluginViews.render', () => {
     }))
     const views = runner([view({ id: 'acme.status', data })])
 
-    const spec = (await views.render('acme.status', { sessionId: 's1' })) as {
-      blocks: unknown[]
-      note: string
-    }
+    const render = await views.render('acme.status', { sessionId: 's1' })
+    if (render.kind !== 'blocks') throw new Error('描述型视图应当返回块')
+    const spec = render.spec as { blocks: unknown[]; note: string }
 
     expect(spec.note).toBe('读于此刻')
     expect(spec.blocks).toHaveLength(1)
@@ -197,5 +214,136 @@ describe('PluginViews.act', () => {
     await expect(runner([]).act('acme.nope', { action: 'press', sessionId: null })).rejects.toThrow(
       /没有这个视图：acme.nope/,
     )
+  })
+})
+
+/**
+ * A frame view is not run here: the window runs it. What this process owns is the address
+ * its files are served from, and the refusal when the plugin that owns them is gone.
+ */
+describe('PluginViews.render — frames', () => {
+  const board: ViewContribution = {
+    id: 'acme.board',
+    title: '看板',
+    frame: { entry: 'client/index.js', styles: 'client/index.css' },
+  }
+
+  it('mounts the bundle and says where it is', async () => {
+    const host = frames()
+    const render = await framed([board], { frames: host }).render('acme.board', {
+      sessionId: 's1',
+    })
+
+    expect(render).toEqual({ kind: 'frame', url: 'http://127.0.0.1:9/f/token/', title: '看板' })
+    // The address is mounted for one view of one conversation, inside that plugin's root.
+    expect(host.mount).toHaveBeenCalledWith({
+      viewId: 'acme.board',
+      pluginId: 'acme.demo',
+      root: '/plugins/acme.demo',
+      entry: 'client/index.js',
+      styles: 'client/index.css',
+      sessionId: 's1',
+    })
+  })
+
+  it('names the plugin whose files are gone', async () => {
+    // Serving from a remembered path after an uninstall would hand the window whatever
+    // moved into that directory.
+    await expect(
+      framed([board], { root: null }).render('acme.board', { sessionId: null }),
+    ).rejects.toThrow(/插件目录不在了：acme.demo/)
+  })
+
+  it('says so when this build cannot run a frame', async () => {
+    await expect(
+      framed([board], { frames: null }).render('acme.board', { sessionId: null }),
+    ).rejects.toThrow(/没有帧宿主/)
+  })
+})
+
+/**
+ * A message from a frame is the plugin's own conversation with its front end. The three
+ * answers that matter: data, nothing, and the plugin's own words when it fails.
+ */
+describe('PluginViews.respond', () => {
+  const board = (respond: ViewContribution['respond']): ViewContribution => ({
+    id: 'acme.board',
+    title: '看板',
+    frame: { entry: 'client.js' },
+    ...(respond === undefined ? {} : { respond }),
+  })
+
+  it('answers with what the plugin returned', async () => {
+    const views = framed([board(({ action, value }) => ({ action, value, ok: true }))])
+
+    await expect(
+      views.respond('acme.board', { action: 'load', value: 'x', sessionId: 's1' }),
+    ).resolves.toEqual({ ok: true, data: { action: 'load', value: 'x', ok: true } })
+  })
+
+  it('answers null when the plugin said nothing', async () => {
+    const views = framed([board(() => undefined)])
+
+    await expect(views.respond('acme.board', { action: 'noop', sessionId: null })).resolves.toEqual(
+      {
+        ok: true,
+        data: null,
+      },
+    )
+  })
+
+  it('reports a plugin that throws in its own words', async () => {
+    const views = framed([
+      board(() => {
+        throw new Error('数据库没打开')
+      }),
+    ])
+
+    const answer = await views.respond('acme.board', { action: 'load', sessionId: null })
+
+    expect(answer).toEqual({
+      ok: false,
+      error: '视图「看板」处理「load」时失败：数据库没打开',
+    })
+  })
+
+  it('refuses an answer that is not JSON', async () => {
+    // Without this the frame would receive `{}` and read it as an empty answer.
+    const views = framed([board(() => 10n)])
+
+    await expect(
+      views.respond('acme.board', { action: 'load', sessionId: null }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/不是 JSON/) as unknown as string,
+    })
+  })
+
+  it('refuses an answer larger than a message may carry', async () => {
+    const views = framed([board(() => 'x'.repeat(VIEW_LIMITS.answer + 1))])
+
+    await expect(
+      views.respond('acme.board', { action: 'load', sessionId: null }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/答复超过/) as unknown as string,
+    })
+  })
+
+  it('reports a view that has no handler', async () => {
+    const views = framed([board(undefined)])
+
+    await expect(views.respond('acme.board', { action: 'load', sessionId: null })).resolves.toEqual(
+      {
+        ok: false,
+        error: '视图「看板」不处理消息：load',
+      },
+    )
+  })
+
+  it('reports a view nobody contributed', async () => {
+    await expect(
+      framed([]).respond('acme.nope', { action: 'load', sessionId: null }),
+    ).resolves.toEqual({ ok: false, error: '没有这个视图：acme.nope' })
   })
 })

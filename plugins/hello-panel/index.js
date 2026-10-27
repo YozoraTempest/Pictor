@@ -22,6 +22,9 @@ let reads = 0
 /** 按钮按了多少次；插件自己的状态，跨读取保留。 */
 let presses = 0
 
+/** 帧里的按钮按了多少次：同一份插件状态，另一条通道。 */
+let framePresses = 0
+
 export function apply(ctx) {
   // `ctx.effect` 交出的是「这个插件活着期间有效」的注册：卸载插件时 cordis 调用它，
   // 面板和视图一起消失，不需要谁记着去删。
@@ -121,6 +124,25 @@ export function apply(ctx) {
     }),
   )
 
+  // 第二种载荷：不交描述，交一个前端包。窗口把它跑在沙箱 iframe 里，文件和网络都受限，
+  // 唯一出来的路是 `respond` —— 而 `respond` 就在这个进程里跑。
+  ctx.effect(() =>
+    ctx.pictor.views({
+      id: 'pictor.example.hello.frame',
+      title: '示例画板',
+      frame: { entry: 'client.js', styles: 'client.css' },
+      respond: ({ action, pluginId, sessionId }) => {
+        if (action === 'press') {
+          framePresses += 1
+          return { presses: framePresses }
+        }
+        if (action === 'info') return { pluginId, sessionId }
+        // 抛出来的话会原样送到帧里，插件自己的措辞比「出错了」有用。
+        throw new Error(`不认识的消息：${action}`)
+      },
+    }),
+  )
+
   // A seat in the title bar: small enough that the bar keeps its height, and it says
   // what the whole plugin is rather than repeating a panel.
   ctx.effect(() =>
@@ -215,6 +237,16 @@ export function apply(ctx) {
       description: '一个视图能说什么',
       icon: 'puzzle',
       view: 'pictor.example.hello.today',
+    }),
+  )
+
+  ctx.effect(() =>
+    ctx.pictor.panels({
+      id: 'pictor.example.hello.board',
+      title: '示例画板',
+      description: '插件交了自己的前端，窗口只负责装进沙箱',
+      icon: 'blocks',
+      view: 'pictor.example.hello.frame',
     }),
   )
 

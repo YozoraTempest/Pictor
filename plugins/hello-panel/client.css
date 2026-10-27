@@ -1,0 +1,53 @@
+/* 插件自己的样式，由帧的文档以 <link> 引入 —— 证明一个前端包可以不止一个文件。 */
+:root {
+  --accent: #6ea8fe;
+}
+
+body {
+  padding: 12px;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pictor-text);
+}
+
+.note,
+.said,
+.where {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--pictor-muted);
+}
+
+.press {
+  margin-bottom: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.press:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.press:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.said {
+  color: var(--pictor-text);
+}
+
+.said[data-count] {
+  color: var(--accent);
+}

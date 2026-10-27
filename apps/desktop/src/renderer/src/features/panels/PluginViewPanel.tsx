@@ -1,10 +1,11 @@
 import { ArrowLeft, RefreshCw, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
-import type { ViewSpec } from '../../../../shared/bridge.js'
+import type { ViewRender } from '../../../../shared/bridge.js'
 
 import { Banner, IconButton, Spinner } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'
+import { FrameView } from './FrameView.js'
 import { ViewContent } from './ViewContent.js'
 
 /**
@@ -34,7 +35,7 @@ export function PluginViewPanel({
   /** Collapses the column. */
   onClose: () => void
 }): React.JSX.Element {
-  const [spec, setSpec] = useState<ViewSpec | null>(null)
+  const [render, setRender] = useState<ViewRender | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [nonce, setNonce] = useState(0)
@@ -49,7 +50,7 @@ export function PluginViewPanel({
       .renderPluginView(view, sessionId)
       .then((next) => {
         if (!alive) return
-        setSpec(next)
+        setRender(next)
         setBusy(false)
       })
       .catch((reason: unknown) => {
@@ -57,7 +58,7 @@ export function PluginViewPanel({
         // The old content is dropped with the failure: what the plugin said a moment ago
         // is not what it says now, and leaving it up would present a stale answer as the
         // current one.
-        setSpec(null)
+        setRender(null)
         setError(reason instanceof Error ? reason.message : String(reason))
         setBusy(false)
       })
@@ -83,7 +84,7 @@ export function PluginViewPanel({
       void window.pictor
         .actPluginView(view, action, value, sessionId)
         .then((next) => {
-          if (next !== null) setSpec(next)
+          if (next !== null) setRender({ kind: 'blocks', spec: next })
         })
         .catch((reason: unknown) => {
           setError(reason instanceof Error ? reason.message : String(reason))
@@ -110,17 +111,46 @@ export function PluginViewPanel({
         </IconButton>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      {/*
+        Blocks scroll; a frame does not. A padded, scrolling box around an iframe would
+        make it taller than the column and leave the frame's own coordinates floating,
+        so the same element changes shape with the payload.
+      */}
+      <div
+        className={cn(
+          'flex min-h-0 flex-1 flex-col',
+          render?.kind === 'frame' ? 'min-h-0' : 'gap-2 overflow-y-auto p-3',
+        )}
+      >
         {error !== null && <Banner tone="error">{error}</Banner>}
 
-        {error === null && spec === null && (
+        {error === null && render === null && (
           <div className="flex items-center gap-2 text-2xs text-faint">
             <Spinner className="size-3.5" />
             读取中
           </div>
         )}
 
-        {spec !== null && <ViewContent spec={spec} onAction={act} busy={pending} />}
+        {render?.kind === 'blocks' && (
+          <ViewContent spec={render.spec} onAction={act} busy={pending} />
+        )}
+
+        {/*
+          A frame fills the column and scrolls inside itself. `nonce` is part of its key so
+          the refresh button reloads the bundle — there is nothing here to re-read, and a
+          frame that kept its old state while claiming to be refreshed would be lying.
+        */}
+        {render?.kind === 'frame' && (
+          <FrameView
+            key={`${render.url}#${String(nonce)}`}
+            url={render.url}
+            title={render.title}
+            view={view}
+            sessionId={sessionId}
+            className="min-h-0 flex-1"
+            onError={setError}
+          />
+        )}
       </div>
     </div>
   )

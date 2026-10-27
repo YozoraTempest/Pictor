@@ -1158,6 +1158,37 @@ function registerIpc(workspace: Workspace): void {
   })
 
   /**
+   * One message from a frame.
+   *
+   * The frame cannot reach the plugin by itself — it has no network, no Node and no
+   * lineage — so what it does reaches the plugin through the window that hosts it. The
+   * answer is always an answer here, never a throw: it goes back into the plugin's own
+   * front end, which is the only place that can show it to a person.
+   */
+  ipcMain.handle(
+    'pictor:frames.request',
+    async (_event, id: unknown, action: unknown, value: unknown, sessionId: unknown) => {
+      if (typeof id !== 'string' || id.length === 0) {
+        return { ok: false, error: 'view id must be a non-empty string' }
+      }
+      if (typeof action !== 'string' || action.length === 0) {
+        return { ok: false, error: 'action must be a non-empty string' }
+      }
+      if (value !== undefined && typeof value !== 'string') {
+        return { ok: false, error: 'value must be a string when present' }
+      }
+      if (sessionId !== null && typeof sessionId !== 'string') {
+        return { ok: false, error: 'sessionId must be a string or null' }
+      }
+      return workspace.plugins.viewRunner().respond(id, {
+        action,
+        ...(value === undefined ? {} : { value }),
+        sessionId,
+      })
+    },
+  )
+
+  /**
    * A press on a `button` block.
    *
    * The window never runs plugin code: it names the view and the action, the plugin's

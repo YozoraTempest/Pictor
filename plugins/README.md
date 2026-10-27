@@ -82,16 +82,16 @@ registers a tool — runs in both.
 Every point is a function on the `pictor` service. Each returns a disposer, and the ones
 inside `ctx.effect` are undone when the plugin unloads.
 
-| Call                          | Payload                                          | What it does                                   |
-| ----------------------------- | ------------------------------------------------ | ---------------------------------------------- |
-| `ctx.pictor.panels(...)`      | `{ id, title, icon?, view }`                     | A row in the right column's launcher           |
-| `ctx.pictor.slots(...)`       | `{ slot, key?, title, icon?, view }`             | A seat anywhere the window reserves one        |
-| `ctx.pictor.views(...)`       | `{ id, title, data(context), onAction?, icon? }` | What a panel draws: blocks, not renderer code  |
-| `ctx.pictor.toolGuards(...)`  | `{ id, title, tools?, decide(context) }`         | Decides allow/deny **before** a call runs      |
-| `ctx.pictor.toolHooks(...)`   | `{ id, title?, tools?, after(context) }`         | Reacts **after** a call settled: note or fail  |
-| `ctx.pictor.toolViews(...)`   | `{ id, tools, label?, icon? }`                   | How a tool call is presented in the transcript |
-| `ctx.pictor.skills(...)`      | `{ name, description, body, whenToUse? }`        | A skill the agent can load on demand           |
-| `pictor.contributes` `kernel` | `{ main, label? }`                               | A second entry that provides `kernel.<id>`     |
+| Call                          | Payload                                    | What it does                                     |
+| ----------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| `ctx.pictor.panels(...)`      | `{ id, title, icon?, view }`               | A row in the right column's launcher             |
+| `ctx.pictor.slots(...)`       | `{ slot, key?, title, icon?, view }`       | A seat anywhere the window reserves one          |
+| `ctx.pictor.views(...)`       | `{ id, title, data(context) \| frame, … }` | What a panel shows: blocks, or its own front end |
+| `ctx.pictor.toolGuards(...)`  | `{ id, title, tools?, decide(context) }`   | Decides allow/deny **before** a call runs        |
+| `ctx.pictor.toolHooks(...)`   | `{ id, title?, tools?, after(context) }`   | Reacts **after** a call settled: note or fail    |
+| `ctx.pictor.toolViews(...)`   | `{ id, tools, label?, icon? }`             | How a tool call is presented in the transcript   |
+| `ctx.pictor.skills(...)`      | `{ name, description, body, whenToUse? }`  | A skill the agent can load on demand             |
+| `pictor.contributes` `kernel` | `{ main, label? }`                         | A second entry that provides `kernel.<id>`       |
 
 ### Slots: where a seat goes
 
@@ -218,6 +218,69 @@ ctx.effect(() =>
 There is nowhere to put a function in a block, on purpose: the click travels to where the
 plugin already runs and comes back as a description. That is what keeps plugin code out of
 the window while still giving a panel something to press.
+
+### A frame: your own front end
+
+Blocks are descriptions. When a panel needs to be something the vocabulary cannot say — a
+canvas, a chart, a board with drag handles — a view can ship a **front end** instead:
+
+```js
+ctx.effect(() =>
+  ctx.pictor.views({
+    id: 'acme.board.view',
+    title: '看板',
+    // Relative to the plugin's own directory. Both files are served from a token that
+    // names this view of this conversation, and nothing else is reachable through it.
+    frame: { entry: 'client/index.js', styles: 'client/index.css' },
+    // The only way the bundle can reach the plugin: one message in, one answer out.
+    respond: ({ action, value, sessionId }) => {
+      if (action !== 'load') throw new Error(`不认识的消息：${action}`)
+      return { cards: [], sessionId }
+    },
+  }),
+)
+```
+
+The bundle is an ordinary ES module. It draws with its own DOM, its own styles and its own
+state; what it gets from the window is one object:
+
+```js
+// client/index.js — no build step needed, though a bundler is fine
+const api = window.pictorFrame
+
+api.onInit(({ sessionId, theme }) => {
+  // theme.bg / surface / border / text / muted / accent, the app's live colours
+  document.body.style.background = theme.bg
+})
+
+document.querySelector('#refresh').addEventListener('click', async () => {
+  // Goes to `respond` above, in the main process, next to the rest of the plugin.
+  const answer = await api.request('load')
+  render(answer.cards)
+})
+```
+
+`request` resolves with whatever `respond` returned and rejects with its `Error` message, so
+a refusal is written in the plugin's own words. The answer must be JSON and under 64 KiB;
+`undefined` arrives as `null`.
+
+**What the frame cannot do** — this is the trade, and it is not negotiable at runtime:
+
+| Limit                   | Why                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| No network              | `connect-src 'none'`: `fetch`, `XHR` and `sendBeacon` are refused by the browser.     |
+| No storage              | The frame's origin is opaque, so `localStorage` throws. State lives in the plugin.    |
+| No Node, no Electron    | It is an `<iframe sandbox="allow-scripts">`, not a window.                            |
+| No reaching the app     | No same-origin, so it cannot see the app's DOM, variables or bridge.                  |
+| No second document      | You ship modules and assets, not `.html`; the frame's document and CSP are the app's. |
+| Files inside the plugin | Paths are checked against the plugin root; `..`, absolute paths and `~` are refused.  |
+
+A frame is mounted per **view and conversation**, and the same URL is reused for a refresh.
+The refresh button reloads the bundle — a frame that kept its own state while claiming to
+be refreshed would be lying about what happened.
+
+Sizes are the window's: a panel frame fills the column, a seat frame gets a fixed height and
+scrolls. Content does not get to resize the app.
 
 ### Naming a tool
 

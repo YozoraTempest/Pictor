@@ -60,6 +60,8 @@ export {
   type ViewContribution,
   type ViewContributionFailure,
   type ViewActionRequest,
+  type ViewFrame,
+  type FrameActionRequest,
   type ViewSpec,
   type ViewTone,
 } from './views.js'

@@ -177,6 +177,45 @@ avoids. And an action id is something the plugin itself can refuse: a view witho
 like a broken app. The same channel serves a panel and a seat, because both are a `views`
 id with a person in front of it.
 
+### Frames: a plugin's own front end
+
+Blocks are a closed vocabulary, which is the point — but a canvas or a board is not
+expressible in it, and inventing a `canvas` block would mean inventing a rendering engine.
+So a `views` contribution has a second payload: `frame: { entry, styles? }`, a bundle the
+window runs inside an iframe instead of describing.
+
+The line that made blocks safe — the window never runs plugin code — is replaced by a
+narrower one: the window runs plugin code **inside a box it fully controls**, and the box is
+made of things it can verify.
+
+- **`sandbox="allow-scripts"`, no `allow-same-origin`.** The frame's origin is opaque: it
+  cannot read the app's document, its variables or its bridge, and the app cannot read the
+  frame's. Verification that a message came from _this_ frame is `event.source ===
+iframe.contentWindow`, because `event.origin` is the string `"null"` for every frame.
+- **Files come from a loopback server behind a token** (`apps/desktop/src/main/frame-host.ts`).
+  A token names one view of one conversation and one plugin directory; every path is
+  resolved and then checked against that root, and the file types are an allowlist. There is
+  no directory listing, no HTML, and nothing above 8 MiB.
+- **The document is generated here.** Charset, theme variables, shim, one module tag — so a
+  plugin cannot ship a document that relaxes its own CSP or adds a second origin.
+- **`connect-src 'none'`.** Module imports are `script-src`, so a bundle still loads its own
+  files while `fetch`, `XHR` and `sendBeacon` are refused. A front end that needs data asks
+  its plugin, in the process that is allowed to have it.
+
+The channel is `postMessage` and nothing else: `ready` and `request` come out, `init` and
+`answer` go in, and a pure parser (`features/panels/frame-protocol.ts`) is the only place
+untrusted input becomes an action. A request names an `action` id and travels to the
+plugin's `respond` in the main process — the same shape as a button press, for the same
+reason: the id is something the plugin can refuse, and a refusal reaches the frame in the
+plugin's own words.
+
+What this costs, all of it deliberate: no `localStorage` (opaque origin), no network, no
+shared state with the main window, and no content-driven height — a seat's frame gets a fixed
+box and scrolls inside it, because a panel that resizes itself whenever plugin code feels
+like it would move the conversation under the reader. Refresh remounts the frame: there is
+nothing to re-read, and a frame that kept its state while claiming to be refreshed would be
+lying about what happened.
+
 ### Kernels
 
 A conversation is executed by a kernel, never by Pictor itself. `KernelDriver`
