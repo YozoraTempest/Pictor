@@ -22,11 +22,9 @@ export function openSession(sessionId: string): boolean {
   const session = state.sessions.find((entry) => entry.id === sessionId)
   if (session === undefined) return false
 
-  // The page of the kernel that ran it — every mounted kernel has one — or home when
-  // this build no longer has that kernel: home can always be drawn, and its composer
-  // is a place to go on from.
-  const mounted = state.kernels.some((kernel) => kernel.id === session.kernelId)
-  const view: AppView = mounted ? kernelViewId(session.kernelId) : 'home'
+  // The page of the engine that ran it. A conversation whose engine is no longer mounted
+  // still names it; the view registry falls back to the engine that is.
+  const view: AppView = kernelViewId(session.kernelId)
 
   if (useUiStore.getState().view !== view) openView(view)
   state.selectSession(sessionId)

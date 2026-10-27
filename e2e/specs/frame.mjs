@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 
+import { openKernel } from '../harness.mjs'
+
 /**
  * A plugin's own front end, in a box.
  *
@@ -16,10 +18,7 @@ export default {
   async run(page) {
     // Start from home: the panel column belongs to the shell, but a spec that ran before
     // this one may have left the app on the extensions page.
-    await page
-      .getByRole('navigation', { name: '主导航' })
-      .getByRole('button', { name: '首页' })
-      .click()
+    await openKernel(page, 'DeepSeek Harness')
 
     const opener = page.getByRole('button', { name: '展开右侧面板' })
     if ((await opener.count()) > 0) await opener.click()

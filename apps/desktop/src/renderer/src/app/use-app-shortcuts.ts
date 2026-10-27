@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import { kernelOfView } from './kernel-scope.js'
+import { arsSettingsViewId, kernelOfView } from './kernel-scope.js'
 import { viewsFor } from './views.js'
 import { openView } from './open-view.js'
 import { useUiStore } from './ui-store.js'
@@ -30,13 +30,16 @@ export function useAppShortcuts(): void {
       switch (event.key.toLowerCase()) {
         case 'n':
           event.preventDefault()
-          // The open page decides the kernel, the same way its own 新聊天 does. Home
-          // names none, and the server picks the default.
+          // The open page names the engine, the same way its own 新聊天 does; a view that
+          // names none lets the server pick.
           void createSession(newSessionTitle(), null, kernelOfView(useUiStore.getState().view))
           return
         case ',':
           event.preventDefault()
-          openView('settings')
+          {
+            const kernel = useWorkspaceStore.getState().kernels[0]
+            if (kernel !== undefined) openView(arsSettingsViewId(kernel.id))
+          }
           return
         case 'b':
           event.preventDefault()

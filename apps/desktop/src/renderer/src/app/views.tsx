@@ -1,11 +1,10 @@
-import { Blocks, Boxes, House, Settings2, type LucideIcon } from 'lucide-react'
+import { Boxes, Settings2, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { KernelInfo } from '../../../shared/bridge.js'
-import { kernelViewId } from './kernel-scope.js'
+import { arsSettingsViewId, kernelViewId } from './kernel-scope.js'
 
-import { ExtensionsView } from '../features/extensions/ExtensionsView.js'
 import { iconFor } from '../lib/icons.js'
-import { SettingsView } from '../features/settings/SettingsView.js'
+import { ArsSettingsPage } from '../features/settings/ArsSettingsPage.js'
 import {
   WorkspaceLeading,
   WorkspaceTitle,
@@ -59,85 +58,60 @@ export interface AppViewDescriptor<Id extends string = string> {
  */
 export type AppView = string
 
-/** Where the app starts when nothing else is known. */
-export const DEFAULT_VIEW: AppView = 'home'
-
-/** Every conversation starts here, whatever kernel ends up running it. */
-const HOME_VIEW: AppViewDescriptor = {
-  id: DEFAULT_VIEW,
-  label: '首页',
-  description: '开始一个新话题',
-  icon: House,
-  group: 'primary',
-  order: 0,
-  /**
-   * No sessions and no kernel: a conversation starts here, and once it has a kernel
-   * it lives on that kernel's page. One list for every kernel would have to describe
-   * runtimes that disagree about almost everything.
-   */
-  render: () => <WorkspaceView />,
-  title: () => <WorkspaceTitle />,
-  leading: () => <WorkspaceLeading />,
-  trailing: () => <WorkspaceTrailing />,
-  shortcut: 'Ctrl+1',
-}
-
 /**
- * What can be added to the app.
+ * Where the app starts.
  *
- * Above settings, and separate from it: a plugin, a skill or an MCP server is something
- * you install and switch on, not a preference you set once. Three surfaces that answer
- * the same question — 「还能加什么？」 — belong on one page.
+ * There is no home page: the one engine's page is where a conversation starts and where
+ * the open one is drawn, so "nothing chosen yet" and "the engine's page" are the same
+ * place. The id is derived from the mounted engine rather than written here, because the
+ * rail is.
  */
-const EXTENSIONS_VIEW: AppViewDescriptor = {
-  id: 'extensions',
-  label: '拓展',
-  description: '插件、技能与 MCP',
-  icon: Blocks,
-  group: 'secondary',
-  order: 0,
-  render: () => <ExtensionsView />,
-  // No title-bar text: the page's own heading names it, and two 「拓展」 on screen would
-  // be the same word twice — the exact thing this page was made to avoid.
+export function defaultView(kernels: readonly KernelInfo[]): AppView {
+  const first = kernels[0]
+  return first === undefined ? ARS_SETTINGS_FALLBACK : kernelViewId(first.id)
 }
 
-/** Preferences are not about kernels, so the entry is not either. */
-const SETTINGS_VIEW: AppViewDescriptor = {
-  id: 'settings',
-  label: '设置',
-  description: '偏好与模型服务',
-  icon: Settings2,
-  group: 'secondary',
-  order: 1,
-  render: () => <SettingsView />,
-  title: () => '设置',
-  shortcut: 'Ctrl+,',
-}
+/** Drawn when no engine is mounted at all; the window still has to show something. */
+const ARS_SETTINGS_FALLBACK = 'settings'
 
 /**
  * Every destination, given what this machine can run.
  *
- * Home first, one page per mounted kernel after it, settings pinned to the bottom.
- * The list is built on demand because the kernels are: turning a kernel off takes its
- * page away, and installing one adds a page without an edit here.
+ * Two entries, both belonging to the engine: its page, and its settings — which is also
+ * where 拓展 lives, because a plugin, a skill or an MCP server is something you add to
+ * *this* engine, not a preference of the window. There is no home page: the engine's page
+ * is where a conversation starts.
+ *
+ * The list is built from what is mounted rather than written here, so a second engine would
+ * appear without an edit if one ever ships again.
  */
 export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
   const pages = kernels.map((kernel, index): AppViewDescriptor => ({
     id: kernelViewId(kernel.id),
     label: kernel.label,
     description: `${kernel.label} 的会话`,
-    // The kernel names its icon; the window owns the vocabulary. An installed kernel
-    // the build has never heard of still gets a page, a generic icon and a number.
+    // The engine names its icon; the window owns the vocabulary.
     icon: iconFor(kernel.icon, Boxes),
     group: 'primary',
-    order: index + 1,
+    order: index * 2,
     render: () => <WorkspaceView kernelId={kernel.id} />,
     title: () => <WorkspaceTitle />,
     leading: () => <WorkspaceLeading />,
     trailing: () => <WorkspaceTrailing />,
-    shortcut: `Ctrl+${String(index + 2)}`,
+    shortcut: `Ctrl+${String(index + 1)}`,
   }))
-  return [HOME_VIEW, ...pages, EXTENSIONS_VIEW, SETTINGS_VIEW]
+  const settings = kernels.map((kernel, index): AppViewDescriptor => ({
+    id: arsSettingsViewId(kernel.id),
+    label: `${kernel.label} 设置`,
+    description: '运行时、拓展与偏好',
+    icon: Settings2,
+    group: 'primary',
+    order: index * 2 + 1,
+    render: () => <ArsSettingsPage kernel={kernel.id} label={kernel.label} />,
+    title: () => `${kernel.label} 设置`,
+  }))
+
+  return [...pages, ...settings]
 }
 
 /** The destinations in the order the rail shows them. */
@@ -146,12 +120,24 @@ export function sortedViews(kernels: readonly KernelInfo[]): AppViewDescriptor[]
 }
 
 /**
- * The descriptor for `id`, falling back to home.
+ * The descriptor for `id`, falling back to the engine's page.
  *
- * Callers render a frame on every frame; an id whose kernel is no longer mounted has
- * to produce a view rather than an empty window, and home is the one that can always
- * be shown.
+ * Callers render a frame on every frame; an id whose engine is no longer mounted still has
+ * to produce a view rather than an empty window.
  */
 export function findView(id: string, kernels: readonly KernelInfo[]): AppViewDescriptor {
-  return viewsFor(kernels).find((entry) => entry.id === id) ?? HOME_VIEW
+  const views = viewsFor(kernels)
+  return views.find((entry) => entry.id === id) ?? views[0] ?? MISSING_VIEW
+}
+
+/** Drawn when nothing is mounted at all: an engine that failed to load, in words. */
+const MISSING_VIEW: AppViewDescriptor = {
+  id: 'missing',
+  label: '没有引擎',
+  description: 'dsh 没有装载',
+  icon: Boxes,
+  group: 'primary',
+  order: 0,
+  render: () => <p className="p-6 text-sm text-muted">dsh 没有装载。看日志里启动失败的那一行。</p>,
+  title: () => '没有引擎',
 }

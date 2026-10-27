@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 
+import { openKernel } from '../harness.mjs'
+
 /**
  * The one block a person can press, all the way through.
  *
@@ -14,10 +16,7 @@ export default {
   async run(page) {
     // Start from home, and from an expanded column: earlier specs may have left the app on
     // another page or with the column collapsed, and neither is this spec's subject.
-    await page
-      .getByRole('navigation', { name: '主导航' })
-      .getByRole('button', { name: '首页' })
-      .click()
+    await openKernel(page, 'DeepSeek Harness')
     const opener = page.getByRole('button', { name: '展开右侧面板' })
     if ((await opener.count()) > 0) await opener.click()
 

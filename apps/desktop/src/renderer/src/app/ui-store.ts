@@ -85,7 +85,9 @@ function cancelPeekTimer(): void {
 }
 
 export const useUiStore = create<UiState>()((set, get) => ({
-  view: 'home' as AppView,
+  // Empty until the workspace reports its engine: the first view is derived from what
+  // is mounted, and there is no home page to fall back to.
+  view: '' as AppView,
   leftPanelOpen: true,
   rightPanelOpen: window.matchMedia('(min-width: 1080px)').matches,
   sidebarWidth: SIDEBAR_DEFAULT,

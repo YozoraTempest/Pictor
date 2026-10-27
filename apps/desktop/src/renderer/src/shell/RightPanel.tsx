@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { LayoutTemplate, X } from 'lucide-react'
 
+import { arsSettingsViewId } from '../app/kernel-scope.js'
 import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
 import { useWorkspaceStore } from '../app/workspace-store.js'
@@ -71,7 +72,10 @@ export function RightPanel(): React.JSX.Element {
               `新会话 ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`,
             )
           },
-          openSettings: () => openView('settings'),
+          openSettings: () => {
+            const kernel = useWorkspaceStore.getState().kernels[0]
+            if (kernel !== undefined) openView(arsSettingsViewId(kernel.id))
+          },
         }),
         pluginPanelEntries(pluginPanels, (panel) => openPanelNamed(panel.id)),
       ),

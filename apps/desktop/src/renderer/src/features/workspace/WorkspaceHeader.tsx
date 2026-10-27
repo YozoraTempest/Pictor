@@ -16,12 +16,10 @@ import { cn } from '../../lib/cn.js'
  * is not there is worse than no button.
  */
 export function WorkspaceLeading(): React.JSX.Element {
-  const view = useUiStore((state) => state.view)
   const leftPanelOpen = useUiStore((state) => state.leftPanelOpen)
   const toggleLeftPanel = useUiStore((state) => state.toggleLeftPanel)
   const peekSidebar = useUiStore((state) => state.peekSidebar)
 
-  if (view === 'home') return <></>
   return (
     <Tooltip
       label={leftPanelOpen ? '收起侧栏' : '悬停预览，点击展开侧栏'}

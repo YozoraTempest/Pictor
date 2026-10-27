@@ -11,7 +11,10 @@ import assert from 'node:assert/strict'
 export default {
   name: '拓展面板',
   async run(page) {
-    await page.locator('nav[aria-label="主导航"] button[aria-label="拓展"]').click()
+    await page
+      .locator('nav[aria-label="主导航"] button[aria-label="DeepSeek Harness 设置"]')
+      .click()
+    await page.getByRole('tab', { name: '拓展' }).click()
 
     // Named once: the page's own heading. The title bar stays quiet for this view.
     await page.getByRole('heading', { name: '拓展' }).waitFor({ timeout: 20_000 })

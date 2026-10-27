@@ -84,7 +84,7 @@ export default {
       // and waits for the home view to render before handing over.
       await page
         .getByRole('navigation', { name: '主导航' })
-        .getByRole('button', { name: '首页' })
+        .getByRole('button', { name: 'DeepSeek Harness' })
         .click()
       await page.getByRole('button', { name: '搜索会话' }).waitFor({ timeout: 15_000 })
     } finally {

@@ -15,8 +15,9 @@ vi.stubGlobal('matchMedia', (query: string) => ({
   dispatchEvent: () => false,
 }))
 
-const { DEFAULT_VIEW, findView, viewsFor } = await import('./views.js')
-const { kernelOfView, kernelViewId } = await import('./kernel-scope.js')
+const { defaultView, findView, viewsFor } = await import('./views.js')
+const { kernelOfView, kernelViewId, arsSettingsViewId, settingsOwnerOf } =
+  await import('./kernel-scope.js')
 
 /** What `kernels.list()` reports, near enough for the rail to be built. */
 function kernel(id: string, label = id, icon: string | null = null): KernelInfo {
@@ -64,8 +65,8 @@ describe('view registry', () => {
   })
 
   it('starts on a view it declares', () => {
-    expect(viewsFor(BUILTINS).some((entry) => entry.id === DEFAULT_VIEW)).toBe(true)
-    expect(findView(DEFAULT_VIEW, BUILTINS).id).toBe(DEFAULT_VIEW)
+    expect(viewsFor(BUILTINS).some((entry) => entry.id === defaultView(BUILTINS))).toBe(true)
+    expect(findView(defaultView(BUILTINS), BUILTINS).id).toBe(defaultView(BUILTINS))
   })
 
   it('does not bind the same accelerator twice', () => {
@@ -75,26 +76,26 @@ describe('view registry', () => {
     expect(new Set(shortcuts).size).toBe(shortcuts.length)
   })
 
-  it('puts home first and one page per mounted kernel after it', () => {
-    const primary = viewsFor(BUILTINS)
-      .filter((entry) => entry.group === 'primary')
+  it('puts one page and one settings page per mounted engine, and nothing else', () => {
+    // No home page and no app-level destinations: the rail is the engine's.
+    const ids = viewsFor(BUILTINS)
+      .slice()
       .sort((a, b) => a.order - b.order)
+      .map((entry) => entry.id)
 
-    expect(primary.map((entry) => entry.id)).toEqual([
-      DEFAULT_VIEW,
-      ...BUILTINS.map((entry) => kernelViewId(entry.id)),
-    ])
-    expect(primary.map((entry) => entry.label)).toEqual(['首页', 'DeepSeek Harness', 'Pi'])
+    expect(ids).toEqual(
+      BUILTINS.flatMap((entry) => [kernelViewId(entry.id), arsSettingsViewId(entry.id)]),
+    )
+    expect(viewsFor(BUILTINS).every((entry) => entry.group === 'primary')).toBe(true)
   })
 
-  it('puts extensions above settings in the rail', () => {
-    // The rail's bottom group is what a person reaches for when the conversation is not
-    // in front of them: adding something first, then settings.
-    const secondary = viewsFor(BUILTINS)
-      .filter((entry) => entry.group === 'secondary')
-      .sort((a, b) => a.order - b.order)
-
-    expect(secondary.map((entry) => entry.label)).toEqual(['拓展', '设置'])
+  it('names each settings page after the engine that owns it', () => {
+    for (const kernel of BUILTINS) {
+      expect(settingsOwnerOf(arsSettingsViewId(kernel.id))).toBe(kernel.id)
+      expect(settingsOwnerOf(kernelViewId(kernel.id))).toBeNull()
+    }
+    const named = viewsFor(BUILTINS).find((entry) => entry.id === arsSettingsViewId('dsh'))
+    expect(named?.label).toBe('DeepSeek Harness 设置')
   })
 
   it('draws a page for a kernel this build has never heard of', () => {
@@ -132,8 +133,10 @@ describe('view registry', () => {
     }
   })
 
-  it('falls back to home when the page a kernel used to have is gone', () => {
+  it('falls back when the page a kernel used to have is gone', () => {
     // A kernel turned off while its page was open leaves a view id nobody declares.
-    expect(findView(kernelViewId('dsh'), []).id).toBe(DEFAULT_VIEW)
+    // With nothing mounted there is no engine page, so the registry hands back the
+    // fallback rather than an empty window.
+    expect(findView(kernelViewId('dsh'), []).id).toBe('missing')
   })
 })

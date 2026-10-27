@@ -101,13 +101,13 @@ describe('openSession', () => {
     expect(useWorkspaceStore.getState().selectedSessionId).toBe('fake-1')
   })
 
-  it('falls back to home for a kernel that is no longer mounted', () => {
-    // The kernel was uninstalled or turned off: its page is gone, so the conversation
-    // opens on the one page that always exists.
+  it('names the page of an engine that is no longer mounted', () => {
+    // The conversation still names the engine that ran it; the view registry decides what
+    // to draw when that page is gone.
     useWorkspaceStore.setState({ sessions: [session('codex-1', 'codex')] })
 
     expect(openSession('codex-1')).toBe(true)
-    expect(useUiStore.getState().view).toBe('home')
+    expect(useUiStore.getState().view).toBe('kernel:codex')
     expect(useWorkspaceStore.getState().selectedSessionId).toBe('codex-1')
   })
 

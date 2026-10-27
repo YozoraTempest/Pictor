@@ -35,7 +35,7 @@ const PI_INSTALL = 'npm i -g @earendil-works/pi-coding-agent'
  * this component takes the kernel instead of rendering both.
  */
 export interface RuntimePageProps {
-  kernel: 'dsh' | 'pi'
+  kernel: string
 }
 
 /**
@@ -105,7 +105,7 @@ export function RuntimePage({ kernel }: RuntimePageProps): React.JSX.Element {
       )}
 
       {/* dsh: the server this app boots, so it owns the start/stop pair. */}
-      {kernel === 'dsh' && (
+      {
         <Section
           title="进程"
           description="常驻服务：由 Pictor 启动并保持运行，会话消息都经过它。"
@@ -212,7 +212,7 @@ export function RuntimePage({ kernel }: RuntimePageProps): React.JSX.Element {
             control={null}
           />
         </Section>
-      )}
+      }
 
       {/* Pi: a CLI on the machine, started per conversation, so only the facts. */}
       {kernel === 'pi' && (

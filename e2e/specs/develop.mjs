@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { openKernel } from '../harness.mjs'
+
 /**
  * Writing a plugin is the whole workflow.
  *
@@ -24,10 +26,11 @@ export default {
 
     // Open the page first: the row has to appear while it is on screen, which is the part
     // a restart-based discovery could not do.
+    // 拓展 lives inside the engine's settings now.
     await page
-      .getByRole('navigation', { name: '主导航' })
-      .getByRole('button', { name: '拓展' })
+      .locator('nav[aria-label="主导航"] button[aria-label="DeepSeek Harness 设置"]')
       .click()
+    await page.getByRole('tab', { name: '拓展' }).click()
     await page.getByRole('tab', { name: /插件/ }).click()
     await page.getByText('编辑后自动重载').waitFor({ timeout: 30_000 })
 
@@ -69,10 +72,7 @@ export function apply(ctx) {
 
     // And it is a working plugin, not just a row: its panel opens and draws. The panel
     // column belongs to the workspace, not to this page, so home is where to look.
-    await page
-      .getByRole('navigation', { name: '主导航' })
-      .getByRole('button', { name: '首页' })
-      .click()
+    await openKernel(page, 'DeepSeek Harness')
     const opener = page.getByRole('button', { name: '展开右侧面板' })
     if ((await opener.count()) > 0) await opener.click()
     const panel = page.getByRole('button', { name: /刚写的面板/ })
@@ -87,10 +87,11 @@ export function apply(ctx) {
       .click()
       .catch(() => undefined)
 
+    // 拓展 lives inside the engine's settings now.
     await page
-      .getByRole('navigation', { name: '主导航' })
-      .getByRole('button', { name: '拓展' })
+      .locator('nav[aria-label="主导航"] button[aria-label="DeepSeek Harness 设置"]')
       .click()
+    await page.getByRole('tab', { name: '拓展' }).click()
     await page.getByRole('tab', { name: /插件/ }).click()
     // The row goes without a restart, and it really goes: a poll, because a locator that
     // matches nothing is nothing to wait for.
