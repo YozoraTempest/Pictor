@@ -161,6 +161,35 @@ engine, and the honest answer is that this is not one. A view is read when the p
 and when the reader asks for a refresh, never on a timer: freshness a plugin needs it
 states in `note`, which is drawn under the blocks, where limitations belong.
 
+### The kernel's plugins
+
+Pictor mounts its own plugins into a cordis tree in the main process. The kernel is a
+_separate_ cordis tree, in a separate process, with a different service surface — and the
+plugins written for it are the dsh ecosystem. Both are "plugins", so the page lists both;
+the split is stated rather than hidden, because a plugin that reaches the editor is not the
+same thing as one that reaches the model's tools.
+
+A kernel plugin is a package in the kernel's profile (`<dsh home>/profiles/pictor`), mounted
+by an `insert` entry in the `cordis.patch.yml` Pictor regenerates on every boot. That is the
+mechanism dsh documents for anything its bundle stack did not declare, and it is the same one
+the MCP client and the guard already use.
+
+Two rules keep it from forking the kernel:
+
+- **A package dsh already ships is not installed.** Writing the entry is the whole install;
+  the kernel resolves its own copy. Installing it into the profile puts a second
+  `@deepseek-ai/cordis` on the resolution path, which means two service registries — every
+  plugin then waits, and startup fails. This was found the hard way: `npm install` of a
+  bundled plugin produced exactly that, and the boot log's 36 pending plugins were the
+  symptom.
+- **A third-party package is installed with `--legacy-peer-deps`.** A dsh plugin declares
+  cordis as a peer dependency; npm 7+ installs peers by default, which is the same fork by a
+  different road.
+
+The list lives in settings (`kernel.plugins`), not in a file beside the profile: the patch is
+generated from settings on every boot, so anything written by hand would be erased by the next
+model change. Installing therefore takes a restart — the contract MCP servers already have.
+
 ### Buttons are messages
 
 `button` is the one block a person can press, and it carries an **action id**, never a

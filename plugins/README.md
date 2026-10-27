@@ -95,6 +95,33 @@ That is the honest shape of "one plugin, two hosts": the loading contract is sha
 service surface is not. A plugin that uses neither — a kernel, or something that only
 registers a tool — runs in both.
 
+### …or just run it in the kernel
+
+A dsh plugin that needs dsh's services belongs in dsh, and Pictor runs one. **拓展 → 插件 →
+内核插件** installs a package into the kernel's own profile and mounts it with a patch entry,
+so `inject: ['tools']` works there rather than waiting here:
+
+```
+@deepseek-ai/dsh-tool-terminal     a terminal tool for the model
+@deepseek-ai/dsh-terminal          the terminals service it needs
+@deepseek-ai/dsh-terminal-bash     a shell backend for it
+```
+
+Two paths, decided by the package's own manifest:
+
+- **Bundled with dsh** (already in the kernel installation): no install at all. Pictor writes
+  the entry and the kernel resolves the package it already has. Installing it into the
+  profile instead would put a second copy of `@deepseek-ai/cordis` on the resolution path —
+  two service registries, every plugin waiting, the kernel refusing to start.
+- **Third-party**: `npm install --legacy-peer-deps` into the profile. The flag is not
+  tidiness: a dsh plugin declares cordis as a peer, and npm 7+ would install it, with the
+  same split as above.
+
+A change is applied by **restarting the kernel** — the patch is generated from settings on
+every boot, so the list is a setting and not a file. What such a plugin cannot do is draw in
+Pictor's window: it has the kernel's services, not the window's. UI plugins written for
+dsh's own web client mount and run, and have nowhere to render.
+
 ## Contribution points
 
 Every point is a function on the `pictor` service. Each returns a disposer, and the ones

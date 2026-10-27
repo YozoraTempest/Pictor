@@ -14,6 +14,12 @@ import {
   expandPluginRoots,
   resolveActivationOrder,
 } from '@pictor/plugin-host'
+import {
+  KernelPluginInstaller,
+  addProfileBundle,
+  isBundlePackage,
+  type KernelPluginInstallResult,
+} from './kernel/kernel-plugins.js'
 import { developmentPluginsDirectory } from './plugin-roots.js'
 import { SLOT_SPECS } from '@pictor/plugin-sdk'
 import type {
@@ -25,7 +31,9 @@ import {
   DEFAULT_PERMISSION_MODE,
   MODEL_EFFORTS,
   isPermissionMode,
+  parseKernelPlugins,
   parseMcpServers,
+  type KernelPluginSpec,
   type ApprovalMode,
   type ChatAnswer,
   type ChatImage,
@@ -167,6 +175,12 @@ interface Workspace {
   kernels: KernelHost
   /** Installs and removes plugins under the profile. */
   installer: PluginInstaller
+  /**
+   * dsh plugins for the kernel: packages in the kernel's own profile, mounted through the
+   * patch Pictor writes. Separate from `installer` because these two run in different
+   * processes and reach different services.
+   */
+  kernelPlugins: KernelPluginInstaller
   /** Every plugin directory on disk right now, bundled first; recomputed per call. */
   pluginDirectories: () => readonly string[]
   /** Where installed plugins live, and where one being written does. */
@@ -398,6 +412,40 @@ async function startWorkspace(): Promise<Workspace | null> {
   const disabledBuiltins = readStringList(stored[BuiltinKernelsKey])
   const preferredKernel =
     typeof stored[DefaultKernelKey] === 'string' ? stored[DefaultKernelKey] : null
+
+  /**
+   * dsh plugins, installed into the kernel's profile.
+   *
+   * The list is a setting, not a file: the profile patch is generated from settings on
+   * every boot, so anything written beside it by hand would be erased by the next model
+   * change. Writing the setting is what stages a plugin; a restart is what mounts it.
+   */
+  const kernelPlugins = new KernelPluginInstaller({
+    profile: join(userData, 'harness', 'profiles', 'pictor'),
+    // What dsh itself already ships: those take an entry and no install, or the profile
+    // copy splits the kernel's service tree in two.
+    installation: join(userData, 'harness-runtime'),
+    npm: () => {
+      const node = resolveNodeBinary()
+      if (node === null)
+        throw new Error('没有找到可用的 Node；安装 Node 22+ 或设置 PICTOR_NODE_BIN')
+      const cli = resolveNpmCli(node)
+      if (cli === null) throw new Error('没有找到 npm，无法安装内核插件')
+      return { node, cli }
+    },
+    read: () => parseKernelPlugins(settings.values()['kernel.plugins']),
+    write: async (plugins) => {
+      await settings.write('kernel.plugins', plugins as unknown as JsonValue)
+      // A bundle brings its own patch, so it also has to be in the profile's bundle list;
+      // without that the loader never reads the patch it ships.
+      for (const plugin of plugins) {
+        if (!plugin.enabled) continue
+        const root = join(userData, 'harness', 'profiles', 'pictor', 'node_modules', plugin.name)
+        if (isBundlePackage(root))
+          addProfileBundle(join(userData, 'harness', 'profiles', 'pictor'), plugin.name)
+      }
+    },
+  })
 
   // One installer for both halves: a plugin may contribute panels, a kernel, or both,
   // and installing it should not be two decisions.
@@ -641,6 +689,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     harness,
     kernels,
     installer,
+    kernelPlugins,
     // Recomputed, not remembered: a plugin installed while the app runs is a directory
     // that did not exist when the app started, and every caller here — the settings page,
     // the on/off switch — is asking precisely because the set may have changed.
@@ -1940,6 +1989,45 @@ function registerIpc(workspace: Workspace): void {
           null,
       }
     })
+  })
+
+  /**
+   * dsh plugins: the list, and the three things a person can do to it.
+   *
+   * These run in the kernel's process, not this one — which is why they are here and not
+   * with the Pictor plugins above: the two lists are two different trees, and a row that
+   * said otherwise would mislead about what it can reach.
+   */
+  ipcMain.handle('pictor:kernelPlugins.home', async (): Promise<{ profile: string }> => {
+    return { profile: workspace.kernelPlugins.profile }
+  })
+
+  ipcMain.handle('pictor:kernelPlugins.list', async (): Promise<KernelPluginSpec[]> => {
+    return parseKernelPlugins(workspace.settings['kernel.plugins'])
+  })
+
+  ipcMain.handle(
+    'pictor:kernelPlugins.install',
+    async (_event, spec: unknown): Promise<KernelPluginInstallResult> => {
+      if (typeof spec !== 'string' || spec.trim().length === 0) {
+        throw new Error('要装什么？用包名、file: 路径，或 git/tarball 地址')
+      }
+      return workspace.kernelPlugins.install(spec)
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:kernelPlugins.setEnabled',
+    async (_event, id: unknown, enabled: unknown): Promise<KernelPluginSpec[]> => {
+      if (typeof id !== 'string' || id.length === 0) throw new Error('id is required')
+      if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean')
+      return workspace.kernelPlugins.setEnabled(id, enabled)
+    },
+  )
+
+  ipcMain.handle('pictor:kernelPlugins.remove', async (_event, id: unknown): Promise<void> => {
+    if (typeof id !== 'string' || id.length === 0) throw new Error('id is required')
+    await workspace.kernelPlugins.remove(id)
   })
 
   ipcMain.handle('pictor:kernels.plugins', async (): Promise<KernelPluginInfo[]> => {

@@ -1,4 +1,4 @@
-import type { McpServerSpec, ModelEntry, ModelProtocol } from '@pictor/shared'
+import type { KernelPluginSpec, McpServerSpec, ModelEntry, ModelProtocol } from '@pictor/shared'
 import { acceptedEfforts } from '@pictor/shared'
 
 import { GUARD_PLUGIN_NAME } from './harness-guard-plugin.js'
@@ -37,6 +37,13 @@ export interface ProfileSettingsInput {
   guard?: { port: number; token: string }
   /** Servers to mount; already filtered to the enabled ones. */
   mcp?: readonly McpServerSpec[]
+  /**
+   * dsh plugins to mount, already filtered to the enabled ones.
+   *
+   * These are entries in the kernel's own tree, not Pictor plugins: they reach the
+   * kernel's services (`tools`, `session`, …) and nothing of Pictor's window.
+   */
+  plugins?: readonly KernelPluginSpec[]
 }
 
 /** The model list the route declares, with a single-entry fallback. */
@@ -132,6 +139,20 @@ export function buildProfilePatch(input: ProfileSettingsInput): string {
                   // the rest of the harness still works without it.
                   failOnStartupError: false,
                 },
+        },
+      ],
+    })
+  }
+
+  for (const plugin of input.plugins ?? []) {
+    // Same shape as the MCP entries above, and for the same reason: a user-layer patch can
+    // only amend what the bundle stack declared, so anything new arrives through `insert`.
+    patch.push({
+      insert: [
+        {
+          id: plugin.id,
+          name: plugin.name,
+          ...(plugin.config === null ? {} : { config: plugin.config }),
         },
       ],
     })

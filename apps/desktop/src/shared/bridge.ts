@@ -193,6 +193,28 @@ export interface KernelNotice {
  * directory, where a plugin being written goes — anything dropped there is mounted, and a
  * watcher notices it appearing or going away, so writing files is the whole workflow.
  */
+/**
+ * A dsh plugin mounted into the kernel.
+ *
+ * The kernel is a real dsh process, so this is a package in its profile, mounted through
+ * the patch Pictor writes. It can add tools and change how the agent behaves; it cannot
+ * draw in Pictor's window — that is what the `views`-based plugins above are for.
+ */
+export interface KernelPlugin {
+  id: string
+  /** Package name the runtime resolves. */
+  name: string
+  enabled: boolean
+  /** How it arrived: `npm`, `file`, or the spec that was typed. */
+  source: string
+  version: string | null
+}
+
+export interface KernelPluginHomes {
+  /** The kernel's profile directory; packages live in its `node_modules`. */
+  profile: string
+}
+
 export interface PluginHomes {
   installed: string
   development: string
@@ -389,6 +411,14 @@ export interface PictorBridge {
   listKernelPlugins(): Promise<KernelPluginInfo[]>
   /** Every installed plugin, with what it contributes and what it can reach. */
   listPluginOverview(): Promise<PluginOverview[]>
+  /** dsh plugins mounted into the kernel: a different tree from the list above. */
+  listDshPlugins(): Promise<KernelPlugin[]>
+  /** Installs one dsh plugin into the kernel's profile; a restart mounts it. */
+  installDshPlugin(spec: string): Promise<{ plugin: KernelPlugin; mount: 'bundle' | 'entry' }>
+  setDshPluginEnabled(id: string, enabled: boolean): Promise<KernelPlugin[]>
+  removeDshPlugin(id: string): Promise<void>
+  /** Where the kernel's packages live. */
+  dshPluginHome(): Promise<KernelPluginHomes>
   /** The two directories a plugin can live in. */
   pluginHomes(): Promise<PluginHomes>
   /** Settings the mounted kernels declare; each names the kernel that owns it. */

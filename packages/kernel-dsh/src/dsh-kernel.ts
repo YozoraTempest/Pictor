@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 
 import { DshDriver } from './dsh-driver.js'
 import { hostService, provideKernel, type KernelPlugin } from '@pictor/kernel-sdk'
-import { parseMcpServers } from '@pictor/shared'
+import { parseKernelPlugins, parseMcpServers } from '@pictor/shared'
 
 /**
  * dsh, mounted the way any other kernel is.
@@ -34,6 +34,9 @@ export const dshKernel: KernelPlugin = {
       // Read on every boot rather than captured: the profile patch is the mount
       // point, so a new server arrives with the next runtime.
       mcp: () => parseMcpServers(hostService(ctx, 'pictor.settings').read('mcp.servers')),
+      // dsh plugins for this kernel: tools and behaviour, in the kernel's own tree. Read
+      // per boot, so a change is a restart — the same contract as the servers above.
+      plugins: () => parseKernelPlugins(hostService(ctx, 'pictor.settings').read('kernel.plugins')),
     })
     provideKernel(ctx, driver)
   },

@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 
 import { cn } from '../../lib/cn.js'
 import { McpSection } from '../settings/McpSection.js'
+import { KernelPluginsSection } from '../settings/KernelPluginsSection.js'
 import { PluginsSection } from '../settings/PluginsSection.js'
 import { SkillsSection } from '../settings/SkillsSection.js'
 
@@ -34,7 +35,14 @@ const TABS: readonly Tab[] = [
     label: '插件',
     hint: '面板、守卫、技能与内核，一次装齐',
     icon: Blocks,
-    render: () => <PluginsSection />,
+    // Two lists, one page: Pictor's own plugins, then the dsh plugins the kernel loads.
+    // They are separate trees with separate reach, and the second section says so.
+    render: () => (
+      <>
+        <PluginsSection />
+        <KernelPluginsSection />
+      </>
+    ),
   },
   {
     id: 'skills',

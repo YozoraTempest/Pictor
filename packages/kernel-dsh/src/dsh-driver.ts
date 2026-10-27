@@ -33,8 +33,10 @@ import {
   type ChatQuestion,
   type ForkPoint,
   type ModelEffort,
+  type KernelPluginSpec,
   type McpServerSpec,
   type ModelSettings,
+  enabledKernelPlugins,
   enabledMcpServers,
 } from '@pictor/shared'
 
@@ -81,9 +83,18 @@ function bootFingerprint(input: {
   apiKey: string | null
   /** Server list, as the patch will render it: changing it needs a new boot. */
   mcp?: string
+  /** dsh plugin entries, likewise: they are written into the same patch. */
+  plugins?: string
 }): string {
   const key = input.apiKey === null ? '-' : createHash('sha256').update(input.apiKey).digest('hex')
-  return [input.baseUrl, input.protocol, input.modelId, key, input.mcp ?? ''].join('|')
+  return [
+    input.baseUrl,
+    input.protocol,
+    input.modelId,
+    key,
+    input.mcp ?? '',
+    input.plugins ?? '',
+  ].join('|')
 }
 
 export interface DshDriverOptions {
@@ -99,6 +110,13 @@ export interface DshDriverOptions {
    * restart, and the fingerprint below is what notices the change.
    */
   mcp?: () => readonly McpServerSpec[]
+  /**
+   * dsh plugins to mount, as configured in Pictor.
+   *
+   * Read on every boot for the same reason as `mcp`: the list is part of the profile
+   * patch, so a change is a restart, and the fingerprint below notices it.
+   */
+  plugins?: () => readonly KernelPluginSpec[]
   /** Overrides discovery, for a bundled runtime or a development checkout. */
   binary?: string
   /** Sandbox mode read from settings; the runtime takes it as an env var. */
@@ -396,6 +414,7 @@ export class DshDriver implements KernelDriver {
         modelId: settings.modelId,
         apiKey,
         mcp: JSON.stringify(enabledMcpServers(this.#options.mcp?.() ?? [])),
+        plugins: JSON.stringify(enabledKernelPlugins(this.#options.plugins?.() ?? [])),
       })
       // The runtime's preset table has its own default, which need not be the mode
       // this process was started with. Align it once, so a conversation opened
@@ -531,6 +550,7 @@ export class DshDriver implements KernelDriver {
       modelId: settings.modelId,
       apiKey: await this.#options.model.activeApiKey(),
       mcp: JSON.stringify(enabledMcpServers(this.#options.mcp?.() ?? [])),
+      plugins: JSON.stringify(enabledKernelPlugins(this.#options.plugins?.() ?? [])),
     })
   }
 
@@ -1555,6 +1575,7 @@ export class DshDriver implements KernelDriver {
         modelId: settings.modelId,
         models: settings.models,
         mcp: enabledMcpServers(this.#options.mcp?.() ?? []),
+        plugins: enabledKernelPlugins(this.#options.plugins?.() ?? []),
         ...(guard === null ? {} : { guard }),
       }),
       'utf8',
