@@ -126,12 +126,9 @@ export default {
         .locator('button')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label'))),
       // 拓展 sits above settings: what can be added, then what can be configured.
-      [
-        '首页',
-        ...kernels.flatMap((kernel) => [kernel.label, `${kernel.label} 设置`]),
-        '拓展',
-        '设置',
-      ],
+      // 拓展 sits above settings: what can be added, then what can be configured. An ars's
+      // own settings are not here — they are opened from that ars's page.
+      ['首页', ...kernels.map((kernel) => kernel.label), '拓展', '设置'],
     )
 
     // A page lists that ars's conversations and nobody else's: each row was created above,
@@ -149,6 +146,16 @@ export default {
       await page.getByRole('button', { name: branch }).count(),
       0,
       'dsh 的页面不列回声（示例）的会话',
+    )
+    // The ars's settings are not a rail destination: the gear on its own page is the way
+    // in, and the page it leads to is not a seat — nothing in the rail lights up, which is
+    // what tells a person this is the page they came from rather than a place they went.
+    await page.locator('[aria-label="DeepSeek Harness 设置"]').click()
+    await page.getByRole('heading', { name: '进程' }).waitFor({ timeout: 20_000 })
+    assert.equal(
+      await page.locator('nav[aria-label="主导航"] button[aria-current="page"]').count(),
+      0,
+      '设置的页面不在侧栏上占座位',
     )
 
     // A heading with nothing under it reads as a failed load, so a page draws the sections

@@ -30,9 +30,9 @@ export const ARS_SETTINGS_VIEW_SUFFIX = ':settings'
 /**
  * The view id of one ars's settings.
  *
- * A second icon in the rail, temporarily: what the page holds — the process, its version,
- * switches the runtime owns — belongs to that ars, not to the app's preferences, so it
- * must not be filed under `settings`. Folding it into the ars page is the next step.
+ * A page of its own — what it holds, the process and the switches the runtime declares,
+ * belongs to that ars rather than to the app's preferences — but not a rail icon: it is
+ * opened from the ars page's toolbar and left with the title bar's back button.
  */
 export function arsSettingsViewId(kernelId: string): string {
   return `${kernelViewId(kernelId)}${ARS_SETTINGS_VIEW_SUFFIX}`

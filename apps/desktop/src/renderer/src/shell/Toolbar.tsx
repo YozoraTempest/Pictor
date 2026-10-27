@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Menu as MenuIcon } from 'lucide-react'
 import type { WindowCommand } from '../../../shared/bridge.js'
 import { openView } from '../app/open-view.js'
 import { useUiStore } from '../app/ui-store.js'
-import { sortedViews } from '../app/views.js'
+import { railViews } from '../app/views.js'
 import { useWorkspaceStore } from '../app/workspace-store.js'
 import { Menu, Tooltip, type MenuEntry } from '../components/ui/index.js'
 
@@ -34,7 +34,7 @@ function useAppMenu(): MenuEntry[] {
   const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
 
   const kernels = useWorkspaceStore((state) => state.kernels)
-  const views = sortedViews(kernels)
+  const views = railViews(kernels)
   const info = useWorkspaceStore((state) => state.info)
   const createSession = useWorkspaceStore((state) => state.createSession)
   const addProject = useWorkspaceStore((state) => state.addProject)

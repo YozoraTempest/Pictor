@@ -15,7 +15,7 @@ vi.stubGlobal('matchMedia', (query: string) => ({
   dispatchEvent: () => false,
 }))
 
-const { DEFAULT_VIEW, findView, viewsFor } = await import('./views.js')
+const { DEFAULT_VIEW, findView, railViews, viewsFor } = await import('./views.js')
 const { arsSettingsViewId, kernelOfView, kernelViewId, settingsOwnerOf } =
   await import('./kernel-scope.js')
 
@@ -76,17 +76,32 @@ describe('view registry', () => {
     expect(new Set(shortcuts).size).toBe(shortcuts.length)
   })
 
-  it('puts home first, then each ars with its own settings after it', () => {
-    // Every destination that does something is an ars: a page, and — for now as a second
-    // icon — the settings that belong to it rather than to the app.
-    const primary = viewsFor(BUILTINS)
-      .filter((entry) => entry.group === 'primary')
-      .sort((a, b) => a.order - b.order)
+  it('puts home first, then one page per ars', () => {
+    // The rail lists what a person switches between: its top group is home and the ars
+    // pages, its bottom group what can be added and configured. An ars's own settings are
+    // not a destination up there — they are opened from the ars page's toolbar.
+    const rail = railViews(BUILTINS)
 
-    expect(primary.map((entry) => entry.id)).toEqual([
+    expect(rail.filter((entry) => entry.group === 'primary').map((entry) => entry.id)).toEqual([
       DEFAULT_VIEW,
-      ...BUILTINS.flatMap((entry) => [kernelViewId(entry.id), arsSettingsViewId(entry.id)]),
+      ...BUILTINS.map((entry) => kernelViewId(entry.id)),
     ])
+    expect(rail.filter((entry) => entry.group === 'secondary').map((entry) => entry.id)).toEqual([
+      'extensions',
+      'settings',
+    ])
+  })
+
+  it('keeps a settings page out of the rail but in the registry', () => {
+    const views = viewsFor(BUILTINS)
+
+    for (const kernel of BUILTINS) {
+      const settings = views.find((entry) => entry.id === arsSettingsViewId(kernel.id))
+      // Reachable — from the ars page — and drawn with a title of its own, because the
+      // rail does not light up for the page it was opened from.
+      expect(settings).toBeDefined()
+      expect(settings?.inRail).toBe(false)
+    }
   })
 
   it('gives each ars settings its own page instead of filing them under settings', () => {

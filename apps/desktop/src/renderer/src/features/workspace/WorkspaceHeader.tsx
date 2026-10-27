@@ -1,6 +1,8 @@
-import { GitBranch, PanelLeft, PanelRight, Search } from 'lucide-react'
+import { GitBranch, PanelLeft, PanelRight, Search, Settings2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { arsSettingsViewId, kernelOfView } from '../../app/kernel-scope.js'
+import { openView } from '../../app/open-view.js'
 import { useUiStore } from '../../app/ui-store.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { Tooltip } from '../../components/ui/index.js'
@@ -50,6 +52,12 @@ export function WorkspaceTrailing(): React.JSX.Element {
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen)
   const toggleRightPanel = useUiStore((state) => state.toggleRightPanel)
   const showBranchTree = useUiStore((state) => state.showBranchTree)
+  // The page decides whether there is a settings button: only the ars whose page this is
+  // owns settings, and home owns none.
+  const view = useUiStore((state) => state.view)
+  const kernels = useWorkspaceStore((state) => state.kernels)
+  const kernelId = kernelOfView(view)
+  const kernel = kernelId === null ? null : (kernels.find((entry) => entry.id === kernelId) ?? null)
   const sessions = useWorkspaceStore((state) => state.sessions)
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -109,6 +117,18 @@ export function WorkspaceTrailing(): React.JSX.Element {
         </button>
       </Tooltip>
 
+      {kernel !== null && (
+        <Tooltip label={`${kernel.label} 设置`} side="bottom" align="end">
+          <button
+            type="button"
+            aria-label={`${kernel.label} 设置`}
+            onClick={() => openView(arsSettingsViewId(kernel.id))}
+            className="grid size-7 place-items-center rounded-sm text-muted transition-colors duration-150 hover:bg-surface-hover hover:text-text"
+          >
+            <Settings2 className="size-3.5" />
+          </button>
+        </Tooltip>
+      )}
       <SessionSearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
       <BranchTreeDialog />
     </>

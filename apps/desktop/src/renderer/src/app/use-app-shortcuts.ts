@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 
 import { kernelOfView, kernelViewId } from './kernel-scope.js'
-import { viewsFor } from './views.js'
+import { railViews } from './views.js'
 import { openView } from './open-view.js'
 import { useUiStore } from './ui-store.js'
 import { useWorkspaceStore } from './workspace-store.js'
@@ -67,13 +67,13 @@ export function useAppShortcuts(): void {
           void window.pictor.windowCommand('zoomReset')
           return
         default: {
-          // Ctrl+1 is home and Ctrl+2… are the mounted kernels, in the rail's own
-          // order: the numbers follow what is installed, so a third kernel is
-          // reachable without a new binding.
-          const destinations = viewsFor(useWorkspaceStore.getState().kernels).filter(
-            (entry) => entry.group === 'primary',
+          // A destination names its own accelerator — home is Ctrl+1, the mounted ars take
+          // Ctrl+2 onward in the rail's order — so the numbers follow what is installed
+          // and a third ars needs no new binding. Pages without a seat in the rail name
+          // none, and this does not invent one for them.
+          const target = railViews(useWorkspaceStore.getState().kernels).find(
+            (entry) => entry.shortcut === `Ctrl+${event.key}`,
           )
-          const target = destinations[Number(event.key) - 1]
           if (target === undefined) return
           event.preventDefault()
           openView(target.id)

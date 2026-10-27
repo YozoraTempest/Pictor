@@ -31,6 +31,14 @@ export interface AppViewDescriptor<Id extends string = string> {
   /** `secondary` pins the entry to the bottom of the rail. */
   group: 'primary' | 'secondary'
   order: number
+  /**
+   * Whether this destination gets a place in the rail. Defaults to true.
+   *
+   * An ars's settings are opened from the ars page's own toolbar, so they take no icon:
+   * the rail lists what a person switches between, and a second gear per mounted ars
+   * would turn that list into two lists interleaved.
+   */
+  inRail?: boolean
   render: () => ReactNode
   /** Centred in the title bar; omit it to show no title. */
   title?: () => ReactNode
@@ -134,8 +142,9 @@ export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
     // the build has never heard of still gets a page, a generic icon and a number.
     icon: iconFor(kernel.icon, Boxes),
     group: 'primary',
-    // Two slots per ars: its page, then its settings. Interleaved so the gear sits with
-    // the software it belongs to instead of at the end of a list of gears.
+    // Its page takes the odd slot and its settings the even one. The settings page has no
+    // icon, so nothing interleaves in the rail; the order only has to stay unique, because
+    // the sorted list is what every caller walks.
     order: index * 2 + 1,
     render: () => <WorkspaceView kernelId={kernel.id} />,
     title: () => <WorkspaceTitle />,
@@ -144,12 +153,13 @@ export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
     shortcut: `Ctrl+${String(index + 2)}`,
   }))
   /**
-   * Each ars gets a settings destination beside its page.
+   * Each ars gets a settings destination, reachable from its own toolbar.
    *
-   * Temporarily a second icon: what these pages hold — the runtime's process, its
-   * version, its own switches — belongs to the ars that owns them, not to the app's
-   * preferences. Folding them into the ars page itself is the next step; keeping them
-   * as one icon per ars is already the right shape, and needs no special case for dsh.
+   * What these pages hold — the runtime's process, its version, the switches the software
+   * itself declares — belongs to that ars rather than to the app's preferences, so they are
+   * a page of their own rather than a section under `settings`. They take no rail icon: a
+   * gear per mounted ars would make the rail two lists interleaved, and the page a person
+   * is looking at is the one whose settings they want.
    */
   const settings = kernels.map((kernel, index): AppViewDescriptor => ({
     id: arsSettingsViewId(kernel.id),
@@ -158,6 +168,7 @@ export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
     icon: Settings2,
     group: 'primary',
     order: index * 2 + 2,
+    inRail: false,
     render: () => <RuntimePage kernel={kernel.id} />,
     title: () => `${kernel.label} 设置`,
     // No shortcut: a settings page is visited, not cycled between.
@@ -167,9 +178,19 @@ export function viewsFor(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
   return [HOME_VIEW, ...pages, ...settings, EXTENSIONS_VIEW, SETTINGS_VIEW]
 }
 
-/** The destinations in the order the rail shows them. */
+/** Every destination, in the order the rail shows them. */
 export function sortedViews(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
   return viewsFor(kernels).sort((a, b) => a.order - b.order)
+}
+
+/**
+ * The destinations that get a place in the rail and in 视图.
+ *
+ * One per thing a person switches between. A page reached from inside another one — an
+ * ars's settings — is left out: it is a place to come back from, not a place to go to.
+ */
+export function railViews(kernels: readonly KernelInfo[]): AppViewDescriptor[] {
+  return sortedViews(kernels).filter((entry) => entry.inRail !== false)
 }
 
 /**
