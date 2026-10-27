@@ -4,6 +4,10 @@ This document only records the structure and dependency rules a contributor must
 follow. Product direction and decision history live in the maintainer's Trilium
 knowledge base.
 
+What Pictor is — a shell that assembles software as plugins, where a kernel is one
+service among them — is in [`COMPOSITION.md`](COMPOSITION.md). Read that first: it draws
+the line this document then enforces.
+
 ## Principles
 
 - `ApplicationHost` is the headless application core. It owns commands, events and
@@ -18,7 +22,9 @@ knowledge base.
   context isolation and `nodeIntegration: false` are mandatory; the preload is
   emitted as CommonJS because sandboxed renderers do not load ESM preloads.
 - The agent runtime is a separate process the app owns. `main` configures and
-  monitors it; nothing above `main` knows how it speaks.
+  monitors it; nothing above `main` knows how it speaks. It is also _one plugin among
+  others_: it reaches the app through the same kernel contract and the same tree as a
+  panel, and the host must not grow a second category for it (see `COMPOSITION.md`).
 
 ## Dependency direction
 
