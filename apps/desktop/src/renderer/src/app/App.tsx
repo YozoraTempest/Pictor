@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { Banner } from '../components/ui/index.js'
 import { useChatStore } from '../features/chat/chat-store.js'
@@ -8,7 +8,8 @@ import { useQuestionStore } from './question-store.js'
 import { useRuntimeStore } from './runtime-store.js'
 import { useUiStore } from './ui-store.js'
 import { openView } from './open-view.js'
-import { findView } from './views.js'
+import { DEFAULT_VIEW, findView } from './views.js'
+import { kernelViewId } from './kernel-scope.js'
 import { useAppShortcuts } from './use-app-shortcuts.js'
 import { useWorkspaceStore } from './workspace-store.js'
 
@@ -24,6 +25,22 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (active.id !== view) openView(active.id)
   }, [active.id, view])
+
+  /**
+   * Opens into the ars that runs conversations, not into an empty page.
+   *
+   * Home draws nothing, so starting there would greet a person with a blank window. It is
+   * a placeholder for "no ars chosen yet", and on the first load there is exactly one to
+   * choose. Once only — navigating back to home afterwards is a decision, not an accident.
+   */
+  const entered = useRef(false)
+  useEffect(() => {
+    if (entered.current || kernels.length === 0) return
+    entered.current = true
+    if (view !== DEFAULT_VIEW) return
+    const first = kernels.find((kernel) => kernel.default) ?? kernels[0]
+    if (first !== undefined) openView(kernelViewId(first.id))
+  }, [kernels, view])
 
   const refresh = useWorkspaceStore((state) => state.refresh)
   const error = useWorkspaceStore((state) => state.error)

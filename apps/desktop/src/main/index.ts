@@ -568,11 +568,9 @@ async function startWorkspace(): Promise<Workspace | null> {
         label: 'DeepSeek Harness',
         entry: { load: async () => (await import('@pictor/kernel-dsh')).dshKernel },
       },
-      {
-        id: 'pi',
-        label: 'Pi',
-        entry: { load: async () => (await import('@pictor/kernel-pi')).createPiKernel() },
-      },
+      // Pi is not wired up yet: its package still builds and its tests still pass, but it
+      // is not assembled into the app. dsh is the one ars for now, and a second entry here
+      // would put a half-connected runtime in the rail and in every session's kernel list.
     ],
     disabled: disabledBuiltins,
     directories: [join(userData, 'plugins')],
