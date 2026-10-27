@@ -17,6 +17,7 @@ function plugin(
     manifestPath: `/plugins/${id}/manifest.json`,
     manifest: {
       id,
+      kind: 'pictor',
       name: id,
       version: options.version ?? '1.0.0',
       main: 'dist/index.js',

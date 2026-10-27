@@ -51,6 +51,14 @@ export interface KernelHostOptions {
   /** Built-in kernel ids a person turned off; they are not mounted. */
   disabled?: readonly string[]
   /**
+   * The tree to mount into.
+   *
+   * Shared with the plugin container so a plugin can `inject` a kernel service and a
+   * kernel can inject a contribution point — the same relation dsh has, and the reason
+   * `inject` means the same thing on both sides.
+   */
+  ctx?: Context
+  /**
    * Directories scanned for installed plugins, highest priority first.
    *
    * Plugins and kernels share one root now, so the profile's `plugins/` comes first
@@ -134,7 +142,10 @@ export function provideKernel(ctx: Context, driver: KernelDriver): void {
  * rest still come up, because one broken download must not take the app with it.
  */
 export async function startKernelHost(options: KernelHostOptions): Promise<KernelHost> {
-  const ctx = new Context()
+  const ctx = options.ctx ?? new Context()
+  // The tree belongs to the caller when one was handed in: disposing it here would take
+  // the plugin container's plugins down with the kernels.
+  const ownsContext = options.ctx === undefined
   const drivers = new Map<string, KernelDriver>()
   const failures: KernelPluginFailure[] = []
 
@@ -269,7 +280,7 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
       if (index >= 0) failures.splice(index, 1)
     },
     async dispose(): Promise<void> {
-      await ctx.fiber.dispose()
+      if (ownsContext) await ctx.fiber.dispose()
     },
   }
 }

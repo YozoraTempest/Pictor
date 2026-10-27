@@ -21,19 +21,23 @@ export function resolveActivationOrder(
   const usable = new Map<string, DiscoveredPlugin>()
 
   for (const plugin of plugins) {
-    const range = plugin.manifest.engines.pictor
+    // A cordis plugin declares nothing in JSON, so there is no range to check. That is
+    // not a pass: it means this app knows less about the package before starting it.
+    const range = plugin.manifest.engines?.pictor
 
-    if (validRange(range) === null) {
-      failures.push({ source: plugin.root, reason: `invalid engine range: ${range}` })
-      continue
-    }
+    if (range !== undefined) {
+      if (validRange(range) === null) {
+        failures.push({ source: plugin.root, reason: `invalid engine range: ${range}` })
+        continue
+      }
 
-    if (!satisfies(pictorVersion, range)) {
-      failures.push({
-        source: plugin.root,
-        reason: `requires pictor ${range}, host is ${pictorVersion}`,
-      })
-      continue
+      if (!satisfies(pictorVersion, range)) {
+        failures.push({
+          source: plugin.root,
+          reason: `requires pictor ${range}, host is ${pictorVersion}`,
+        })
+        continue
+      }
     }
 
     const missing = Object.entries(plugin.manifest.dependencies ?? {}).find(

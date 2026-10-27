@@ -8,6 +8,7 @@
   },
   "types": "./src/index.ts",
   "dependencies": {
+    "@deepseek-ai/cordis": "~4.0.5",
     "@pictor/plugin-sdk": "workspace:*",
     "@pictor/shared": "workspace:*",
     "semver": "^7.8.5"

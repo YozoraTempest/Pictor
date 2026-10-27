@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url'
 import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@pictor/application'
 import { resolveHostCoreBinary, startHostCore } from '@pictor/host-client'
 import {
-  PluginHost,
   PluginInstaller,
   discoverPlugins,
+  installedPackageRoots,
   type DiscoveredPlugin,
   expandPluginRoots,
   resolveActivationOrder,
@@ -64,7 +64,7 @@ import { resolveNodeBinary, resolveNpmCli } from '@pictor/kernel-sdk'
 import { openSettings } from './kernel/settings-store.js'
 
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
-import { PluginContributions } from './plugin-contributions.js'
+import { PluginRuntime } from './plugin-runtime.js'
 import { ToolBridgeServer, type GuardAsk } from './tool-bridge-server.js'
 import { ModelService } from './model-service.js'
 import { RuleBook, describeAsk, describeRule } from './rule-book.js'
@@ -154,7 +154,8 @@ app.on('before-quit', () => {
 
 interface Workspace {
   appHost: ApplicationHost
-  pluginHost: PluginHost
+  /** The plugin runtime: one cordis tree, shared with the kernels. */
+  plugins: PluginRuntime
   model: ModelService
   /** Routes each conversation to the kernel that owns it. */
   harness: KernelRouter
@@ -172,15 +173,6 @@ interface Workspace {
   settings: Readonly<SettingsMap>
   /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
   readPermissionMode: () => Promise<PermissionMode>
-  /**
-   * What plugins contribute, recomputed when the host changes.
-   *
-   * Panels, the views behind them, tool presenters, guards, hooks and skills all come
-   * from here: one projection, so installing a plugin changes every answer at once.
-   */
-  contributions: PluginContributions
-  /** Rewrites plugin skills after the plugin set changed. */
-  applyPluginSkills: () => void
   /**
    * Where plugins that ship with the app live, as opposed to installed ones.
    *
@@ -255,7 +247,15 @@ async function startWorkspace(): Promise<Workspace | null> {
   const pluginRoot = app.isPackaged
     ? join(process.resourcesPath, 'plugins')
     : join(repositoryRoot, 'plugins')
-  const candidateRoots = expandPluginRoots([pluginRoot, join(userData, 'plugins')])
+  const pluginDirectory = join(userData, 'plugins')
+  // Folders sit beside `installed.json`; a package installed by npm sits inside
+  // `node_modules` and is named by that file. Both are plugins, so discovery asks for
+  // both — otherwise a plugin installed as a package would only ever contribute its
+  // kernel half, which is what used to happen.
+  const candidateRoots = [
+    ...expandPluginRoots([pluginRoot, pluginDirectory]),
+    ...installedPackageRoots(pluginDirectory),
+  ]
 
   const discovery = discoverPlugins(candidateRoots)
   for (const plugin of discovery.plugins) {
@@ -286,29 +286,27 @@ async function startWorkspace(): Promise<Workspace | null> {
     app.getVersion() === '0.0.0' ? '0.0.0' : app.getVersion(),
   )
 
-  const pluginHost = new PluginHost({
-    plugins: discovery.plugins,
-    // The running app's version, so `engines.pictor` checks against something real.
-    pictorVersion: app.getVersion(),
-    dataRoot: join(userData, 'plugins-data'),
-    isEnabled: (id) => enabled.get(id) ?? true,
-    logger: {
-      info: (message) => console.info(`[plugin] ${message}`),
-      warn: (message) => console.warn(`[plugin] ${message}`),
-      error: (message, error) => console.error(`[plugin] ${message}`, error),
-    },
-  })
-
-  await pluginHost.start(resolution.ordered)
-
-  // What plugins contribute is a projection of the host, not a snapshot of it: a plugin
-  // installed while the app runs has to change the answer, or "装完不用重启" would be
-  // true of its kernel half and false of everything else.
-  const contributions = new PluginContributions(pluginHost, {
+  /**
+   * Plugins, in the cordis tree the kernels also live in.
+   *
+   * One tree is what makes `inject` mean the same thing for both halves: a plugin can
+   * wait for `kernel.dsh`, a kernel can read `pictor.panels`, and neither has to be told
+   * about the other's registry.
+   */
+  const plugins = new PluginRuntime({
+    userData,
     // A view's own scratch space, beside the plugin's other state.
     dataDirectory: (pluginId) => join(userData, 'plugin-data', pluginId),
     warn: (message) => console.warn(`[plugin] ${message}`),
   })
+
+  for (const plugin of resolution.ordered) {
+    if (enabled.get(plugin.id) === false) continue
+    await plugins.add(plugin)
+  }
+  for (const failure of resolution.failures) {
+    console.warn(`[plugin] ${failure.source}: ${failure.reason}`)
+  }
 
   // Skills live in one root the runtime already scans; a plugin contributes data
   // and Pictor writes the file, so the plugin never touches the runtime's home.
@@ -319,31 +317,15 @@ async function startWorkspace(): Promise<Workspace | null> {
     logger: (message) => console.warn(`[skill] ${message}`),
   })
 
-  /**
-   * Writes every plugin's skills, and removes the files of one that stopped
-   * contributing.
-   *
-   * Called at launch and after every change to the plugin set: a skill is a file the
-   * runtime scans, so "installed" and "written" have to happen in that order, once per
-   * change, or a plugin installed a minute ago would announce skills that do not exist.
-   */
-  let appliedSkills = new Set<string>()
-  const applyPluginSkills = (): void => {
-    const wanted = contributions.current().skills
-    for (const [pluginId, list] of wanted) skills.syncPlugin(pluginId, [...list])
-    for (const pluginId of appliedSkills) {
-      if (!wanted.has(pluginId)) skills.clearPlugin(pluginId)
-    }
-    appliedSkills = new Set(wanted.keys())
-  }
-
-  // A plugin that is installed but not activated owns no files: whatever an
-  // earlier run wrote for it has to go, or its skills would outlive the switch.
+  // A plugin that is installed but not mounted owns no files: whatever an earlier run
+  // wrote for it has to go, or its skills would outlive the switch. The runtime then
+  // writes what the mounted set actually contributes.
+  const mounted = new Set(plugins.mounted().map((plugin) => plugin.id))
   for (const plugin of discovery.plugins) {
-    if (pluginHost.report().activated.includes(plugin.id)) continue
+    if (mounted.has(plugin.id)) continue
     skills.clearPlugin(plugin.id)
   }
-  applyPluginSkills()
+  plugins.syncSkills()
 
   console.info(`pictor host core ${info.version} (schema ${info.schemaVersion})`)
 
@@ -444,11 +426,11 @@ async function startWorkspace(): Promise<Workspace | null> {
   const guardBridge = new ToolBridgeServer(
     // The person's own rules first, then whatever guards are installed right now —
     // asked per call, so installing one does not need a restart to matter.
-    () => [ruleGuard, ...contributions.current().guards],
+    () => [ruleGuard, ...plugins.guards()],
     randomUUID(),
     askFor,
     () => providersFrom(kernelHost?.drivers ?? new Map()),
-    () => contributions.current().hooks,
+    () => plugins.hooks(),
   )
   void guardBridge.start().catch((error: unknown) => {
     console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
@@ -469,6 +451,11 @@ async function startWorkspace(): Promise<Workspace | null> {
   // `kernel.<id>` service — so adding a third is a directory, not a build. What is
   // compiled in goes first, and whatever the profile has installed follows.
   const kernels: KernelHost = await startKernelHost({
+    // The plugins' tree, so both halves are services in one scope: a plugin can wait
+    // for `kernel.dsh` and a kernel can read `pictor.panels` without either being told
+    // the other exists. This is what dsh does, and the reason `inject` means the same
+    // thing on both sides.
+    ctx: plugins.ctx,
     services: {
       models: model,
       rules,
@@ -604,7 +591,7 @@ async function startWorkspace(): Promise<Workspace | null> {
 
   return {
     appHost,
-    pluginHost,
+    plugins,
     model,
     harness,
     kernels,
@@ -627,8 +614,6 @@ async function startWorkspace(): Promise<Workspace | null> {
     client: running.client,
     hostCore,
     database,
-    contributions,
-    applyPluginSkills,
     bundledRoot: pluginRoot,
     skills,
     rules,
@@ -636,7 +621,7 @@ async function startWorkspace(): Promise<Workspace | null> {
       if (disposed) return
       disposed = true
       await kernels.dispose()
-      await pluginHost.stop()
+      await plugins.ctx.fiber.dispose()
       running.dispose()
       lock.release()
     },
@@ -789,6 +774,36 @@ async function adoptSessionTitle(
     // A title is cosmetic: failing to store it must never surface as a chat error.
     console.warn('[session] 标题未能更新', error instanceof Error ? error.message : error)
   }
+}
+
+/**
+ * Contributions per plugin, by point.
+ *
+ * The registry knows which plugin registered what — it recorded the owner when the
+ * contribution arrived — so the settings row and the running app agree by construction
+ * rather than by two lists that happen to match.
+ */
+function countContributions(runtime: PluginRuntime): Map<string, Map<string, number>> {
+  const bySummary = new Map<string, Map<string, number>>()
+  const points: Array<[string, ReadonlyArray<object>]> = [
+    ['panels', runtime.panels()],
+    ['views', runtime.views()],
+    ['toolGuards', runtime.guards()],
+    ['toolHooks', runtime.hooks()],
+    ['toolViews', runtime.toolViews()],
+    ['skills', [...runtime.skillsByPlugin().values()].flat()],
+  ]
+
+  for (const [point, values] of points) {
+    for (const value of values) {
+      const owner = runtime.ownerFor(value)
+      if (owner === null) continue
+      const counts = bySummary.get(owner) ?? new Map<string, number>()
+      counts.set(point, (counts.get(point) ?? 0) + 1)
+      bySummary.set(owner, counts)
+    }
+  }
+  return bySummary
 }
 
 /** Upper bounds so one paste cannot exhaust memory or the runtime's request. */
@@ -1108,11 +1123,11 @@ function registerIpc(workspace: Workspace): void {
   // Both read the projection, not a snapshot: a panel installed a minute ago is a row
   // now, and the reason it is not is the reason nobody could see it.
   ipcMain.handle('pictor:panels.list', async (): Promise<PanelContribution[]> => {
-    return [...workspace.contributions.current().panels]
+    return [...workspace.plugins.panels()]
   })
 
   ipcMain.handle('pictor:toolViews.list', async (): Promise<ToolViewContribution[]> => {
-    return [...workspace.contributions.current().toolViews]
+    return [...workspace.plugins.toolViews()]
   })
 
   /**
@@ -1128,7 +1143,7 @@ function registerIpc(workspace: Workspace): void {
     if (sessionId !== null && typeof sessionId !== 'string') {
       throw new Error('sessionId must be a string or null')
     }
-    return workspace.contributions.current().views.render(id, { sessionId })
+    return workspace.plugins.viewRunner().render(id, { sessionId })
   })
 
   ipcMain.handle('pictor:plugins.list', async (): Promise<PluginRecord[]> => {
@@ -1161,10 +1176,10 @@ function registerIpc(workspace: Workspace): void {
       if (found === undefined) return enabled
 
       if (enabled) {
-        await workspace.pluginHost.add(found)
+        await workspace.plugins.add(found)
         await workspace.kernels.mountInstalled(basename(found.root))
       } else {
-        await workspace.pluginHost.remove(id)
+        await workspace.plugins.remove(id)
         const name = basename(found.root)
         const mounted = workspace.kernels
           .plugins()
@@ -1172,7 +1187,6 @@ function registerIpc(workspace: Workspace): void {
         if (mounted !== undefined) await workspace.kernels.unmount(mounted.id)
       }
 
-      workspace.applyPluginSkills()
       workspace.harness.refreshDefault()
       announceWorkspaceChanged()
       return enabled
@@ -1180,7 +1194,7 @@ function registerIpc(workspace: Workspace): void {
   )
 
   ipcMain.handle('pictor:plugins.report', async (): Promise<PluginReport> => {
-    return workspace.pluginHost.report()
+    return workspace.plugins.report()
   })
 
   ipcMain.handle('pictor:model.get', async () => {
@@ -1572,7 +1586,7 @@ function registerIpc(workspace: Workspace): void {
     name: string,
   ): Promise<KernelChangeResult> => {
     for (const plugin of plugins) {
-      await workspace.pluginHost.add(plugin)
+      await workspace.plugins.add(plugin)
       // The record is what the settings switch writes to. A plugin that arrived after
       // launch has none yet, and "not found" is a bad answer to "turn this off" — but
       // an existing record keeps its switch, so reinstalling never re-enables anything.
@@ -1588,9 +1602,8 @@ function registerIpc(workspace: Workspace): void {
       }
     }
 
-    // The plugin set changed, so what it produces changed with it: skills on disk, and
-    // every list a window draws.
-    workspace.applyPluginSkills()
+    // The plugin set changed, so what it produces changed with it: the runtime wrote
+    // its skills already, and every window is told to look again.
     announceWorkspaceChanged()
 
     // The kernel host is the one that knows whether this directory holds a kernel: an
@@ -1659,12 +1672,11 @@ function registerIpc(workspace: Workspace): void {
       workspace.harness.refreshDefault()
 
       for (const plugin of discoverPlugins([root]).plugins) {
-        await workspace.pluginHost.remove(plugin.id)
+        await workspace.plugins.remove(plugin.id)
         // The record is what the switch and the row are drawn from; leaving it behind
         // would list a plugin whose files are gone.
         await workspace.client.removePlugin(plugin.id)
       }
-      workspace.applyPluginSkills()
       announceWorkspaceChanged()
 
       try {
@@ -1756,18 +1768,14 @@ function registerIpc(workspace: Workspace): void {
 
     // `kernel` is not counted here: a kernel is a cordis service, not a contribution
     // the plugin host recorded, and the row lists it separately with its services.
-    const points = ['panels', 'views', 'toolGuards', 'toolHooks', 'toolViews', 'skills'] as const
+    // Counted from the runtime, which is the same list the panels and guards come
+    // from — so a row cannot claim a contribution the app is not using.
+    const counted = countContributions(workspace.plugins)
     return found.plugins.map((plugin) => {
       const name = basename(plugin.root)
       const record = records.find((entry) => entry.id === plugin.id)
-      const contributions = points
-        .map((point) => ({
-          point,
-          count: workspace.pluginHost
-            .contributionsWithSource(point)
-            .filter((entry) => entry.pluginId === plugin.id).length,
-        }))
-        .filter((entry) => entry.count > 0)
+      const byOwner = counted.get(plugin.id) ?? new Map<string, number>()
+      const contributions = [...byOwner].map(([point, count]) => ({ point, count }))
       const mounted = kernels.filter((kernel) => kernel.source === name && kernel.failure === null)
 
       return {

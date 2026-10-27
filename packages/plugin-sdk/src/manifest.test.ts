@@ -33,14 +33,33 @@ describe('parsePackageManifest', () => {
     expect(parsePackageManifest(headless).main).toBeUndefined()
   })
 
-  it('refuses a package that never opted in', () => {
-    expect(() => parsePackageManifest({ name: 'x', version: '1.0.0' })).toThrow(/pictor/)
+  it('refuses a package that neither opted in nor carries a main', () => {
+    // No `pictor` block and no `main` is not a plugin at all — a stray package in the
+    // profile must not be reported as broken.
+    expect(() => parsePackageManifest({ name: 'x', version: '1.0.0' })).toThrow(/neither/)
   })
 
-  it('refuses a missing engines range', () => {
-    expect(() => parsePackageManifest({ ...pkg, pictor: { id: 'acme.codex' } })).toThrow(
-      /pictor\.engines/,
-    )
+  it('reads a cordis plugin, whose needs live in code', () => {
+    // The shape dsh ships, and what makes one package installable by both apps: nothing
+    // is declared here, so the id is the package name and no engine range is claimed.
+    const manifest = parsePackageManifest({
+      name: '@acme/cordis-thing',
+      version: '1.2.3',
+      main: 'index.js',
+    })
+
+    expect(manifest.kind).toBe('cordis')
+    expect(manifest.id).toBe('@acme/cordis-thing')
+    expect(manifest.engines).toBeUndefined()
+  })
+
+  it('accepts a pictor block without an engines range, and reports no promise', () => {
+    // Engines is a promise to the person installing. Omitting it is allowed; inventing
+    // a default would be claiming something the package never said.
+    const manifest = parsePackageManifest({ ...pkg, pictor: { id: 'acme.codex' } })
+
+    expect(manifest.kind).toBe('pictor')
+    expect(manifest.engines).toBeUndefined()
   })
 
   it('refuses a main that climbs out of the plugin root', () => {

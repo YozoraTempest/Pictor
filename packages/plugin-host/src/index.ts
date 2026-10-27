@@ -15,4 +15,11 @@ export {
   type PluginInstallerOptions,
 } from './installer.js'
 
-export { PluginHost, type PluginHostOptions, type PluginHostReport } from './host.js'
+export {
+  PluginContainer,
+  describeManifest,
+  installedPackageRoots,
+  type MountedPlugin,
+  type PluginContainerOptions,
+  type PluginState,
+} from './container.js'

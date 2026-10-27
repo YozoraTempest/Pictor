@@ -75,9 +75,15 @@ function readPlugin(
 
   try {
     const raw = JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown
-    // Only a package that opts in is a plugin; anything else in the root is left
-    // alone rather than reported as broken.
-    if (typeof raw !== 'object' || raw === null || !('pictor' in raw)) return null
+    if (typeof raw !== 'object' || raw === null) return null
+
+    // Two ways in, and the second is what makes a plugin installable by both this app
+    // and dsh: a `pictor` block describes a plugin before it starts, and a bare
+    // `main` is a plain cordis plugin whose needs live in code.
+    //
+    // A package with neither is not a plugin at all — a stray folder in the profile is
+    // left alone rather than reported as broken.
+    if (!('pictor' in raw) && !('main' in raw)) return null
     return { manifest: parsePackageManifest(raw), manifestPath }
   } catch (error) {
     return { reason: (error as Error).message }
@@ -97,6 +103,10 @@ export function expandPluginRoots(parentDirectories: string[]): string[] {
     if (!existsSync(parent)) continue
 
     for (const entry of readdirSync(parent)) {
+      // `node_modules` holds packages this profile installed *for* plugins, and a dot
+      // directory is machinery. Since a cordis plugin needs only a `main` entry, every
+      // dependency would otherwise look like one.
+      if (entry === 'node_modules' || entry.startsWith('.')) continue
       const path = join(parent, entry)
       if (statSync(path).isDirectory() && existsSync(join(path, 'package.json'))) {
         roots.push(path)

@@ -10,6 +10,33 @@ the app is discovered from here; what a person installs lives under
 
 ## The smallest plugin
 
+A plugin is a **cordis plugin**. That is not an implementation detail: it is why the same
+package installs into Pictor and into dsh, and why unloading one undoes everything it
+registered without either app keeping a list.
+
+```js
+// index.js
+export const name = 'pictor-hello'
+
+/** What this plugin needs. Cordis starts it once every name here exists. */
+export const inject = ['pictor']
+
+export function apply(ctx) {
+  // `ctx.effect` ties the registration to this plugin's lifetime: unload the plugin and
+  // the panel goes with it.
+  ctx.effect(() =>
+    ctx.pictor.views({
+      id: 'acme.hello.view',
+      title: '你好',
+      data: () => ({ blocks: [{ kind: 'text', text: '你好' }] }),
+    }),
+  )
+  ctx.effect(() =>
+    ctx.pictor.panels({ id: 'acme.hello.panel', title: '你好', view: 'acme.hello.view' }),
+  )
+}
+```
+
 ```json
 {
   "name": "@acme/pictor-hello",
@@ -26,30 +53,44 @@ the app is discovered from here; what a person installs lives under
 }
 ```
 
-```js
-// index.js — optional. Omit `main` entirely if the plugin contributes no UI half.
-export function activate(context) {
-  context.logger.info('hello')
-  // Registering through the context hands back a disposer; the host runs them in
-  // reverse when the plugin is disabled or removed.
-  const dispose = context.contribute('panels', { … })
-}
-```
+The `pictor` block is **optional**. It exists so the settings page can describe a plugin
+before starting it — an id that is stable across renames, an engine range to check against
+the running app, and the points it claims. Without it the package is a plain cordis
+plugin: its id is its npm name, nothing is promised in JSON, and everything it needs is in
+`inject`.
 
-`id` is dotted and stable. `version` must be semver; it is what the settings page
-shows. `engines.pictor` is checked against the running app.
+Ready-made metadata (`contributes`) is still read from the `pictor` block: a skill is a
+file written before the runtime scans, so it can be described without running code.
+
+## Installing a plugin from the other side
+
+dsh plugins are cordis plugins too, so a package written for dsh installs here and answers
+one question: can this host supply what it injects?
+
+- `inject: ['tools']` — a dsh service. Pictor has no such service, so the plugin stays
+  **mounted and waiting**, and the settings page reports it as skipped. Not a failure:
+  the moment something provides `tools`, cordis starts it.
+- `inject: ['pictor']` — this app's contribution surface. Runs here, and cannot run in
+  dsh for the same reason.
+
+That is the honest shape of "one plugin, two hosts": the loading contract is shared, the
+service surface is not. A plugin that uses neither — a kernel, or something that only
+registers a tool — runs in both.
 
 ## Contribution points
 
-| Point        | Payload                                   | What it does                                            |
-| ------------ | ----------------------------------------- | ------------------------------------------------------- |
-| `panels`     | `{ id, title, icon?, view }`              | A side-panel entry that renders a view                  |
-| `views`      | `{ id, title, data(context), icon? }`     | What a panel draws: blocks, not renderer code           |
-| `toolGuards` | `{ id, title, tools?, decide(context) }`  | Decides allow/deny **before** a call runs               |
-| `toolHooks`  | `{ id, title?, tools?, after(context) }`  | Reacts **after** a call settled: note or fail           |
-| `toolViews`  | `{ id, tools, label?, icon? }`            | How a tool call is presented in the transcript          |
-| `skills`     | `{ name, description, body, whenToUse? }` | A skill the agent can load on demand                    |
-| `kernel`     | `{ main, label? }`                        | A cordis plugin that provides one `kernel.<id>` service |
+Every point is a function on the `pictor` service. Each returns a disposer, and the ones
+inside `ctx.effect` are undone when the plugin unloads.
+
+| Call                          | Payload                                   | What it does                                   |
+| ----------------------------- | ----------------------------------------- | ---------------------------------------------- |
+| `ctx.pictor.panels(...)`      | `{ id, title, icon?, view }`              | A side-panel entry that renders a view         |
+| `ctx.pictor.views(...)`       | `{ id, title, data(context), icon? }`     | What a panel draws: blocks, not renderer code  |
+| `ctx.pictor.toolGuards(...)`  | `{ id, title, tools?, decide(context) }`  | Decides allow/deny **before** a call runs      |
+| `ctx.pictor.toolHooks(...)`   | `{ id, title?, tools?, after(context) }`  | Reacts **after** a call settled: note or fail  |
+| `ctx.pictor.toolViews(...)`   | `{ id, tools, label?, icon? }`            | How a tool call is presented in the transcript |
+| `ctx.pictor.skills(...)`      | `{ name, description, body, whenToUse? }` | A skill the agent can load on demand           |
+| `pictor.contributes` `kernel` | `{ main, label? }`                        | A second entry that provides `kernel.<id>`     |
 
 ### A panel is a view
 
@@ -72,22 +113,28 @@ The view answers with **blocks**; the window draws them with components it owns:
 | `divider`  | —                                          |
 
 ```js
-context.contribute('views', {
-  id: 'acme.today',
-  title: '今日',
-  // Called when the panel opens and when the reader asks for a refresh — never on a
-  // timer. `sessionId` is the conversation it was opened over, or null; `dataDirectory`
-  // is a folder of the plugin's own.
-  data: async ({ sessionId, dataDirectory }) => ({
-    blocks: [
-      { kind: 'heading', text: '今天要做的' },
-      { kind: 'list', items: ['读代码', '写补丁'], ordered: true },
-    ],
-    // Drawn under the blocks, where limitations belong.
-    note: `读取于 ${new Date().toLocaleTimeString('zh-CN')}`,
-  }),
-})
-context.contribute('panels', { id: 'acme.today.panel', title: '今日', view: 'acme.today' })
+export const inject = ['pictor']
+
+export function apply(ctx) {
+  ctx.effect(() =>
+    ctx.pictor.views({
+      id: 'acme.today',
+      title: '今日',
+      // Called when the panel opens and when the reader asks for a refresh — never on a
+      // timer. `sessionId` is the conversation it was opened over, or null;
+      // `dataDirectory` is a folder of the plugin's own.
+      data: async ({ sessionId, dataDirectory }) => ({
+        blocks: [
+          { kind: 'heading', text: '今天要做的' },
+          { kind: 'list', items: ['读代码', '写补丁'], ordered: true },
+        ],
+        // Drawn under the blocks, where limitations belong.
+        note: `读取于 ${new Date().toLocaleTimeString('zh-CN')}`,
+      }),
+    }),
+  )
+  ctx.effect(() => ctx.pictor.panels({ id: 'acme.today.panel', title: '今日', view: 'acme.today' }))
+}
 ```
 
 **Why a description and not a component.** The alternative is running a plugin's React
@@ -116,25 +163,27 @@ while both kernels let a post-execution step replace or annotate the result. So:
   a hook that throws costs its own contribution and nothing else.
 
 ```js
-context.contribute('toolHooks', {
-  id: 'acme.no-publish',
-  tools: ['bash'],
-  after: ({ args, ok, output }) =>
-    // `fail` turns the result into a failure that still carries what the tool printed;
-    // `note` is appended to what the model reads, prefixed with this id.
-    ok && String(args.command).includes('npm publish')
-      ? { fail: '发版请走 release 工作流' }
-      : undefined,
-})
+ctx.effect(() =>
+  ctx.pictor.toolHooks({
+    id: 'acme.no-publish',
+    tools: ['bash'],
+    after: ({ args, ok, output }) =>
+      // `fail` turns the result into a failure that still carries what the tool printed;
+      // `note` is appended to what the model reads, prefixed with this id.
+      ok && String(args.command).includes('npm publish')
+        ? { fail: '发版请走 release 工作流' }
+        : undefined,
+  }),
+)
 ```
 
 Watch it in the transcript: whatever a hook adds is **attributed to the hook**, so a
 reader never mistakes a plugin's words for the tool's own.
 
-`main` is the **UI** entry (`activate`). A kernel's entry is `main` inside the
-`kernel` contribution — they are two different files, and a plugin may provide
-either, both, or neither. A directory without a `pictor` field is not a plugin and is
-ignored, so a stray package in the plugins folder cannot be mounted by accident.
+`main` is the plugin's entry (`apply`). A kernel's entry is `main` inside the
+`kernel` contribution — they are two different files, and a plugin may provide either,
+both, or neither. A directory with neither a `pictor` block nor a `main` is not a plugin
+and is ignored, so a stray package in the plugins folder cannot be mounted by accident.
 
 ## What a kernel can reach
 

@@ -5,8 +5,25 @@ export interface PluginContribution {
   value: unknown
 }
 
+/**
+ * Where a plugin's metadata came from.
+ *
+ * `pictor` declared a `pictor` block and gets the full contract (engines, dependencies,
+ * declared contributions). `cordis` is a plain cordis plugin — the shape dsh ships —
+ * which declares its needs in code (`inject`, `apply`) instead of in JSON. Both can be
+ * installed; what differs is how much this app can promise before starting one.
+ */
+export type PluginKind = 'pictor' | 'cordis'
+
 export interface PluginManifest {
+  /**
+   * Stable id: `pictor.id` when declared, otherwise the package name.
+   *
+   * A cordis plugin has no place to put an id, and inventing one would make the same
+   * package appear twice. The package name is what npm already guarantees unique.
+   */
   id: string
+  kind: PluginKind
   name: string
   version: string
   description?: string
@@ -17,7 +34,8 @@ export interface PluginManifest {
    * process to import and activate, and pretending otherwise would fail at load.
    */
   main?: string
-  engines: {
+  /** Absent for a cordis plugin: it never claimed a Pictor version range. */
+  engines?: {
     pictor: string
   }
   /** Plugin ids this plugin depends on, mapped to a SemVer range. */
@@ -70,9 +88,32 @@ export function parsePackageManifest(value: unknown): PluginManifest {
   }
 
   const record = value as Record<string, unknown>
+  const name = requireString(record, 'name', 'package')
+  const version = requireString(record, 'version', 'package')
+  if (!SEMVER_PATTERN.test(version)) {
+    throw new ManifestError(`invalid plugin version: ${version}`)
+  }
+
   const meta = record.pictor
+  if (meta === undefined) {
+    // A cordis plugin: no `pictor` block, nothing declared in JSON. Its needs travel in
+    // code (`inject`), which is exactly what makes one package installable by both this
+    // app and dsh — and why this is not an error.
+    if (record.main === undefined) {
+      throw new ManifestError('package.json declares neither pictor metadata nor a main entry')
+    }
+    return {
+      id: name,
+      kind: 'cordis',
+      name,
+      version,
+      ...(typeof record.description === 'string' ? { description: record.description } : {}),
+      main: normalizeMain(record.main),
+    }
+  }
+
   if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) {
-    throw new ManifestError('package.json.pictor is required')
+    throw new ManifestError('package.json.pictor must be an object')
   }
   const pictor = meta as Record<string, unknown>
 
@@ -81,28 +122,26 @@ export function parsePackageManifest(value: unknown): PluginManifest {
     throw new ManifestError(`invalid plugin id: ${id}`)
   }
 
-  const name = requireString(record, 'name', 'package')
-  const version = requireString(record, 'version', 'package')
-  if (!SEMVER_PATTERN.test(version)) {
-    throw new ManifestError(`invalid plugin version: ${version}`)
-  }
-
   const engines = pictor.engines
-  if (typeof engines !== 'object' || engines === null) {
-    throw new ManifestError('pictor.engines is required')
+  let pictorRange: string | undefined
+  if (engines !== undefined) {
+    if (typeof engines !== 'object' || engines === null) {
+      throw new ManifestError('pictor.engines must be an object')
+    }
+    pictorRange = requireString(engines as Record<string, unknown>, 'pictor', 'pictor.engines')
   }
-  const pictorRange = requireString(engines as Record<string, unknown>, 'pictor', 'pictor.engines')
 
   const dependencies = parseDependencies(pictor.dependencies)
   const contributes = parseContributions(pictor.contributes)
 
   return {
     id,
+    kind: 'pictor',
     name,
     version,
     ...(typeof record.description === 'string' ? { description: record.description } : {}),
     ...(record.main === undefined ? {} : { main: normalizeMain(record.main) }),
-    engines: { pictor: pictorRange },
+    ...(pictorRange === undefined ? {} : { engines: { pictor: pictorRange } }),
     ...(dependencies === undefined ? {} : { dependencies }),
     ...(contributes === undefined ? {} : { contributes }),
   }

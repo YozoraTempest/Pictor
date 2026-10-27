@@ -35,12 +35,45 @@ describe('discoverPlugins', () => {
 
   it('reports a malformed pictor field without throwing', () => {
     const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
-    const root = writePlugin(parent, 'acme.codex', { pictor: { id: 'acme.codex' } })
+    const root = writePlugin(parent, 'acme.codex', { pictor: { id: 'Acme Codex' } })
 
     const discovery = discoverPlugins([root])
 
     expect(discovery.plugins).toEqual([])
-    expect(discovery.failures[0]?.reason).toMatch(/engines/)
+    expect(discovery.failures[0]?.reason).toMatch(/invalid plugin id/)
+  })
+
+  it('accepts a cordis plugin that declares nothing in JSON', () => {
+    // The shape dsh ships: no `pictor` block, needs only `main`. That is what makes one
+    // package installable by both apps — and what this app must not refuse as malformed.
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
+    const root = join(parent, 'cordis-thing')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: '@acme/cordis-thing', version: '1.2.3', main: 'index.js' }),
+    )
+
+    const discovery = discoverPlugins([root])
+
+    expect(discovery.failures).toEqual([])
+    expect(discovery.plugins[0]?.manifest.kind).toBe('cordis')
+    // Its id is the package name: there is nowhere else to put one.
+    expect(discovery.plugins[0]?.id).toBe('@acme/cordis-thing')
+  })
+
+  it('ignores node_modules when expanding roots', () => {
+    // Every dependency has a `main`, so since a cordis plugin needs only that, a
+    // directory of them would otherwise be a directory of plugins.
+    const parent = mkdtempSync(join(tmpdir(), 'pictor-registry-'))
+    const dependency = join(parent, 'node_modules', 'left-pad')
+    mkdirSync(dependency, { recursive: true })
+    writeFileSync(
+      join(dependency, 'package.json'),
+      JSON.stringify({ name: 'left-pad', main: 'i.js' }),
+    )
+
+    expect(expandPluginRoots([parent])).toEqual([])
   })
 
   it('rejects duplicate plugin ids', () => {

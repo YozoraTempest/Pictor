@@ -54,18 +54,38 @@ A plugin does not add to that engine: plugin panels are views (below), and a plu
 capability surfaces are `toolGuards`, `toolHooks`, `toolViews`, `skills` and `kernel`.
 
 Plugin lifecycle: discovery -> manifest validation -> engine check -> dependency
-resolution -> topological order -> activation -> reverse disposal. Failures are
-isolated per plugin and surfaced in the plugin report.
+resolution -> topological order -> mount -> disposal. Failures are isolated per plugin and
+surfaced in the plugin report.
 
-What a plugin contributes is a **projection** of the host, not a snapshot of it
-(`apps/desktop/src/main/plugin-contributions.ts`): panels, the views behind them, tool
-presenters, guards, hooks and skills are re-derived whenever `PluginHost.revision()`
-changes, and remembered in between. That is what makes installing, removing or switching
-off a plugin a live act. It used to be half true — the kernel half mounted immediately
-while every list was frozen at launch, so a panel appeared only after a restart and a
-guard installed at runtime guarded nothing. The settings switch had the same problem in
-reverse: it wrote a record and left the plugin running until the next launch, which made
-the row a promise the app did not keep.
+**A plugin is a cordis plugin** (`packages/plugin-host/src/container.ts`). Discovery reads
+a `package.json`; mounting imports its `main` and hands it to `ctx.plugin()`, which runs
+`apply` inside a fiber. That is the same contract dsh uses, and it is why one package
+installs into both: `export const inject` plus `export function apply` is the whole shape,
+and what decides whether a plugin _runs_ is whether the host provides the services it
+injects.
+
+Two consequences follow, and both replaced code that used to exist:
+
+- **Lifetime is the container's.** A contribution registered through `ctx.pictor.*`
+  returns a disposer; inside `ctx.effect` it is undone when the plugin's fiber unloads. So
+  the app no longer keeps a list of contributions to prune, and a projection that
+  re-derived the answers when a counter moved is gone with it.
+- **`inject` is the interop boundary.** A plugin that names `tools` — a dsh service —
+  mounts and stays _pending_: not broken, waiting. The settings page reports it as
+  skipped, which is the honest answer for a package written for the other side.
+
+The `pictor` block in `package.json` stays optional, and exists only so the app can
+describe a plugin before starting it: a stable id, an engine range to check, and the
+points it claims. A package with neither that block nor a `main` is not a plugin.
+
+### The plugin tree and the kernel tree
+
+Plugins and kernels share **one** cordis `Context` (`PluginRuntime.ctx`, handed to
+`startKernelHost` as `options.ctx`). Without that, `inject` would mean two different
+things depending on which half asked: a kernel provides `kernel.<id>` and reads
+`pictor.models`, a plugin provides panels and may read `kernel.<id>`. One tree is what
+makes those the same relation, and it is the reason the two containers are two views of
+one scope rather than two registries that have to be kept in step.
 
 ### Plugin views
 

@@ -6,11 +6,21 @@ export {
   type KernelContributionFailure,
 } from './kernel.js'
 export {
+  CONTRIBUTION_ERRORS,
+  ContributionHost,
+  ContributionRegistry,
+  type ContributionHostOptions,
+  type ContributionMap,
+  type ContributionPoint,
+  type PictorContributions,
+} from './contribution.js'
+export {
   ManifestError,
   parsePackageManifest,
   type PluginContribution,
   type PluginContext,
   type PluginLogger,
+  type PluginKind,
   type PluginManifest,
   type PluginModule,
 } from './manifest.js'
