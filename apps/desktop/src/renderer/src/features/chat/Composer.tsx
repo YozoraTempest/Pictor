@@ -12,8 +12,6 @@ import { cn } from '../../lib/cn.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { useChatStore } from './chat-store.js'
 import { ContextMeter } from './ContextMeter.js'
-import { KernelPicker } from './KernelPicker.js'
-import { KernelModelPicker } from './KernelModelPicker.js'
 import { ModelPicker } from './ModelPicker.js'
 import { SessionApprovalPicker } from './SessionApprovalPicker.js'
 import { SessionPermissionPicker } from './SessionPermissionPicker.js'
@@ -50,7 +48,6 @@ export interface ComposerProps {
    * A page that is one kernel's workspace has already answered that question, and
    * a picker there would offer to leave the page it sits on.
    */
-  showKernelPicker?: boolean
   onSend: (prompt: string, images: ChatImage[]) => void
   onStop: () => void
   /** Called after the active model changed, so the chat can be reopened. */
@@ -62,7 +59,6 @@ export function Composer({
   running,
   onSend,
   onStop,
-  showKernelPicker = true,
   onModelChanged,
 }: ComposerProps): React.JSX.Element {
   const [value, setValue] = useState('')
@@ -321,10 +317,8 @@ export function Composer({
           <SessionPermissionPicker />
           <SessionApprovalPicker />
           <div className="ml-auto flex min-w-0 items-center gap-1">
-            {showKernelPicker && <KernelPicker />}
             <ContextMeter />
             <ModelPicker onChanged={onModelChanged} />
-            <KernelModelPicker />
             {running ? (
               <Button variant="secondary" size="sm" className="ml-1" onClick={onStop}>
                 <Square className="size-3 fill-current" />

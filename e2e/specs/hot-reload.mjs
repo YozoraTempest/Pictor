@@ -59,9 +59,12 @@ export default {
 
     // A failed earlier run can leave the plugin behind, and a second install of the same
     // name is refused — clean first so the spec is repeatable.
-    await page.evaluate(() => window.pictor.removeKernel('hot-panel')).catch(() => undefined)
+    await page.evaluate(() => window.pictor.removePlugin('hot-panel')).catch(() => undefined)
 
-    const installed = await page.evaluate((path) => window.pictor.installKernelFolder(path), dir)
+    const installed = await page.evaluate(
+      (path) => window.pictor.installPlugin(`file:${path}`),
+      dir,
+    )
     assert.equal(installed.ok, true, installed.message)
 
     const row = page.getByRole('button', { name: /热重载面板/ })
@@ -104,7 +107,7 @@ export default {
     await page.getByText('版本：v2').waitFor({ timeout: 20_000 })
     await page.getByRole('button', { name: '返回面板列表' }).click()
 
-    const removed = await page.evaluate(() => window.pictor.removeKernel('hot-panel'))
+    const removed = await page.evaluate(() => window.pictor.removePlugin('hot-panel'))
     assert.equal(removed.ok, true, removed.message)
   },
 }

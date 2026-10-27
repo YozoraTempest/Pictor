@@ -297,195 +297,69 @@ like it would move the conversation under the reader. Refresh remounts the frame
 nothing to re-read, and a frame that kept its state while claiming to be refreshed would be
 lying about what happened.
 
-### Kernels
+### The engine
 
-A conversation is executed by a kernel, never by Pictor itself. `KernelDriver`
-(`packages/kernel-sdk/src/driver.ts`) is the whole contract the rest of the
-main process may assume: lifecycle, one turn, history, events, settings,
-diagnosis. `KernelRouter` (`apps/desktop/src/main/kernel/router.ts`) sends each call to the kernel that
-owns the conversation and **never falls back**: history sent to a kernel that
-never produced it would be a lie about where it came from.
+Pictor owns no agent loop. A conversation is executed by **dsh**
+(`@deepseek-ai/dsh`), and `KernelDriver` (`packages/kernel-sdk/src/driver.ts`) is the
+whole contract the rest of the main process may assume about it: lifecycle, one turn,
+history, events, settings, diagnosis. `DshHarness` (`apps/desktop/src/main/kernel/dsh.ts`)
+is that engine: every call forwards to the one driver, and the checks it keeps are about
+what this build of dsh offers — no job registry means an empty roster, a namespace that
+decides its own policy means no approval switch — not about choosing between backends.
 
-### How a kernel is mounted
+There used to be a `KernelRouter` here, sending each call to whichever kernel owned the
+conversation. With one engine that lookup is a constant, so it is gone; so is the
+installer that mounted a second one, the rail entry that reached it, and the picker that
+switched to it. Pi was the second engine and now lives in `experiments/kernel-pi`, out of
+the workspace: it is kept, it is not built, and `experiments/README.md` says why.
 
-Every kernel is a **cordis plugin** that provides exactly one service named
-`kernel.<id>` (`apps/desktop/src/main/kernel/host.ts`). Adding a kernel is adding a
-plugin: the built-in ones are `@vulonlok/kernel-dsh` and `@vulonlok/kernel-pi`, and an
-installed one is a package under `<profile>/plugins` — either a copied directory or a
-package in its `node_modules`, named by `installed.json`. A plugin points at its kernel
-from `pictor.contributes` (`{ point: 'kernel', value: { main } }`); `package.json`'s
-`main` is the UI entry and has nothing to do with the kernel. `startKernelHost` mounts
-them in order, watches `internal/service` for the services they publish, and hands the
-resulting map to `KernelRouter` — nothing enumerates plugins by hand.
+### How the engine is mounted
 
-A kernel is its own package. `@vulonlok/kernel-dsh` and `@vulonlok/kernel-pi` contain the
-driver and its helpers; `@vulonlok/kernel-sdk` contains what they compile against — the
-driver interface, `KernelPlugin`/`KernelEntry`, the host services a plugin may inject,
-and the kernel-facing types (`HarnessStatus`, `PermissionMode`, `KernelCapabilities`,
-`KernelModel*`). A kernel package may depend on the SDK and on `@vulonlok/shared`, and on
-nothing else in this repository; the app's `bridge.ts` re-exports the types from the SDK
-so the window still imports one module.
+The engine is a **cordis plugin** that provides exactly one service named `kernel.dsh`
+(`apps/desktop/src/main/kernel/host.ts`). `startEngine` provides the host services first
+(`pictor.models`, `pictor.rules`, `pictor.guard`, `pictor.permission`, `pictor.workspace`,
+`pictor.userdata`, `pictor.settings`), then imports `@vulonlok/kernel-dsh` and mounts it
+into the **plugin runtime's own tree** — so a plugin can `inject` a host service and the
+engine can read a contribution point, and `inject` means the same thing on both sides. A
+missing or broken engine fails the boot with one message rather than half a start.
 
-Both halves arrive as a `KernelEntry` — "something that can hand over a plugin" — so
-one `mount()` covers them: a built-in is a closure in this bundle (`{ load: async () =>
-dshKernel }`) and an installed kernel is a module imported by path. Turning a built-in
-into its own package is then a change of that one closure to an `import()`, not a change
-of shape, and a kernel that fails to load fails alone with its reason on the settings
-page.
+`@vulonlok/kernel-dsh` contains the driver and its helpers; `@vulonlok/kernel-sdk`
+contains what it compiles against — the driver interface, `KernelPlugin`/`KernelEntry`,
+the host services a plugin may inject, and the engine-facing types (`HarnessStatus`,
+`PermissionMode`, `KernelCapabilities`, `KernelModel*`). A kernel package may depend on
+the SDK and on `@vulonlok/shared`, and on nothing else in this repository; the app's
+`bridge.ts` re-exports the types from the SDK so the window still imports one module.
 
-The map is **live**. `KernelHost.mountInstalled` starts one more plugin and
-`unmount` disposes its fiber, so installing a kernel does not need a restart and
-removing one takes it out of the picker at once. The two steps are kept apart on
-purpose (`kernel/installer.ts` owns the disk, the host owns the mount): a copy that
-succeeds and a mount that fails is a kernel on disk with a reason attached, which the
-settings page shows, rather than a rollback that hides what went wrong.
+The engine is **in the main process only**. The runtime stays a child process: cordis has
+no cross-process semantics, and the tool-guard bridge is only fail-closed because the
+engine lives on the other side of it.
 
-`installed.json` exists because the package manager owns `node_modules` and drags in
-dependencies with it; only the names a person actually installed are plugins.
-
-What a plugin may reach is a service, and the `inject` list it declares is the
-sentence the settings page shows a person: `pictor.models`, `pictor.rules`,
-`pictor.guard`, `pictor.permission`, `pictor.workspace`, `pictor.userdata`,
-`pictor.settings`. A capability declared `true` with no method behind it is refused at
-mount time, so the window never draws a control the kernel cannot answer.
-`pictor.models` includes the running service's key — a kernel cannot take a turn
-without it — which is why installing one asks first.
-
-`pictor.settings` is what makes a kernel's own switch the kernel's business: it reads
-a snapshot of the profile's settings, and it writes back through the same store, so a
-plugin that declares a setting can remember it itself. The app that assembles the
-kernels never spells out those keys. That snapshot is refreshed by every write the app
-makes (`kernel/settings-store.ts`), not only by the kernels' own, so a page that saves
-a value never leaves a kernel reporting the previous one.
-
-The container is deliberately **in the main process only**. The runtime stays a child
-process: cordis has no cross-process semantics, and the tool-guard bridge is only
-fail-closed because the kernel lives on the other side of it.
-
-Two kernels ship:
-
-- **dsh** (`packages/kernel-dsh`) — the default, and the one the rest of this
-  section describes: a server process booted with a profile Pictor owns.
-- **Pi** (`packages/kernel-pi`) — an RPC child per conversation: `pi --mode
-rpc` speaks JSONL commands on stdin and streams the same events over stdout,
-  translated by `packages/kernel-pi/src/pi-events.ts` into the durable events and chunks the window
-  already renders. The child runs on **this process's own runtime**
-  (`ELECTRON_RUN_AS_NODE`), not on whatever `node` PATH offers: Pi needs Node 22.19
-  or newer and a desktop app cannot assume the machine has it. Images travel as
-  content parts, and a model that cannot see them is refused by name before the
-  turn is spent. It branches conversations at a user message's entry id, and it
-  answers for its own model catalogue (`KernelModelSource`). Its tool calls go
-  through the same guard chain as dsh's: Pictor writes a Pi extension
-  (`packages/kernel-pi/src/pi-guard-extension.ts`) that asks the loopback bridge about every call and
-  blocks it when a rule or a plugin guard says so, failing closed when the bridge
-  cannot be reached. It has no sandbox of its own, so _when_ a call waits for a
-  person is Pictor's decision there (`KernelApprovalSource`): a per-conversation
-  mode plus `ask` rules in the tool policy, carried out through Pi's own dialog
-  (`ctx.ui.confirm`), which is what keeps timeouts, cancellation and parallel
-  calls Pi's business. A conversation can also remember "not this tool again",
-  which it can forget again from the same switch. Pi's other dialogs (`select`,
-  `input`, `editor`) become the question card — options, free text, and a seeded
-  multi-line field for a draft someone is meant to change — and since Pi ships no
-  model-facing asking tool, that extension registers `ask_user_question` under
-  dsh's name, `draft` included — so a Pi conversation can ask, not only answer.
-  `notify` is the one fire-and-forget request a GUI has a place for: it becomes the
-  banner, marked with the kernel that sent it. The rest (`setStatus`, `setWidget`,
-  `setTitle`, a custom terminal component) describe a terminal's own surface, so
-  they are neither drawn nor answered — Pi keeps no pending entry for them, and
-  `custom` does not exist in RPC mode at all. What it still cannot express is a
-  per-conversation sandbox; it declares none instead of faking one. Its
-  transcript is read back from Pi's own session file (`packages/kernel-pi/src/pi-history.ts`),
-  because Pictor keeps none.
-
-Each driver also declares what it can do (`KernelCapabilities`: sandbox, approval,
-model, skills, fork, commands, jobs), and that declaration reaches the renderer with
-`kernels.list`. The composer draws a control only where the conversation's kernel
-says it exists: a CLI kernel gets no sandbox switch and no model picker, instead
-of a control that throws when pressed. The approval switch follows the same rule:
-dsh decides for itself when to ask, so it draws no such switch, and a kernel that
-hands the decision over draws one.
-
-Who answers that "when" question is the conversation's own kernel
-(`KernelRouter.guardApprovalMode` / `guardIsGranted`), asked per call by the guard
-bridge: a kernel that decides for itself — dsh — answers `never`, because its own
-policy already decided to hold the call, and only a `deny`/`ask` rule can hold one of
-its calls from outside. Naming a kernel there instead is how the guard used to end up
-asking Pi about dsh's conversations.
-
-Pictor also hands its own services to Pi. The same loopback bridge that answers the
-guard also answers "what can I run": the extension calls
-`pi.registerProvider(name, { baseUrl, apiKey, models })` for each configured
-provider, so one address, key and model list serves both kernels instead of being
-typed twice. Keys travel over that socket and are never written into the extension
-file, which lives on disk with the profile. What Pictor supplies is what it knows:
-`input` stays `text` unless the model declared otherwise, and `thinkingLevelMap` is
-left out entirely when the levels were never declared, so Pi keeps applying its own
-default rather than a map invented here. Editing a service invalidates Pi's cached
-catalogue, so the picker shows the new list without a restart.
-
-Inside Pictor, Pi is pointed at a configuration directory of its own
-(`<profile>/pi-home`, via `PI_CODING_AGENT_DIR`), so it sees exactly the providers
-Pictor registered and nothing from `~/.pi/agent`: no second copy of the same
-service, no models Pictor cannot offer. A conversation that had picked one of Pi's
-own models is pruned at boot rather than left failing to start. The one way out is
-the switch on the Pi runtime page — Pi then brings its own services, keys and
-extensions, which is the only way to keep using those, at the cost of two lists
-that differ again.
-
-The MCP list is rendered into that directory too (`pi-home/mcp.json`, written before
-each spawn), because Pi reads a file while dsh reads a patch: one list on the page,
-two translations, and neither kernel learns about the other's format. With isolation
-off, `~/.pi/agent/mcp.json` is the person's file and Pictor does not touch it.
-
-A kernel may also own a setting rather than only read one: Pi's "run on my own
-configuration" means nothing to dsh. It declares it as a `KernelSetting` — key,
-label, description, and a `hint` for what the current value means — the host
-collects whatever the mounted kernels declare, and the runtime page draws those
-rows without knowing which kernel they belong to. Pictor persists the key and
-hands the write to the kernel that declared it; a key nobody owns comes back
-`false` rather than looking like it worked.
-
-A kernel that brings its own models declares it (`KernelModelSource`), and
-`kernels.list` says whose list the picker should show: `pictor` for a kernel
-booted with Pictor's providers, `kernel` for one that answers for its own
-catalogue. The composer draws one picker or the other, never both — a list that
-is not the conversation's list is the same lie as a control the kernel cannot
-honour.
+What it can do travels as `KernelCapabilities`, and that declaration reaches the renderer
+with `kernels.list`. The composer draws a control only where it says the capability
+exists: dsh decides for itself when to ask, so it draws no approval switch, and a machine
+with no provider configured shows no model picker instead of one that throws when pressed.
+The capability is also what the guard asks — `DshHarness.guardApprovalMode` answers
+`never` for dsh, because its own policy already decided to hold the call, and only a
+`deny`/`ask` rule can hold one of its calls from outside.
 
 The rail is **derived** from `kernels.list()`, not written by hand: `viewsFor()`
-(`app/views.tsx`) builds home, one page per mounted kernel, then the two destinations at
-the bottom — 拓展 and 设置 — and a page is named after the kernel it holds
-(`kernel:<id>`, `app/kernel-scope.ts`). Turning a kernel off takes its page away and
-installing one adds a page, both without an edit; a kernel the build has never heard of
-still gets a page, an icon it borrows and a number (`Ctrl+2…`), which is what makes
-"adding a kernel is adding a directory" true in the window and not only in the container.
-
-A kernel page is derived, but what the page _looks like_ is the kernel's own answer:
-`KernelDriver.icon` is a name from the window's icon vocabulary (`lib/icons.ts`, the same
-table plugin panels use), carried through `kernels.list()` into `viewsFor()`. This used to
-be a table in `views.tsx` keyed by kernel id, which meant an installed kernel could only
-borrow a generic icon — and the rail knew something about DSH and Pi that a plugin could
-never say about itself.
+(`app/views.tsx`) builds home, one page per mounted engine, then the two destinations at
+the bottom — 拓展 and 设置 — and the page is named after the engine it holds
+(`kernel:<id>`, `app/kernel-scope.ts`). The engine names its own icon
+(`KernelDriver.icon`, a name from the window's vocabulary in `lib/icons.ts`, the same
+table plugin panels use), so the window needs no table keyed by engine id.
 
 **拓展** is one page with three tabs (`features/extensions/ExtensionsView.tsx`): plugins,
 skills, MCP. They are not settings — a plugin is something you install, not a preference
-you set — and they are not three pages either, because they answer one question. The tabs
-are the whole navigation: three entries do not need a column, and the panels behind them
-therefore carry no heading of their own, only the sentence a reader needs and the actions
-that belong to that panel.
+you set — and they are not three pages either, because they answer one question.
 
-A kernel page lists only that kernel's conversations, filters the
-project rows to the ones that hold one, draws only the sections that hold one,
-opens a conversation of its own kernel instead of keeping the previous one, and
-draws the kernel picker only for an open conversation — moving it to another kernel
-is a branch, so the control is the branch. Home draws no list at all: it opens on a
-draft, offers the choice of kernel, and is where a conversation starts. A list of
-every kernel's conversations would have to describe runtimes that disagree about
-almost everything, so the list belongs to the page that has one answer.
+The engine page lists only its own conversations, filters the project rows to the ones
+that hold one, draws only the sections that hold one, and opens a conversation of its own
+engine instead of keeping the previous one. Home draws no list at all: it opens on a
+draft and is where a conversation starts.
 
-The kernel is fixed when a conversation is created (`sessions.kernel_id`), so the
-picker opens a branch on the other kernel rather than rewriting one in place.
-Lifecycle calls carry no session id and stay on the default kernel.
+The engine is fixed when a conversation is created (`sessions.kernel_id`, still written),
+so the history is always the history of the process that produced it.
 
 ### Commands and compaction
 
@@ -641,10 +515,9 @@ renderer does not care how a kernel speaks:
 
 - `packages/kernel-dsh/src/harness-history.ts` projects runtime events into
   transcript rows and paginates from the newest message backwards.
-- Every conversation belongs to the kernel recorded on it. `chat.open`,
-  `chat.send`, `chat.stop` and `session.fork` ask `KernelRouter.statusOf(sessionId)`
-  for that kernel's state — lifecycle used to belong to one process, and asking the
-  default kernel instead would refuse a turn that could run. An unready kernel yields
+- Every conversation belongs to the engine recorded on it. `chat.open`,
+  `chat.send`, `chat.stop` and `session.fork` ask `DshHarness.statusOf(sessionId)`
+  for its state. An unready engine yields
   an empty page the window explains rather than a second engine: sending a message
   while it is down is refused, so a turn can never land somewhere the next boot
   cannot read. `sessions.pi_session_id` survives from the pre-kernel layout and is

@@ -16,7 +16,6 @@ export default defineConfig({
       '@vulonlok/kernel-sdk': fromRoot('./packages/kernel-sdk/src/index.ts'),
       '@vulonlok/kernel-sdk/types': fromRoot('./packages/kernel-sdk/src/types.ts'),
       '@vulonlok/kernel-dsh': fromRoot('./packages/kernel-dsh/src/index.ts'),
-      '@vulonlok/kernel-pi': fromRoot('./packages/kernel-pi/src/index.ts'),
     },
   },
   test: {

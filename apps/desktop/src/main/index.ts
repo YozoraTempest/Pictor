@@ -56,13 +56,11 @@ import {
 
 import type {
   AppInfo,
-  BuiltinKernelInfo,
   PluginHomes,
   PluginOverview,
   HarnessStatus,
   HostSnapshot,
   KernelChangeResult,
-  KernelPluginInfo,
   PermissionMode,
   PluginReport,
   PluginInstallSummary,
@@ -72,12 +70,12 @@ import { HarnessChatBridge } from './harness-chat.js'
 import { shouldAdoptTitle } from '@vulonlok/harness-dsh'
 
 import type { KernelDriver } from '@vulonlok/kernel-sdk'
-import { startKernelHost, type KernelHost } from './kernel/host.js'
+import { startEngine, type EngineHost } from './kernel/host.js'
 import { isProviderSource } from '@vulonlok/kernel-sdk'
 import { resolveNodeBinary, resolveNpmCli } from '@vulonlok/kernel-sdk'
 import { openSettings } from './kernel/settings-store.js'
 
-import { KernelRouter, type KernelInfo } from './kernel/router.js'
+import { DshHarness, type KernelInfo } from './kernel/dsh.js'
 import { PluginRuntime } from './plugin-runtime.js'
 import { ToolBridgeServer, type GuardAsk } from './tool-bridge-server.js'
 import { ModelService } from './model-service.js'
@@ -172,9 +170,9 @@ interface Workspace {
   plugins: PluginRuntime
   model: ModelService
   /** Routes each conversation to the kernel that owns it. */
-  harness: KernelRouter
-  /** The kernel container: what is mounted, what was refused, and why. */
-  kernels: KernelHost
+  harness: DshHarness
+  /** The mounted engine: one driver, disposed with the workspace. */
+  engine: EngineHost
   /** Installs and removes plugins under the profile. */
   installer: PluginInstaller
   /**
@@ -402,18 +400,11 @@ async function startWorkspace(): Promise<Workspace | null> {
   const rules = new RuleBook(running.client)
   await rules.load()
 
-  // The profile's settings once, plus the one function every write goes through: a
-  // kernel reads the snapshot, and a page that saves anything keeps it current. That
-  // is what lets a kernel ask "what did the person choose?" without this file knowing
+  // The profile's settings once, plus the one function every write goes through: the
+  // engine reads the snapshot, and a page that saves anything keeps it current. That is
+  // what lets the runtime ask "what did the person choose?" without this file knowing
   // which key it means, and without a stale answer after the page saves.
   const settings = await openSettings(running.client)
-  const stored = settings.values()
-
-  // Which kernels this machine runs. Both are a person's choice, kept in settings so
-  // "the built-in kernel is the default" stops being a fact of the build.
-  const disabledBuiltins = readStringList(stored[BuiltinKernelsKey])
-  const preferredKernel =
-    typeof stored[DefaultKernelKey] === 'string' ? stored[DefaultKernelKey] : null
 
   /**
    * dsh plugins, installed into the kernel's profile.
@@ -480,9 +471,9 @@ async function startWorkspace(): Promise<Workspace | null> {
     },
   }
   // Holding a call for a person is a second question, asked only by a caller that can
-  // wait for the answer. The rules answer it, and so does the conversation's own mode —
-  // which belongs to the kernel that runs that conversation, not to a named one here.
-  let router: KernelRouter | null = null
+  // wait for the answer. The rules answer it, and so does the engine's own mode — which
+  // belongs to the runtime that runs the conversation, not to a named one here.
+  let engine: DshHarness | null = null
   const askFor = async (context: GuardAsk): Promise<{ tool: string; reason: string } | null> => {
     const session = context.session
     // A call with no conversation to name cannot have a mode; the rules still apply, so
@@ -490,9 +481,9 @@ async function startWorkspace(): Promise<Workspace | null> {
     // kernel answers, whatever kernel that is.
     let mode: ApprovalMode = 'never'
     let granted = false
-    if (session !== null && router !== null) {
-      mode = await router.guardApprovalMode(session)
-      granted = await router.guardIsGranted(session, context.tool)
+    if (session !== null && engine !== null) {
+      mode = await engine.guardApprovalMode(session)
+      granted = await engine.guardIsGranted(session, context.tool)
     }
     const verdict = rules.askFor({
       tool: context.tool,
@@ -517,14 +508,19 @@ async function startWorkspace(): Promise<Workspace | null> {
   // never reach the file on disk.
   // Resolved per request rather than captured: the bridge outlives any one kernel
   // being mounted or unmounted, and it is only asked when an extension wants services.
-  let kernelHost: KernelHost | null = null
+  // The engine, once it is mounted: the bridge outlives any single session, so the
+  // driver is read per request rather than captured at boot.
+  let engineDriverRef: KernelDriver | null = null
   const guardBridge = new ToolBridgeServer(
     // The person's own rules first, then whatever guards are installed right now —
     // asked per call, so installing one does not need a restart to matter.
     () => [ruleGuard, ...plugins.guards()],
     randomUUID(),
     askFor,
-    () => providersFrom(kernelHost?.drivers ?? new Map()),
+    () =>
+      providersFrom(
+        engineDriverRef === null ? new Map() : new Map([[engineDriverRef.id, engineDriverRef]]),
+      ),
     () => plugins.hooks(),
   )
   void guardBridge.start().catch((error: unknown) => {
@@ -545,11 +541,11 @@ async function startWorkspace(): Promise<Workspace | null> {
   // Every kernel is mounted the same way — one cordis plugin that provides one
   // `kernel.<id>` service — so adding a third is a directory, not a build. What is
   // compiled in goes first, and whatever the profile has installed follows.
-  const kernels: KernelHost = await startKernelHost({
-    // The plugins' tree, so both halves are services in one scope: a plugin can wait
-    // for `kernel.dsh` and a kernel can read `pictor.panels` without either being told
-    // the other exists. This is what dsh does, and the reason `inject` means the same
-    // thing on both sides.
+  // The plugins' tree, so both halves are services in one scope: a plugin can wait for
+  // `pictor.panels` and the engine can read `pictor.models` without either being told the
+  // other exists. This is what dsh does on its own side, and the reason `inject` means the
+  // same thing on both.
+  const host = await startEngine({
     ctx: plugins.ctx,
     services: {
       models: model,
@@ -560,38 +556,17 @@ async function startWorkspace(): Promise<Workspace | null> {
       userData,
       settings: settings.service,
     },
-    builtins: [
-      // Loaded by package name, the way an installed kernel is loaded by path: the
-      // only difference between shipping a kernel and installing one is where the
-      // module comes from.
-      {
-        id: 'dsh',
-        label: 'DeepSeek Harness',
-        entry: { load: async () => (await import('@vulonlok/kernel-dsh')).dshKernel },
-      },
-      {
-        id: 'pi',
-        label: 'Pi',
-        entry: { load: async () => (await import('@vulonlok/kernel-pi')).createPiKernel() },
-      },
-    ],
-    disabled: disabledBuiltins,
-    directories: [join(userData, 'plugins')],
-  })
-  kernelHost = kernels
-  const harness: KernelRouter = new KernelRouter({
-    drivers: kernels.drivers,
-    defaultKernel: preferredKernel,
-    lookup: {
-      kernelOf: async (sessionId) => {
-        const session = (await running.client.listSessions()).find(
-          (entry) => entry.id === sessionId,
-        )
-        return session?.kernelId ?? null
-      },
+    // Loaded by package name. There is one entry because there is one engine: dsh is not
+    // one of several backends, and nothing in the window can replace it.
+    builtin: {
+      id: 'dsh',
+      label: 'DeepSeek Harness',
+      entry: { load: async () => (await import('@vulonlok/kernel-dsh')).dshKernel },
     },
   })
-  router = harness
+  engineDriverRef = host.driver
+  const harness: DshHarness = new DshHarness(host.driver)
+  engine = harness
   // The runtime reports durable session events; the renderer renders runs and
   // deltas. One translation keeps the transcript unchanged by the swap.
   const chatBridge = new HarnessChatBridge()
@@ -689,7 +664,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     plugins,
     model,
     harness,
-    kernels,
+    engine: host,
     installer,
     kernelPlugins,
     // Recomputed, not remembered: a plugin installed while the app runs is a directory
@@ -718,7 +693,7 @@ async function startWorkspace(): Promise<Workspace | null> {
     dispose: async () => {
       if (disposed) return
       disposed = true
-      await kernels.dispose()
+      await host.dispose()
       plugins.dispose()
       await plugins.ctx.fiber.dispose()
       running.dispose()
@@ -995,18 +970,6 @@ function parseAnswers(value: unknown): ChatAnswer[] {
       ...(typeof custom === 'string' ? { custom } : {}),
     }
   })
-}
-
-/** Built-in kernel ids a person turned off. */
-const BuiltinKernelsKey = 'kernel.disabled'
-
-/** Which kernel new conversations start on; absent means the first that loaded. */
-const DefaultKernelKey = 'kernel.default'
-
-/** A settings value that should be a list of names; anything else is nothing. */
-function readStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((entry): entry is string => typeof entry === 'string')
 }
 
 function registerIpc(workspace: Workspace): void {
@@ -1366,23 +1329,22 @@ function registerIpc(workspace: Workspace): void {
       )
       if (found === undefined) return enabled
 
-      if (enabled) {
-        await workspace.plugins.add(found)
-        await workspace.kernels.mountInstalled(basename(found.root))
-      } else {
-        await workspace.plugins.remove(id)
-        const name = basename(found.root)
-        const mounted = workspace.kernels
-          .plugins()
-          .find((kernel) => kernel.source === name && kernel.failure === null)
-        if (mounted !== undefined) await workspace.kernels.unmount(mounted.id)
-      }
+      if (enabled) await workspace.plugins.add(found)
+      else await workspace.plugins.remove(id)
 
-      workspace.harness.refreshDefault()
       announceWorkspaceChanged()
       return enabled
     },
   )
+
+  /** Ask for a plugin directory; null when the person cancelled. */
+  ipcMain.handle('pictor:plugins.chooseFolder', async (): Promise<string | null> => {
+    const chosen = await dialog.showOpenDialog({
+      title: '选择一个插件目录',
+      properties: ['openDirectory'],
+    })
+    return chosen.canceled ? null : (chosen.filePaths[0] ?? null)
+  })
 
   ipcMain.handle('pictor:plugins.report', async (): Promise<PluginReport> => {
     return workspace.plugins.report()
@@ -1807,43 +1769,8 @@ function registerIpc(workspace: Workspace): void {
     // its skills already, and every window is told to look again.
     announceWorkspaceChanged()
 
-    // The kernel host is the one that knows whether this directory holds a kernel: an
-    // older plugin has no manifest to ask, and a UI-only plugin has no kernel to mount
-    // — neither is a failure.
-    const mounted = await workspace.kernels.mountInstalled(name)
-    if (!mounted.mounted && mounted.failure !== null) {
-      return { ok: false, id: name, message: mounted.failure }
-    }
     return { ok: true, id: name, message: '' }
   }
-
-  ipcMain.handle('pictor:kernels.chooseFolder', async (): Promise<string | null> => {
-    const chosen = await dialog.showOpenDialog({
-      title: '选择一个内核目录',
-      properties: ['openDirectory'],
-    })
-    return chosen.canceled ? null : (chosen.filePaths[0] ?? null)
-  })
-
-  ipcMain.handle(
-    'pictor:kernels.installFolder',
-    async (_event, source: unknown): Promise<KernelChangeResult> => {
-      if (typeof source !== 'string' || source.length === 0) {
-        return { ok: false, id: null, message: '需要一个目录' }
-      }
-      return mountAfterInstall(() => workspace.installer.installFolder(source))
-    },
-  )
-
-  ipcMain.handle(
-    'pictor:kernels.installPackage',
-    async (_event, spec: unknown): Promise<KernelChangeResult> => {
-      if (typeof spec !== 'string' || spec.trim().length === 0) {
-        return { ok: false, id: null, message: '需要一个包名' }
-      }
-      return mountAfterInstall(() => workspace.installer.installPackage(spec))
-    },
-  )
 
   /**
    * One install entry for both trees.
@@ -1971,31 +1898,17 @@ function registerIpc(workspace: Workspace): void {
   )
 
   ipcMain.handle(
-    'pictor:kernels.remove',
+    'pictor:plugins.remove',
     async (_event, id: unknown): Promise<KernelChangeResult> => {
       if (typeof id !== 'string' || id.length === 0) {
         return { ok: false, id: null, message: '需要一个插件名' }
       }
 
-      // A plugin is one installation, named by its directory under the profile — but a
-      // caller may also name the kernel it mounted, because that is the id a conversation
-      // holds. Both are accepted here; the directory is what gets removed either way.
-      const kernels = workspace.kernels.plugins()
-      const byKernel = kernels.find((entry) => entry.id === id)
-      if (byKernel !== undefined && byKernel.source === 'builtin') {
-        return { ok: false, id, message: '内置内核不能卸载' }
-      }
-      const name = byKernel?.source ?? id
+      // A plugin is one installation, named by its directory under the profile.
+      const name = id
 
       const root = workspace.installer.rootOf(name)
       if (root === null) return { ok: false, id, message: '没有这个插件' }
-
-      // Unmount first: the conversations it ran would otherwise talk to a kernel whose
-      // files are about to be gone.
-      for (const kernel of kernels.filter((entry) => entry.source === name)) {
-        await workspace.kernels.unmount(kernel.id)
-      }
-      workspace.harness.refreshDefault()
 
       for (const plugin of discoverPlugins([root]).plugins) {
         await workspace.plugins.remove(plugin.id)
@@ -2021,88 +1934,19 @@ function registerIpc(workspace: Workspace): void {
    * Recomputed on every call rather than cached: installing or removing a plugin
    * changes the answer, and a snapshot taken at launch would keep showing the old one.
    */
-  /** The kernels compiled into the app, mounted or turned off. */
-  ipcMain.handle('pictor:kernels.builtins', async (): Promise<BuiltinKernelInfo[]> => {
-    const reports = workspace.kernels.plugins()
-    const defaultId = workspace.harness.id
-    return workspace.kernels.builtins().map((entry) => {
-      const mounted = reports.find((report) => report.id === entry.id)
-      return {
-        id: entry.id,
-        label: entry.label,
-        enabled: entry.mounted,
-        default: entry.id === defaultId,
-        services: mounted === undefined ? [] : [...mounted.services],
-      }
-    })
-  })
-
-  /**
-   * Turns a built-in kernel off or on, live.
-   *
-   * Turning it off unmounts it, so it leaves the picker at once; turning it on mounts
-   * it again. The setting is what makes the choice survive a restart.
-   */
-  ipcMain.handle(
-    'pictor:kernels.setBuiltinEnabled',
-    async (_event, id: unknown, enabled: unknown): Promise<boolean> => {
-      if (typeof id !== 'string' || typeof enabled !== 'boolean') {
-        throw new Error('id and enabled are required')
-      }
-      const current = readStringList((await workspace.client.listSettings())[BuiltinKernelsKey])
-      const next = enabled
-        ? current.filter((entry) => entry !== id)
-        : [...new Set([...current, id])]
-      await workspace.writeSetting(BuiltinKernelsKey, next)
-
-      if (enabled) {
-        const result = await workspace.kernels.mountBuiltin(id)
-        const mounted = workspace.harness.list().some((kernel) => kernel.id === id)
-        if (!mounted && result.failure !== null) {
-          console.warn(`[kernel] ${id} 没能启动：${result.failure}`)
-        }
-      } else {
-        await workspace.kernels.unmount(id)
-      }
-      // The default may have just been turned off, or a newly mounted one may be the
-      // only kernel left.
-      workspace.harness.refreshDefault()
-      // Main has unmounted the kernel; the window still draws the rail from its own
-      // list. Without this the page stayed until something else refreshed — which is
-      // exactly what "turned it off and it is still there" feels like.
-      announceWorkspaceChanged()
-      return enabled
-    },
-  )
-
-  /** Chooses where new conversations start; conversations keep the kernel they ran on. */
-  ipcMain.handle('pictor:kernels.setDefault', async (_event, id: unknown): Promise<boolean> => {
-    if (typeof id !== 'string') throw new Error('id must be a string')
-    if (!workspace.harness.setDefault(id)) return false
-    await workspace.writeSetting(DefaultKernelKey, id)
-    // The composer names the kernel new conversations will use; moving the default has
-    // to reach it without a reload.
-    announceWorkspaceChanged()
-    return true
-  })
-
   ipcMain.handle('pictor:plugins.overview', async (): Promise<PluginOverview[]> => {
     const records = await workspace.client.listPlugins()
     // The workspace already holds expanded plugin directories, not parents.
     const found = discoverPlugins([...workspace.pluginDirectories()])
-    const kernels = workspace.kernels.plugins()
 
-    // `kernel` is not counted here: a kernel is a cordis service, not a contribution
-    // the plugin host recorded, and the row lists it separately with its services.
-    // Counted from the runtime, which is the same list the panels and guards come
-    // from — so a row cannot claim a contribution the app is not using.
+    // Counted from the runtime, which is the same list the panels and guards come from —
+    // so a row cannot claim a contribution the app is not using.
     const counted = countContributions(workspace.plugins)
     return found.plugins.map((plugin) => {
       const name = basename(plugin.root)
       const record = records.find((entry) => entry.id === plugin.id)
       const byOwner = counted.get(plugin.id) ?? new Map<string, number>()
       const contributions = [...byOwner].map(([point, count]) => ({ point, count }))
-      const mounted = kernels.filter((kernel) => kernel.source === name && kernel.failure === null)
 
       return {
         name,
@@ -2114,15 +1958,6 @@ function registerIpc(workspace: Workspace): void {
         source: dirname(plugin.root) === workspace.bundledRoot ? 'builtin' : name,
         enabled: record?.enabled ?? true,
         contributions,
-        kernels: mounted.map((kernel) => ({
-          id: kernel.id,
-          label: kernel.label,
-          services: [...kernel.services],
-          available: kernel.available,
-        })),
-        failure:
-          kernels.find((kernel) => kernel.source === name && kernel.failure !== null)?.failure ??
-          null,
       }
     })
   })
@@ -2164,17 +1999,6 @@ function registerIpc(workspace: Workspace): void {
   ipcMain.handle('pictor:kernelPlugins.remove', async (_event, id: unknown): Promise<void> => {
     if (typeof id !== 'string' || id.length === 0) throw new Error('id is required')
     await workspace.kernelPlugins.remove(id)
-  })
-
-  ipcMain.handle('pictor:kernels.plugins', async (): Promise<KernelPluginInfo[]> => {
-    return workspace.kernels.plugins().map((entry) => ({
-      id: entry.id,
-      label: entry.label,
-      source: entry.source,
-      services: [...entry.services],
-      available: entry.available,
-      failure: entry.failure,
-    }))
   })
 
   // A kernel that brings its own models answers for them; Pictor only relays.

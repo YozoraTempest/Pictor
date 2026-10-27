@@ -27,8 +27,7 @@
       "@vulonlok/model-config": ["./packages/model-config/src/index.ts"],
       "@vulonlok/kernel-sdk": ["./packages/kernel-sdk/src/index.ts"],
       "@vulonlok/kernel-sdk/types": ["./packages/kernel-sdk/src/types.ts"],
-      "@vulonlok/kernel-dsh": ["./packages/kernel-dsh/src/index.ts"],
-      "@vulonlok/kernel-pi": ["./packages/kernel-pi/src/index.ts"]
+      "@vulonlok/kernel-dsh": ["./packages/kernel-dsh/src/index.ts"]
     }
   }
 }

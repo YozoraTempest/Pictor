@@ -54,7 +54,7 @@ export default {
       ].join('\n'),
     )
 
-    const installed = await page.evaluate((dir) => window.pictor.installKernelFolder(dir), mine)
+    const installed = await page.evaluate((dir) => window.pictor.installPlugin(`file:${dir}`), mine)
     assert.equal(installed.ok, true, installed.message)
 
     const row = page.getByRole('button', { name: /互通面板/ })
@@ -89,7 +89,7 @@ export default {
       ].join('\n'),
     )
 
-    const second = await page.evaluate((dir) => window.pictor.installKernelFolder(dir), other)
+    const second = await page.evaluate((dir) => window.pictor.installPlugin(`file:${dir}`), other)
     assert.equal(second.ok, true, second.message)
 
     const report = await page.evaluate(() => window.pictor.pluginReport())
@@ -105,7 +105,7 @@ export default {
 
     // Both go away with the plugins that brought them.
     for (const name of ['cordis-panel', 'dsh-tool']) {
-      await page.evaluate((dir) => window.pictor.removeKernel(dir), name)
+      await page.evaluate((dir) => window.pictor.removePlugin(dir), name)
     }
     await row.waitFor({ state: 'detached', timeout: 20_000 })
   },

@@ -95,9 +95,6 @@ importers:
       '@vulonlok/kernel-dsh':
         specifier: workspace:*
         version: link:../../packages/kernel-dsh
-      '@vulonlok/kernel-pi':
-        specifier: workspace:*
-        version: link:../../packages/kernel-pi
       '@vulonlok/kernel-sdk':
         specifier: workspace:*
         version: link:../../packages/kernel-sdk
@@ -198,21 +195,6 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
-  packages/kernel-pi:
-    dependencies:
-      '@deepseek-ai/cordis':
-        specifier: ~4.0.5
-        version: 4.0.5(@deepseek-ai/cordis-plugin-loader@1.0.6)
-      '@vulonlok/harness-dsh':
-        specifier: workspace:*
-        version: link:../harness
-      '@vulonlok/kernel-sdk':
-        specifier: workspace:*
-        version: link:../kernel-sdk
-      '@vulonlok/shared':
-        specifier: workspace:*
-        version: link:../shared
-
   packages/kernel-sdk:
     dependencies:
       '@deepseek-ai/cordis':
@@ -266,8 +248,6 @@ importers:
       '@vulonlok/kernel-sdk':
         specifier: workspace:*
         version: link:../kernel-sdk
-
-  plugins/fake-kernel: {}
 
   plugins/hello-panel: {}
 

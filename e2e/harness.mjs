@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -74,16 +74,9 @@ export async function launch() {
   // network: the profile is empty, so the app would otherwise install one.
   const dsh = runtimeBinary()
 
-  // A kernel that is not compiled into the app, installed the way a downloaded one
-  // is: a package under the profile, mounted by the kernel host. It answers the
-  // echo spec, and it keeps the "add a kernel = add a directory" promise tested.
-  cpSync(
-    join(APP_ROOT, '..', '..', 'plugins', 'fake-kernel'),
-    join(profile, 'plugins', 'fake-kernel'),
-    {
-      recursive: true,
-    },
-  )
+  // No second engine is dropped in. dsh is the one the app runs, so a profile that
+  // also held another kernel would only be testing a promise this build no longer
+  // makes: there is no "add a kernel = add a directory" here.
 
   // CI runs headless, where Chromium's sandbox may be unavailable; a spec host can
   // pass extra switches without teaching this file about any particular runner.

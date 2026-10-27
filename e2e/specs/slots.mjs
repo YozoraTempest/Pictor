@@ -56,8 +56,11 @@ export default {
     // them is refused — which is the rule working, not a failure. Turning it off first is
     // also the check that a seat disappears with its plugin.
     await page.evaluate(() => window.pictor.setPluginEnabled('pictor.example.hello-panel', false))
-    await page.evaluate(() => window.pictor.removeKernel('seat-demo')).catch(() => undefined)
-    const installed = await page.evaluate((path) => window.pictor.installKernelFolder(path), dir)
+    await page.evaluate(() => window.pictor.removePlugin('seat-demo')).catch(() => undefined)
+    const installed = await page.evaluate(
+      (path) => window.pictor.installPlugin(`file:${path}`),
+      dir,
+    )
     assert.equal(installed.ok, true, installed.message)
 
     // The plumbing: six seats, each addressed by slot and cell. Filtered to this plugin's
@@ -105,7 +108,7 @@ export default {
     await page.waitForTimeout(300)
     assert.equal(await page.getByText('座位 page').count(), 0, '回到会话之后，座位页不该还留在中间')
 
-    const removed = await page.evaluate(() => window.pictor.removeKernel('seat-demo'))
+    const removed = await page.evaluate(() => window.pictor.removePlugin('seat-demo'))
     assert.equal(removed.ok, true, removed.message)
 
     // Unloading the plugin takes its seats with it: that is what a fiber owns.

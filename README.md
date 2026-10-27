@@ -4,17 +4,16 @@ Pictor is an agent-native local development environment. This repository is the
 new implementation: an Electron shell, a Rust host core that owns SQLite, and a
 TypeScript application core shared by every frontend.
 
-Agent work runs on a **kernel**. Two ship — [DeepSeek
-Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) (dsh), the default, and
-[Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) — and a third
-can be installed as a plugin without rebuilding the app. A conversation belongs to
-the kernel that started it; switching kernels opens a branch rather than rewriting
-one.
+Agent work runs on [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh)
+(dsh): one engine, not a choice of engines. `@vulonlok/harness-dsh` speaks its
+JSON-RPC, `@vulonlok/kernel-dsh` turns it into sessions, permissions, jobs and
+skills, and the window drives that through one object. A conversation records the
+engine that ran it; there is no second one to switch to.
 
 > Status: runnable app. Projects, sessions, plugins, model services, cc-switch
-> import, endpoint probes, streaming chat, two kernels with installable kernel
-> plugins, tool rules and approvals, skills, branching and a three-column shell are
-> implemented. Installers are produced; nothing checks for a newer release.
+> import, endpoint probes, streaming chat, dsh plugins, tool rules and approvals,
+> skills, branching and a three-column shell are implemented. Installers are
+> produced; nothing checks for a newer release.
 
 ## Requirements
 
@@ -34,9 +33,7 @@ pnpm dev              # builds host-core (debug), then starts Electron
 and the release host-core binary.
 
 The dsh runtime is installed from inside the app (**设置 › DSH › 运行时**); it is an
-npm package unpacked into the profile, so no global install is involved. Pi is
-expected on the machine already — the app points at a `pi` binary it can find, or
-`PICTOR_PI_BIN`.
+npm package unpacked into the profile, so no global install is involved.
 
 ## Verification
 
@@ -61,10 +58,9 @@ sidecar actually made it into the bundle.
 
 ```text
 apps/desktop/          Electron main, preload and React renderer
-  src/main/kernel/     the kernel container: mounting, discovery, installer
-packages/kernel-sdk/   the kernel contract: what a core is, and what it may reach
-packages/kernel-dsh/   the DeepSeek Harness kernel, as its own package
-packages/kernel-pi/    the Pi kernel, as its own package
+  src/main/kernel/     the engine host: mounting dsh, and the contract it is given
+packages/kernel-sdk/   the contract: what an engine is, and what it may reach
+packages/kernel-dsh/   the dsh engine, as its own package
 crates/host-core/      Rust sidecar: SQLite schema, migrations, NDJSON JSON-RPC
 packages/shared/       Serializable domain model, error codes, Pi provider mapping
 packages/racp/         NDJSON JSON-RPC framing, client and stdio transport
@@ -74,7 +70,8 @@ packages/model-config/ Provider records, auth storage, endpoint probing
 packages/plugin-sdk/   Manifest, Module and Contribution contract
 packages/plugin-host/  Discovery, SemVer resolution, lifecycle, installer
 packages/harness/      dsh transport: unary calls, session stream, follow frames
-plugins/               Bundled plugins, a sample kernel plugin, and how to write one
+plugins/               Bundled plugins, and how to write one
+experiments/           Code kept in the repo but out of the build (see its README)
 ```
 
 ## How it fits together
@@ -97,122 +94,43 @@ plugins/               Bundled plugins, a sample kernel plugin, and how to write
   object crosses the context bridge, and the window runs with sandbox, context
   isolation, no Node integration and a restrictive CSP.
 
-## Kernels
+## The engine
 
-Pictor owns no agent loop. `KernelDriver` (`packages/kernel-sdk/src/driver.ts`)
-is everything the rest of the main process may assume about one: lifecycle, one
-turn, history, events, settings, diagnosis. `KernelRouter` sends each call to the
-kernel that owns the conversation and **never falls back** — history handed to a
-kernel that never produced it would be a lie about where it came from.
+Pictor owns no agent loop. `KernelDriver` (`packages/kernel-sdk/src/driver.ts`) is
+what the main process may assume about the engine it drives: lifecycle, one turn,
+history, events, settings, diagnosis. `DshHarness` (`apps/desktop/src/main/kernel/
+dsh.ts`) is that one engine: it forwards, and the capability checks it keeps are
+about what _this_ build of dsh offers, not about picking between backends.
 
-A conversation records its kernel when it is created. Choosing another kernel is a
-**branch**: the new conversation names the new kernel and points back at the one it
-came from, so a conversation never silently changes what ran it. The rail carries
-one page per **mounted** kernel — built from `kernels.list()`, so an installed kernel
-appears there and a disabled one disappears, neither an edit in the window. Home is
+A conversation records the engine that ran it. There is no second engine to switch
+to — the rail carries home, one page for the engine, extensions and settings. Home is
 where a conversation starts, and the only place the choice of kernel is offered. Home
-deliberately lists no conversations — a single column of them would have to describe
-runtimes that disagree about almost everything — so a conversation is found again on
-the page of the kernel that ran it, or through the search palette.
+deliberately lists no conversations of its own — a conversation is found again on the
+engine's page, or through the search palette.
 
-### Two built-in kernels
+### dsh
 
-- **dsh** (`packages/kernel-dsh`) — the default. A server process booted with a
-  profile Pictor owns, over the runtime's own HTTP and WebSocket API.
-- **Pi** (`packages/kernel-pi`) — an RPC child per conversation: `pi --mode rpc`
-  speaks JSONL commands on stdin and streams the same events over stdout,
-  translated by `kernel/pi-events.ts` into the durable events and chunks the window
-  already renders. The child runs on the app's own runtime
-  (`ELECTRON_RUN_AS_NODE`), because Pi needs Node 22.19 or newer.
-
-What a kernel can do travels with it as `KernelCapabilities`, and the window draws a
-control only where the conversation's kernel says it exists: no sandbox switch for a
-kernel without a sandbox, no model picker for one that has none. Anything a kernel
+`packages/kernel-dsh` is the engine: a server process booted with a profile Pictor
+owns, over the runtime's own HTTP and WebSocket API, with `packages/harness-dsh`
+speaking its JSON-RPC. What it can do travels as `KernelCapabilities`, and the window
+draws a control only where those say it exists: no approval switch when dsh decides
+for itself, no model picker when no provider is configured. Anything the engine
 cannot express is answered honestly — `null`, an empty page, a thrown error — instead
 of being faked.
 
-### Kernel plugins
+### How the engine is mounted
 
-Every kernel is a **cordis plugin** that provides exactly one service named
-`kernel.<id>` (`apps/desktop/src/main/kernel/host.ts`). The built-ins are the two
-packages above; an installed one is a plugin under `<profile>/plugins` that
-points at it from `pictor.contributes` — either a copied directory or a package in
-its `node_modules`, named by `installed.json`. `startKernelHost` mounts them in
-order, watches `internal/service` for what they publish, and hands the resulting map
-to `KernelRouter` — nothing enumerates plugins by hand.
+The engine is a **cordis plugin** that provides exactly one service named
+`kernel.dsh` (`apps/desktop/src/main/kernel/host.ts`). `startEngine` provides the host
+services it may reach, imports `@vulonlok/kernel-dsh`, and mounts it into the plugin
+runtime's own tree — so a plugin can `inject` a host service and the engine can read a
+contribution point, and `inject` means the same thing on both sides.
 
-A kernel is a **package**, and the two that ship are packages in this repository:
-`packages/kernel-dsh` and `packages/kernel-pi` depend on `@vulonlok/kernel-sdk` for the
-contract and on `@vulonlok/shared` for the vocabulary, and on nothing else here. The app
-loads them by name (`entry: { load: () => import('@vulonlok/kernel-dsh') }`), which is the
-same move it makes for an installed one — the only difference is where the module comes
-from. `packages/kernel-sdk` holds the contract itself (the driver interface, the plugin
-entry, the host services and the kernel-facing types), so a kernel written outside this
-repository compiles against it unchanged.
-
-The map is live: installing a plugin mounts its kernel without a restart, and
-removing one takes it out of the picker at once. Installing and mounting are deliberately two
-steps (`kernel/installer.ts` owns the disk, the host owns the mount), so a copy that
-succeeds and a mount that fails leaves a kernel on disk _with a reason_, which the
-settings page shows, instead of a rollback that hides what went wrong.
-
-What a plugin may reach is a service, and the `inject` list it declares is the
-sentence the settings page shows a person: `pictor.models`, `pictor.rules`,
-`pictor.guard`, `pictor.permission`, `pictor.workspace`, `pictor.userdata`,
-`pictor.settings`. A capability declared `true` with no method behind it is refused at
-mount time, so the window never draws a control the kernel cannot answer.
-
-Built-in and installed kernels take the same road: both arrive as a `KernelEntry`
-(`{ load: () => Promise<plugin> }`) and mount through one function, so shipping a
-built-in as its own package is a change of one closure. `pictor.settings` is how a
-kernel remembers a setting it declared — it reads the profile's settings and writes
-back through the same store, so the file that assembles the kernels never spells out
-their keys. Every write the app makes refreshes the same snapshot, so a page that
-saves a value never leaves a kernel showing the old one.
-
-The container lives in the **main process only**. The runtime stays a child process:
-cordis has no cross-process semantics, and the tool-guard bridge is only fail-closed
-because the kernel lives on the other side of it.
-
-### dsh, in detail
-
-- **Profile.** `<DSH_HOME>/profiles/pictor` holds a `package.json` (written once;
-  the bundle list lives there) and a `cordis.patch.yml`.
-- **Patch.** Regenerated on every boot from the settings page: one model route named
-  `pictor` carrying the selected wire protocol, its endpoint and its models, the
-  default model pointing at that route, and a `pictor-guard` plugin inserted so tool
-  guards can be consulted. The DeepSeek-specific routes are switched off because
-  their protocol cannot be configured.
-- **Protocols.** A route declares one of `openai-completions`, `openai-responses` or
-  `anthropic-messages`, and that decides the request shape and endpoint inside the
-  runtime.
-- **Credentials.** The route resolves its key from `PICTOR_LLM_API_KEY` per request;
-  the value is injected into the runtime process and never written to the patch.
-  `DEEPSEEK_API_KEY` is passed as well because `web_search` reads it through its own
-  client.
-- **Transport.** Unary calls are `POST /api/<endpoint>`; the live transcript is a
-  WebSocket subscription on `/api/remote.mux`, which replays an opening window and
-  then streams.
-- **Sessions.** The runtime owns conversation transcripts. The app keeps the mapping
-  from its own session ids to runtime ids in `<DSH_HOME>/pictor-sessions.json`. There
-  is no second store, so a turn never lands somewhere the next boot cannot read.
-
-### Pi, in detail
-
-- **Isolation.** Pi runs with `PI_CODING_AGENT_DIR=<profile>/pi-home`, so the only
-  models it sees are the ones Pictor registers. **设置 › Pi › 运行时** has a switch
-  that gives Pi its own `~/.pi/agent` back; the page states what that costs.
-- **One configuration.** Pictor's services are registered into Pi as
-  `pictor-<slug>` providers over the guard bridge's loopback socket, so one address,
-  key and model list serves both kernels. The key never reaches a file on disk.
-- **Dialogs.** `ctx.ui.confirm` becomes an approval card; `select`, `input` and
-  `editor` become the question card — options, free text, and a seeded multi-line
-  field. `notify` becomes the banner, marked with the kernel that sent it; terminal
-  surfaces (`setStatus`, `setWidget`, `setTitle`) are neither drawn nor answered,
-  and `custom` does not exist in RPC mode at all.
-- **Asking.** Pi ships no model-facing asking tool, so Pictor's extension registers
-  `ask_user_question` under dsh's name — `draft` included — so a Pi conversation can
-  ask, not only answer.
+The engine is a **package**: `packages/kernel-dsh` depends on `@vulonlok/kernel-sdk` for
+the contract and on `@vulonlok/shared` for the vocabulary, and on nothing else here. The
+SDK holds the driver interface, the plugin shape, the host services a plugin may inject,
+and the engine-facing types. `apps/desktop/src/shared/bridge.ts` re-exports them, so the
+window imports one module and never a package name.
 
 ## Chat
 

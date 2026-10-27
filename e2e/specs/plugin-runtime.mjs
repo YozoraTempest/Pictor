@@ -62,7 +62,7 @@ export default {
     for (const [name, body] of Object.entries(PLUGIN)) writeFileSync(join(source, name), body)
 
     const installed = await page.evaluate(
-      (directory) => window.pictor.installKernelFolder(directory),
+      (directory) => window.pictor.installPlugin(`file:${directory}`),
       source,
     )
     assert.equal(installed.ok, true, installed.message)

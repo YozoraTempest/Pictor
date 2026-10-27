@@ -153,26 +153,6 @@ export interface ToolViewDescriptor {
   icon?: string
 }
 
-/** What one kernel looks like from the renderer's side. */
-/**
- * One kernel plugin, as the settings page lists it.
- *
- * `services` is the trust sentence: these are the host services the plugin asked
- * for, and a kernel cannot run a turn without reaching at least the model service.
- */
-export interface KernelPluginInfo {
-  /** Kernel id once mounted; the directory or `builtin:<n>` when it failed. */
-  id: string
-  label: string
-  /** `builtin`, or the directory under the profile that holds it. */
-  source: string
-  /** Host services the plugin declared with `inject`. */
-  services: string[]
-  available: boolean
-  /** Why it could not be used, when it could not. */
-  failure: string | null
-}
-
 /** A message an extension asked to show; the kernel sent it, not Pictor. */
 export interface KernelNotice {
   message: string
@@ -249,10 +229,6 @@ export interface PluginOverview {
   enabled: boolean
   /** How many contributions it made, per point. */
   contributions: Array<{ point: string; count: number }>
-  /** Kernels it mounted, with the host services each declared. */
-  kernels: Array<{ id: string; label: string; services: string[]; available: boolean }>
-  /** Why it is not running, when it is not. */
-  failure: string | null
 }
 
 /** A setting one kernel declares, in the shape the page draws. */
@@ -424,10 +400,10 @@ export interface PictorBridge {
   listKernels(): Promise<KernelInfo[]>
   /** Messages extensions asked to show, already trimmed by the main process. */
   onKernelNotice(callback: (notice: KernelNotice) => void): () => void
-  /** Every kernel plugin: mounted, installed but broken, or built in. */
-  listKernelPlugins(): Promise<KernelPluginInfo[]>
   /** Every installed plugin, with what it contributes and what it can reach. */
   listPluginOverview(): Promise<PluginOverview[]>
+  /** Ask for a plugin directory; null when the person cancelled. */
+  choosePluginFolder(): Promise<string | null>
   /** dsh plugins mounted into the kernel: a different tree from the list above. */
   listDshPlugins(): Promise<KernelPlugin[]>
   /** Installs one dsh plugin into the kernel's profile; a restart mounts it. */
@@ -451,20 +427,8 @@ export interface PictorBridge {
   kernelSettings(): Promise<KernelSettingInfo[]>
   /** Writes one declared setting; false when no mounted kernel owns that key. */
   setKernelSetting(key: string, value: boolean): Promise<boolean>
-  /** The kernels compiled into the app, mounted or turned off. */
-  listBuiltinKernels(): Promise<BuiltinKernelInfo[]>
-  /** Turns a built-in kernel off or on; resolves with the new state. */
-  setBuiltinKernelEnabled(id: string, enabled: boolean): Promise<boolean>
-  /** Chooses where new conversations start; false when that kernel is not present. */
-  setDefaultKernel(id: string): Promise<boolean>
-  /** Ask for a directory; null when the person cancelled. */
-  chooseKernelFolder(): Promise<string | null>
-  /** Install a directory as a kernel. */
-  installKernelFolder(path: string): Promise<KernelChangeResult>
-  /** Install a package as a kernel; the package manager runs in the profile. */
-  installKernelPackage(spec: string): Promise<KernelChangeResult>
-  /** Remove an installed kernel by id; built-ins are refused. */
-  removeKernel(id: string): Promise<KernelChangeResult>
+  /** Remove an installed plugin by its directory name. */
+  removePlugin(id: string): Promise<KernelChangeResult>
   /** Every kernel's status, by kernel id — one entry per kernel this build drives. */
   kernelStatuses(): Promise<Record<string, HarnessStatus>>
   /** MCP servers every kernel may use; the list is Pictor's, not a kernel's. */

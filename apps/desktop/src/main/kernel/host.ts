@@ -1,129 +1,25 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
-
-import { Context, type Fiber, type Plugin } from '@deepseek-ai/cordis'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
 import {
   KERNEL_PREFIX,
   assertKernelDriver,
   type BuiltinKernel,
-  type KernelEntry,
   type KernelHostServices,
-  type KernelPlugin,
 } from '@vulonlok/kernel-sdk'
-import { INSTALLED_LIST } from '@vulonlok/plugin-host'
-import { parseKernelContribution, parsePackageManifest } from '@vulonlok/plugin-sdk'
 
 import type { KernelDriver } from '@vulonlok/kernel-sdk'
 
 /**
- * The kernel container.
+ * Publish the engine as its service.
  *
- * The contract itself — what a kernel is, what it may reach, how a plugin publishes
- * one — lives in `@vulonlok/kernel-sdk`, because a kernel now ships as its own package
- * and cannot depend on this app. What stays here is the part that needs a running
- * application: mounting entries into cordis, finding installed kernels on disk, and
- * remembering which plugin produced which service.
- */
-export interface KernelMountResult {
-  /** True when a `kernel.<id>` service appeared. */
-  mounted: boolean
-  /**
-   * Why it did not mount, when that is a problem.
-   *
-   * `null` with `mounted: false` means the directory simply holds no kernel — a UI
-   * plugin, say — which is not a failure and must not be reported as one.
-   */
-  failure: string | null
-}
-
-/** A kernel that could not be used, and why. */
-export interface KernelPluginFailure {
-  /** Directory name, or `builtin:<index>` for one compiled into the app. */
-  source: string
-  message: string
-}
-
-export interface KernelHostOptions {
-  services: KernelHostServices
-  /** Kernels compiled into the app, in mount order. */
-  builtins: readonly BuiltinKernel[]
-  /** Built-in kernel ids a person turned off; they are not mounted. */
-  disabled?: readonly string[]
-  /**
-   * The tree to mount into.
-   *
-   * Shared with the plugin container so a plugin can `inject` a kernel service and a
-   * kernel can inject a contribution point — the same relation dsh has, and the reason
-   * `inject` means the same thing on both sides.
-   */
-  ctx?: Context
-  /**
-   * Directories scanned for installed plugins, highest priority first.
-   *
-   * Plugins and kernels share one root now, so the profile's `plugins/` comes first
-   * and the older `kernels/` still works for what an earlier version installed. A
-   * missing directory is simply nothing to scan.
-   */
-  directories: readonly string[]
-}
-
-/** One kernel as the settings page reports it: what it is and what it may reach. */
-export interface KernelPluginReport {
-  /** Kernel id once mounted; the directory name or `builtin:<n>` otherwise. */
-  id: string
-  label: string
-  /** Icon name the kernel asked for, so the rail does not have to know its id. */
-  icon: string | null
-  /** `builtin`, or the directory under the profile that holds it. */
-  source: string
-  /** Host services the plugin declared with `inject`. */
-  services: readonly string[]
-  available: boolean
-  /** Why it could not be used, when it could not. */
-  failure: string | null
-}
-
-export interface KernelHost {
-  /**
-   * Every kernel that came up, in mount order; the first is the default.
-   *
-   * The map is live: installing a kernel adds to it, uninstalling removes from it,
-   * and the router reads it on every call, so nothing has to be rebuilt.
-   */
-  readonly drivers: ReadonlyMap<string, KernelDriver>
-  /** Kernels that failed, so the settings page can name them. */
-  readonly failures: readonly KernelPluginFailure[]
-  /** Everything mounted or refused right now, for the settings page. */
-  plugins(): KernelPluginReport[]
-  /** Mount one installed plugin's kernel half without restarting the app. */
-  mountInstalled(name: string): Promise<KernelMountResult>
-  /** The kernels compiled into the app, and whether each is mounted right now. */
-  builtins(): Array<{ id: string; label: string; icon: string | null; mounted: boolean }>
-  /**
-   * Mount one built-in kernel that a person turned back on.
-   *
-   * The other half of {@link unmount}: a built-in is not installed anywhere, so it
-   * can only be switched, and switching is mounting and unmounting it live.
-   */
-  mountBuiltin(id: string): Promise<KernelMountResult>
-  /** Unmount a kernel by id; its conversations then report it as missing. */
-  unmount(id: string): Promise<void>
-  dispose(): Promise<void>
-}
-
-/**
- * Publish a kernel as its service.
- *
- * `id` and `capabilities` are checked before the service exists: a kernel that
- * claims a sandbox but cannot set one would draw a switch that fails on use, so it
- * is refused here instead, where the failure has a name a person can read.
+ * The dsh kernel module calls this inside its cordis `apply`: one plugin, one
+ * `kernel.<id>` service, which is how the engine reaches the host services it was
+ * granted (`pictor.models`, `pictor.rules`, …) and nothing else.
  */
 export function provideKernel(ctx: Context, driver: KernelDriver): void {
   assertKernelDriver(driver)
-  // A plugin written in plain JavaScript may forget its display name; showing the id
-  // is better than showing nothing in the picker. Defined on the instance rather than
-  // spread, because a class-based driver keeps its methods on the prototype.
+  // A plugin written in plain JavaScript may forget its display name; showing the id is
+  // better than showing nothing. Defined on the instance rather than spread, because a
+  // class-based driver keeps its methods on the prototype.
   if (typeof driver.label !== 'string' || driver.label.length === 0) {
     Object.defineProperty(driver, 'label', {
       value: driver.id,
@@ -134,31 +30,51 @@ export function provideKernel(ctx: Context, driver: KernelDriver): void {
   ctx.provide(`${KERNEL_PREFIX}${driver.id}`, driver)
 }
 
+export interface EngineHostOptions {
+  /** What the engine may reach: the model service, the rules, the guard endpoint. */
+  services: KernelHostServices
+  /**
+   * The engine compiled into the app.
+   *
+   * One entry, not a list: dsh is the engine this app runs, and there is no second one to
+   * choose between. An engine that ships separately would be a different product decision
+   * than the one this build made.
+   */
+  builtin: BuiltinKernel
+  /**
+   * The tree to mount into.
+   *
+   * Shared with the plugin container so a plugin can `inject` a host service and the
+   * engine can read a contribution point — the same relation dsh has on its own side.
+   */
+  ctx?: Context
+}
+
+export interface EngineHost {
+  readonly driver: KernelDriver
+  dispose(): Promise<void>
+}
+
 /**
- * Start the kernel container.
+ * Mount the engine and hand back the driver.
  *
- * Built-ins mount first so the default kernel is the one the app was built around;
- * installed kernels follow, each isolated: a plugin that throws is reported and the
- * rest still come up, because one broken download must not take the app with it.
+ * The services are provided first, because the kernel module reads them synchronously in
+ * `apply`; the module is imported afterwards, so a missing or broken engine fails here
+ * with one message instead of half a boot.
  */
-export async function startKernelHost(options: KernelHostOptions): Promise<KernelHost> {
+export async function startEngine(options: EngineHostOptions): Promise<EngineHost> {
   const ctx = options.ctx ?? new Context()
   // The tree belongs to the caller when one was handed in: disposing it here would take
-  // the plugin container's plugins down with the kernels.
+  // the plugin container's plugins down with the engine.
   const ownsContext = options.ctx === undefined
-  const drivers = new Map<string, KernelDriver>()
-  const failures: KernelPluginFailure[] = []
 
-  // `internal/service` fires for every published service, which is how a kernel
-  // appears here: nothing enumerates plugins, only what they provided.
+  let driver: KernelDriver | null = null
+  // `internal/service` fires for every published service, which is how the engine appears:
+  // nothing enumerates plugins, only what they provided.
   ctx.on('internal/service', (name: string, value: unknown) => {
     if (!name.startsWith(KERNEL_PREFIX)) return
-    try {
-      assertKernelDriver(value)
-      drivers.set(value.id, value)
-    } catch (error) {
-      failures.push({ source: name, message: messageOf(error) })
-    }
+    assertKernelDriver(value)
+    driver = value
   })
 
   ctx.provide('pictor.models', options.services.models)
@@ -169,303 +85,21 @@ export async function startKernelHost(options: KernelHostOptions): Promise<Kerne
   ctx.provide('pictor.userdata', options.services.userData)
   ctx.provide('pictor.settings', options.services.settings)
 
-  /** Which plugin brought each kernel up, what it needs, and how to unload it. */
-  const mounted = new Map<string, { source: string; services: readonly string[]; fiber: Fiber }>()
+  const plugin = await options.builtin.entry.load()
+  const fiber: Fiber = await ctx.plugin(plugin)
 
-  /**
-   * Mount one entry, whatever brought it here.
-   *
-   * A built-in is a closure in this bundle and an installed kernel is a directory on
-   * disk, but both arrive as "something that can hand over a plugin". Mounting them
-   * through one function is what keeps installing and shipping a kernel the same act.
-   */
-  const mount = async (
-    entry: KernelEntry,
-    source: string,
-    failureName = source,
-  ): Promise<string | null> => {
-    const known = new Set(drivers.keys())
-    let plugin: KernelPlugin
-    let fiber: Fiber
-    try {
-      plugin = await entry.load()
-      fiber = await ctx.plugin(plugin)
-    } catch (error) {
-      const message = messageOf(error)
-      failures.push({ source: failureName, message })
-      return message
-    }
-    // A plugin publishes its service synchronously inside `apply`, so whatever
-    // arrived here came from this one.
-    let last: string | null = null
-    for (const id of drivers.keys()) {
-      if (known.has(id)) continue
-      mounted.set(id, { source, services: declaredServices(plugin), fiber })
-      last = id
-    }
-    return last === null ? `${failureName} 没有提供内核服务` : null
+  if (driver === null) {
+    await fiber.dispose()
+    throw new Error(`${options.builtin.label} 没有提供内核服务：挂载失败`)
   }
 
-  const builtinById = new Map(options.builtins.map((entry) => [entry.id, entry]))
-  const disabled = new Set(options.disabled ?? [])
-  for (const entry of options.builtins) {
-    // A built-in that is turned off is simply not mounted: no service, no kernel,
-    // and the picker will not offer it.
-    if (disabled.has(entry.id)) continue
-    await mount(entry.entry, 'builtin', `builtin:${entry.id}`)
-  }
-
-  for (const found of discoverKernels(options.directories)) {
-    if ('error' in found) {
-      failures.push({ source: found.source, message: found.error })
-      continue
-    }
-    await mount(found.entry, found.source)
-  }
+  const mounted = driver
   return {
-    drivers,
-    failures,
-    plugins(): KernelPluginReport[] {
-      const reports: KernelPluginReport[] = [...drivers].map(([id, driver]) => ({
-        id,
-        label: driver.label,
-        icon: typeof driver.icon === 'string' && driver.icon.length > 0 ? driver.icon : null,
-        source: mounted.get(id)?.source ?? 'builtin',
-        services: mounted.get(id)?.services ?? [],
-        available: isAvailable(driver),
-        failure: null,
-      }))
-      for (const failure of failures) {
-        reports.push({
-          id: failure.source,
-          label: failure.source,
-          icon: null,
-          source: failure.source,
-          services: [],
-          available: false,
-          failure: failure.message,
-        })
-      }
-      return reports
-    },
-    builtins(): Array<{ id: string; label: string; icon: string | null; mounted: boolean }> {
-      return [...builtinById.values()].map((entry) => ({
-        id: entry.id,
-        label: entry.label,
-        icon: drivers.get(entry.id)?.icon ?? null,
-        mounted: drivers.has(entry.id),
-      }))
-    },
-    async mountBuiltin(id: string): Promise<KernelMountResult> {
-      const entry = builtinById.get(id)
-      if (entry === undefined) return { mounted: false, failure: `没有内置内核 ${id}` }
-      const failure = await mount(entry.entry, 'builtin', `builtin:${id}`)
-      return { mounted: failure === null, failure }
-    },
-    async mountInstalled(name: string): Promise<KernelMountResult> {
-      const found = discoverKernel(options.directories, name, { required: false })
-      if (found === null) return { mounted: false, failure: null }
-      if ('error' in found) return { mounted: false, failure: found.error }
-      const failure = await mount(found.entry, found.source)
-      return { mounted: failure === null, failure }
-    },
-    async unmount(id: string): Promise<void> {
-      const record = mounted.get(id)
-      if (record === undefined) return
-      // Unloading the fiber unprovides the service; the driver map is ours to clean.
-      await record.fiber.dispose()
-      mounted.delete(id)
-      drivers.delete(id)
-      const index = failures.findIndex((entry) => entry.source === id)
-      if (index >= 0) failures.splice(index, 1)
-    },
+    driver: mounted,
     async dispose(): Promise<void> {
+      // A caller's tree outlives this host, so only the fiber is ours to unload.
+      await fiber.dispose()
       if (ownsContext) await ctx.fiber.dispose()
     },
   }
-}
-
-/** One directory that might hold a kernel, and the reason when it does not. */
-type DiscoveredKernel = { source: string; entry: KernelEntry } | { source: string; error: string }
-
-/** File naming the plugins installed as packages, rather than copied folders. */
-const PACKAGE_LIST = INSTALLED_LIST
-
-/**
- * Installed kernels, found by directory and imported by path.
- *
- * Two shapes live side by side under the profile's `kernels/`:
- *
- * - a **folder**, copied in whole, which is what installing a directory produces;
- * - a **package**, installed into `kernels/node_modules` by the package manager and
- *   named in `kernels.json`, which is the only way a kernel can bring its own
- *   dependencies with it.
- *
- * Either way the entry point is imported by file: ESM resolution still walks up from
- * that file, which is where those dependencies live. The import itself is deferred to
- * mount time — the module graph is ESM, and a plugin that fails to import has to fail
- * alone.
- */
-function discoverKernels(directories: readonly string[]): DiscoveredKernel[] {
-  const entries: DiscoveredKernel[] = []
-  const seen = new Set<string>()
-  for (const directory of directories) {
-    // The first root that offers a name wins; a plugin installed twice is one plugin.
-    for (const name of [...installedFolders(directory), ...installedPackages(directory)]) {
-      if (seen.has(name)) continue
-      seen.add(name)
-      const found = discoverKernel(directories, name, { required: false })
-      if (found === null) continue
-      seen.add(name)
-      entries.push(found)
-    }
-  }
-  return entries
-}
-
-/** One installed kernel by name, looked up across the roots: folder first, then package. */
-function discoverKernel(
-  directories: readonly string[],
-  name: string,
-  options: { required: boolean },
-): DiscoveredKernel | null {
-  const root = kernelRoot(directories, name)
-  if (root === null) return options.required ? { source: name, error: '内核目录不存在' } : null
-
-  let main: string
-  try {
-    const found = kernelEntryOf(root)
-    // A plugin that contributes no kernel shares this directory with ones that do;
-    // it is not a broken kernel, it is simply not one.
-    if (found === null) {
-      return options.required ? { source: name, error: '这个插件没有声明内核' } : null
-    }
-    main = found
-  } catch (error) {
-    return { source: name, error: messageOf(error) }
-  }
-
-  const entry = join(root, main)
-  // The plugin is a wrapper around the import, so a kernel that fails to load fails
-  // on its own instead of taking this scan with it.
-  return { source: name, entry: { load: async () => mountModule(entry, name) } }
-}
-
-/**
- * Where a plugin's kernel entry is.
- *
- * `main` in a `package.json` is the UI entry; a kernel names its own module under
- * `contributes`. A package that declares no `pictor` field is not a plugin at all.
- */
-function kernelEntryOf(root: string): string | null {
-  const parsed = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as Record<
-    string,
-    unknown
-  >
-  if (!('pictor' in parsed)) return null
-
-  const manifest = parsePackageManifest(parsed)
-  for (const contribution of manifest.contributes ?? []) {
-    if (contribution.point !== 'kernel') continue
-    return parseKernelContribution(contribution.value).main
-  }
-  return null
-}
-
-/** Where a kernel lives: a folder under a root, or a package in its store. */
-function kernelRoot(directories: readonly string[], name: string): string | null {
-  for (const directory of directories) {
-    const folder = join(directory, name)
-    if (existsSync(join(folder, 'package.json'))) return folder
-    const packaged = join(directory, 'node_modules', name)
-    if (existsSync(join(packaged, 'package.json'))) return packaged
-  }
-  return null
-}
-
-/** Copied-in kernels: every child directory that is a package. */
-function installedFolders(directory: string): string[] {
-  try {
-    return (
-      readdirSync(directory, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        // `node_modules` holds packages, and they are listed by name instead.
-        .filter((entry) => entry.name !== 'node_modules')
-        .map((entry) => entry.name)
-        .filter((name) => existsSync(join(directory, name, 'package.json')))
-        .sort()
-    )
-  } catch {
-    return []
-  }
-}
-
-/** Package-installed kernels: only the ones the list names, never a dependency. */
-function installedPackages(directory: string): string[] {
-  try {
-    const parsed = JSON.parse(readFileSync(join(directory, PACKAGE_LIST), 'utf8')) as {
-      packages?: unknown
-    }
-    if (!Array.isArray(parsed.packages)) return []
-    return parsed.packages.filter((entry): entry is string => typeof entry === 'string').sort()
-  } catch {
-    return []
-  }
-}
-
-/** A plugin that imports its module when cordis mounts it. */
-function mountModule(entry: string, name: string): KernelPlugin {
-  return {
-    name: `installed:${name}`,
-    async apply(ctx: Context): Promise<void> {
-      const loaded = (await import(pathToFileURL(entry).href)) as {
-        default?: unknown
-        apply?: unknown
-      }
-      const inner = loaded.default ?? loaded.apply
-      if (typeof inner !== 'function' && (typeof inner !== 'object' || inner === null)) {
-        throw new Error(`内核插件 ${name} 没有 default 或 apply 导出`)
-      }
-      // A separate fiber, so the kernel's service disappears when it unloads.
-      await ctx.plugin(inner as Plugin)
-    },
-  }
-}
-
-/**
- * A host service, which an `inject` list already promised exists.
- *
- * Cordis types a lookup as possibly undefined because a service can be unloaded
- * while a plugin is still running; here a plugin only starts once every injected
- * service is available, so a missing one means the host itself is broken.
- */
-export function hostService<K extends Parameters<Context['get']>[0] & keyof Context>(
-  ctx: Context,
-  name: K,
-): Context[K] {
-  const value = ctx.get(name)
-  if (value === undefined) throw new Error(`宿主服务 ${String(name)} 不可用`)
-  return value
-}
-
-/** The host services a plugin declared, in the shape `inject` allows. */
-function declaredServices(plugin: KernelPlugin): readonly string[] {
-  const inject = (plugin as { inject?: unknown }).inject
-  if (Array.isArray(inject))
-    return inject.filter((entry): entry is string => typeof entry === 'string')
-  if (typeof inject === 'object' && inject !== null) return Object.keys(inject)
-  return []
-}
-
-/** Whether the kernel says it can run here; a broken one is not available. */
-function isAvailable(driver: KernelDriver): boolean {
-  try {
-    return driver.status().binary !== null
-  } catch {
-    return false
-  }
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

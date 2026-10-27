@@ -359,12 +359,8 @@ export function ChatView({ kernelId = null }: ChatViewProps): React.JSX.Element 
                       agent is working through, plan mode, background jobs. Absent for a
                       kernel that keeps none of them. */}
                   {selectedSessionId !== null && <SessionStateBar sessionId={selectedSessionId} />}
-                  {/* A kernel page answered "which kernel" for anything new there; an
-                      open conversation can still move to another one, and that is a
-                      branch rather than a switch. */}
                   <Composer
                     disabled={false}
-                    showKernelPicker={kernelId === null || session !== null}
                     onModelChanged={() => void handleModelChanged()}
                     running={running}
                     onSend={(prompt, images) => void submit(prompt, images)}
