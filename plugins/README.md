@@ -6,11 +6,11 @@ one per contribution.
 
 Three places, three purposes:
 
-| Where                | What                                                           |
-| -------------------- | -------------------------------------------------------------- |
-| this directory       | Examples that ship with the app (`fake-kernel`, `hello-panel`) |
-| `<profile>/plugins/` | What a person installed                                        |
-| `~/Pictor/plugins/`  | What a person is **writing** — see below                       |
+| Where                | What                                                            |
+| -------------------- | --------------------------------------------------------------- |
+| this directory       | Examples that ship with the app (`hello-panel`, `pictor-guide`) |
+| `<profile>/plugins/` | What a person installed                                         |
+| `~/Pictor/plugins/`  | What a person is **writing** — see below                        |
 
 ## Writing one
 

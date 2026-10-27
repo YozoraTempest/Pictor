@@ -310,8 +310,9 @@ decides its own policy means no approval switch — not about choosing between b
 There used to be a `KernelRouter` here, sending each call to whichever kernel owned the
 conversation. With one engine that lookup is a constant, so it is gone; so is the
 installer that mounted a second one, the rail entry that reached it, and the picker that
-switched to it. Pi was the second engine and now lives in `experiments/kernel-pi`, out of
-the workspace: it is kept, it is not built, and `experiments/README.md` says why.
+switched to it. Pi was the second engine; it is gone from this codebase — the engine
+contract, its RPC driver and its UI came out with the abstraction that existed to hold two
+of them. `git log` keeps it for whoever wants to bring a second engine back.
 
 ### How the engine is mounted
 

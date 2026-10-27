@@ -71,7 +71,6 @@ packages/plugin-sdk/   Manifest, Module and Contribution contract
 packages/plugin-host/  Discovery, SemVer resolution, lifecycle, installer
 packages/harness/      dsh transport: unary calls, session stream, follow frames
 plugins/               Bundled plugins, and how to write one
-experiments/           Code kept in the repo but out of the build (see its README)
 ```
 
 ## How it fits together
