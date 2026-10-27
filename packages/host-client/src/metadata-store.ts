@@ -1,5 +1,5 @@
-import { RpcClient } from '@pictor/racp'
-import type { RpcTransport } from '@pictor/racp'
+import { RpcClient } from '@vulonlok/racp'
+import type { RpcTransport } from '@vulonlok/racp'
 import type {
   CcSwitchProviderDetail,
   CcSwitchProviderSummary,
@@ -10,7 +10,7 @@ import type {
   Section,
   Session,
   SettingsMap,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
 /**
  * The only surface the application layer is allowed to use for metadata.

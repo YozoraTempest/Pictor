@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import type { JsonValue, ModelSettings, SettingsMap } from '@pictor/shared'
+import type { JsonValue, ModelSettings, SettingsMap } from '@vulonlok/shared'
 
 import { readApiKey, writeApiKey } from './auth.js'
 import { normalizeBaseUrl, parseModels, type SettingsStore } from './providers.js'

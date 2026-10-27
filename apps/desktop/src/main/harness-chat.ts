@@ -1,11 +1,11 @@
-import { jobOf, planActiveOf, subagentOf, todosOf } from '@pictor/kernel-dsh'
-import type { ChatEvent, ChatRole } from '@pictor/shared'
+import { jobOf, planActiveOf, subagentOf, todosOf } from '@vulonlok/kernel-dsh'
+import type { ChatEvent, ChatRole } from '@vulonlok/shared'
 import type {
   HarnessNotification,
   SessionAssistantStreamFrame,
   SessionFollowFrame,
   SessionWireEvent,
-} from '@pictor/harness'
+} from '@vulonlok/harness-dsh'
 
 /** The text of one message, from its content blocks. */
 function textOf(message: unknown): string {

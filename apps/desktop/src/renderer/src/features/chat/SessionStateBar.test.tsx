@@ -3,7 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { ChatJob } from '@pictor/shared'
+import type { ChatJob } from '@vulonlok/shared'
 
 import type { KernelInfo } from '../../../../shared/bridge.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'

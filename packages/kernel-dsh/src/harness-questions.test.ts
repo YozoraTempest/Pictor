@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ChatQuestion } from '@pictor/shared'
+import type { ChatQuestion } from '@vulonlok/shared'
 
 import { answerValue, questionsOf } from './harness-questions.js'
 

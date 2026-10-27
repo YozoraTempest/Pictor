@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import type { Context, Fiber, Plugin } from '@deepseek-ai/cordis'
-import type { PluginKind, PluginManifest } from '@pictor/plugin-sdk'
+import type { PluginKind, PluginManifest } from '@vulonlok/plugin-sdk'
 
 import type { DiscoveredPlugin, PluginFailure } from './registry.js'
 

@@ -1,4 +1,4 @@
-import type { Session } from '@pictor/shared'
+import type { Session } from '@vulonlok/shared'
 
 /** One conversation in a family tree, with the branches that came from it. */
 export interface FamilyNode {

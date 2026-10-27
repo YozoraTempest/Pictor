@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { JsonValue, Project, Section, Session, SettingsMap } from '@pictor/shared'
+import type { JsonValue, Project, Section, Session, SettingsMap } from '@vulonlok/shared'
 
 import { ApplicationHost } from './application-host.js'
 import type { ApplicationStore } from './application-host.js'

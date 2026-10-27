@@ -1,4 +1,4 @@
-import type { ChatJob, ChatPlanState, ChatTodoItem } from '@pictor/shared'
+import type { ChatJob, ChatPlanState, ChatTodoItem } from '@vulonlok/shared'
 
 /**
  * The pure half of the session-state bar.

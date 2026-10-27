@@ -1,4 +1,4 @@
-import type { ChatHistoryPage, ChatMessage, ChatUsage } from '@pictor/shared'
+import type { ChatHistoryPage, ChatMessage, ChatUsage } from '@vulonlok/shared'
 
 interface SessionEvent {
   type?: string

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ModelEffort } from '@pictor/shared'
+import type { ModelEffort } from '@vulonlok/shared'
 
 import { buildProfilePatch, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
 

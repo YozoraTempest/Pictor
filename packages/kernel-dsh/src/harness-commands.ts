@@ -1,4 +1,4 @@
-import type { KernelCommand } from '@pictor/kernel-sdk'
+import type { KernelCommand } from '@vulonlok/kernel-sdk'
 
 /**
  * Reading the runtime's command surface into Pictor's shape.

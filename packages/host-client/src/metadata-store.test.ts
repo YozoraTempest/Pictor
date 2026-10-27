@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { RpcTransport } from '@pictor/racp'
+import type { RpcTransport } from '@vulonlok/racp'
 
 import { HostCoreClient } from './metadata-store.js'
 

@@ -2,7 +2,7 @@ import { Check, ChevronDown, ShieldQuestion, ShieldOff } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import type { ApprovalMode } from '@pictor/shared'
+import type { ApprovalMode } from '@vulonlok/shared'
 
 import { cn } from '../../lib/cn.js'
 import { useKernelCapabilities } from '../kernels/capabilities.js'

@@ -8,7 +8,7 @@ import {
   sortKey,
 } from './settings-schema.js'
 
-import type { ForkPoint, PluginRecord, Project, Section, Session } from '@pictor/shared'
+import type { ForkPoint, PluginRecord, Project, Section, Session } from '@vulonlok/shared'
 
 import type {
   AppInfo,

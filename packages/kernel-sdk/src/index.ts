@@ -2,7 +2,7 @@
  * What a kernel is, and what it may reach.
  *
  * A kernel ships as its own package: it depends on this one for the contract, on
- * `@pictor/shared` for the vocabulary both sides speak, and on nothing else in this
+ * `@vulonlok/shared` for the vocabulary both sides speak, and on nothing else in this
  * repository. Installed kernels get this module the same way they get cordis — as a
  * dependency — so a package that compiles against it here imports unchanged there.
  */

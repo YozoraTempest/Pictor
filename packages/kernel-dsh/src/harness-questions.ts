@@ -1,4 +1,4 @@
-import type { ChatAnswer, ChatQuestion, ChatQuestionOption } from '@pictor/shared'
+import type { ChatAnswer, ChatQuestion, ChatQuestionOption } from '@vulonlok/shared'
 
 /**
  * Reads the questions out of a `user-questions/request` waterfall payload.

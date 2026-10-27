@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@pictor/application'
-import { resolveHostCoreBinary, startHostCore } from '@pictor/host-client'
+import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@vulonlok/application'
+import { resolveHostCoreBinary, startHostCore } from '@vulonlok/host-client'
 import {
   PluginInstaller,
   discoverPlugins,
@@ -13,7 +13,7 @@ import {
   type DiscoveredPlugin,
   expandPluginRoots,
   resolveActivationOrder,
-} from '@pictor/plugin-host'
+} from '@vulonlok/plugin-host'
 import {
   KernelPluginInstaller,
   addProfileBundle,
@@ -22,12 +22,12 @@ import {
 } from './kernel/kernel-plugins.js'
 import { developmentPluginsDirectory } from './plugin-roots.js'
 import { declarationFor, declarationOf, targetsOf, type PluginTarget } from './plugin-target.js'
-import { SLOT_SPECS } from '@pictor/plugin-sdk'
+import { SLOT_SPECS } from '@vulonlok/plugin-sdk'
 import type {
   PanelContribution,
   ToolGuardContribution,
   ToolViewContribution,
-} from '@pictor/plugin-sdk'
+} from '@vulonlok/plugin-sdk'
 import {
   DEFAULT_PERMISSION_MODE,
   MODEL_EFFORTS,
@@ -52,7 +52,7 @@ import {
   type ToolRule,
   composeSkills,
   parseToolRules,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
 import type {
   AppInfo,
@@ -69,12 +69,12 @@ import type {
   SlotDescriptor,
 } from '../shared/bridge.js'
 import { HarnessChatBridge } from './harness-chat.js'
-import { shouldAdoptTitle } from '@pictor/harness'
+import { shouldAdoptTitle } from '@vulonlok/harness-dsh'
 
-import type { KernelDriver } from '@pictor/kernel-sdk'
+import type { KernelDriver } from '@vulonlok/kernel-sdk'
 import { startKernelHost, type KernelHost } from './kernel/host.js'
-import { isProviderSource } from '@pictor/kernel-sdk'
-import { resolveNodeBinary, resolveNpmCli } from '@pictor/kernel-sdk'
+import { isProviderSource } from '@vulonlok/kernel-sdk'
+import { resolveNodeBinary, resolveNpmCli } from '@vulonlok/kernel-sdk'
 import { openSettings } from './kernel/settings-store.js'
 
 import { KernelRouter, type KernelInfo } from './kernel/router.js'
@@ -567,12 +567,12 @@ async function startWorkspace(): Promise<Workspace | null> {
       {
         id: 'dsh',
         label: 'DeepSeek Harness',
-        entry: { load: async () => (await import('@pictor/kernel-dsh')).dshKernel },
+        entry: { load: async () => (await import('@vulonlok/kernel-dsh')).dshKernel },
       },
       {
         id: 'pi',
         label: 'Pi',
-        entry: { load: async () => (await import('@pictor/kernel-pi')).createPiKernel() },
+        entry: { load: async () => (await import('@vulonlok/kernel-pi')).createPiKernel() },
       },
     ],
     disabled: disabledBuiltins,

@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { GuardEndpoint } from '@pictor/kernel-sdk'
+import type { GuardEndpoint } from '@vulonlok/kernel-sdk'
 
 /**
  * The kernel-side half of Pictor's tool guards, for Pi.

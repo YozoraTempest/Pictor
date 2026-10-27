@@ -1,5 +1,5 @@
 {
-  "name": "@pictor/shared",
+  "name": "@vulonlok/shared",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,6 +8,6 @@
   },
   "types": "./src/index.ts",
   "dependencies": {
-    "@pictor/kernel-sdk": "workspace:*"
+    "@vulonlok/kernel-sdk": "workspace:*"
   }
 }

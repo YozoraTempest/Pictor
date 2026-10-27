@@ -10,7 +10,7 @@ import {
   expandPluginRoots,
   installedPackageRoots,
   type MountedPlugin,
-} from '@pictor/plugin-host'
+} from '@vulonlok/plugin-host'
 import {
   ContributionHost,
   type PanelContribution,
@@ -21,8 +21,8 @@ import {
   type ToolHookContribution,
   type ToolViewContribution,
   type ViewContribution,
-} from '@pictor/plugin-sdk'
-import type { DiscoveredPlugin } from '@pictor/plugin-host'
+} from '@vulonlok/plugin-sdk'
+import type { DiscoveredPlugin } from '@vulonlok/plugin-host'
 
 import { FrameHost } from './frame-host.js'
 import { PluginViews } from './plugin-views.js'

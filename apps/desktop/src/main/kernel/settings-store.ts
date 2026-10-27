@@ -1,7 +1,7 @@
-import type { MetadataStore } from '@pictor/host-client'
-import type { JsonValue, SettingsMap } from '@pictor/shared'
+import type { MetadataStore } from '@vulonlok/host-client'
+import type { JsonValue, SettingsMap } from '@vulonlok/shared'
 
-import type { KernelSettingsService } from '@pictor/kernel-sdk'
+import type { KernelSettingsService } from '@vulonlok/kernel-sdk'
 
 /** The part of the profile store a kernel's settings need. */
 export type SettingsSource = Pick<MetadataStore, 'listSettings' | 'putSetting'>

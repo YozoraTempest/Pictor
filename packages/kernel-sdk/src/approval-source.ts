@@ -1,4 +1,4 @@
-import type { ApprovalMode } from '@pictor/shared'
+import type { ApprovalMode } from '@vulonlok/shared'
 
 import type { KernelDriver } from './driver.js'
 

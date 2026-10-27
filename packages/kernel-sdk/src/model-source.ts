@@ -1,4 +1,4 @@
-import type { ModelEffort } from '@pictor/shared'
+import type { ModelEffort } from '@vulonlok/shared'
 
 import type { KernelModelState } from './kinds.js'
 import type { KernelDriver } from './driver.js'

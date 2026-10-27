@@ -1,4 +1,4 @@
-import type { ChatJob, ChatPlanState, ChatSubagent, ChatTodoItem } from '@pictor/shared'
+import type { ChatJob, ChatPlanState, ChatSubagent, ChatTodoItem } from '@vulonlok/shared'
 
 /**
  * The three states a conversation has *now*, replayed from its own event log.

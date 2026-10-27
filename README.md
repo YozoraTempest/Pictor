@@ -142,9 +142,9 @@ order, watches `internal/service` for what they publish, and hands the resulting
 to `KernelRouter` — nothing enumerates plugins by hand.
 
 A kernel is a **package**, and the two that ship are packages in this repository:
-`packages/kernel-dsh` and `packages/kernel-pi` depend on `@pictor/kernel-sdk` for the
-contract and on `@pictor/shared` for the vocabulary, and on nothing else here. The app
-loads them by name (`entry: { load: () => import('@pictor/kernel-dsh') }`), which is the
+`packages/kernel-dsh` and `packages/kernel-pi` depend on `@vulonlok/kernel-sdk` for the
+contract and on `@vulonlok/shared` for the vocabulary, and on nothing else here. The app
+loads them by name (`entry: { load: () => import('@vulonlok/kernel-dsh') }`), which is the
 same move it makes for an installed one — the only difference is where the module comes
 from. `packages/kernel-sdk` holds the contract itself (the driver interface, the plugin
 entry, the host services and the kernel-facing types), so a kernel written outside this

@@ -7,7 +7,7 @@ import {
   isKernelPluginPackage,
   kernelPluginIdOf,
   type KernelPluginSpec,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
 /**
  * Installs dsh plugins into the kernel's own profile.

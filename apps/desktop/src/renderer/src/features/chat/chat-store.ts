@@ -9,7 +9,7 @@ import type {
   ChatSubagent,
   ChatTodoItem,
   ModelEffort,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
 import { lastUsageOf, type TurnUsage } from './context-usage.js'
 import { applyPlanEvent, mergeJobs } from './session-state.js'

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Session } from '@pictor/shared'
+import type { Session } from '@vulonlok/shared'
 
 import { familyRoot, familySize, familyTree } from './family.js'
 

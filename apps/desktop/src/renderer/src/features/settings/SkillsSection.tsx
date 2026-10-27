@@ -1,7 +1,7 @@
 import { FolderOpen, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { SkillEntry, SkillOrigin } from '@pictor/shared'
+import type { SkillEntry, SkillOrigin } from '@vulonlok/shared'
 
 import { Badge, Button, Spinner, Switch } from '../../components/ui/index.js'
 import { useChatStore } from '../chat/chat-store.js'

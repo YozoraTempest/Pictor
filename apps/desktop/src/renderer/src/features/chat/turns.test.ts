@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ChatMessage } from '@pictor/shared'
+import type { ChatMessage } from '@vulonlok/shared'
 
 import { buildTurns, groupActivityItems } from './turns.js'
 

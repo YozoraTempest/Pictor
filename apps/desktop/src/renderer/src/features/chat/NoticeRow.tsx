@@ -1,7 +1,7 @@
 import { Minimize2 } from 'lucide-react'
 import { useState } from 'react'
 
-import type { ChatNotice } from '@pictor/shared'
+import type { ChatNotice } from '@vulonlok/shared'
 
 import { cn } from '../../lib/cn.js'
 

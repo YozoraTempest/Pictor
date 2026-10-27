@@ -2,7 +2,7 @@ import { connect } from 'node:net'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { ToolGuardContribution, ToolHookContribution } from '@pictor/plugin-sdk'
+import type { ToolGuardContribution, ToolHookContribution } from '@vulonlok/plugin-sdk'
 
 import { ToolBridgeServer } from './tool-bridge-server.js'
 

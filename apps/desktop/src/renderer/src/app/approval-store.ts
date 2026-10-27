@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-import type { ApprovalRequest } from '@pictor/shared'
+import type { ApprovalRequest } from '@vulonlok/shared'
 
 import { dropPending, dropPendingOf, putPending } from './pending.js'
 

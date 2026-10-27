@@ -1,7 +1,7 @@
 /**
  * One turn, as every kernel adapter reports it.
  *
- * The names mirror `ChatEvent` in `@pictor/shared`, so an adapter that works here
+ * The names mirror `ChatEvent` in `@vulonlok/shared`, so an adapter that works here
  * is already shaped for the main process: `run.started` opens a turn, deltas
  * arrive in order, tools bracket their call, and exactly one `run.finished`
  * closes it.

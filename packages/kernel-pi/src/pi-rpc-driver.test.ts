@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { HarnessNotification } from '@pictor/harness'
+import type { HarnessNotification } from '@vulonlok/harness-dsh'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { PiRpcDriver } from './pi-rpc-driver.js'

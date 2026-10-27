@@ -1,5 +1,5 @@
 {
-  "name": "@pictor/kernel-sdk",
+  "name": "@vulonlok/kernel-sdk",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@pictor/harness": "workspace:*",
-    "@pictor/model-config": "workspace:*",
-    "@pictor/shared": "workspace:*"
+    "@vulonlok/harness-dsh": "workspace:*",
+    "@vulonlok/model-config": "workspace:*",
+    "@vulonlok/shared": "workspace:*"
   }
 }

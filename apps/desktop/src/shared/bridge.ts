@@ -8,9 +8,9 @@ import type {
   KernelJobOutput,
   KernelModelState,
   PermissionMode,
-} from '@pictor/kernel-sdk/types'
-import type { SlotKey, SlotKind, ViewSpec } from '@pictor/plugin-sdk'
-import type { McpServerSpec } from '@pictor/shared'
+} from '@vulonlok/kernel-sdk/types'
+import type { SlotKey, SlotKind, ViewSpec } from '@vulonlok/plugin-sdk'
+import type { McpServerSpec } from '@vulonlok/shared'
 
 export type {
   HarnessStatus,
@@ -22,7 +22,7 @@ export type {
   KernelModelSource,
   KernelModelState,
   PermissionMode,
-} from '@pictor/kernel-sdk/types'
+} from '@vulonlok/kernel-sdk/types'
 
 import type {
   ApprovalMode,
@@ -51,7 +51,7 @@ import type {
   SettingsMap,
   SkillEntry,
   ToolRule,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
 export interface AppInfo {
   name: string
@@ -125,7 +125,7 @@ export interface SlotDescriptor {
  * The block vocabulary belongs to the plugin SDK; this is the same type, re-exported for
  * the window so the renderer imports one module.
  */
-export type { ViewBlock, ViewSpec, ViewTone } from '@pictor/plugin-sdk'
+export type { ViewBlock, ViewSpec, ViewTone } from '@vulonlok/plugin-sdk'
 
 /**
  * What the window draws for one view.

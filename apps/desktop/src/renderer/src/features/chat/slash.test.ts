@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { CatalogSkill } from '@pictor/shared'
+import type { CatalogSkill } from '@vulonlok/shared'
 
 import { matchSkills, slashTokenAt } from './slash.js'
 

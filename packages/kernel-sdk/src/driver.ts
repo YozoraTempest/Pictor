@@ -1,4 +1,4 @@
-import type { HarnessNotification } from '@pictor/harness'
+import type { HarnessNotification } from '@vulonlok/harness-dsh'
 import type {
   CatalogSkill,
   ChatAnswer,
@@ -8,7 +8,7 @@ import type {
   ChatImage,
   ForkPoint,
   ModelEffort,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
 import type {
   HarnessStatus,

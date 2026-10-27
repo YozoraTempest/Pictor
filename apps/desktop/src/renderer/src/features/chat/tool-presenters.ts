@@ -12,8 +12,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import { matchesTool, toolPatternSpecificity } from '@pictor/plugin-sdk'
-import type { ChatMessage } from '@pictor/shared'
+import { matchesTool, toolPatternSpecificity } from '@vulonlok/plugin-sdk'
+import type { ChatMessage } from '@vulonlok/shared'
 
 import { diffLines, formatDiff } from '../../lib/diff.js'
 

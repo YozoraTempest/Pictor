@@ -1,5 +1,5 @@
-import type { SessionWireEvent } from '@pictor/harness'
-import { isAutoSessionTitle } from '@pictor/shared'
+import type { SessionWireEvent } from '@vulonlok/harness-dsh'
+import { isAutoSessionTitle } from '@vulonlok/shared'
 
 /**
  * The name the runtime gave a conversation, if this event carries one.

@@ -1,4 +1,4 @@
-import type { ModelEffort } from '@pictor/shared'
+import type { ModelEffort } from '@vulonlok/shared'
 
 /**
  * Sandbox mode one conversation runs under.

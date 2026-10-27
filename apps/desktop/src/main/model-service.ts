@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import type { MetadataStore } from '@pictor/host-client'
+import type { MetadataStore } from '@vulonlok/host-client'
 import {
   activateProvider,
   fetchModels,
@@ -17,14 +17,14 @@ import {
   useModel,
   type ProviderInput,
   type ProviderList,
-} from '@pictor/model-config'
+} from '@vulonlok/model-config'
 import type {
   CcSwitchProviderSummary,
   ModelEntry,
   ModelProtocol,
   ModelSettings,
   ModelSettingsInput,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
 export interface ModelServiceOptions {
   store: MetadataStore

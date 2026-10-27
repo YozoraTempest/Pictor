@@ -10,17 +10,17 @@ import {
   type KernelEntry,
   type KernelHostServices,
   type KernelPlugin,
-} from '@pictor/kernel-sdk'
-import { INSTALLED_LIST } from '@pictor/plugin-host'
-import { parseKernelContribution, parsePackageManifest } from '@pictor/plugin-sdk'
+} from '@vulonlok/kernel-sdk'
+import { INSTALLED_LIST } from '@vulonlok/plugin-host'
+import { parseKernelContribution, parsePackageManifest } from '@vulonlok/plugin-sdk'
 
-import type { KernelDriver } from '@pictor/kernel-sdk'
+import type { KernelDriver } from '@vulonlok/kernel-sdk'
 
 /**
  * The kernel container.
  *
  * The contract itself — what a kernel is, what it may reach, how a plugin publishes
- * one — lives in `@pictor/kernel-sdk`, because a kernel now ships as its own package
+ * one — lives in `@vulonlok/kernel-sdk`, because a kernel now ships as its own package
  * and cannot depend on this app. What stays here is the part that needs a running
  * application: mounting entries into cordis, finding installed kernels on disk, and
  * remembering which plugin produced which service.

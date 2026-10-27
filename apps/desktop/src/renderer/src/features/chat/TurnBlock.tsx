@@ -1,6 +1,6 @@
 import { GitBranch, Sparkles, Undo2 } from 'lucide-react'
 
-import type { ForkPoint } from '@pictor/shared'
+import type { ForkPoint } from '@vulonlok/shared'
 import { useEffect, useState } from 'react'
 
 import { IconButton } from '../../components/ui/index.js'

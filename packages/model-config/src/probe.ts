@@ -1,4 +1,4 @@
-import type { ModelEntry, ModelProtocol } from '@pictor/shared'
+import type { ModelEntry, ModelProtocol } from '@vulonlok/shared'
 
 import { normalizeBaseUrl } from './settings.js'
 

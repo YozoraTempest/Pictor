@@ -6,7 +6,7 @@ import {
   hookOutputOf,
   type ToolGuardContribution,
   type ToolHookContribution,
-} from '@pictor/plugin-sdk'
+} from '@vulonlok/plugin-sdk'
 
 /**
  * Where the runtime's guard plugin reaches the app.

@@ -7,8 +7,8 @@ import type {
   ProviderInput,
   ProviderList,
   ProviderView,
-} from '@pictor/shared'
-import { MODEL_EFFORTS } from '@pictor/shared'
+} from '@vulonlok/shared'
+import { MODEL_EFFORTS } from '@vulonlok/shared'
 
 import { clearApiKey, readApiKey, writeApiKey } from './auth.js'
 

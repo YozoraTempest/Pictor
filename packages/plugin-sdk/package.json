@@ -1,5 +1,5 @@
 {
-  "name": "@pictor/plugin-sdk",
+  "name": "@vulonlok/plugin-sdk",
   "version": "0.0.0",
   "private": true,
   "type": "module",

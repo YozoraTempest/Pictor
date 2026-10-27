@@ -7,8 +7,8 @@ import type {
   ModelProtocol,
   ProviderList,
   ProviderView,
-} from '@pictor/shared'
-import { MODEL_EFFORTS, OMIT_EFFORT } from '@pictor/shared'
+} from '@vulonlok/shared'
+import { MODEL_EFFORTS, OMIT_EFFORT } from '@vulonlok/shared'
 
 import { Badge, Banner, Button, Dialog, Input, Select, Switch } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'

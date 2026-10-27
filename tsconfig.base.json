@@ -18,17 +18,17 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@pictor/shared": ["./packages/shared/src/index.ts"],
-      "@pictor/racp": ["./packages/racp/src/index.ts"],
-      "@pictor/host-client": ["./packages/host-client/src/index.ts"],
-      "@pictor/application": ["./packages/application/src/index.ts"],
-      "@pictor/plugin-sdk": ["./packages/plugin-sdk/src/index.ts"],
-      "@pictor/plugin-host": ["./packages/plugin-host/src/index.ts"],
-      "@pictor/model-config": ["./packages/model-config/src/index.ts"],
-      "@pictor/kernel-sdk": ["./packages/kernel-sdk/src/index.ts"],
-      "@pictor/kernel-sdk/types": ["./packages/kernel-sdk/src/types.ts"],
-      "@pictor/kernel-dsh": ["./packages/kernel-dsh/src/index.ts"],
-      "@pictor/kernel-pi": ["./packages/kernel-pi/src/index.ts"]
+      "@vulonlok/shared": ["./packages/shared/src/index.ts"],
+      "@vulonlok/racp": ["./packages/racp/src/index.ts"],
+      "@vulonlok/host-client": ["./packages/host-client/src/index.ts"],
+      "@vulonlok/application": ["./packages/application/src/index.ts"],
+      "@vulonlok/plugin-sdk": ["./packages/plugin-sdk/src/index.ts"],
+      "@vulonlok/plugin-host": ["./packages/plugin-host/src/index.ts"],
+      "@vulonlok/model-config": ["./packages/model-config/src/index.ts"],
+      "@vulonlok/kernel-sdk": ["./packages/kernel-sdk/src/index.ts"],
+      "@vulonlok/kernel-sdk/types": ["./packages/kernel-sdk/src/types.ts"],
+      "@vulonlok/kernel-dsh": ["./packages/kernel-dsh/src/index.ts"],
+      "@vulonlok/kernel-pi": ["./packages/kernel-pi/src/index.ts"]
     }
   }
 }

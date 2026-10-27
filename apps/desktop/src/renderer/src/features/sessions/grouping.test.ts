@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Project, Section, Session } from '@pictor/shared'
+import type { Project, Section, Session } from '@vulonlok/shared'
 
 import {
   collectSectionSessionIds,

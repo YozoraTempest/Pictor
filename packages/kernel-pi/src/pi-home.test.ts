@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { type McpServerSpec } from '@pictor/shared'
+import { type McpServerSpec } from '@vulonlok/shared'
 
 import {
   ensurePiHome,

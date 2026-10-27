@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { ModelEntry, ProviderList } from '@pictor/shared'
+import type { ModelEntry, ProviderList } from '@vulonlok/shared'
 
 import { cn } from '../../lib/cn.js'
 import { capabilitiesOf, emptyModel } from '../settings/models.js'

@@ -1,8 +1,8 @@
 import { Plus, Server, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { McpServerSpec } from '@pictor/shared'
-import { isMcpServerName } from '@pictor/shared'
+import type { McpServerSpec } from '@vulonlok/shared'
+import { isMcpServerName } from '@vulonlok/shared'
 
 import {
   Badge,

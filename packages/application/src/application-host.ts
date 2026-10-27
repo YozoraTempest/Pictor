@@ -1,4 +1,4 @@
-import type { JsonValue, Project, Section, Session, SettingsMap } from '@pictor/shared'
+import type { JsonValue, Project, Section, Session, SettingsMap } from '@vulonlok/shared'
 
 import { CommandEngine } from './command-engine.js'
 import { EventBus } from './events.js'

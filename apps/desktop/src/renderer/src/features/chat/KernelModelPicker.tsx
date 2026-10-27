@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 
 import type { KernelModel, KernelModelState } from '../../../../shared/bridge.js'
-import type { ModelEffort } from '@pictor/shared'
+import type { ModelEffort } from '@vulonlok/shared'
 
 import { cn } from '../../lib/cn.js'
 import { EffortSlider } from './EffortSlider.js'

@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import type { CatalogSkill, ChatImage } from '@pictor/shared'
+import type { CatalogSkill, ChatImage } from '@vulonlok/shared'
 
 import type { KernelCommand } from '../../../../shared/bridge.js'
 

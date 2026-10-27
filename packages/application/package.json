@@ -1,5 +1,5 @@
 {
-  "name": "@pictor/application",
+  "name": "@vulonlok/application",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,9 +8,9 @@
   },
   "types": "./src/index.ts",
   "dependencies": {
-    "@pictor/host-client": "workspace:*",
-    "@pictor/plugin-host": "workspace:*",
-    "@pictor/plugin-sdk": "workspace:*",
-    "@pictor/shared": "workspace:*"
+    "@vulonlok/host-client": "workspace:*",
+    "@vulonlok/plugin-host": "workspace:*",
+    "@vulonlok/plugin-sdk": "workspace:*",
+    "@vulonlok/shared": "workspace:*"
   }
 }

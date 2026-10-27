@@ -10,8 +10,8 @@ import {
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 
-import type { HarnessNotification } from '@pictor/harness'
-import { MODEL_EFFORTS } from '@pictor/shared'
+import type { HarnessNotification } from '@vulonlok/harness-dsh'
+import { MODEL_EFFORTS } from '@vulonlok/shared'
 import type {
   ApprovalMode,
   CatalogSkill,
@@ -21,7 +21,7 @@ import type {
   ForkPoint,
   McpServerSpec,
   ModelEffort,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
 import type {
   HarnessStatus,
@@ -29,12 +29,12 @@ import type {
   KernelModel,
   KernelModelState,
   PermissionMode,
-} from '@pictor/kernel-sdk/types'
-import type { PiProviderSpec } from '@pictor/shared'
+} from '@vulonlok/kernel-sdk/types'
+import type { PiProviderSpec } from '@vulonlok/shared'
 
-import type { AgentProbeResult, KernelDriver } from '@pictor/kernel-sdk'
-import type { KernelCommand, KernelSetting } from '@pictor/kernel-sdk'
-import type { KernelModelCatalogue } from '@pictor/kernel-sdk'
+import type { AgentProbeResult, KernelDriver } from '@vulonlok/kernel-sdk'
+import type { KernelCommand, KernelSetting } from '@vulonlok/kernel-sdk'
+import type { KernelModelCatalogue } from '@vulonlok/kernel-sdk'
 import { PiTranslator, type PiFrame } from './pi-events.js'
 import { ensurePiHome, writePiMcpJson } from './pi-home.js'
 import { historyRows, storedLevel, storedModel, textOf, type StoredRecord } from './pi-history.js'

@@ -1,5 +1,5 @@
 {
-  "name": "@pictor/racp",
+  "name": "@vulonlok/racp",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,6 +8,6 @@
   },
   "types": "./src/index.ts",
   "dependencies": {
-    "@pictor/shared": "workspace:*"
+    "@vulonlok/shared": "workspace:*"
   }
 }

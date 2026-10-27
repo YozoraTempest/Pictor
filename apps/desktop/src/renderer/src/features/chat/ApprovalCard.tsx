@@ -1,7 +1,7 @@
 import { ShieldQuestion } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { ApprovalRequest } from '@pictor/shared'
+import type { ApprovalRequest } from '@vulonlok/shared'
 
 import { useApprovalStore } from '../../app/approval-store.js'
 import { openSession } from '../../app/open-session.js'

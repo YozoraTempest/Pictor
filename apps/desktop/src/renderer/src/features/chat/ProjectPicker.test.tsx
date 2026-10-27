@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Project } from '@pictor/shared'
+import type { Project } from '@vulonlok/shared'
 
 import { useWorkspaceStore } from '../../app/workspace-store.js'
 import { ProjectPicker } from './ProjectPicker.js'

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ModelEffort, ModelEntry } from '@pictor/shared'
+import type { ModelEffort, ModelEntry } from '@vulonlok/shared'
 
 import { designedEffort, effortsOf, pickEffort } from './effort.js'
 

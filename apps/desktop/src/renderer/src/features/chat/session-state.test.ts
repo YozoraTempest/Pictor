@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ChatJob } from '@pictor/shared'
+import type { ChatJob } from '@vulonlok/shared'
 
 import { applyPlanEvent, liveJobs, mergeJobs, todoSummary } from './session-state.js'
-import { isLocalSubagent } from '@pictor/shared'
+import { isLocalSubagent } from '@vulonlok/shared'
 
 function job(overrides: Partial<ChatJob> & Pick<ChatJob, 'id'>): ChatJob {
   return {

@@ -1,5 +1,5 @@
 {
-  "name": "@pictor/plugin-guide",
+  "name": "@vulonlok/plugin-guide",
   "version": "0.0.0",
   "private": true,
   "description": "随应用提供的开发指南技能：教 agent 怎么写一个 Pictor 插件",

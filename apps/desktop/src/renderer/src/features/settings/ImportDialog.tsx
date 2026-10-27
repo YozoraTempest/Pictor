@@ -1,7 +1,7 @@
 import { Download, Loader2, Radar } from 'lucide-react'
 import { useState } from 'react'
 
-import type { ProviderList } from '@pictor/shared'
+import type { ProviderList } from '@vulonlok/shared'
 
 import type { CcSwitchScanResult } from '../../../../shared/bridge.js'
 import { Badge, Banner, Button, Dialog, EmptyState, Switch } from '../../components/ui/index.js'

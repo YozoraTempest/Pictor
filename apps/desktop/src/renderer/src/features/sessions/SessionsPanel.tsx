@@ -18,7 +18,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
-import type { Project, Session } from '@pictor/shared'
+import type { Project, Session } from '@vulonlok/shared'
 
 import { useUiStore } from '../../app/ui-store.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'

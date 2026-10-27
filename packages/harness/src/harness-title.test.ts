@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { SessionWireEvent } from '@pictor/harness'
+import type { SessionWireEvent } from '@vulonlok/harness-dsh'
 
 import { sessionTitleOf, shouldAdoptTitle } from './harness-title.js'
 

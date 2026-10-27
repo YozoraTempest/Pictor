@@ -1,4 +1,4 @@
-import type { JsonValue } from '@pictor/shared'
+import type { JsonValue } from '@vulonlok/shared'
 
 import { RpcError, encodeRequest, parseResponse } from './frame.js'
 

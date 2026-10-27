@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 
-import type { ModelEffort } from '@pictor/shared'
+import type { ModelEffort } from '@vulonlok/shared'
 
 import { effortColor, effortLabel } from './effort.js'
 

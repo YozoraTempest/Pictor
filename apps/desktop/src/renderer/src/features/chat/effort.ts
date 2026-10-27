@@ -1,5 +1,5 @@
-import type { ModelEffort, ModelEntry } from '@pictor/shared'
-import { acceptedEfforts, defaultEffortOf, OMIT_EFFORT } from '@pictor/shared'
+import type { ModelEffort, ModelEntry } from '@vulonlok/shared'
+import { acceptedEfforts, defaultEffortOf, OMIT_EFFORT } from '@vulonlok/shared'
 
 /** Levels this model accepts, in the order the slider shows them. */
 export function effortsOf(model: ModelEntry | undefined): ModelEffort[] {

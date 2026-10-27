@@ -1,4 +1,4 @@
-import type { CatalogSkill } from '@pictor/shared'
+import type { CatalogSkill } from '@vulonlok/shared'
 
 import type { KernelCommand } from '../../../../shared/bridge.js'
 

@@ -18,7 +18,7 @@ vi.hoisted(() => {
   })) as unknown as typeof window.matchMedia
 })
 
-import type { Session } from '@pictor/shared'
+import type { Session } from '@vulonlok/shared'
 
 import type { KernelInfo } from '../../../shared/bridge.js'
 import { openSession } from './open-session.js'

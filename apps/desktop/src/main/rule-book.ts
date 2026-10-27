@@ -1,5 +1,5 @@
-import type { ApprovalMode, ToolRule, ToolAskSource } from '@pictor/shared'
-import { allowsTool, askVerdict, matchDenyRule, parseToolRules } from '@pictor/shared'
+import type { ApprovalMode, ToolRule, ToolAskSource } from '@vulonlok/shared'
+import { allowsTool, askVerdict, matchDenyRule, parseToolRules } from '@vulonlok/shared'
 
 /** The part of the host core this needs: one settings key, read and written. */
 export interface RuleStore {

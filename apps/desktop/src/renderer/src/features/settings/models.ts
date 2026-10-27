@@ -1,5 +1,5 @@
-import type { ModelEffort, ModelEntry } from '@pictor/shared'
-import { acceptedEfforts, DEFAULT_MODEL_EFFORTS, defaultEffortOf } from '@pictor/shared'
+import type { ModelEffort, ModelEntry } from '@vulonlok/shared'
+import { acceptedEfforts, DEFAULT_MODEL_EFFORTS, defaultEffortOf } from '@vulonlok/shared'
 
 /** What a model can do, as far as the runtime is concerned. */
 export interface Capabilities {

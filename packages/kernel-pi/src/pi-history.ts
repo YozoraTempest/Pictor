@@ -1,4 +1,4 @@
-import { MODEL_EFFORTS, type ChatMessage, type ChatUsage, type ModelEffort } from '@pictor/shared'
+import { MODEL_EFFORTS, type ChatMessage, type ChatUsage, type ModelEffort } from '@vulonlok/shared'
 
 /**
  * Reading a Pi session file back into transcript rows.

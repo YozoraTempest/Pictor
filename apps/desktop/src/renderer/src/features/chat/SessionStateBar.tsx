@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
-import { isLocalSubagent } from '@pictor/shared'
+import { isLocalSubagent } from '@vulonlok/shared'
 
 import { useKernelCapabilities } from '../kernels/capabilities.js'
 import { cn } from '../../lib/cn.js'

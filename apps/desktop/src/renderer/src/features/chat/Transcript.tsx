@@ -1,7 +1,7 @@
 import { ArrowDown, Loader2, MessagesSquare } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-import type { ForkPoint } from '@pictor/shared'
+import type { ForkPoint } from '@vulonlok/shared'
 
 import { Button, EmptyState } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'

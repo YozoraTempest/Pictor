@@ -20,7 +20,7 @@ import {
   type SessionWireEvent,
   type WebSocketConstructor,
   type WebSocketLike,
-} from '@pictor/harness'
+} from '@vulonlok/harness-dsh'
 
 import {
   parseSkills,
@@ -38,16 +38,16 @@ import {
   type ModelSettings,
   enabledKernelPlugins,
   enabledMcpServers,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
-import type { KernelJobOutput } from '@pictor/kernel-sdk'
+import type { KernelJobOutput } from '@vulonlok/kernel-sdk'
 
 import { commandTextOf, parseCommands } from './harness-commands.js'
 import { loadHarnessHistory, projectHarnessEvents } from './harness-history.js'
 import { jobOutputOf } from './harness-job-output.js'
 import { jobOf, sessionStates } from './harness-session-state.js'
-import { DEFAULT_PERMISSION_MODE, isPermissionMode } from '@pictor/shared'
-import { sessionTitleOf } from '@pictor/harness'
+import { DEFAULT_PERMISSION_MODE, isPermissionMode } from '@vulonlok/shared'
+import { sessionTitleOf } from '@vulonlok/harness-dsh'
 import { answerValue, questionsOf } from './harness-questions.js'
 import {
   GUARD_PLUGIN_NAME,
@@ -55,15 +55,15 @@ import {
   GUARD_PLUGIN_SOURCE,
 } from './harness-guard-plugin.js'
 import { buildProfilePatch, PROFILE_BUNDLES, ROUTE, ROUTE_API_KEY_ENV } from './harness-profile.js'
-import { pinnedVersionOf } from '@pictor/shared'
-import type { HarnessStatus, KernelCapabilities, PermissionMode } from '@pictor/kernel-sdk/types'
+import { pinnedVersionOf } from '@vulonlok/shared'
+import type { HarnessStatus, KernelCapabilities, PermissionMode } from '@vulonlok/kernel-sdk/types'
 import type {
   AgentProbeResult,
   KernelCommand,
   KernelDriver,
   KernelModelService,
-} from '@pictor/kernel-sdk'
-import { resolveNodeBinary, resolveNpmCli } from '@pictor/kernel-sdk'
+} from '@vulonlok/kernel-sdk'
+import { resolveNodeBinary, resolveNpmCli } from '@vulonlok/kernel-sdk'
 
 /**
  * Everything the runtime reads once, at boot.

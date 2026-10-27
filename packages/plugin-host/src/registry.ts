@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { parsePackageManifest, type PluginManifest } from '@pictor/plugin-sdk'
+import { parsePackageManifest, type PluginManifest } from '@vulonlok/plugin-sdk'
 
 export interface DiscoveredPlugin {
   id: string

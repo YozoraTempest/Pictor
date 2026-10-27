@@ -1,7 +1,7 @@
 import { MessageCircleQuestion } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { ChatAnswer, ChatQuestion, ChatQuestionRequest } from '@pictor/shared'
+import type { ChatAnswer, ChatQuestion, ChatQuestionRequest } from '@vulonlok/shared'
 
 import { openSession } from '../../app/open-session.js'
 import { useQuestionStore } from '../../app/question-store.js'

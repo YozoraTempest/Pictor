@@ -1,7 +1,7 @@
 import { AlertTriangle, MessageSquarePlus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatImage, ForkPoint } from '@pictor/shared'
+import type { ChatImage, ForkPoint } from '@vulonlok/shared'
 
 import { pendingFor } from '../../app/pending.js'
 import { useWorkspaceStore } from '../../app/workspace-store.js'

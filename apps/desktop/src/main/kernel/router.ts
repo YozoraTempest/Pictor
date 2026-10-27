@@ -1,4 +1,4 @@
-import type { HarnessNotification } from '@pictor/harness'
+import type { HarnessNotification } from '@vulonlok/harness-dsh'
 import type {
   ApprovalMode,
   CatalogSkill,
@@ -9,7 +9,7 @@ import type {
   ChatMessage,
   ForkPoint,
   ModelEffort,
-} from '@pictor/shared'
+} from '@vulonlok/shared'
 
 import type {
   HarnessStatus,
@@ -24,10 +24,10 @@ import {
   isCommandSource,
   type KernelApprovalSource,
   type KernelCommand,
-} from '@pictor/kernel-sdk'
-import type { AgentProbeResult, KernelDriver } from '@pictor/kernel-sdk'
-import { isCatalogueSource, isModelSource } from '@pictor/kernel-sdk'
-import { isSettingsSource } from '@pictor/kernel-sdk'
+} from '@vulonlok/kernel-sdk'
+import type { AgentProbeResult, KernelDriver } from '@vulonlok/kernel-sdk'
+import { isCatalogueSource, isModelSource } from '@vulonlok/kernel-sdk'
+import { isSettingsSource } from '@vulonlok/kernel-sdk'
 
 export type { KernelInfo }
 

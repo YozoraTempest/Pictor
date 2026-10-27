@@ -1,4 +1,4 @@
-import type { KernelJobOutput } from '@pictor/kernel-sdk'
+import type { KernelJobOutput } from '@vulonlok/kernel-sdk'
 
 /**
  * Reading a job's output stream into something a window can show.

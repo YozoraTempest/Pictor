@@ -1,6 +1,6 @@
 import type { Context, Plugin } from '@deepseek-ai/cordis'
-import type { ProviderList } from '@pictor/model-config'
-import type { JsonValue, ModelSettings } from '@pictor/shared'
+import type { ProviderList } from '@vulonlok/model-config'
+import type { JsonValue, ModelSettings } from '@vulonlok/shared'
 
 import type { KernelCapabilities } from './kinds.js'
 import type { KernelDriver } from './driver.js'

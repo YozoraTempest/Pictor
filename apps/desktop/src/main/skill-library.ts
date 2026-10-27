@@ -9,8 +9,8 @@ import {
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import type { SkillContribution } from '@pictor/plugin-sdk'
-import type { SkillEntry, SkillLibraryView, SkillOrigin } from '@pictor/shared'
+import type { SkillContribution } from '@vulonlok/plugin-sdk'
+import type { SkillEntry, SkillLibraryView, SkillOrigin } from '@vulonlok/shared'
 
 /** Marker written beside every file Pictor owns, so a later run knows it may move it. */
 const MARKER = '.pictor.json'

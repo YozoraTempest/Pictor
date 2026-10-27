@@ -10,9 +10,9 @@ knowledge base.
   the `MetadataStore` port. It must not import Electron, React, DOM or the
   renderer.
 - The Rust `host-core` sidecar is the only writer of SQLite. Node code reaches it
-  exclusively through `@pictor/host-client`; no other package opens the database.
+  exclusively through `@vulonlok/host-client`; no other package opens the database.
 - Protocols crossing a process or plugin boundary are serialisable. Plugins only
-  receive the public `@pictor/plugin-sdk` surface.
+  receive the public `@vulonlok/plugin-sdk` surface.
 - The renderer sees one narrow bridge. Electron capabilities stay in `main`, and
   the preload exposes no `ipcRenderer`, Node or filesystem object. Sandbox,
   context isolation and `nodeIntegration: false` are mandatory; the preload is
@@ -33,7 +33,7 @@ Forbidden:
 
 - `packages/shared` importing Node, Electron, React or any concrete package.
 - `packages/plugin-sdk` importing `src/`, Electron or React.
-- `packages/harness` importing Electron, the renderer or `@pictor/shared` beyond
+- `packages/harness` importing Electron, the renderer or `@vulonlok/shared` beyond
   type-only imports; it is a transport library and must stay testable with a fake
   socket.
 - Renderer importing Electron, Node built-ins or main-process code.
@@ -310,7 +310,7 @@ never produced it would be a lie about where it came from.
 
 Every kernel is a **cordis plugin** that provides exactly one service named
 `kernel.<id>` (`apps/desktop/src/main/kernel/host.ts`). Adding a kernel is adding a
-plugin: the built-in ones are `@pictor/kernel-dsh` and `@pictor/kernel-pi`, and an
+plugin: the built-in ones are `@vulonlok/kernel-dsh` and `@vulonlok/kernel-pi`, and an
 installed one is a package under `<profile>/plugins` — either a copied directory or a
 package in its `node_modules`, named by `installed.json`. A plugin points at its kernel
 from `pictor.contributes` (`{ point: 'kernel', value: { main } }`); `package.json`'s
@@ -318,11 +318,11 @@ from `pictor.contributes` (`{ point: 'kernel', value: { main } }`); `package.jso
 them in order, watches `internal/service` for the services they publish, and hands the
 resulting map to `KernelRouter` — nothing enumerates plugins by hand.
 
-A kernel is its own package. `@pictor/kernel-dsh` and `@pictor/kernel-pi` contain the
-driver and its helpers; `@pictor/kernel-sdk` contains what they compile against — the
+A kernel is its own package. `@vulonlok/kernel-dsh` and `@vulonlok/kernel-pi` contain the
+driver and its helpers; `@vulonlok/kernel-sdk` contains what they compile against — the
 driver interface, `KernelPlugin`/`KernelEntry`, the host services a plugin may inject,
 and the kernel-facing types (`HarnessStatus`, `PermissionMode`, `KernelCapabilities`,
-`KernelModel*`). A kernel package may depend on the SDK and on `@pictor/shared`, and on
+`KernelModel*`). A kernel package may depend on the SDK and on `@vulonlok/shared`, and on
 nothing else in this repository; the app's `bridge.ts` re-exports the types from the SDK
 so the window still imports one module.
 
@@ -594,7 +594,7 @@ why a Pi conversation draws no bar at all).
 ### Runtime (dsh)
 
 `packages/kernel-dsh/src/dsh-driver.ts` owns the runtime lifecycle, and
-`@pictor/harness` owns the wire protocol.
+`@vulonlok/harness-dsh` owns the wire protocol.
 
 - **Boot.** The runtime is spawned from `<userData>/harness-runtime` with
   `DSH_HOME` pointing at a profile this app owns. It prints an origin with an
@@ -702,7 +702,7 @@ renderer does not care how a kernel speaks:
 
 ### Model configuration
 
-`@pictor/model-config` owns the settings contract:
+`@vulonlok/model-config` owns the settings contract:
 
 - `ModelProtocol` uses the runtime's own vocabulary (`openai-completions`,
   `openai-responses`, `anthropic-messages`), so a saved service reaches the kernel

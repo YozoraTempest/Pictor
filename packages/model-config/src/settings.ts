@@ -1,4 +1,4 @@
-import type { ModelSettings, ModelSettingsInput } from '@pictor/shared'
+import type { ModelSettings, ModelSettingsInput } from '@vulonlok/shared'
 
 import {
   activateProvider,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { isLocalSubagent, type ChatMessage, type ChatSubagent } from '@pictor/shared'
+import { isLocalSubagent, type ChatMessage, type ChatSubagent } from '@vulonlok/shared'
 
 import { Banner, Dialog, Spinner } from '../../components/ui/index.js'
 import { buildTurns } from './turns.js'

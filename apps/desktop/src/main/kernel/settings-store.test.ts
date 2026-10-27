@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { JsonValue, SettingsMap } from '@pictor/shared'
+import type { JsonValue, SettingsMap } from '@vulonlok/shared'
 
 import { openSettings, type SettingsSource } from './settings-store.js'
 

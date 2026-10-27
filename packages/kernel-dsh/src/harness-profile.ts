@@ -1,5 +1,5 @@
-import type { KernelPluginSpec, McpServerSpec, ModelEntry, ModelProtocol } from '@pictor/shared'
-import { acceptedEfforts } from '@pictor/shared'
+import type { KernelPluginSpec, McpServerSpec, ModelEntry, ModelProtocol } from '@vulonlok/shared'
+import { acceptedEfforts } from '@vulonlok/shared'
 
 import { GUARD_PLUGIN_NAME } from './harness-guard-plugin.js'
 /**

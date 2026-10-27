@@ -1,5 +1,5 @@
 {
-  "name": "@pictor/plugin-host",
+  "name": "@vulonlok/plugin-host",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,8 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@pictor/plugin-sdk": "workspace:*",
-    "@pictor/shared": "workspace:*",
+    "@vulonlok/plugin-sdk": "workspace:*",
+    "@vulonlok/shared": "workspace:*",
     "semver": "^7.8.5"
   },
   "devDependencies": {

@@ -1,5 +1,5 @@
-import { createStdioTransport } from '@pictor/racp'
-import type { StdioTransport } from '@pictor/racp'
+import { createStdioTransport } from '@vulonlok/racp'
+import type { StdioTransport } from '@vulonlok/racp'
 
 import { HostCoreClient } from './metadata-store.js'
 

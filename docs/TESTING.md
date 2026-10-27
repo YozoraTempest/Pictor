@@ -46,12 +46,12 @@ than kept for its count.
 
 ## Unit tests
 
-| Layer         | Location                                           | Covers                                                                                                                                          |
-| ------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core packages | `packages/*/src/**/*.test.ts`                      | RACP framing, the host client, profile locking, plugin resolution and lifecycle, the `@pictor/harness` wire protocol, provider and auth storage |
-| Main process  | `apps/desktop/src/main/*.test.ts`                  | The runtime event bridge, history projection, the profile patch, tool guards, title adoption                                                    |
-| Renderer      | `apps/desktop/src/renderer/src/**/*.test.{ts,tsx}` | Session grouping, transcript turns, stores, presenters, settings schema, and the few components whose logic is not layout                       |
-| Rust          | `crates/host-core`                                 | Migrations, store operations, JSON-RPC dispatch                                                                                                 |
+| Layer         | Location                                           | Covers                                                                                                                                                |
+| ------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core packages | `packages/*/src/**/*.test.ts`                      | RACP framing, the host client, profile locking, plugin resolution and lifecycle, the `@vulonlok/harness-dsh` wire protocol, provider and auth storage |
+| Main process  | `apps/desktop/src/main/*.test.ts`                  | The runtime event bridge, history projection, the profile patch, tool guards, title adoption                                                          |
+| Renderer      | `apps/desktop/src/renderer/src/**/*.test.{ts,tsx}` | Session grouping, transcript turns, stores, presenters, settings schema, and the few components whose logic is not layout                             |
+| Rust          | `crates/host-core`                                 | Migrations, store operations, JSON-RPC dispatch                                                                                                       |
 
 Tests use temporary directories and injected fakes (a fake socket for the mux, a
 fake transport for RPC) and never touch the real profile or a network endpoint.

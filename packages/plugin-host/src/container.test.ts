@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { Context } from '@deepseek-ai/cordis'
-import { ContributionHost } from '@pictor/plugin-sdk'
+import { ContributionHost } from '@vulonlok/plugin-sdk'
 import { describe, expect, it } from 'vitest'
 
 import { PluginContainer } from './container.js'

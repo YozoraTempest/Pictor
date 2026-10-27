@@ -80,39 +80,39 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: ^1.3.0
         version: 1.3.0(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(supports-color@7.2.0)(ws@8.22.0)
-      '@pictor/application':
-        specifier: workspace:*
-        version: link:../../packages/application
-      '@pictor/harness':
-        specifier: workspace:*
-        version: link:../../packages/harness
-      '@pictor/host-client':
-        specifier: workspace:*
-        version: link:../../packages/host-client
-      '@pictor/kernel-dsh':
-        specifier: workspace:*
-        version: link:../../packages/kernel-dsh
-      '@pictor/kernel-pi':
-        specifier: workspace:*
-        version: link:../../packages/kernel-pi
-      '@pictor/kernel-sdk':
-        specifier: workspace:*
-        version: link:../../packages/kernel-sdk
-      '@pictor/model-config':
-        specifier: workspace:*
-        version: link:../../packages/model-config
-      '@pictor/plugin-host':
-        specifier: workspace:*
-        version: link:../../packages/plugin-host
-      '@pictor/plugin-sdk':
-        specifier: workspace:*
-        version: link:../../packages/plugin-sdk
-      '@pictor/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+      '@vulonlok/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+      '@vulonlok/harness-dsh':
+        specifier: workspace:*
+        version: link:../../packages/harness
+      '@vulonlok/host-client':
+        specifier: workspace:*
+        version: link:../../packages/host-client
+      '@vulonlok/kernel-dsh':
+        specifier: workspace:*
+        version: link:../../packages/kernel-dsh
+      '@vulonlok/kernel-pi':
+        specifier: workspace:*
+        version: link:../../packages/kernel-pi
+      '@vulonlok/kernel-sdk':
+        specifier: workspace:*
+        version: link:../../packages/kernel-sdk
+      '@vulonlok/model-config':
+        specifier: workspace:*
+        version: link:../../packages/model-config
+      '@vulonlok/plugin-host':
+        specifier: workspace:*
+        version: link:../../packages/plugin-host
+      '@vulonlok/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@vulonlok/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -155,31 +155,31 @@ importers:
 
   packages/application:
     dependencies:
-      '@pictor/host-client':
+      '@vulonlok/host-client':
         specifier: workspace:*
         version: link:../host-client
-      '@pictor/plugin-host':
+      '@vulonlok/plugin-host':
         specifier: workspace:*
         version: link:../plugin-host
-      '@pictor/plugin-sdk':
+      '@vulonlok/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@pictor/shared':
+      '@vulonlok/shared':
         specifier: workspace:*
         version: link:../shared
 
   packages/harness:
     dependencies:
-      '@pictor/shared':
+      '@vulonlok/shared':
         specifier: workspace:*
         version: link:../shared
 
   packages/host-client:
     dependencies:
-      '@pictor/racp':
+      '@vulonlok/racp':
         specifier: workspace:*
         version: link:../racp
-      '@pictor/shared':
+      '@vulonlok/shared':
         specifier: workspace:*
         version: link:../shared
 
@@ -188,13 +188,13 @@ importers:
       '@deepseek-ai/cordis':
         specifier: ~4.0.5
         version: 4.0.5(@deepseek-ai/cordis-plugin-loader@1.0.6)
-      '@pictor/harness':
+      '@vulonlok/harness-dsh':
         specifier: workspace:*
         version: link:../harness
-      '@pictor/kernel-sdk':
+      '@vulonlok/kernel-sdk':
         specifier: workspace:*
         version: link:../kernel-sdk
-      '@pictor/shared':
+      '@vulonlok/shared':
         specifier: workspace:*
         version: link:../shared
 
@@ -203,13 +203,13 @@ importers:
       '@deepseek-ai/cordis':
         specifier: ~4.0.5
         version: 4.0.5(@deepseek-ai/cordis-plugin-loader@1.0.6)
-      '@pictor/harness':
+      '@vulonlok/harness-dsh':
         specifier: workspace:*
         version: link:../harness
-      '@pictor/kernel-sdk':
+      '@vulonlok/kernel-sdk':
         specifier: workspace:*
         version: link:../kernel-sdk
-      '@pictor/shared':
+      '@vulonlok/shared':
         specifier: workspace:*
         version: link:../shared
 
@@ -218,19 +218,19 @@ importers:
       '@deepseek-ai/cordis':
         specifier: ~4.0.5
         version: 4.0.5(@deepseek-ai/cordis-plugin-loader@1.0.6)
-      '@pictor/harness':
+      '@vulonlok/harness-dsh':
         specifier: workspace:*
         version: link:../harness
-      '@pictor/model-config':
+      '@vulonlok/model-config':
         specifier: workspace:*
         version: link:../model-config
-      '@pictor/shared':
+      '@vulonlok/shared':
         specifier: workspace:*
         version: link:../shared
 
   packages/model-config:
     dependencies:
-      '@pictor/shared':
+      '@vulonlok/shared':
         specifier: workspace:*
         version: link:../shared
 
@@ -239,10 +239,10 @@ importers:
       '@deepseek-ai/cordis':
         specifier: ~4.0.5
         version: 4.0.5(@deepseek-ai/cordis-plugin-loader@1.0.6)
-      '@pictor/plugin-sdk':
+      '@vulonlok/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@pictor/shared':
+      '@vulonlok/shared':
         specifier: workspace:*
         version: link:../shared
       semver:
@@ -257,13 +257,13 @@ importers:
 
   packages/racp:
     dependencies:
-      '@pictor/shared':
+      '@vulonlok/shared':
         specifier: workspace:*
         version: link:../shared
 
   packages/shared:
     dependencies:
-      '@pictor/kernel-sdk':
+      '@vulonlok/kernel-sdk':
         specifier: workspace:*
         version: link:../kernel-sdk
 

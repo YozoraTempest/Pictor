@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-import type { ChatQuestionRequest } from '@pictor/shared'
+import type { ChatQuestionRequest } from '@vulonlok/shared'
 
 import { dropPending, dropPendingOf, putPending } from './pending.js'
 

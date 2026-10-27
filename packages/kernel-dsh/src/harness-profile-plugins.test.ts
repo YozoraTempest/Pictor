@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { KernelPluginSpec, ModelEffort, ModelEntry } from '@pictor/shared'
+import type { KernelPluginSpec, ModelEffort, ModelEntry } from '@vulonlok/shared'
 
 import { buildProfilePatch } from './harness-profile.js'
 

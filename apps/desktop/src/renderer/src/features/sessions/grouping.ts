@@ -1,4 +1,4 @@
-import type { Project, Section, Session } from '@pictor/shared'
+import type { Project, Section, Session } from '@vulonlok/shared'
 
 /** How sessions inside a section are ordered. */
 export type SectionSort = 'created' | 'updated' | 'manual'

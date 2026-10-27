@@ -5,7 +5,7 @@
  * in the composer and applied by whichever kernel has a sandbox. A kernel that declares
  * no sandbox simply ignores it, which is why the default lives here and not in dsh.
  */
-import type { PermissionMode } from '@pictor/kernel-sdk/types'
+import type { PermissionMode } from '@vulonlok/kernel-sdk/types'
 
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'workspace-write'
 

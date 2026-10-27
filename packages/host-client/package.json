@@ -1,5 +1,5 @@
 {
-  "name": "@pictor/host-client",
+  "name": "@vulonlok/host-client",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
   },
   "types": "./src/index.ts",
   "dependencies": {
-    "@pictor/racp": "workspace:*",
-    "@pictor/shared": "workspace:*"
+    "@vulonlok/racp": "workspace:*",
+    "@vulonlok/shared": "workspace:*"
   }
 }

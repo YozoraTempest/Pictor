@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import type { HarnessStatus } from '../../shared/bridge.js'
-import type { KernelDriver } from '@pictor/kernel-sdk'
+import type { KernelDriver } from '@vulonlok/kernel-sdk'
 import { KernelRouter } from './router.js'
-import type { KernelSetting } from '@pictor/kernel-sdk'
+import type { KernelSetting } from '@vulonlok/kernel-sdk'
 
 function status(id: string): HarnessStatus {
   return {

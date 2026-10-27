@@ -1,8 +1,8 @@
 import { Download, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { piProviderPlan } from '@pictor/shared'
-import type { ProviderList, ProviderView } from '@pictor/shared'
+import { piProviderPlan } from '@vulonlok/shared'
+import type { ProviderList, ProviderView } from '@vulonlok/shared'
 
 import { Badge, Button, Dialog, IconButton, Tooltip } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'

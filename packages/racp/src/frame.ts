@@ -1,4 +1,4 @@
-import type { JsonValue } from '@pictor/shared'
+import type { JsonValue } from '@vulonlok/shared'
 
 export interface RpcRequestFrame {
   jsonrpc: '2.0'

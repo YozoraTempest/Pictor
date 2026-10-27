@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { VIEW_LIMITS, type ViewContribution, type ViewSpec } from '@pictor/plugin-sdk'
+import { VIEW_LIMITS, type ViewContribution, type ViewSpec } from '@vulonlok/plugin-sdk'
 
 import { PluginViews } from './plugin-views.js'
 

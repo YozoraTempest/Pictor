@@ -2,7 +2,7 @@ import { Brain, Check, ChevronDown, ShieldX, Terminal, TriangleAlert } from 'luc
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useEffect, useState } from 'react'
 
-import type { ChatMessage } from '@pictor/shared'
+import type { ChatMessage } from '@vulonlok/shared'
 
 import { Spinner } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'

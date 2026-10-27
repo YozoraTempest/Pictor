@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatUsage } from '@pictor/shared'
+import type { ChatMessage, ChatUsage } from '@vulonlok/shared'
 
 /** Token counts the provider reported for one turn. */
 export type TurnUsage = ChatUsage

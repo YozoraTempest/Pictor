@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ChatMessage } from '@pictor/shared'
+import type { ChatMessage } from '@vulonlok/shared'
 
 import { presentTool } from './tool-presenters.js'
 import { applyToolViews, iconForName } from './tool-views.js'

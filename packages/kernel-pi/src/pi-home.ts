@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { PI_PROVIDER_PREFIX, type McpServerSpec } from '@pictor/shared'
+import { PI_PROVIDER_PREFIX, type McpServerSpec } from '@vulonlok/shared'
 
 /**
  * The configuration directory Pi runs on inside Pictor.

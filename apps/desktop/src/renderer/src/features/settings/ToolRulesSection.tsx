@@ -1,7 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { ToolRule, ToolRuleEffect } from '@pictor/shared'
+import type { ToolRule, ToolRuleEffect } from '@vulonlok/shared'
 
 import { Badge, Button, Input } from '../../components/ui/index.js'
 import { cn } from '../../lib/cn.js'

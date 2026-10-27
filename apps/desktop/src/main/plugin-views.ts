@@ -5,7 +5,7 @@ import {
   type ViewContext,
   type ViewContribution,
   type ViewSpec,
-} from '@pictor/plugin-sdk'
+} from '@vulonlok/plugin-sdk'
 
 import type { FrameHost } from './frame-host.js'
 

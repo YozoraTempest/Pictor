@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ModelEntry } from '@pictor/shared'
+import type { ModelEntry } from '@vulonlok/shared'
 
 import { capabilitiesOf, mergeModels, withCapabilities } from './models.js'
 

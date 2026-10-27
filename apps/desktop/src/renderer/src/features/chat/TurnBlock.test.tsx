@@ -3,7 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ChatMessage } from '@pictor/shared'
+import type { ChatMessage } from '@vulonlok/shared'
 
 import { TurnBlock } from './TurnBlock.js'
 import { buildTurns } from './turns.js'

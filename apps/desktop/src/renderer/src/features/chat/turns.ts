@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatNotice, ForkPoint } from '@pictor/shared'
+import type { ChatMessage, ChatNotice, ForkPoint } from '@vulonlok/shared'
 
 /** One visual segment inside an agent turn. */
 export type TurnPart =
