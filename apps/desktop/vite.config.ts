@@ -16,6 +16,10 @@ export default defineConfig({
         replacement: fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url)),
       },
       {
+        find: /^@vulonlok\/ui(\/|$)/,
+        replacement: fileURLToPath(new URL('../../packages/ui/src/', import.meta.url)),
+      },
+      {
         find: /^@vulonlok\/harness\//,
         replacement: fileURLToPath(new URL('../../packages/harness/src/', import.meta.url)),
       },

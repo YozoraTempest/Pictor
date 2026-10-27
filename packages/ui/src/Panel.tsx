@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { cn } from '../../lib/cn.js'
+import { cn } from './cn.js'
 
 export interface PanelProps {
   title?: string

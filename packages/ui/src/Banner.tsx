@@ -1,7 +1,7 @@
 import { AlertTriangle, Info, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-import { cn } from '../../lib/cn.js'
+import { cn } from './cn.js'
 import { IconButton } from './Button.js'
 
 export type BannerTone = 'error' | 'notice'

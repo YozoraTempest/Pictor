@@ -1,11 +1,7 @@
-export { Button, IconButton, type ButtonProps, type IconButtonProps } from './Button.js'
-export { Input, Textarea } from './Input.js'
-export { Select, type SelectOption, type SelectProps } from './Select.js'
-export { Switch, type SwitchProps } from './Switch.js'
-export { Field, type FieldProps } from './Field.js'
-export { Panel, type PanelProps } from './Panel.js'
-export { Dialog, type DialogProps } from './Dialog.js'
-export { Tooltip, type TooltipProps } from './Tooltip.js'
-export { Badge, EmptyState, Spinner, type BadgeTone } from './Feedback.js'
-export { Banner, type BannerProps, type BannerTone } from './Banner.js'
-export { Menu, type MenuEntry, type MenuItem, type MenuProps } from './Menu.js'
+/**
+ * Moved: the UI kit belongs to `@vulonlok/ui` now.
+ *
+ * One kit, two consumers — the shell's own chrome and the harness's pages — so it cannot
+ * live in either of them. This re-export goes away when the last import stops using it.
+ */
+export * from '@vulonlok/ui'

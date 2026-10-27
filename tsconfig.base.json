@@ -18,6 +18,8 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
+      "@vulonlok/ui": ["./packages/ui/src/index.ts"],
+      "@vulonlok/ui/*": ["./packages/ui/src/*"],
       "@vulonlok/harness": ["./packages/harness/src/index.ts"],
       "@vulonlok/harness/*": ["./packages/harness/src/*"],
       "@vulonlok/shared": ["./packages/shared/src/index.ts"],

@@ -8,6 +8,11 @@
   "include": [
     "apps/desktop/src/renderer/**/*.ts",
     "apps/desktop/src/renderer/**/*.tsx",
-    "apps/desktop/src/shared/**/*.ts"
+    "apps/desktop/src/shared/**/*.ts",
+    "packages/ui/src/**/*.ts",
+    "packages/ui/src/**/*.tsx",
+    "packages/harness/src/renderer/**/*.ts",
+    "packages/harness/src/renderer/**/*.tsx",
+    "packages/harness/src/main/bridge.ts"
   ]
 }

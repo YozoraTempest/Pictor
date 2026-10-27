@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { cn } from '../../lib/cn.js'
+import { cn } from './cn.js'
 
 export type BadgeTone = 'neutral' | 'accent' | 'danger' | 'success'
 
