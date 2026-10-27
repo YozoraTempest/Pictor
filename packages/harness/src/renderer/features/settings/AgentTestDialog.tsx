@@ -1,0 +1,124 @@
+import { FlaskConical, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+
+import type { AgentTestResult } from '../../../main/bridge.js'
+import { useWorkspaceStore } from '../../app/workspace-store.js'
+import { Banner, Button, Dialog, Textarea } from '@vulonlok/ui'
+import { SettingRow } from './SettingRow.js'
+
+/**
+ * One real agent turn against the active service.
+ *
+ * It is a dialog because it is a check, not a setting: it runs on demand, its
+ * result is disposable, and keeping it off the page leaves the list as the page's
+ * only subject.
+ */
+export function AgentTestDialog({
+  open,
+  onClose,
+}: {
+  open: boolean
+  onClose: () => void
+}): React.JSX.Element {
+  const projects = useWorkspaceStore((state) => state.projects)
+  const selectedProjectId = useWorkspaceStore((state) => state.selectedProjectId)
+  const project = projects.find((entry) => entry.id === selectedProjectId) ?? null
+
+  const [prompt, setPrompt] = useState('用一个短句介绍你自己')
+  const [result, setResult] = useState<AgentTestResult | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function run(): Promise<void> {
+    if (prompt.trim().length === 0) return
+    setBusy(true)
+    setError(null)
+    setResult(null)
+    try {
+      setResult(await window.pictor.runAgentTest(prompt, project?.path ?? ''))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      title="试运行"
+      onClose={onClose}
+      footer={
+        <>
+          <span className="mr-auto text-2xs text-faint">
+            用当前使用中的服务跑一次最简 Agent 调用。
+          </span>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
+            关闭
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={busy || prompt.trim().length === 0}
+            onClick={() => void run()}
+          >
+            {busy ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <FlaskConical className="size-3.5" />
+            )}
+            运行
+          </Button>
+        </>
+      }
+    >
+      <div className="-mx-5 -my-4 flex flex-col divide-y divide-border">
+        {error !== null && (
+          <div className="px-5 py-3">
+            <Banner tone="error">{error}</Banner>
+          </div>
+        )}
+
+        <SettingRow
+          id="agent.prompt"
+          stacked
+          title="提示词"
+          description="试运行时发给模型的内容，运行前可随时修改。"
+          control={
+            <Textarea
+              value={prompt}
+              aria-label="试运行提示词"
+              rows={3}
+              onChange={(event) => setPrompt(event.target.value)}
+            />
+          }
+        />
+
+        <SettingRow
+          stacked
+          title="工作目录"
+          description="取自当前选中的项目；没有项目时用临时目录。"
+          control={<p className="font-mono text-2xs text-faint">{project?.path ?? '临时目录'}</p>}
+        />
+
+        {result !== null && (
+          <div className="px-5 py-3">
+            <div className="rounded-md border border-border bg-bg px-3 py-2">
+              <p className={result.ok ? 'text-xs text-success' : 'text-xs text-danger'}>
+                {result.ok ? 'Agent 调用成功' : (result.message ?? '运行失败')}
+              </p>
+              {result.text.length > 0 && (
+                <pre className="selectable mt-1.5 max-h-52 overflow-auto font-mono text-2xs leading-relaxed whitespace-pre-wrap text-muted">
+                  {result.text}
+                </pre>
+              )}
+              <p className="mt-1.5 font-mono text-2xs text-faint">
+                事件：{result.events.join(', ')}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </Dialog>
+  )
+}

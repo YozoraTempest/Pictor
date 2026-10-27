@@ -1,10 +1,10 @@
 import { Minus, Square, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useUiStore } from '../app/ui-store.js'
-import { useWorkspaceStore } from '../app/workspace-store.js'
-import { findView } from '../app/views.js'
-import { cn } from '../lib/cn.js'
-import { SlotOutlet } from '../features/slots/SlotOutlet.js'
+import { useUiStore } from '@vulonlok/harness/renderer/app/ui-store'
+import { useWorkspaceStore } from '@vulonlok/harness/renderer/app/workspace-store'
+import { findView } from '@vulonlok/harness/renderer/app/views'
+import { cn } from '@vulonlok/harness/renderer/lib/cn'
+import { SlotOutlet } from '@vulonlok/harness/renderer/features/slots/SlotOutlet'
 import { GlobalTools, useWindowCommand } from './Toolbar.js'
 
 /**

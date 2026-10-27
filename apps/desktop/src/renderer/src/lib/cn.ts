@@ -1,2 +1,2 @@
-// Moved to `@vulonlok/ui`; the kit and the shell both use it, so it lives with the kit.
-export { cn } from '@vulonlok/ui/cn'
+// Moved to `@vulonlok/ui`; kept while the last import follows it there.
+export { cn } from '@vulonlok/ui'

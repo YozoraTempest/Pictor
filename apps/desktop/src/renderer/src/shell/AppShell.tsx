@@ -1,8 +1,8 @@
 import { useEffect, type ReactNode } from 'react'
 
-import { useUiStore } from '../app/ui-store.js'
-import { useWorkspaceStore } from '../app/workspace-store.js'
-import { SlotOutlet } from '../features/slots/SlotOutlet.js'
+import { useUiStore } from '@vulonlok/harness/renderer/app/ui-store'
+import { useWorkspaceStore } from '@vulonlok/harness/renderer/app/workspace-store'
+import { SlotOutlet } from '@vulonlok/harness/renderer/features/slots/SlotOutlet'
 import { NavRail } from './NavRail.js'
 import { TitleBar } from './TitleBar.js'
 

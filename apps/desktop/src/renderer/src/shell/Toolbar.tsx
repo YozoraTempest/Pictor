@@ -1,11 +1,11 @@
 import { ArrowLeft, ArrowRight, Menu as MenuIcon } from 'lucide-react'
 
 import type { WindowCommand } from '../../../shared/bridge.js'
-import { openView } from '../app/open-view.js'
-import { useUiStore } from '../app/ui-store.js'
-import { sortedViews } from '../app/views.js'
-import { useWorkspaceStore } from '../app/workspace-store.js'
-import { Menu, Tooltip, type MenuEntry } from '../components/ui/index.js'
+import { openView } from '@vulonlok/harness/renderer/app/open-view'
+import { useUiStore } from '@vulonlok/harness/renderer/app/ui-store'
+import { sortedViews } from '@vulonlok/harness/renderer/app/views'
+import { useWorkspaceStore } from '@vulonlok/harness/renderer/app/workspace-store'
+import { Menu, Tooltip, type MenuEntry } from '@vulonlok/ui'
 
 function newSessionTitle(): string {
   const now = new Date()

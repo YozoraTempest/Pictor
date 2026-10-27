@@ -1,9 +1,9 @@
-import { openView } from '../app/open-view.js'
-import { useUiStore } from '../app/ui-store.js'
-import { useWorkspaceStore } from '../app/workspace-store.js'
-import { sortedViews, type AppViewDescriptor } from '../app/views.js'
-import { cn } from '../lib/cn.js'
-import { Tooltip } from '../components/ui/index.js'
+import { openView } from '@vulonlok/harness/renderer/app/open-view'
+import { useUiStore } from '@vulonlok/harness/renderer/app/ui-store'
+import { useWorkspaceStore } from '@vulonlok/harness/renderer/app/workspace-store'
+import { sortedViews, type AppViewDescriptor } from '@vulonlok/harness/renderer/app/views'
+import { cn } from '@vulonlok/harness/renderer/lib/cn'
+import { Tooltip } from '@vulonlok/ui'
 
 function RailButton({
   view,

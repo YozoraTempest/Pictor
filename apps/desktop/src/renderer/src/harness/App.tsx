@@ -1,16 +1,16 @@
 import { useEffect } from 'react'
 
-import { Banner } from '../components/ui/index.js'
-import { useChatStore } from '../features/chat/chat-store.js'
+import { Banner } from '@vulonlok/ui'
+import { useChatStore } from '@vulonlok/harness/renderer/features/chat/chat-store'
 import { AppShell } from '../shell/AppShell.js'
-import { useApprovalStore } from '../app/approval-store.js'
-import { useQuestionStore } from '../app/question-store.js'
-import { useRuntimeStore } from '../app/runtime-store.js'
-import { useUiStore } from '../app/ui-store.js'
-import { openView } from '../app/open-view.js'
-import { findView } from '../app/views.js'
-import { useAppShortcuts } from '../app/use-app-shortcuts.js'
-import { useWorkspaceStore } from '../app/workspace-store.js'
+import { useApprovalStore } from '@vulonlok/harness/renderer/approval-store'
+import { useQuestionStore } from '@vulonlok/harness/renderer/question-store'
+import { useRuntimeStore } from '@vulonlok/harness/renderer/runtime-store'
+import { useUiStore } from '@vulonlok/harness/renderer/app/ui-store'
+import { openView } from '@vulonlok/harness/renderer/app/open-view'
+import { findView } from '@vulonlok/harness/renderer/app/views'
+import { useAppShortcuts } from '@vulonlok/harness/renderer/app/use-app-shortcuts'
+import { useWorkspaceStore } from '@vulonlok/harness/renderer/app/workspace-store'
 
 export function HarnessApp(): React.JSX.Element {
   useAppShortcuts()

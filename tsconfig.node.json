@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.base.json",
   // The UI kit is JSX: it belongs to the browser project, not to this one.
-  "exclude": ["packages/ui/src/**"],
+  "exclude": ["packages/ui/src/**", "packages/harness/src/renderer/**"],
   "include": [
     "packages/*/src/**/*.ts",
     "apps/desktop/src/main/**/*.ts",
