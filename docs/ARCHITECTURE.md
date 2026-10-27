@@ -132,8 +132,10 @@ Two deliberate departures from dsh:
 - **`rightbar` does not replace the column.** In dsh it does. Here the right column is
   where every panel is found, so the occupant is drawn above the launcher instead.
 
-`views` blocks are display-only, so the floating layer is click-through _including its own
-seats_: a seat that could take a click would eventually cover a button that matters.
+The floating layer is click-through _including its own seats_: a seat that could take a
+click would eventually cover a button that matters. The one exception is a `button` block,
+which opts back into clicks by itself (`[&_button]:pointer-events-auto`) — a button nobody
+can press would be a bigger lie than a clickable card.
 
 ### Plugin views
 
@@ -153,11 +155,27 @@ plugin's name in the message rather than dropping a block — a panel that lost 
 content looks like a plugin with less to say than it has.
 
 The vocabulary is closed (`packages/plugin-sdk/src/views.ts`): heading, text, markdown,
-list, keyValue, table, code, badge, divider, under `VIEW_LIMITS`. That is a deliberate
-ceiling — a contribution the blocks cannot express is a request for a rendering engine, and
-the honest answer is that this is not one. A view is read when the panel opens and when the
-reader asks for a refresh, never on a timer: freshness a plugin needs it states in `note`,
-which is drawn under the blocks, where limitations belong.
+list, keyValue, table, code, badge, button, divider, under `VIEW_LIMITS`. That is a
+deliberate ceiling — a contribution the blocks cannot express is a request for a rendering
+engine, and the honest answer is that this is not one. A view is read when the panel opens
+and when the reader asks for a refresh, never on a timer: freshness a plugin needs it
+states in `note`, which is drawn under the blocks, where limitations belong.
+
+### Buttons are messages
+
+`button` is the one block a person can press, and it carries an **action id**, never a
+handler: `{ kind: 'button', label, action, value?, tone? }`. A press travels the other way
+through the same boundary (`pictor:views.act` → `PluginViews.act`), the plugin's `onAction`
+runs in the main process beside the plugin, and the answer is a new description — or
+nothing, when the press changed nothing the panel shows, in which case the content stands
+rather than blanking to prove the click arrived.
+
+Two reasons it is a message and not a callback. A handler in the window would be plugin
+code running with the window's privileges, which is the thing the whole views design
+avoids. And an action id is something the plugin itself can refuse: a view without
+`onAction` reports "没有处理按钮" with the view's name in it, where a dead button would look
+like a broken app. The same channel serves a panel and a seat, because both are a `views`
+id with a person in front of it.
 
 ### Kernels
 

@@ -19,6 +19,9 @@ export const inject = ['pictor']
 /** 每次读取加一。note 会写着这是第几次，好让「刷新」这件事看得见。 */
 let reads = 0
 
+/** 按钮按了多少次；插件自己的状态，跨读取保留。 */
+let presses = 0
+
 export function apply(ctx) {
   // `ctx.effect` 交出的是「这个插件活着期间有效」的注册：卸载插件时 cordis 调用它，
   // 面板和视图一起消失，不需要谁记着去删。
@@ -34,6 +37,12 @@ export function apply(ctx) {
         return {
           blocks: [
             { kind: 'badge', label: `第 ${reads} 次读取`, tone: 'accent' },
+            {
+              kind: 'button',
+              label: `按一下（已按 ${presses} 次）`,
+              action: 'press',
+              tone: 'accent',
+            },
             { kind: 'heading', text: '内容是插件说的，画的是窗口' },
             {
               kind: 'text',
@@ -43,7 +52,7 @@ export function apply(ctx) {
                 '一段话里的换行会保留。',
             },
             { kind: 'divider' },
-            { kind: 'heading', text: '九种块' },
+            { kind: 'heading', text: '十种块' },
             {
               kind: 'list',
               ordered: true,
@@ -51,6 +60,7 @@ export function apply(ctx) {
                 'heading / text / markdown',
                 'list / keyValue / table',
                 'code / badge / divider',
+                'button —— 唯一能按的一块',
               ],
             },
             {
@@ -88,6 +98,24 @@ export function apply(ctx) {
           note:
             `第 ${reads} 次读取 · ${new Date().toLocaleTimeString('zh-CN')} · ` +
             '视图只在打开和按刷新时读取，不会自己轮询',
+        }
+      },
+      // 点击回到这里，在主进程、插件旁边执行，答案是一段新的描述。按下去的那一刻窗口
+      // 就把这颗按钮禁掉，所以同一颗按钮不会被按两次。
+      onAction: ({ action }) => {
+        if (action !== 'press') return undefined
+        presses += 1
+        return {
+          blocks: [
+            { kind: 'badge', label: `已按 ${presses} 次`, tone: 'accent' },
+            {
+              kind: 'button',
+              label: `再按一下（已按 ${presses} 次）`,
+              action: 'press',
+              tone: 'accent',
+            },
+            { kind: 'text', text: '这一块是点击之后重新描述出来的：插件没有画任何东西。' },
+          ],
         }
       },
     }),

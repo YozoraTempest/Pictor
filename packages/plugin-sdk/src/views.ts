@@ -24,6 +24,15 @@ export type ViewBlock =
   | { kind: 'table'; columns: string[]; rows: string[][] }
   | { kind: 'code'; text: string; language?: string }
   | { kind: 'badge'; label: string; tone?: ViewTone }
+  /**
+   * The one block a person can press.
+   *
+   * `action` is an id the plugin's `onAction` recognises, not code: the click travels to
+   * the main process — where the plugin already runs — and comes back as a new
+   * description or nothing at all. That keeps the line the blocks draw: the window draws,
+   * the plugin decides.
+   */
+  | { kind: 'button'; label: string; action: string; value?: string; tone?: ViewTone }
   | { kind: 'divider' }
 
 /** One panel's content, as the plugin described it. */
@@ -61,6 +70,23 @@ export interface ViewContribution {
    * a plugin that must watch something can do that in its own process.
    */
   data: (context: ViewContext) => ViewSpec | Promise<ViewSpec>
+  /**
+   * Handles a press on one of this view's `button` blocks.
+   *
+   * Return a fresh spec to redraw, or nothing when the click changed nothing the panel
+   * shows — the window then leaves the content alone rather than flashing it. Absent
+   * means the view has no buttons; a button without a handler reports that instead of
+   * doing nothing.
+   */
+  onAction?: (request: ViewActionRequest) => ViewSpec | void | Promise<ViewSpec | void>
+}
+
+/** One press, as the plugin receives it. */
+export interface ViewActionRequest extends ViewContext {
+  /** The `action` id from the button block. */
+  action: string
+  /** The button's `value`, when it carried one. */
+  value?: string
 }
 
 export interface ViewContributionFailure {
@@ -95,8 +121,12 @@ export const VIEW_LIMITS = {
   rows: 200,
   columns: 12,
   note: 400,
+  /** A button's caption, and the value it carries back. */
+  label: 60,
+  action: 200,
 } as const
 
+const ACTION_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/
 const TONES = new Set<ViewTone>(['neutral', 'accent', 'danger', 'success'])
 
 function textOf(value: unknown, where: string, limit: number): string {
@@ -160,6 +190,30 @@ function parseBlock(value: unknown, index: number): ViewBlock {
       return {
         kind,
         label: textOf(record['label'], `${where}.label`, 120),
+        ...(tone === undefined ? {} : { tone: tone as ViewTone }),
+      }
+    }
+    case 'button': {
+      const tone = record['tone']
+      if (tone !== undefined && !TONES.has(tone as ViewTone)) {
+        throw new ViewSpecError(`${where}.tone must be one of neutral, accent, danger, success`)
+      }
+      const action = textOf(record['action'], `${where}.action`, VIEW_LIMITS.action)
+      if (!ACTION_PATTERN.test(action)) {
+        throw new ViewSpecError(`${where}.action is not a valid action id: ${action}`)
+      }
+      const label = textOf(record['label'], `${where}.label`, VIEW_LIMITS.label)
+      // An empty caption would be a button nobody can find but anybody can press.
+      if (label.trim().length === 0) {
+        throw new ViewSpecError(`${where}.label must not be empty`)
+      }
+      return {
+        kind,
+        action,
+        label,
+        ...(record['value'] === undefined
+          ? {}
+          : { value: textOf(record['value'], `${where}.value`, VIEW_LIMITS.action) }),
         ...(tone === undefined ? {} : { tone: tone as ViewTone }),
       }
     }
@@ -296,6 +350,11 @@ export function parseViewContribution(value: unknown): ViewContribution {
     }
   }
 
+  const onAction = record['onAction']
+  if (onAction !== undefined && typeof onAction !== 'function') {
+    throw new ViewContributionError(`view.onAction must be a function: ${id}`)
+  }
+
   const icon = record['icon']
   if (icon !== undefined) {
     if (typeof icon !== 'string' || !ICON_PATTERN.test(icon)) {
@@ -309,6 +368,7 @@ export function parseViewContribution(value: unknown): ViewContribution {
     ...(description === undefined || description.length === 0 ? {} : { description }),
     ...(icon === undefined ? {} : { icon }),
     data: record['data'] as ViewContribution['data'],
+    ...(onAction === undefined ? {} : { onAction: onAction as ViewContribution['onAction'] }),
   }
 }
 

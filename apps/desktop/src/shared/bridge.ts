@@ -312,6 +312,17 @@ export interface PictorBridge {
    * The answer is a description, not markup: the window draws it with its own blocks.
    */
   renderPluginView(id: string, sessionId: string | null): Promise<ViewSpec>
+  /**
+   * A press on one of a view's `button` blocks.
+   *
+   * Resolves with what to draw next, or null when the press changed nothing visible.
+   */
+  actPluginView(
+    id: string,
+    action: string,
+    value: string | undefined,
+    sessionId: string | null,
+  ): Promise<ViewSpec | null>
   listToolViews(): Promise<ToolViewDescriptor[]>
   /** Every seat plugins took, in registration order. */
   listSlots(): Promise<SlotDescriptor[]>

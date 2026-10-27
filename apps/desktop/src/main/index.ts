@@ -1158,6 +1158,36 @@ function registerIpc(workspace: Workspace): void {
   })
 
   /**
+   * A press on a `button` block.
+   *
+   * The window never runs plugin code: it names the view and the action, the plugin's
+   * handler runs in this process, and a description comes back — or nothing, when the
+   * press changed nothing the panel shows.
+   */
+  ipcMain.handle(
+    'pictor:views.act',
+    async (_event, id: unknown, action: unknown, value: unknown, sessionId: unknown) => {
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new Error('view id must be a non-empty string')
+      }
+      if (typeof action !== 'string' || action.length === 0) {
+        throw new Error('action must be a non-empty string')
+      }
+      if (value !== undefined && typeof value !== 'string') {
+        throw new Error('value must be a string when present')
+      }
+      if (sessionId !== null && typeof sessionId !== 'string') {
+        throw new Error('sessionId must be a string or null')
+      }
+      return workspace.plugins.viewRunner().act(id, {
+        action,
+        ...(value === undefined ? {} : { value }),
+        sessionId,
+      })
+    },
+  )
+
+  /**
    * Renders the view a panel names.
    *
    * Asked by view id, not by panel id: a panel is a frame, and the frame is not what has

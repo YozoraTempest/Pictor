@@ -82,16 +82,16 @@ registers a tool — runs in both.
 Every point is a function on the `pictor` service. Each returns a disposer, and the ones
 inside `ctx.effect` are undone when the plugin unloads.
 
-| Call                          | Payload                                   | What it does                                   |
-| ----------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `ctx.pictor.panels(...)`      | `{ id, title, icon?, view }`              | A row in the right column's launcher           |
-| `ctx.pictor.slots(...)`       | `{ slot, key?, title, icon?, view }`      | A seat anywhere the window reserves one        |
-| `ctx.pictor.views(...)`       | `{ id, title, data(context), icon? }`     | What a panel draws: blocks, not renderer code  |
-| `ctx.pictor.toolGuards(...)`  | `{ id, title, tools?, decide(context) }`  | Decides allow/deny **before** a call runs      |
-| `ctx.pictor.toolHooks(...)`   | `{ id, title?, tools?, after(context) }`  | Reacts **after** a call settled: note or fail  |
-| `ctx.pictor.toolViews(...)`   | `{ id, tools, label?, icon? }`            | How a tool call is presented in the transcript |
-| `ctx.pictor.skills(...)`      | `{ name, description, body, whenToUse? }` | A skill the agent can load on demand           |
-| `pictor.contributes` `kernel` | `{ main, label? }`                        | A second entry that provides `kernel.<id>`     |
+| Call                          | Payload                                          | What it does                                   |
+| ----------------------------- | ------------------------------------------------ | ---------------------------------------------- |
+| `ctx.pictor.panels(...)`      | `{ id, title, icon?, view }`                     | A row in the right column's launcher           |
+| `ctx.pictor.slots(...)`       | `{ slot, key?, title, icon?, view }`             | A seat anywhere the window reserves one        |
+| `ctx.pictor.views(...)`       | `{ id, title, data(context), onAction?, icon? }` | What a panel draws: blocks, not renderer code  |
+| `ctx.pictor.toolGuards(...)`  | `{ id, title, tools?, decide(context) }`         | Decides allow/deny **before** a call runs      |
+| `ctx.pictor.toolHooks(...)`   | `{ id, title?, tools?, after(context) }`         | Reacts **after** a call settled: note or fail  |
+| `ctx.pictor.toolViews(...)`   | `{ id, tools, label?, icon? }`                   | How a tool call is presented in the transcript |
+| `ctx.pictor.skills(...)`      | `{ name, description, body, whenToUse? }`        | A skill the agent can load on demand           |
+| `pictor.contributes` `kernel` | `{ main, label? }`                               | A second entry that provides `kernel.<id>`     |
 
 ### Slots: where a seat goes
 
@@ -122,9 +122,10 @@ Two rules make a seat safe to grant:
   one. Two plugins claiming the same cell is refused, and the first keeps working — dsh
   lets a higher priority shadow the other, which turns "why did my panel change" into a
   hunt.
-- **A seat cannot block the app.** `views` blocks are display-only, so nothing in a slot
-  needs a click; the floating layer and its seats are click-through. A badge that covers a
-  button is worse than no badge.
+- **A seat cannot block the app.** A seat's card is click-through, so the floating layer
+  never swallows a press meant for the window. The exception is a `button` block inside it,
+  which opts back into clicks by itself: a button that cannot be pressed is worse than one
+  that can.
 
 `rightbar` is the one place Pictor and dsh differ in meaning: in dsh the occupant replaces
 the right column, here it sits above the launcher. That column is where every other panel
@@ -148,6 +149,7 @@ The view answers with **blocks**; the window draws them with components it owns:
 | `table`    | `{ columns, rows }` — every row same width |
 | `code`     | `{ text, language? }`                      |
 | `badge`    | `{ label, tone? }`                         |
+| `button`   | `{ label, action, value?, tone? }`         |
 | `divider`  | —                                          |
 
 ```js
@@ -181,6 +183,41 @@ workbench's UI as it changes. Blocks are checked one at a time before anything i
 so a shape this build does not know is refused with the plugin's name in the message
 instead of quietly disappearing from the panel. A block the vocabulary cannot express is
 a request for a rendering engine — the honest answer is that this is not one.
+
+### A button is a message
+
+`button` is the one block a person can press. It carries an **action id**, not a handler:
+
+```js
+ctx.effect(() =>
+  ctx.pictor.views({
+    id: 'acme.actions',
+    title: '动作',
+    data: () => ({
+      blocks: [{ kind: 'button', label: '重新检查', action: 'recheck', value: 'main' }],
+    }),
+    // A press runs here, in the main process, next to the plugin's own state.
+    onAction: ({ action, value }) => {
+      if (action !== 'recheck') return undefined
+      return { blocks: [{ kind: 'text', text: `重新检查了 ${value ?? ''}` }] }
+    },
+  }),
+)
+```
+
+- **The answer is a new description.** Return a spec and it replaces what was drawn.
+- **`undefined` is an answer too.** The press landed, nothing the panel shows changed, so
+  the window keeps its content instead of blanking it.
+- **No `onAction` is a refusal, not silence.** Pressing a button on a view without one fails
+  with `视图「…」没有处理按钮：<action>` — a dead button would look like a broken window.
+- **One press at a time.** The window disables the button while its action is in flight, so
+  a double click cannot run the handler twice.
+- **The same channel serves a seat.** A `button` in `shell.overlay` reaches the same
+  `onAction`.
+
+There is nowhere to put a function in a block, on purpose: the click travels to where the
+plugin already runs and comes back as a description. That is what keeps plugin code out of
+the window while still giving a panel something to press.
 
 ### Naming a tool
 

@@ -69,6 +69,7 @@ function Seat({
 }): React.JSX.Element {
   const [spec, setSpec] = useState<ViewSpec | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState<string | null>(null)
   const Icon = iconFor(seat.icon)
 
   useEffect(() => {
@@ -88,6 +89,20 @@ function Seat({
     }
   }, [seat.view, sessionId])
 
+  /** A press in this seat: same channel as a panel's buttons. */
+  const act = (action: string, value: string | undefined): void => {
+    setPending(action)
+    void window.pictor
+      .actPluginView(seat.view, action, value, sessionId)
+      .then((next) => {
+        if (next !== null) setSpec(next)
+      })
+      .catch((reason: unknown) => {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      })
+      .finally(() => setPending(null))
+  }
+
   const body = (
     <>
       {error !== null && <Banner tone="error">{error}</Banner>}
@@ -97,7 +112,7 @@ function Seat({
           {seat.title}
         </div>
       )}
-      {spec !== null && <ViewContent spec={spec} />}
+      {spec !== null && <ViewContent spec={spec} onAction={act} busy={pending} />}
     </>
   )
 
@@ -109,10 +124,10 @@ function Seat({
 
   if (chrome === 'inline') {
     return (
-      // Click-through, including its own box. A `views` block is display-only — there is
-      // nothing here to press — so a seat never needs to take a click, and a floating one
-      // must never cover a control that does.
-      <div className="pointer-events-none rounded-md border border-border bg-surface px-2.5 py-2">
+      // Click-through except for the controls inside it: a `button` block opts in, the card
+      // around it does not. That is what keeps a floating seat from covering a control
+      // that matters while still letting its own buttons be pressed.
+      <div className="pointer-events-none rounded-md border border-border bg-surface px-2.5 py-2 [&_button]:pointer-events-auto">
         <div className="mb-1 flex items-center gap-1.5 text-2xs text-faint">
           <Icon className="size-3 shrink-0" aria-hidden />
           <span className="truncate">{seat.title}</span>

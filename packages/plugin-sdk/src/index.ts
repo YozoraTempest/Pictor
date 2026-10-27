@@ -59,6 +59,7 @@ export {
   type ViewContext,
   type ViewContribution,
   type ViewContributionFailure,
+  type ViewActionRequest,
   type ViewSpec,
   type ViewTone,
 } from './views.js'

@@ -80,6 +80,7 @@ Each spec says what it is about:
 | `image`    | A pasted image reaches the model as an image part, survives into the bubble, and a non-image paste attaches nothing                          |
 | `archive`  | Archiving is undoable from the row that did it, and a sweeping archive asks first                                                            |
 | `search`   | The palette narrows as you type, land on a conversation, open and close on the advertised keys                                               |
+| `actions`  | A button's action id reaches the plugin in the main process, and the description it answers with replaces what was drawn                     |
 
 `e2e/stub-model.mjs` is a local OpenAI-compatible endpoint, so the chat spec
 asserts Pictor's behaviour and never a provider's output. It answers the runtime's

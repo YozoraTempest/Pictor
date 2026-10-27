@@ -1,4 +1,4 @@
-import { Badge } from '../../components/ui/index.js'
+import { Badge, Button, Spinner } from '../../components/ui/index.js'
 import { Markdown } from '../chat/Markdown.js'
 import type { ViewBlock, ViewSpec } from '../../../../shared/bridge.js'
 
@@ -10,7 +10,24 @@ import type { ViewBlock, ViewSpec } from '../../../../shared/bridge.js'
  * mean the same thing everywhere — a `table` in `shell.bottom` looks like a `table` in
  * the right column.
  */
-export function ViewContent({ spec }: { spec: ViewSpec }): React.JSX.Element {
+export function ViewContent({
+  spec,
+  onAction,
+  busy = null,
+}: {
+  spec: ViewSpec
+  /**
+   * Presses one of the view's buttons.
+   *
+   * Required, because every host has the channel: the click names the action here, the
+   * plugin's handler runs next to the plugin, and the answer comes back as a description.
+   * A view with no handler answers with a failure, which the host shows — silence would
+   * look like a dead button.
+   */
+  onAction: (action: string, value: string | undefined) => void
+  /** The `action` id currently in flight, so its button can say so. */
+  busy?: string | null
+}): React.JSX.Element {
   return (
     <div className="flex flex-col gap-2.5">
       {spec.blocks.length === 0 ? (
@@ -18,7 +35,7 @@ export function ViewContent({ spec }: { spec: ViewSpec }): React.JSX.Element {
       ) : (
         spec.blocks.map((block, index) => (
           // Blocks are positional: two identical paragraphs are two blocks.
-          <Block key={String(index)} block={block} />
+          <Block key={String(index)} block={block} onAction={onAction} busy={busy} />
         ))
       )}
 
@@ -32,7 +49,15 @@ export function ViewContent({ spec }: { spec: ViewSpec }): React.JSX.Element {
 }
 
 /** One block. The vocabulary is closed: every case here is one the SDK validates. */
-function Block({ block }: { block: ViewBlock }): React.JSX.Element {
+function Block({
+  block,
+  onAction,
+  busy,
+}: {
+  block: ViewBlock
+  onAction: (action: string, value: string | undefined) => void
+  busy: string | null
+}): React.JSX.Element {
   switch (block.kind) {
     case 'heading':
       return <h3 className="text-xs font-semibold text-text">{block.text}</h3>
@@ -112,6 +137,24 @@ function Block({ block }: { block: ViewBlock }): React.JSX.Element {
           <Badge tone={block.tone ?? 'neutral'}>{block.label}</Badge>
         </div>
       )
+    case 'button': {
+      const pending = busy === block.action
+      return (
+        <div>
+          <Button
+            size="sm"
+            variant={
+              block.tone === 'danger' ? 'danger' : block.tone === 'accent' ? 'primary' : 'secondary'
+            }
+            disabled={pending}
+            onClick={() => onAction(block.action, block.value)}
+          >
+            {pending && <Spinner className="mr-1 size-3" />}
+            {block.label}
+          </Button>
+        </div>
+      )
+    }
     case 'divider':
       return <hr className="border-border" />
   }

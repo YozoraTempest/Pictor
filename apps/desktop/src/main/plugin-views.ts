@@ -74,6 +74,52 @@ export class PluginViews {
     }
   }
 
+  /**
+   * Runs one button press and answers with what to draw next.
+   *
+   * The click is a message, not code: the plugin's `onAction` runs here, next to the
+   * plugin, and the window only ever receives a description back. Returning nothing means
+   * the press changed nothing visible, and the panel keeps what it has — no flash, no
+   * empty frame.
+   */
+  async act(
+    id: string,
+    request: { action: string; value?: string; sessionId: string | null },
+  ): Promise<unknown | null> {
+    const view = this.#views.find((entry) => entry.id === id)
+    if (view === undefined) throw new Error(`没有这个视图：${id}`)
+    if (view.onAction === undefined) {
+      throw new Error(`视图「${view.title}」没有处理按钮：${request.action}`)
+    }
+
+    const owner = this.#ownerOf(id)
+    const call = {
+      sessionId: request.sessionId,
+      dataDirectory: this.#dataDirectory(owner),
+      pluginId: owner,
+      action: request.action,
+      ...(request.value === undefined ? {} : { value: request.value }),
+    }
+
+    let answered: unknown
+    try {
+      answered = await withTimeout(Promise.resolve(view.onAction(call)), this.#timeoutMs, view.id)
+    } catch (error) {
+      throw new Error(`视图「${view.title}」处理「${request.action}」时失败：${messageOf(error)}`)
+    }
+
+    // Nothing returned is an answer too: the press happened, the panel stays as it is.
+    if (answered === undefined) return null
+
+    try {
+      return parseViewSpec(answered)
+    } catch (error) {
+      throw new Error(
+        `视图「${view.title}」返回的内容不符合契约：${error instanceof ViewSpecError ? error.message : messageOf(error)}`,
+      )
+    }
+  }
+
   /** The plugin that contributed one view. */
   #ownerOf(id: string): string {
     return this.#owners.get(id) ?? id

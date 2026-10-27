@@ -24,7 +24,7 @@ export default {
     // Blocks the plugin described, drawn by the renderer: a heading, an ordered list,
     // a key/value row it filled from its own context, a table and a code block.
     await page.getByText('内容是插件说的，画的是窗口').waitFor({ timeout: 20_000 })
-    await page.getByText('九种块').waitFor({ timeout: 20_000 })
+    await page.getByText('十种块').waitFor({ timeout: 20_000 })
     await page.getByText('每行的格子数必须和列数一致').waitFor({ timeout: 20_000 })
     await page.getByText('和会话里同一套渲染').waitFor({ timeout: 20_000 })
     // The context a view is handed: its own plugin id, and a directory of its own to keep
@@ -36,15 +36,23 @@ export default {
     const note = page.getByText(/视图只在打开和按刷新时读取/)
     await note.waitFor({ timeout: 20_000 })
 
+    // The view counts its own reads, so a refresh is visible. The count is read off the
+    // badge instead of assumed from 1: another spec may have opened this panel already.
+    const count = page.getByText(/^第 \d+ 次读取$/)
+    await count.waitFor({ timeout: 20_000 })
+    const first = Number((await count.textContent())?.match(/\d+/)?.[0])
+
     // Refresh reads again — the view counts its reads, so the change is visible.
     await page.getByRole('button', { name: '刷新' }).click()
-    await page.getByText('第 2 次读取').first().waitFor({ timeout: 20_000 })
+    await page.getByText(`第 ${String(first + 1)} 次读取`, { exact: true }).waitFor({
+      timeout: 20_000,
+    })
 
     // Going back restores the list: one level deep, and the same row is still there.
     await page.getByRole('button', { name: '返回面板列表' }).click()
     await row.waitFor({ timeout: 20_000 })
     assert.equal(
-      await page.getByText('九种块').count(),
+      await page.getByText('十种块').count(),
       0,
       'the view is gone once the column is back to its list',
     )

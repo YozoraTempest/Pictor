@@ -19,12 +19,13 @@ describe('parseViewSpec', () => {
         { kind: 'table', columns: ['a', 'b'], rows: [['1', '2']] },
         { kind: 'code', text: 'ls -la', language: 'bash' },
         { kind: 'badge', label: '3 个改动', tone: 'accent' },
+        { kind: 'button', label: '刷新', action: 'refresh' },
         { kind: 'divider' },
       ],
       note: '读取于 12:00',
     })
 
-    expect(spec.blocks).toHaveLength(9)
+    expect(spec.blocks).toHaveLength(10)
     expect(spec.note).toBe('读取于 12:00')
   })
 
@@ -40,6 +41,45 @@ describe('parseViewSpec', () => {
     expect(() =>
       parseViewSpec({ blocks: [{ kind: 'table', columns: ['a', 'b'], rows: [['1']] }] }),
     ).toThrow(/has 1 cells, want 2/)
+  })
+
+  it('keeps a button as a name to press, never as code', () => {
+    const spec = parseViewSpec({
+      blocks: [{ kind: 'button', label: '重新检查', action: 'recheck', value: 'main' }],
+    })
+
+    // The block carries an id and an optional payload; there is nowhere to put a handler,
+    // which is what keeps plugin code out of the window.
+    expect(spec.blocks[0]).toEqual({
+      kind: 'button',
+      label: '重新检查',
+      action: 'recheck',
+      value: 'main',
+    })
+  })
+
+  it('refuses a button nobody could answer', () => {
+    // A caption without an action is a control that cannot say what it wants, and a button
+    // with no caption is a control nobody can find.
+    expect(() => parseViewSpec({ blocks: [{ kind: 'button', label: '匿名' }] })).toThrow(
+      /\.action must be a string/,
+    )
+    expect(() => parseViewSpec({ blocks: [{ kind: 'button', action: 'noop' }] })).toThrow(
+      /\.label must be a string/,
+    )
+    expect(() =>
+      parseViewSpec({ blocks: [{ kind: 'button', label: ' ', action: 'noop' }] }),
+    ).toThrow(/\.label must not be empty/)
+  })
+
+  it('refuses an action id that is not an id', () => {
+    // Action ids are matched exactly by the plugin, so free text would only ever miss.
+    expect(() =>
+      parseViewSpec({ blocks: [{ kind: 'button', label: 'x', action: 'Refresh Now!' }] }),
+    ).toThrow(/not a valid action id/)
+    expect(() =>
+      parseViewSpec({ blocks: [{ kind: 'button', label: 'x', action: 'a/b' }] }),
+    ).toThrow(/not a valid action id/)
   })
 
   it('refuses an unknown badge tone', () => {
@@ -81,5 +121,25 @@ describe('parseViewContributions', () => {
       'acme.bad-icon',
     ])
     expect(failures[0]?.reason).toMatch(/data must be a function/)
+  })
+
+  it('keeps the handler a view hands back for its buttons', () => {
+    // Dropping it here would make every button in the plugin report "no handler" while the
+    // contribution itself looked fine, which is the hardest kind of bug to place.
+    const onAction = (): void => {}
+    const { views } = parseViewContributions([
+      { id: 'acme.actions', title: '动作', data: () => ({ blocks: [] }), onAction },
+    ])
+
+    expect(views[0]?.onAction).toBe(onAction)
+  })
+
+  it('refuses a handler that is not a function', () => {
+    const { views, failures } = parseViewContributions([
+      { id: 'acme.actions', title: '动作', data: () => ({ blocks: [] }), onAction: 'press' },
+    ])
+
+    expect(views).toHaveLength(0)
+    expect(failures[0]?.reason).toMatch(/onAction must be a function/)
   })
 })

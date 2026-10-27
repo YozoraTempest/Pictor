@@ -38,6 +38,8 @@ export function PluginViewPanel({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [nonce, setNonce] = useState(0)
+  /** The action in flight, so its own button shows it and the others stay usable. */
+  const [pending, setPending] = useState<string | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -68,6 +70,29 @@ export function PluginViewPanel({
     setNonce((current) => current + 1)
   }, [])
 
+  /**
+   * A button press.
+   *
+   * The answer is either a new description — which replaces what is drawn — or nothing,
+   * in which case the panel deliberately keeps what it has: a press that changed nothing
+   * visible should not blank the view to prove it was heard.
+   */
+  const act = useCallback(
+    (action: string, value: string | undefined) => {
+      setPending(action)
+      void window.pictor
+        .actPluginView(view, action, value, sessionId)
+        .then((next) => {
+          if (next !== null) setSpec(next)
+        })
+        .catch((reason: unknown) => {
+          setError(reason instanceof Error ? reason.message : String(reason))
+        })
+        .finally(() => setPending(null))
+    },
+    [view, sessionId],
+  )
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border pr-2 pl-1.5">
@@ -95,7 +120,7 @@ export function PluginViewPanel({
           </div>
         )}
 
-        {spec !== null && <ViewContent spec={spec} />}
+        {spec !== null && <ViewContent spec={spec} onAction={act} busy={pending} />}
       </div>
     </div>
   )
