@@ -1,0 +1,2176 @@
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { ApplicationHost, acquireProfileLock, ProfileLockedError } from '@vulonlok/application'
+import { resolveHostCoreBinary, startHostCore } from '@vulonlok/host-client'
+import {
+  PluginInstaller,
+  discoverPlugins,
+  installedPackageRoots,
+  type DiscoveredPlugin,
+  expandPluginRoots,
+  resolveActivationOrder,
+} from '@vulonlok/plugin-host'
+import {
+  KernelPluginInstaller,
+  addProfileBundle,
+  isBundlePackage,
+  type KernelPluginInstallResult,
+} from '../kernel/kernel-plugins.js'
+import { developmentPluginsDirectory } from '../plugin-roots.js'
+import { declarationFor, declarationOf, targetsOf, type PluginTarget } from '../plugin-target.js'
+import { SLOT_SPECS } from '@vulonlok/plugin-sdk'
+import type {
+  PanelContribution,
+  ToolGuardContribution,
+  ToolViewContribution,
+} from '@vulonlok/plugin-sdk'
+import {
+  DEFAULT_PERMISSION_MODE,
+  MODEL_EFFORTS,
+  isPermissionMode,
+  parseKernelPlugins,
+  parseMcpServers,
+  type KernelPluginSpec,
+  type ApprovalMode,
+  type ChatAnswer,
+  type ChatImage,
+  type ChatQuestion,
+  type ForkPoint,
+  type ChatQuestionRequest,
+  type ApprovalRequest,
+  type JsonValue,
+  type ModelEffort,
+  type ModelProtocol,
+  type PluginRecord,
+  type Section,
+  type SettingsMap,
+  type SkillEntry,
+  type ToolRule,
+  composeSkills,
+  parseToolRules,
+} from '@vulonlok/shared'
+
+import type {
+  AppInfo,
+  PluginHomes,
+  PluginOverview,
+  HarnessStatus,
+  HostSnapshot,
+  KernelChangeResult,
+  PermissionMode,
+  PluginReport,
+  PluginInstallSummary,
+  SlotDescriptor,
+} from '../../shared/bridge.js'
+import { HarnessChatBridge } from '../harness-chat.js'
+import { shouldAdoptTitle } from '@vulonlok/harness-dsh'
+
+import type { KernelDriver } from '@vulonlok/kernel-sdk'
+import { startEngine, type EngineHost } from '../kernel/host.js'
+import { isProviderSource } from '@vulonlok/kernel-sdk'
+import { resolveNodeBinary, resolveNpmCli } from '@vulonlok/kernel-sdk'
+import { openSettings } from '../kernel/settings-store.js'
+
+import { DshHarness, type KernelInfo } from '../kernel/dsh.js'
+import { PluginRuntime } from '../plugin-runtime.js'
+import { ToolBridgeServer, type GuardAsk } from '../tool-bridge-server.js'
+import { ModelService } from '../model-service.js'
+import { RuleBook, describeAsk, describeRule } from '../rule-book.js'
+import { SkillLibrary } from '../skill-library.js'
+
+/**
+ * The services the mounted kernels want registered into them.
+ *
+ * Asked of whoever claims to need them rather than of a named kernel, and passed to the
+ * bridge as opaque JSON: the shape is the asking kernel's (Pi's extension), so neither
+ * this file nor the bridge spells it out. This used to read `piKernel.providers()`,
+ * which is exactly the coupling that made "swap the kernel" a promise with an asterisk.
+ */
+async function providersFrom(
+  drivers: ReadonlyMap<string, KernelDriver>,
+): Promise<readonly unknown[]> {
+  for (const driver of drivers.values()) {
+    if (isProviderSource(driver)) return driver.providers()
+  }
+  return []
+}
+
+const here = fileURLToPath(new URL('.', import.meta.url))
+const appRoot = resolve(here, '../..')
+const repositoryRoot = resolve(appRoot, '../..')
+
+app.setName('pictor')
+
+// Tests and portable runs can redirect the whole profile.
+const userDataOverride = process.env.PICTOR_USER_DATA
+if (userDataOverride !== undefined && userDataOverride.trim().length > 0) {
+  app.setPath('userData', userDataOverride)
+}
+
+/**
+ * Whether this process owns the profile.
+ *
+ * A second launch belongs to the window that is already open, not to a second copy of
+ * the app: the copy would take the debug port, fail the profile lock below, and leave
+ * nothing behind that a person could see. Electron raises the existing window through
+ * `second-instance` instead, which is what clicking the icon a second time means.
+ */
+/**
+ * Everything a harness needs from a window that is already open.
+ *
+ * Built here rather than in the shell: the profile lock, the host core, the plugin
+ * runtime, the engine and every IPC channel are this module's business. A shell hands
+ * over nothing but the app it runs in, and receives a `dispose` to call on the way out.
+ */
+export async function createHarnessHost(): Promise<Workspace | null> {
+  const workspace = await startWorkspace()
+  // Channels belong to the host: a shell that had to register them would know what
+  // conversations and settings are.
+  if (workspace !== null) registerIpc(workspace)
+  return workspace
+}
+
+interface Workspace {
+  appHost: ApplicationHost
+  /** The plugin runtime: one cordis tree, shared with the kernels. */
+  plugins: PluginRuntime
+  model: ModelService
+  /** Routes each conversation to the kernel that owns it. */
+  harness: DshHarness
+  /** The mounted engine: one driver, disposed with the workspace. */
+  engine: EngineHost
+  /** Installs and removes plugins under the profile. */
+  installer: PluginInstaller
+  /**
+   * dsh plugins for the kernel: packages in the kernel's own profile, mounted through the
+   * patch Pictor writes. Separate from `installer` because these two run in different
+   * processes and reach different services.
+   */
+  kernelPlugins: KernelPluginInstaller
+  /** Every plugin directory on disk right now, bundled first; recomputed per call. */
+  pluginDirectories: () => readonly string[]
+  /** Where installed plugins live, and where one being written does. */
+  pluginHomes: () => { installed: string; development: string }
+  /** Writes one setting a kernel declared, and remembers it. */
+  setKernelSetting: (key: string, value: boolean) => Promise<boolean>
+  /** Writes one setting Pictor owns; kernels read the same snapshot afterwards. */
+  writeSetting: (key: string, value: JsonValue) => Promise<void>
+  /** The snapshot those writes keep current, for settings only Pictor reads. */
+  settings: Readonly<SettingsMap>
+  /** Sandbox mode persisted in settings; read fresh so a change needs no restart. */
+  readPermissionMode: () => Promise<PermissionMode>
+  /**
+   * Where plugins that ship with the app live, as opposed to installed ones.
+   *
+   * The settings page needs to tell the two apart: one is a directory next to the
+   * build, the other a directory the person put there, and "已安装：hello-panel" for
+   * something that came with the app is simply false.
+   */
+  bundledRoot: string
+  /** Skills Pictor owns, and the switches that apply to skills it does not. */
+  skills: SkillLibrary
+  /** The person's tool rules; the guard and approval prompts read it live. */
+  rules: RuleBook
+  client: ReturnType<typeof startHostCore>['client']
+  hostCore: string
+  database: string
+  isDisposed: () => boolean
+  dispose: () => Promise<void>
+}
+
+async function startWorkspace(): Promise<Workspace | null> {
+  const userData = app.getPath('userData')
+  const lockPath = join(userData, 'profile.lock')
+
+  let lock
+  try {
+    lock = await acquireProfileLock({
+      path: lockPath,
+      owner: `${process.pid}:desktop`,
+      nowait: true,
+    })
+  } catch (error) {
+    if (error instanceof ProfileLockedError) {
+      // No dialog: a modal box waits for a person, so a launch from a terminal or a
+      // test harness would sit forever on a profile nobody can unlock. The lock owner
+      // is enough to diagnose it, and the exit code says the profile was refused.
+      process.stderr.write(
+        `pictor: profile is locked by ${error.owner} (${lockPath}); another instance owns it\n`,
+      )
+      app.exit(4)
+      return null
+    }
+    throw error
+  }
+
+  let hostCore: string
+  try {
+    hostCore = resolveHostCoreBinary({
+      appRoot: repositoryRoot,
+      resourcesPath: process.resourcesPath,
+      env: process.env,
+    })
+  } catch (error) {
+    dialog.showErrorBox('Host core missing', (error as Error).message)
+    process.exitCode = 1
+    return null
+  }
+
+  const database = join(userData, 'metadata.sqlite3')
+  const running = startHostCore({
+    command: hostCore,
+    database,
+    onStderr: (line) => console.warn(`[host-core] ${line}`),
+  })
+
+  const info = await running.client.info()
+  await running.client.putSetting('runtime.id', 'echo')
+
+  const appHost = new ApplicationHost(running.client)
+
+  // What ships with the app, plus what a person installed: one discovery pass, so a
+  // downloaded plugin behaves exactly like a bundled one.
+  const pluginRoot = app.isPackaged
+    ? join(process.resourcesPath, 'plugins')
+    : join(repositoryRoot, 'plugins')
+  const pluginDirectory = join(userData, 'plugins')
+  // A plugin someone is writing, in a directory of their own rather than in profile data:
+  // it has to be a plain project — under version control, open in an editor, deleted when
+  // it was an experiment. Created on start so the place exists to be found before anyone
+  // writes into it.
+  const developmentDirectory = developmentPluginsDirectory()
+  for (const directory of [pluginDirectory, developmentDirectory]) {
+    try {
+      mkdirSync(directory, { recursive: true })
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      console.warn(`[plugin] 无法创建插件目录 ${directory}: ${reason}`)
+    }
+  }
+
+  // Folders sit beside `installed.json`; a package installed by npm sits inside
+  // `node_modules` and is named by that file. Both are plugins, so discovery asks for
+  // both — otherwise a plugin installed as a package would only ever contribute its
+  // kernel half, which is what used to happen.
+  const candidateRoots = [
+    ...expandPluginRoots([pluginRoot, pluginDirectory, developmentDirectory]),
+    ...installedPackageRoots(pluginDirectory),
+  ]
+
+  const discovery = discoverPlugins(candidateRoots)
+  for (const plugin of discovery.plugins) {
+    const existing = (await running.client.listPlugins()).find((record) => record.id === plugin.id)
+    if (existing === undefined) {
+      await running.client.upsertPlugin({
+        id: plugin.id,
+        version: plugin.manifest.version,
+        source: 'bundled',
+      })
+    }
+  }
+
+  // A bundled plugin that was deleted from the install must not linger as a
+  // ghost row in the plugin list.
+  const discovered = new Set(discovery.plugins.map((plugin) => plugin.id))
+  for (const record of await running.client.listPlugins()) {
+    if (record.source !== 'bundled') continue
+    if (discovered.has(record.id)) continue
+    await running.client.removePlugin(record.id)
+    console.info(`[plugin] removed stale bundled record: ${record.id}`)
+  }
+
+  const records = await running.client.listPlugins()
+  const enabled = new Map(records.map((record) => [record.id, record.enabled]))
+  const resolution = resolveActivationOrder(
+    discovery.plugins,
+    app.getVersion() === '0.0.0' ? '0.0.0' : app.getVersion(),
+  )
+
+  /**
+   * Plugins, in the cordis tree the kernels also live in.
+   *
+   * One tree is what makes `inject` mean the same thing for both halves: a plugin can
+   * wait for `kernel.dsh`, a kernel can read `pictor.panels`, and neither has to be told
+   * about the other's registry.
+   */
+  // Skills live in one root the runtime already scans: a plugin contributes data and
+  // Pictor writes the file, so the plugin never touches the runtime's home. Created before
+  // the runtime because the runtime writes into it as plugins mount.
+  const skills = new SkillLibrary({
+    root: join(userData, 'harness', 'skills'),
+    stash: join(userData, 'skill-library', 'disabled'),
+    stateFile: join(userData, 'skill-library.json'),
+    logger: (message) => console.warn(`[skill] ${message}`),
+  })
+
+  // Read before the runtime exists: the watcher is created in its constructor, and a
+  // preference read afterwards could not take it back without a restart.
+  const hotReloadStored = (await running.client.listSettings())['plugins.hotReload']
+  const plugins = new PluginRuntime({
+    // Without this the runtime has nowhere to write a contributed skill, and every skill a
+    // plugin offers would exist only in memory.
+    skills,
+    userData,
+    // A view's own scratch space, beside the plugin's other state.
+    dataDirectory: (pluginId) => join(userData, 'plugin-data', pluginId),
+    warn: (message) => console.warn(`[plugin] ${message}`),
+    // Editing a plugin is the normal way to work on one, so reloading is on by default.
+    // It costs memory — every reload leaves the previous module behind — and the
+    // settings page says so. The stored choice is read further down, once the settings
+    // snapshot exists, and applied before any plugin is mounted.
+    hotReload: hotReloadStored !== false,
+    onReload: (id) => {
+      console.info(`[plugin] reloaded ${id}`)
+      announceWorkspaceChanged()
+    },
+    // The same parents discovery reads, so a folder written while the app runs is a plugin
+    // without a restart — and deleting it takes the plugin away again.
+    pluginParents: () => [pluginRoot, pluginDirectory, developmentDirectory],
+    onPluginsChanged: () => {
+      announceWorkspaceChanged()
+    },
+  })
+
+  for (const plugin of resolution.ordered) {
+    if (enabled.get(plugin.id) === false) continue
+    await plugins.add(plugin)
+  }
+  // Mounting is done by the loop above, which already knows the on/off choices; this is
+  // what turns on the watcher that later notices a folder appearing or going away.
+  plugins.beginWatching()
+  for (const failure of resolution.failures) {
+    console.warn(`[plugin] ${failure.source}: ${failure.reason}`)
+  }
+
+  // A plugin that is installed but not mounted owns no files: whatever an earlier run
+  // wrote for it has to go, or its skills would outlive the switch. The runtime then
+  // writes what the mounted set actually contributes.
+  const mounted = new Set(plugins.mounted().map((plugin) => plugin.id))
+  for (const plugin of discovery.plugins) {
+    if (mounted.has(plugin.id)) continue
+    skills.clearPlugin(plugin.id)
+  }
+  plugins.syncSkills()
+
+  console.info(`pictor host core ${info.version} (schema ${info.schemaVersion})`)
+
+  let disposed = false
+  const model = new ModelService({ store: running.client, userData })
+  const readPermissionMode = async (): Promise<PermissionMode> => {
+    const settings = await running.client.listSettings()
+    const value = settings['harness.permissionMode']
+    return isPermissionMode(value) ? value : DEFAULT_PERMISSION_MODE
+  }
+  // A person's own tool rules live beside the plugin guards: one guard closes over
+  // the book and reads it per call, so saving a rule needs no restart.
+  const rules = new RuleBook(running.client)
+  await rules.load()
+
+  // The profile's settings once, plus the one function every write goes through: the
+  // engine reads the snapshot, and a page that saves anything keeps it current. That is
+  // what lets the runtime ask "what did the person choose?" without this file knowing
+  // which key it means, and without a stale answer after the page saves.
+  const settings = await openSettings(running.client)
+
+  /**
+   * dsh plugins, installed into the kernel's profile.
+   *
+   * The list is a setting, not a file: the profile patch is generated from settings on
+   * every boot, so anything written beside it by hand would be erased by the next model
+   * change. Writing the setting is what stages a plugin; a restart is what mounts it.
+   */
+  const kernelPlugins = new KernelPluginInstaller({
+    profile: join(userData, 'harness', 'profiles', 'pictor'),
+    // What dsh itself already ships: those take an entry and no install, or the profile
+    // copy splits the kernel's service tree in two.
+    installation: join(userData, 'harness-runtime'),
+    npm: () => {
+      const node = resolveNodeBinary()
+      if (node === null)
+        throw new Error('没有找到可用的 Node；安装 Node 22+ 或设置 PICTOR_NODE_BIN')
+      const cli = resolveNpmCli(node)
+      if (cli === null) throw new Error('没有找到 npm，无法安装内核插件')
+      return { node, cli }
+    },
+    read: () => parseKernelPlugins(settings.values()['kernel.plugins']),
+    write: async (plugins) => {
+      await settings.write('kernel.plugins', plugins as unknown as JsonValue)
+      // A bundle brings its own patch, so it also has to be in the profile's bundle list;
+      // without that the loader never reads the patch it ships.
+      for (const plugin of plugins) {
+        if (!plugin.enabled) continue
+        const root = join(userData, 'harness', 'profiles', 'pictor', 'node_modules', plugin.name)
+        if (isBundlePackage(root))
+          addProfileBundle(join(userData, 'harness', 'profiles', 'pictor'), plugin.name)
+      }
+    },
+  })
+
+  // One installer for both halves: a plugin may contribute panels, a kernel, or both,
+  // and installing it should not be two decisions.
+  const installer = new PluginInstaller({
+    directory: join(userData, 'plugins'),
+    npm: () => {
+      const node = resolveNodeBinary()
+      if (node === null)
+        throw new Error('没有找到可用的 Node；安装 Node 22+ 或设置 PICTOR_NODE_BIN')
+      const cli = resolveNpmCli(node)
+      if (cli === null) throw new Error('没有找到 npm，无法安装插件包')
+      return { node, cli }
+    },
+    validate: (root) => {
+      const discovery = discoverPlugins([root])
+      if (discovery.plugins.length > 0) return
+      throw new Error(
+        discovery.failures[0]?.reason ?? '这不是一个插件：package.json 里没有 pictor 字段',
+      )
+    },
+  })
+  const ruleGuard: ToolGuardContribution = {
+    id: 'pictor-rules',
+    title: '工具规则',
+    decide: (context) => {
+      const rule = rules.denyFor(context)
+      return rule === null
+        ? { decision: 'allow' }
+        : { decision: 'deny', reason: `被工具规则拦截：${describeRule(rule)}` }
+    },
+  }
+  // Holding a call for a person is a second question, asked only by a caller that can
+  // wait for the answer. The rules answer it, and so does the engine's own mode — which
+  // belongs to the runtime that runs the conversation, not to a named one here.
+  let engine: DshHarness | null = null
+  const askFor = async (context: GuardAsk): Promise<{ tool: string; reason: string } | null> => {
+    const session = context.session
+    // A call with no conversation to name cannot have a mode; the rules still apply, so
+    // it is asked as if its kernel never opted in. Otherwise the conversation's own
+    // kernel answers, whatever kernel that is.
+    let mode: ApprovalMode = 'never'
+    let granted = false
+    if (session !== null && engine !== null) {
+      mode = await engine.guardApprovalMode(session)
+      granted = await engine.guardIsGranted(session, context.tool)
+    }
+    const verdict = rules.askFor({
+      tool: context.tool,
+      args: context.args,
+      mutating: context.mutating,
+      mode,
+      // A tool the person already allowed in this conversation stops asking — unless
+      // a rule of theirs names this call, which the policy decides.
+      granted,
+    })
+    return verdict === null
+      ? null
+      : { tool: context.tool, reason: describeAsk(verdict, context.tool, context.args) }
+  }
+
+  // Guards are closures in this process, so the runtime asks them over a loopback
+  // socket instead of receiving them as configuration. The bridge is always up:
+  // the rule guard is always present, and rules can be added while it runs.
+  // What Pi needs to run the same services: one shared configuration instead of two
+  // copies. The kernel plugin derives it from `pictor.models`; the bridge only holds
+  // the callback, because the extension asks for it over the loopback socket and keys
+  // never reach the file on disk.
+  // Resolved per request rather than captured: the bridge outlives any one kernel
+  // being mounted or unmounted, and it is only asked when an extension wants services.
+  // The engine, once it is mounted: the bridge outlives any single session, so the
+  // driver is read per request rather than captured at boot.
+  let engineDriverRef: KernelDriver | null = null
+  const guardBridge = new ToolBridgeServer(
+    // The person's own rules first, then whatever guards are installed right now —
+    // asked per call, so installing one does not need a restart to matter.
+    () => [ruleGuard, ...plugins.guards()],
+    randomUUID(),
+    askFor,
+    () =>
+      providersFrom(
+        engineDriverRef === null ? new Map() : new Map([[engineDriverRef.id, engineDriverRef]]),
+      ),
+    () => plugins.hooks(),
+  )
+  void guardBridge.start().catch((error: unknown) => {
+    console.warn('[tool-guard] bridge 启动失败', error instanceof Error ? error.message : error)
+  })
+  // A conversation's directory comes from the project it was filed under. The
+  // lookup happens per session because the runtime decides the sandbox root when
+  // it creates one; nothing here changes a conversation that already exists.
+  const resolveCwd = async (sessionId: string): Promise<string | null> => {
+    const sessions = await running.client.listSessions()
+    const session = sessions.find((entry) => entry.id === sessionId)
+    if (session === undefined || session.projectId === null) return null
+    const projects = await running.client.listProjects()
+    const path = projects.find((project) => project.id === session.projectId)?.path ?? null
+    return path !== null && existsSync(path) ? path : null
+  }
+
+  // Every kernel is mounted the same way — one cordis plugin that provides one
+  // `kernel.<id>` service — so adding a third is a directory, not a build. What is
+  // compiled in goes first, and whatever the profile has installed follows.
+  // The plugins' tree, so both halves are services in one scope: a plugin can wait for
+  // `pictor.panels` and the engine can read `pictor.models` without either being told the
+  // other exists. This is what dsh does on its own side, and the reason `inject` means the
+  // same thing on both.
+  const host = await startEngine({
+    ctx: plugins.ctx,
+    services: {
+      models: model,
+      rules,
+      guard: () => guardBridge.endpoint,
+      permission: readPermissionMode,
+      workspace: resolveCwd,
+      userData,
+      settings: settings.service,
+    },
+    // Loaded by package name. There is one entry because there is one engine: dsh is not
+    // one of several backends, and nothing in the window can replace it.
+    builtin: {
+      id: 'dsh',
+      label: 'DeepSeek Harness',
+      entry: { load: async () => (await import('@vulonlok/kernel-dsh')).dshKernel },
+    },
+  })
+  engineDriverRef = host.driver
+  const harness: DshHarness = new DshHarness(host.driver)
+  engine = harness
+  // The runtime reports durable session events; the renderer renders runs and
+  // deltas. One translation keeps the transcript unchanged by the swap.
+  const chatBridge = new HarnessChatBridge()
+  harness.onNotification((notification) => {
+    // The runtime explains its own failures on stderr; without this the status is
+    // the only place a user could read them.
+    if (notification.method === 'session.title') {
+      const params = (notification.params ?? {}) as { sessionId?: unknown; title?: unknown }
+      if (typeof params.sessionId === 'string' && typeof params.title === 'string') {
+        void adoptSessionTitle(running.client, params.sessionId, params.title)
+      }
+    }
+    if (notification.method === 'approval.request') {
+      const params = (notification.params ?? {}) as {
+        eventId?: unknown
+        tool?: unknown
+        reason?: unknown
+        sessionId?: unknown
+      }
+      if (typeof params.eventId === 'string') {
+        const request: ApprovalRequest = {
+          eventId: params.eventId,
+          tool: typeof params.tool === 'string' ? params.tool : null,
+          reason: typeof params.reason === 'string' ? params.reason : null,
+          // A kernel that names the conversation lets the card stay in it, and lets
+          // the answer be scoped to it. dsh's prompts carry no session, so it stays out.
+          ...(typeof params.sessionId === 'string' && params.sessionId.length > 0
+            ? { sessionId: params.sessionId }
+            : {}),
+        }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('pictor:harness.approval', request)
+        }
+      }
+    }
+    if (notification.method === 'question.request') {
+      const params = (notification.params ?? {}) as {
+        eventId?: unknown
+        questions?: unknown
+        sessionId?: unknown
+      }
+      if (typeof params.eventId === 'string' && Array.isArray(params.questions)) {
+        const request: ChatQuestionRequest = {
+          eventId: params.eventId,
+          // Same as an approval: a kernel that names the conversation lets the card
+          // stay in it.
+          ...(typeof params.sessionId === 'string' && params.sessionId.length > 0
+            ? { sessionId: params.sessionId }
+            : {}),
+          questions: params.questions as ChatQuestion[],
+        }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('pictor:harness.question', request)
+        }
+      }
+    }
+    if (notification.method === 'kernel.notice') {
+      const params = (notification.params ?? {}) as { message?: unknown; level?: unknown }
+      const message = typeof params.message === 'string' ? params.message : ''
+      if (message.length > 0) {
+        const notice = {
+          message: message.slice(0, 400),
+          level: params.level === 'error' ? 'error' : 'info',
+        }
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('pictor:kernel.notice', notice)
+        }
+      }
+    }
+    if (notification.method === 'runtime.install') {
+      const line = (notification.params as { line?: unknown } | null)?.line
+      if (typeof line === 'string') {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('pictor:harness.install', line)
+        }
+      }
+    }
+    if (notification.method === 'runtime.stderr') {
+      const text = (notification.params as { text?: unknown } | null)?.text
+      if (typeof text === 'string' && text.trim().length > 0) {
+        console.warn('[harness]', text.trim().slice(0, 400))
+      }
+    }
+    for (const event of chatBridge.map(notification)) {
+      // Broadcast: the window that opened the conversation is not necessarily the
+      // one a single `mainWindow` handle points at, and several may be listening.
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('pictor:chat.event', event)
+      }
+    }
+  })
+
+  return {
+    appHost,
+    plugins,
+    model,
+    harness,
+    engine: host,
+    installer,
+    kernelPlugins,
+    // Recomputed, not remembered: a plugin installed while the app runs is a directory
+    // that did not exist when the app started, and every caller here — the settings page,
+    // the on/off switch — is asking precisely because the set may have changed.
+    pluginDirectories: () =>
+      expandPluginRoots([pluginRoot, join(userData, 'plugins'), developmentDirectory]),
+    pluginHomes: () => ({ installed: pluginDirectory, development: developmentDirectory }),
+    // The kernel that declared the key is the one that writes it, persistence
+    // included; this only asks every catalogue to look again afterwards.
+    setKernelSetting: async (key, value) => {
+      const applied = await harness.setKernelSetting(key, value)
+      harness.invalidateCatalogues()
+      return applied
+    },
+    writeSetting: settings.write,
+    settings: settings.values(),
+    readPermissionMode,
+    isDisposed: () => disposed,
+    client: running.client,
+    hostCore,
+    database,
+    bundledRoot: pluginRoot,
+    skills,
+    rules,
+    dispose: async () => {
+      if (disposed) return
+      disposed = true
+      await host.dispose()
+      plugins.dispose()
+      await plugins.ctx.fiber.dispose()
+      running.dispose()
+      lock.release()
+    },
+  }
+}
+
+/**
+ * Tells every window that the runtime changed state.
+ *
+ * A conversation opened before the runtime was up holds an empty transcript, so
+ * the window that shows one has to know when re-reading it would finally work.
+ */
+function broadcastHarnessStatus(status: HarnessStatus): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('pictor:harness.status', status)
+  }
+}
+
+/**
+ * Take the runtime's name for a conversation, if it is still unnamed.
+ *
+ * The runtime titles a session from its first prompt. Anything typed by hand must
+ * win, so the rename only happens while the row still carries Pictor's generated
+ * placeholder; a manual rename produces a different string and is left alone.
+ */
+/**
+ * Titles the runtime has already produced for each conversation.
+ *
+ * The runtime writes two: a truncation of the first prompt, then the generated
+ * name. Remembering the first lets the second replace it — and still keeps a
+ * hand-typed name safe, because that name was never produced by the runtime.
+ */
+const runtimeTitles = new Map<string, Set<string>>()
+
+/**
+ * Tells every window that the workspace answer changed.
+ *
+ * One event, not one per cause: the renderer's job is the same either way — ask again
+ * for the things it draws. A plugin installed, removed or switched off lands here
+ * because the panel list, the tool presenters and the kernels all move together.
+ */
+/** A manifest at an absolute path, or null when it cannot be read. */
+function readManifest(path: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as unknown
+  } catch {
+    return null
+  }
+}
+
+function announceWorkspaceChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('pictor:workspace.changed')
+  }
+}
+
+async function adoptSessionTitle(
+  client: Workspace['client'],
+  sessionId: string,
+  title: string,
+): Promise<void> {
+  try {
+    const known = runtimeTitles.get(sessionId) ?? new Set<string>()
+    runtimeTitles.set(sessionId, known)
+
+    const sessions = await client.listSessions()
+    const session = sessions.find((entry) => entry.id === sessionId)
+    if (session === undefined) return
+    if (!shouldAdoptTitle(session.title, title, known)) {
+      if (session.title === title) known.add(title)
+      return
+    }
+
+    await client.renameSession(sessionId, title)
+    known.add(title)
+    announceWorkspaceChanged()
+  } catch (error) {
+    // A title is cosmetic: failing to store it must never surface as a chat error.
+    console.warn('[session] 标题未能更新', error instanceof Error ? error.message : error)
+  }
+}
+
+/**
+ * Contributions per plugin, by point.
+ *
+ * The registry knows which plugin registered what — it recorded the owner when the
+ * contribution arrived — so the settings row and the running app agree by construction
+ * rather than by two lists that happen to match.
+ */
+function countContributions(runtime: PluginRuntime): Map<string, Map<string, number>> {
+  const bySummary = new Map<string, Map<string, number>>()
+  const points: Array<[string, ReadonlyArray<object>]> = [
+    ['panels', runtime.panels()],
+    ['views', runtime.views()],
+    ['toolGuards', runtime.guards()],
+    ['toolHooks', runtime.hooks()],
+    ['toolViews', runtime.toolViews()],
+    ['skills', [...runtime.skillsByPlugin().values()].flat()],
+  ]
+
+  for (const [point, values] of points) {
+    for (const value of values) {
+      const owner = runtime.ownerFor(value)
+      if (owner === null) continue
+      const counts = bySummary.get(owner) ?? new Map<string, number>()
+      counts.set(point, (counts.get(point) ?? 0) + 1)
+      bySummary.set(owner, counts)
+    }
+  }
+  return bySummary
+}
+
+/** Upper bounds so one paste cannot exhaust memory or the runtime's request. */
+const MAX_IMAGES = 5
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+/** Validates the renderer's attachments before they reach the runtime. */
+function parseImages(value: unknown): ChatImage[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new Error('images must be an array')
+  if (value.length > MAX_IMAGES) throw new Error(`最多附加 ${String(MAX_IMAGES)} 张图片`)
+
+  return value.map((entry): ChatImage => {
+    if (typeof entry !== 'object' || entry === null) throw new Error('invalid image')
+    const record = entry as Record<string, unknown>
+    const mediaType = record['mediaType']
+    const data = record['data']
+    if (typeof mediaType !== 'string' || !mediaType.startsWith('image/')) {
+      throw new Error('image mediaType must be an image type')
+    }
+    if (typeof data !== 'string' || data.length === 0) throw new Error('image data is required')
+    // Base64 grows by 4/3; this keeps the decoded payload under the cap.
+    if (data.length > (MAX_IMAGE_BYTES * 4) / 3) throw new Error('图片过大')
+    const name = typeof record['name'] === 'string' ? record['name'] : undefined
+    return { mediaType, data, ...(name === undefined ? {} : { name }) }
+  })
+}
+
+/** The reasoning level the composer asked for, or `null` when it asked for none. */
+/** A fork point from the renderer, or nothing when it named no message. */
+function parseForkPoint(value: unknown): ForkPoint | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'object') throw new Error('分叉点必须是一个对象')
+  const point = value as { seq?: unknown; id?: unknown }
+  if (point.seq !== undefined && typeof point.seq !== 'number') {
+    throw new Error('分叉点 seq 必须是数字')
+  }
+  if (point.id !== undefined && (typeof point.id !== 'string' || point.id.length === 0)) {
+    throw new Error('分叉点 id 必须是非空字符串')
+  }
+  if (point.seq === undefined && point.id === undefined) return undefined
+  return {
+    ...(point.seq === undefined ? {} : { seq: point.seq }),
+    ...(point.id === undefined ? {} : { id: point.id }),
+  }
+}
+
+function parseEffort(value: unknown): ModelEffort | null {
+  if (value === undefined || value === null) return null
+  const level = MODEL_EFFORTS.find((entry) => entry === value)
+  if (level === undefined) throw new Error(`不认识的推理强度：${String(value)}`)
+  return level
+}
+
+/**
+ * The answers the question card sent.
+ *
+ * Shapes are checked here rather than trusted, because the renderer is the only
+ * caller but the value still crosses a process boundary: an answer with no `id`
+ * or a non-string selection would reach the runtime as a malformed batch and be
+ * refused, leaving the tool call to fail for the wrong reason.
+ */
+function parseAnswers(value: unknown): ChatAnswer[] {
+  if (!Array.isArray(value)) throw new Error('answers must be an array')
+  return value.map((entry): ChatAnswer => {
+    if (typeof entry !== 'object' || entry === null) throw new Error('invalid answer')
+    const record = entry as Record<string, unknown>
+    const id = record['id']
+    const selected = record['selected']
+    const custom = record['custom']
+    if (typeof id !== 'string' || id.length === 0) throw new Error('answer id is required')
+    if (!Array.isArray(selected) || selected.some((label) => typeof label !== 'string')) {
+      throw new Error('answer selected must be a string array')
+    }
+    if (custom !== undefined && typeof custom !== 'string') {
+      throw new Error('answer custom must be a string')
+    }
+    return {
+      id,
+      selected: selected as string[],
+      ...(typeof custom === 'string' ? { custom } : {}),
+    }
+  })
+}
+
+const WINDOW_COMMANDS = [
+  'minimize',
+  'toggleMaximize',
+  'close',
+  'reload',
+  'toggleDevTools',
+  'zoomIn',
+  'zoomOut',
+  'zoomReset',
+  'undo',
+  'redo',
+  'cut',
+  'copy',
+  'paste',
+  'selectAll',
+] as const
+
+type WindowCommand = (typeof WINDOW_COMMANDS)[number]
+
+function isWindowCommand(value: unknown): value is WindowCommand {
+  return typeof value === 'string' && (WINDOW_COMMANDS as readonly string[]).includes(value)
+}
+
+function registerIpc(workspace: Workspace): void {
+  ipcMain.handle('pictor:window.command', (event, command: unknown) => {
+    if (!isWindowCommand(command)) throw new Error('unknown window command')
+
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const contents = event.sender
+
+    switch (command) {
+      case 'minimize':
+        window?.minimize()
+        break
+      case 'toggleMaximize':
+        if (window?.isMaximized() === true) window.unmaximize()
+        else window?.maximize()
+        break
+      case 'close':
+        window?.close()
+        break
+      case 'reload':
+        contents.reload()
+        break
+      case 'toggleDevTools':
+        contents.toggleDevTools()
+        break
+      case 'zoomIn':
+        contents.setZoomLevel(contents.getZoomLevel() + 0.5)
+        break
+      case 'zoomOut':
+        contents.setZoomLevel(contents.getZoomLevel() - 0.5)
+        break
+      case 'zoomReset':
+        contents.setZoomLevel(0)
+        break
+      case 'undo':
+        contents.undo()
+        break
+      case 'redo':
+        contents.redo()
+        break
+      case 'cut':
+        contents.cut()
+        break
+      case 'copy':
+        contents.copy()
+        break
+      case 'paste':
+        contents.paste()
+        break
+      case 'selectAll':
+        contents.selectAll()
+        break
+    }
+  })
+
+  ipcMain.handle('pictor:window.state', (event) => ({
+    maximized: BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false,
+  }))
+
+  ipcMain.handle('pictor:snapshot', async (): Promise<HostSnapshot> => {
+    // The renderer can refresh while the app is quitting; answer with an empty
+    // snapshot instead of surfacing a disposed-client error.
+    if (workspace.isDisposed()) return { projects: [], sessions: [], sections: [], settings: {} }
+    return workspace.appHost.snapshot()
+  })
+
+  ipcMain.handle('pictor:project.add', async (_event, path: unknown, name: unknown) => {
+    if (typeof path !== 'string') throw new Error('path must be a string')
+    return workspace.appHost.commands.execute('project.add', {
+      path,
+      ...(typeof name === 'string' ? { name } : {}),
+    })
+  })
+
+  ipcMain.handle('pictor:project.remove', async (_event, id: unknown) => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    return workspace.appHost.commands.execute('project.remove', { id })
+  })
+
+  ipcMain.handle(
+    'pictor:session.create',
+    async (_event, projectId: unknown, title: unknown, kernelId: unknown, parentId: unknown) => {
+      if (typeof title !== 'string') throw new Error('title must be a string')
+      if (projectId !== null && typeof projectId !== 'string') {
+        throw new Error('projectId must be a string or null')
+      }
+      // `null` and an absent argument both mean "not specified": callers reach
+      // this from several layers, and a picker that clears a value sends null.
+      const kernel = kernelId === null || kernelId === undefined ? null : kernelId
+      const parent = parentId === null || parentId === undefined ? null : parentId
+      if (kernel !== null && (typeof kernel !== 'string' || kernel.length === 0)) {
+        throw new Error('kernelId must be a non-empty string')
+      }
+      if (parent !== null && (typeof parent !== 'string' || parent.length === 0)) {
+        throw new Error('parentId must be a non-empty string')
+      }
+      // No kernel named means "the default one", and which that is belongs to the
+      // settings, not to a constant baked into the metadata store.
+      if (kernel === null && workspace.harness.id === '') {
+        throw new Error('这台机器上没有可用的内核；先到「设置 › 通用 › 插件」装一个')
+      }
+
+      // The kernel is fixed at creation: a conversation's history belongs to the
+      // one that produced it, so switching later is a branch, not an edit.
+      return workspace.appHost.commands.execute('session.create', {
+        projectId,
+        title,
+        kernelId: kernel ?? workspace.harness.id,
+        ...(parent === null ? {} : { parentId: parent }),
+      })
+    },
+  )
+
+  ipcMain.handle('pictor:session.delete', async (_event, id: unknown) => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    return workspace.appHost.commands.execute('session.delete', { id })
+  })
+
+  ipcMain.handle('pictor:session.setPinned', async (_event, id: unknown, pinned: unknown) => {
+    if (typeof id !== 'string' || typeof pinned !== 'boolean') {
+      throw new Error('id must be a string and pinned a boolean')
+    }
+    return workspace.appHost.commands.execute('session.setPinned', { id, pinned })
+  })
+
+  ipcMain.handle('pictor:session.setArchived', async (_event, id: unknown, archived: unknown) => {
+    if (typeof id !== 'string' || typeof archived !== 'boolean') {
+      throw new Error('id must be a string and archived a boolean')
+    }
+    return workspace.appHost.commands.execute('session.setArchived', { id, archived })
+  })
+
+  ipcMain.handle('pictor:session.reorder', async (_event, ids: unknown) => {
+    if (!Array.isArray(ids)) throw new Error('ids must be an array')
+    return workspace.appHost.commands.execute('session.reorder', { ids })
+  })
+
+  ipcMain.handle('pictor:session.archiveMany', async (_event, ids: unknown) => {
+    if (!Array.isArray(ids)) throw new Error('ids must be an array')
+    return workspace.appHost.commands.execute('session.archiveMany', { ids })
+  })
+
+  ipcMain.handle('pictor:session.setProject', async (_event, id: unknown, projectId: unknown) => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    if (projectId !== null && typeof projectId !== 'string') {
+      throw new Error('projectId must be a string or null')
+    }
+    return workspace.appHost.commands.execute('session.setProject', { id, projectId })
+  })
+
+  ipcMain.handle('pictor:session.setSections', async (_event, id: unknown, sectionIds: unknown) => {
+    if (typeof id !== 'string' || !Array.isArray(sectionIds)) {
+      throw new Error('id must be a string and sectionIds an array')
+    }
+    return workspace.appHost.commands.execute('session.setSections', { id, sectionIds })
+  })
+
+  ipcMain.handle('pictor:project.addFolder', async (_event, id: unknown, path: unknown) => {
+    if (typeof id !== 'string' || typeof path !== 'string') {
+      throw new Error('id and path must be strings')
+    }
+    return workspace.appHost.commands.execute('project.addFolder', { id, path })
+  })
+
+  ipcMain.handle('pictor:project.removeFolder', async (_event, id: unknown, path: unknown) => {
+    if (typeof id !== 'string' || typeof path !== 'string') {
+      throw new Error('id and path must be strings')
+    }
+    return workspace.appHost.commands.execute('project.removeFolder', { id, path })
+  })
+
+  ipcMain.handle('pictor:sections.list', async (): Promise<Section[]> => {
+    if (workspace.isDisposed()) return []
+    return workspace.client.listSections()
+  })
+
+  ipcMain.handle('pictor:sections.create', async (_event, name: unknown) => {
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      throw new Error('name must be a non-empty string')
+    }
+    return workspace.appHost.commands.execute('section.create', { name })
+  })
+
+  ipcMain.handle('pictor:sections.rename', async (_event, id: unknown, name: unknown) => {
+    if (typeof id !== 'string' || typeof name !== 'string' || name.trim().length === 0) {
+      throw new Error('id and a non-empty name are required')
+    }
+    return workspace.appHost.commands.execute('section.rename', { id, name })
+  })
+
+  ipcMain.handle('pictor:sections.reorder', async (_event, ids: unknown) => {
+    if (!Array.isArray(ids)) throw new Error('ids must be an array')
+    return workspace.appHost.commands.execute('section.reorder', { ids })
+  })
+
+  ipcMain.handle('pictor:project.setSection', async (_event, id: unknown, sectionId: unknown) => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    if (sectionId !== null && typeof sectionId !== 'string') {
+      throw new Error('sectionId must be a string or null')
+    }
+    return workspace.appHost.commands.execute('project.setSection', { id, sectionId })
+  })
+
+  ipcMain.handle('pictor:sections.remove', async (_event, id: unknown) => {
+    if (typeof id !== 'string') throw new Error('id must be a string')
+    return workspace.appHost.commands.execute('section.remove', { id })
+  })
+
+  ipcMain.handle('pictor:settings.put', async (_event, key: unknown, value: unknown) => {
+    if (typeof key !== 'string' || key.trim().length === 0) {
+      throw new Error('key must be a non-empty string')
+    }
+    await workspace.writeSetting(key, value as JsonValue)
+  })
+
+  ipcMain.handle('pictor:pickDirectory', async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  // Both read the projection, not a snapshot: a panel installed a minute ago is a row
+  // now, and the reason it is not is the reason nobody could see it.
+  ipcMain.handle('pictor:panels.list', async (): Promise<PanelContribution[]> => {
+    return [...workspace.plugins.panels()]
+  })
+
+  ipcMain.handle('pictor:toolViews.list', async (): Promise<ToolViewContribution[]> => {
+    return [...workspace.plugins.toolViews()]
+  })
+
+  ipcMain.handle('pictor:slots.list', async (): Promise<SlotDescriptor[]> => {
+    return workspace.plugins.allSlots().map((seat) => ({
+      slot: seat.slot,
+      kind: SLOT_SPECS[seat.slot].kind,
+      ...(seat.key === undefined ? {} : { key: seat.key }),
+      title: seat.title,
+      ...(seat.description === undefined ? {} : { description: seat.description }),
+      ...(seat.icon === undefined ? {} : { icon: seat.icon }),
+      view: seat.view,
+    }))
+  })
+
+  /**
+   * One message from a frame.
+   *
+   * The frame cannot reach the plugin by itself — it has no network, no Node and no
+   * lineage — so what it does reaches the plugin through the window that hosts it. The
+   * answer is always an answer here, never a throw: it goes back into the plugin's own
+   * front end, which is the only place that can show it to a person.
+   */
+  ipcMain.handle(
+    'pictor:frames.request',
+    async (_event, id: unknown, action: unknown, value: unknown, sessionId: unknown) => {
+      if (typeof id !== 'string' || id.length === 0) {
+        return { ok: false, error: 'view id must be a non-empty string' }
+      }
+      if (typeof action !== 'string' || action.length === 0) {
+        return { ok: false, error: 'action must be a non-empty string' }
+      }
+      if (value !== undefined && typeof value !== 'string') {
+        return { ok: false, error: 'value must be a string when present' }
+      }
+      if (sessionId !== null && typeof sessionId !== 'string') {
+        return { ok: false, error: 'sessionId must be a string or null' }
+      }
+      return workspace.plugins.viewRunner().respond(id, {
+        action,
+        ...(value === undefined ? {} : { value }),
+        sessionId,
+      })
+    },
+  )
+
+  /**
+   * A press on a `button` block.
+   *
+   * The window never runs plugin code: it names the view and the action, the plugin's
+   * handler runs in this process, and a description comes back — or nothing, when the
+   * press changed nothing the panel shows.
+   */
+  ipcMain.handle(
+    'pictor:views.act',
+    async (_event, id: unknown, action: unknown, value: unknown, sessionId: unknown) => {
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new Error('view id must be a non-empty string')
+      }
+      if (typeof action !== 'string' || action.length === 0) {
+        throw new Error('action must be a non-empty string')
+      }
+      if (value !== undefined && typeof value !== 'string') {
+        throw new Error('value must be a string when present')
+      }
+      if (sessionId !== null && typeof sessionId !== 'string') {
+        throw new Error('sessionId must be a string or null')
+      }
+      return workspace.plugins.viewRunner().act(id, {
+        action,
+        ...(value === undefined ? {} : { value }),
+        sessionId,
+      })
+    },
+  )
+
+  /**
+   * Renders the view a panel names.
+   *
+   * Asked by view id, not by panel id: a panel is a frame, and the frame is not what has
+   * content. `sessionId` lets a view speak about the conversation it was opened over.
+   */
+  ipcMain.handle('pictor:views.render', async (_event, id: unknown, sessionId: unknown) => {
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new Error('view id must be a non-empty string')
+    }
+    if (sessionId !== null && typeof sessionId !== 'string') {
+      throw new Error('sessionId must be a string or null')
+    }
+    return workspace.plugins.viewRunner().render(id, { sessionId })
+  })
+
+  ipcMain.handle('pictor:plugins.list', async (): Promise<PluginRecord[]> => {
+    return workspace.client.listPlugins()
+  })
+
+  /**
+   * Where plugins live, for the page that explains it.
+   *
+   * Two places rather than one sentence: an installed plugin is app data, one being written
+   * is the person's own directory — and the second is the one they need a path to.
+   */
+  ipcMain.handle('pictor:plugins.homes', async (): Promise<PluginHomes> => {
+    return workspace.pluginHomes()
+  })
+
+  /**
+   * Turns one plugin off or on, live.
+   *
+   * The switch used to write a record and leave the plugin running until the next
+   * launch, which made the row a promise the app did not keep. Now it does what it says:
+   * the UI half is unmounted or activated, the kernel half unmounted or mounted, the
+   * skills it owns written or removed — and every window is told to look again.
+   *
+   * Turning a plugin off is reversible, so it is not the destructive act removal is; a
+   * conversation whose kernel this was reports that kernel as missing, the same way it
+   * would after an uninstall.
+   */
+  ipcMain.handle(
+    'pictor:plugins.setEnabled',
+    async (_event, id: unknown, enabled: unknown): Promise<boolean> => {
+      if (typeof id !== 'string' || typeof enabled !== 'boolean') {
+        throw new Error('id must be a string and enabled a boolean')
+      }
+      await workspace.client.setPluginEnabled(id, enabled)
+
+      const found = discoverPlugins([...workspace.pluginDirectories()]).plugins.find(
+        (plugin) => plugin.id === id,
+      )
+      if (found === undefined) return enabled
+
+      if (enabled) await workspace.plugins.add(found)
+      else await workspace.plugins.remove(id)
+
+      announceWorkspaceChanged()
+      return enabled
+    },
+  )
+
+  /** Ask for a plugin directory; null when the person cancelled. */
+  ipcMain.handle('pictor:plugins.chooseFolder', async (): Promise<string | null> => {
+    const chosen = await dialog.showOpenDialog({
+      title: '选择一个插件目录',
+      properties: ['openDirectory'],
+    })
+    return chosen.canceled ? null : (chosen.filePaths[0] ?? null)
+  })
+
+  ipcMain.handle('pictor:plugins.report', async (): Promise<PluginReport> => {
+    return workspace.plugins.report()
+  })
+
+  /**
+   * Whether edits are picked up without a restart.
+   *
+   * The answer is what the running runtime actually does, not what the setting says:
+   * turning it off needs a restart because the watchers belong to the process.
+   */
+  ipcMain.handle('pictor:plugins.hotReload', async (): Promise<boolean> => {
+    return workspace.plugins.hotReload
+  })
+
+  ipcMain.handle('pictor:model.get', async () => {
+    return workspace.model.settings()
+  })
+
+  /**
+   * Apply a settings change to the runtime that is already running.
+   *
+   * The patch and the key environment are read once at boot, so a change only
+   * lands on the next start. Waiting here is what makes "使用中" mean what the
+   * window says it means.
+   */
+  const applyToRuntime = async <T>(result: T): Promise<T> => {
+    await workspace.harness.applySettings()
+    return result
+  }
+
+  ipcMain.handle('pictor:model.save', async (_event, input: unknown) => {
+    if (typeof input !== 'object' || input === null) throw new Error('invalid model settings')
+    return applyToRuntime(await workspace.model.save(input as Parameters<ModelService['save']>[0]))
+  })
+
+  ipcMain.handle('pictor:model.select', async (_event, modelId: unknown) => {
+    if (typeof modelId !== 'string' || modelId.trim().length === 0) {
+      throw new Error('modelId must be a non-empty string')
+    }
+    return applyToRuntime(await workspace.model.selectModel(modelId))
+  })
+
+  ipcMain.handle('pictor:model.use', async (_event, providerId: unknown, modelId: unknown) => {
+    if (typeof providerId !== 'string' || providerId.length === 0) {
+      throw new Error('providerId is required')
+    }
+    if (typeof modelId !== 'string' || modelId.trim().length === 0) {
+      throw new Error('modelId is required')
+    }
+    return applyToRuntime(await workspace.model.useModel(providerId, modelId))
+  })
+
+  ipcMain.handle('pictor:model.fetch', async (_event, input: unknown) => {
+    const override =
+      typeof input === 'object' && input !== null
+        ? (input as {
+            baseUrl?: string
+            protocol?: ModelProtocol
+            apiKey?: string
+          })
+        : undefined
+    return workspace.model.fetchModels(override)
+  })
+
+  ipcMain.handle('pictor:model.test', async () => {
+    return workspace.model.test()
+  })
+
+  ipcMain.handle('pictor:provider.list', async () => {
+    return workspace.model.providers()
+  })
+
+  ipcMain.handle('pictor:provider.save', async (_event, input: unknown) => {
+    if (typeof input !== 'object' || input === null) throw new Error('invalid provider')
+    const saved = await workspace.model.saveProvider(
+      input as Parameters<ModelService['saveProvider']>[0],
+    )
+    workspace.harness.invalidateCatalogues()
+    return applyToRuntime(saved)
+  })
+
+  ipcMain.handle('pictor:provider.remove', async (_event, id: unknown) => {
+    if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
+    const left = await workspace.model.removeProvider(id)
+    workspace.harness.invalidateCatalogues()
+    return applyToRuntime(left)
+  })
+
+  ipcMain.handle('pictor:provider.activate', async (_event, id: unknown) => {
+    if (typeof id !== 'string' || id.length === 0) throw new Error('provider id is required')
+    const active = await workspace.model.activateProvider(id)
+    workspace.harness.invalidateCatalogues()
+    return applyToRuntime(active)
+  })
+
+  ipcMain.handle('pictor:model.ccswitch.scan', async () => {
+    return workspace.model.scanCcSwitch()
+  })
+
+  ipcMain.handle(
+    'pictor:model.ccswitch.import',
+    async (_event, id: unknown, includeApiKey: unknown) => {
+      if (typeof id !== 'string' || id.trim().length === 0)
+        throw new Error('provider id is required')
+      const imported = await workspace.model.importCcSwitchProvider(id, includeApiKey === true)
+      workspace.harness.invalidateCatalogues()
+      return applyToRuntime(imported)
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:model.agentTest',
+    async (_event, prompt: unknown, workingDirectory: unknown) => {
+      if (typeof prompt !== 'string' || prompt.trim().length === 0) {
+        throw new Error('prompt is required')
+      }
+
+      const directory =
+        typeof workingDirectory === 'string' && workingDirectory.trim().length > 0
+          ? workingDirectory
+          : app.getPath('userData')
+
+      if (workspace.harness.status().state !== 'ready') {
+        return { ok: false, text: '', events: [], message: 'agent 运行时没有运行；先启动它再试' }
+      }
+      return workspace.harness.probe(prompt, directory)
+    },
+  )
+
+  ipcMain.handle('pictor:chat.open', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+
+    const sessions = await workspace.client.listSessions()
+    const session = sessions.find((entry) => entry.id === sessionId)
+    if (session === undefined) throw new Error('session not found')
+
+    // The runtime owns every transcript: there is no second store, so an
+    // unready runtime is an empty page the window explains rather than a
+    // conversation that appears to have lost its history.
+    const ready = (await workspace.harness.statusOf(sessionId)).state === 'ready'
+    return {
+      path: `harness:${sessionId}`,
+      history: ready
+        ? await workspace.harness.openHistory(sessionId)
+        : { messages: [], nextOffset: 0, hasMore: false },
+    }
+  })
+
+  /**
+   * Branch a conversation into a new Pictor session.
+   *
+   * The runtime owns the copy, so the new conversation is created here and then
+   * pointed at the runtime's child id; opening it reads the inherited history.
+   */
+  /**
+   * Cut one conversation at a point and record the family.
+   *
+   * The kernel copies the event prefix and answers its own session id; the Pictor
+   * conversation is created here, because only this side knows which conversations
+   * belong to the same lineage.
+   */
+  const branchAt = async (sessionId: string, point: ForkPoint | undefined): Promise<string> => {
+    if ((await workspace.harness.statusOf(sessionId)).state !== 'ready') {
+      throw new Error('先启动 agent 运行时')
+    }
+
+    const sessions = await workspace.client.listSessions()
+    const source = sessions.find((entry) => entry.id === sessionId)
+    if (source === undefined) throw new Error('session not found')
+
+    const child = await workspace.harness.fork(sessionId, point)
+    const created = await workspace.client.createSession(
+      source.projectId,
+      `${source.title} · 分支`,
+      source.id,
+      // A branch keeps the kernel that produced the history it inherits.
+      source.kernelId,
+    )
+    workspace.harness.adopt(created.id, child)
+    return created.id
+  }
+
+  ipcMain.handle('pictor:session.fork', async (_event, sessionId: unknown, at: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    // The point is whatever the caller's rows carry: an event sequence for dsh, an
+    // entry id for a kernel that branches by message. Both are optional.
+    return branchAt(sessionId, parseForkPoint(at))
+  })
+
+  /**
+   * 回到这里: branch at the point, then file the conversation that was left behind.
+   *
+   * The runtime's log is append-only and has no rewind, so "going back" is a branch plus
+   * a judgement about where the old tail belongs. Archiving is that judgement, and it is
+   * reversible on purpose: the turns the person walked away from are still there, in a
+   * conversation they can un-archive. Files are *not* restored — a checkpoint in this
+   * runtime means "the log is durable up to here", never "the workspace looked like this"
+   * — and the window says so before it acts.
+   */
+  ipcMain.handle('pictor:session.rewind', async (_event, sessionId: unknown, at: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    const created = await branchAt(sessionId, parseForkPoint(at))
+
+    // A branch that exists and an archive that failed is still a usable outcome: the
+    // conversation can be archived by hand, and saying so beats undoing the branch.
+    let archived = true
+    try {
+      await workspace.client.setSessionArchived(sessionId, true)
+    } catch (error) {
+      archived = false
+      console.warn(
+        '[rewind] 分支已建立，但原会话没有归档',
+        error instanceof Error ? error.message : error,
+      )
+    }
+    return { id: created, archived }
+  })
+
+  ipcMain.handle(
+    'pictor:chat.send',
+    async (_event, sessionId: unknown, prompt: unknown, images: unknown, effort: unknown) => {
+      if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+      if (typeof prompt !== 'string') throw new Error('prompt must be a string')
+      const attachments = parseImages(images)
+      const level = parseEffort(effort)
+      if (prompt.trim().length === 0 && attachments.length === 0) {
+        throw new Error('a message needs text or an image')
+      }
+      if ((await workspace.harness.statusOf(sessionId)).state !== 'ready') {
+        throw new Error('agent 运行时没有运行；先启动它再发消息')
+      }
+      await workspace.harness.prompt(sessionId, prompt, attachments, level)
+    },
+  )
+
+  ipcMain.handle('pictor:chat.stop', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('sessionId must be a string')
+    // Nothing to stop when the kernel is down: the turn died with it.
+    if ((await workspace.harness.statusOf(sessionId)).state !== 'ready') return
+    await workspace.harness.cancel(sessionId)
+  })
+
+  ipcMain.handle(
+    'pictor:chat.history',
+    async (_event, path: unknown, limit: unknown, offset: unknown) => {
+      if (typeof path !== 'string') throw new Error('path must be a string')
+      const size = typeof limit === 'number' && limit > 0 ? Math.min(limit, 200) : 50
+      const from = typeof offset === 'number' && offset >= 0 ? offset : 0
+      if (!path.startsWith('harness:')) throw new Error('unknown transcript path')
+      return workspace.harness.historyPage(path.slice('harness:'.length), size, from)
+    },
+  )
+
+  ipcMain.handle('pictor:harness.status', async (): Promise<HarnessStatus> => {
+    workspace.harness.setPermissionMode(await workspace.readPermissionMode())
+    return workspace.harness.status()
+  })
+
+  /**
+   * Moves the runtime onto a sandbox mode, now and for what it starts next.
+   *
+   * dsh keeps one permission namespace for the process, so there is one answer to write:
+   * the stored default (`defaultPreset`) and the running session must not disagree, or the
+   * composer would name a mode the next tool call does not run under. A `sessionId` is
+   * passed after a switch in an open conversation, so that conversation follows too; with
+   * none, only the default changes.
+   */
+  ipcMain.handle(
+    'pictor:harness.setPermissionMode',
+    async (_event, mode: unknown, sessionId: unknown): Promise<HarnessStatus> => {
+      if (!isPermissionMode(mode)) throw new Error('unknown permission mode')
+      await workspace.writeSetting('harness.permissionMode', mode)
+      workspace.harness.setPermissionMode(mode)
+      // A live namespace setting, not a boot flag: asking the runtime to apply it keeps
+      // the process (and every stream on it) alive.
+      await workspace.harness.applyPermission(mode)
+      if (typeof sessionId === 'string' && sessionId.length > 0) {
+        await workspace.harness.applyPermissionToSession(sessionId, mode)
+      }
+      return workspace.harness.status()
+    },
+  )
+
+  ipcMain.handle('pictor:harness.start', async (_event, cwd: unknown): Promise<HarnessStatus> => {
+    const directory = typeof cwd === 'string' && cwd.trim().length > 0 ? cwd : app.getPath('home')
+    const status = await workspace.harness.start(directory)
+    broadcastHarnessStatus(status)
+    return status
+  })
+
+  ipcMain.handle('pictor:harness.stop', async (): Promise<HarnessStatus> => {
+    const status = await workspace.harness.stop()
+    broadcastHarnessStatus(status)
+    return status
+  })
+
+  // The runtime reports what it can load; Pictor adds what it owns and what it
+  // switched off, because a disabled skill is missing from the catalog.
+  const readSkills = async (sessionId: string): Promise<SkillEntry[]> =>
+    composeSkills(
+      await workspace.harness.listSkills(sessionId),
+      workspace.skills.view(),
+      await workspace.harness.projectRootFor(sessionId),
+    )
+
+  ipcMain.handle('pictor:harness.skills', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0)
+      throw new Error('sessionId is required')
+    return readSkills(sessionId)
+  })
+
+  ipcMain.handle(
+    'pictor:harness.skillEnabled',
+    async (_event, sessionId: unknown, name: unknown, enabled: unknown) => {
+      if (typeof sessionId !== 'string' || sessionId.length === 0)
+        throw new Error('sessionId is required')
+      if (typeof name !== 'string' || name.length === 0) throw new Error('skill name is required')
+      if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean')
+
+      const current = await readSkills(sessionId)
+      const entry = current.find((skill) => skill.name === name)
+      if (entry === undefined) throw new Error(`没有这个技能：${name}`)
+
+      workspace.skills.setEnabled(name, enabled, {
+        name: entry.name,
+        description: entry.description,
+        whenToUse: entry.whenToUse,
+        path: entry.path,
+        origin: entry.origin,
+      })
+      return readSkills(sessionId)
+    },
+  )
+
+  /**
+   * The skills Pictor owns, listed without a conversation.
+   *
+   * Skills are resolved per session by the runtime, which makes them invisible from a
+   * page nobody opened a conversation from. The extensions panel needs to be browsable
+   * before that, so the library answers for itself: what Pictor wrote, what a plugin
+   * brought, and which of those are switched off.
+   */
+  ipcMain.handle('pictor:skills.library', async (): Promise<SkillEntry[]> => {
+    return workspace.skills.entries()
+  })
+
+  ipcMain.handle(
+    'pictor:skills.setLibraryEnabled',
+    async (_event, name: unknown, enabled: unknown): Promise<SkillEntry[]> => {
+      if (typeof name !== 'string' || name.length === 0) throw new Error('skill name is required')
+      if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean')
+      const entry = workspace.skills.entries().find((skill) => skill.name === name)
+      if (entry === undefined) throw new Error(`没有这个技能：${name}`)
+
+      workspace.skills.setEnabled(name, enabled, {
+        name: entry.name,
+        description: entry.description,
+        whenToUse: entry.whenToUse,
+        path: entry.path,
+        origin: entry.origin,
+      })
+      return workspace.skills.entries()
+    },
+  )
+
+  ipcMain.handle('pictor:kernels.list', async (): Promise<KernelInfo[]> => {
+    return workspace.harness.list()
+  })
+
+  /**
+   * Install a kernel, then mount it.
+   *
+   * The two steps stay apart on purpose: a copy that succeeds and a mount that fails
+   * is a kernel on disk with a reason attached, which the settings page shows, rather
+   * than a rollback that hides what went wrong.
+   */
+  /**
+   * Install a plugin, then start both halves of it.
+   *
+   * A plugin may contribute panels, a kernel, or both, and installing is one act: the
+   * kernel half is mounted and the UI half activated, without a restart. Whichever
+   * half it does not have is simply not there.
+   */
+  const mountAfterInstall = async (
+    install: () => Promise<{ name: string }> | { name: string },
+  ): Promise<KernelChangeResult> => {
+    let installed: { name: string }
+    try {
+      installed = await install()
+    } catch (error) {
+      return {
+        ok: false,
+        id: null,
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
+
+    const root = workspace.installer.rootOf(installed.name)
+    const found = root === null ? [] : discoverPlugins([root]).plugins
+    const kernelId = await activateHalves(found, installed.name)
+    return kernelId
+  }
+
+  /**
+   * Starts the halves of one plugin and reports what it became.
+   *
+   * The kernel is mounted first: it is the half that can fail for a reason worth
+   * showing (a broken cordis plugin, a capability it cannot honour), and the UI half
+   * failing would otherwise be reported as if the whole plugin had.
+   */
+  const activateHalves = async (
+    plugins: readonly DiscoveredPlugin[],
+    name: string,
+  ): Promise<KernelChangeResult> => {
+    for (const plugin of plugins) {
+      await workspace.plugins.add(plugin)
+      // The record is what the settings switch writes to. A plugin that arrived after
+      // launch has none yet, and "not found" is a bad answer to "turn this off" — but
+      // an existing record keeps its switch, so reinstalling never re-enables anything.
+      const existing = (await workspace.client.listPlugins()).find(
+        (entry) => entry.id === plugin.id,
+      )
+      if (existing === undefined) {
+        await workspace.client.upsertPlugin({
+          id: plugin.id,
+          version: plugin.manifest.version,
+          source: name,
+        })
+      }
+    }
+
+    // The plugin set changed, so what it produces changed with it: the runtime wrote
+    // its skills already, and every window is told to look again.
+    announceWorkspaceChanged()
+
+    return { ok: true, id: name, message: '' }
+  }
+
+  /**
+   * One install entry for both trees.
+   *
+   * The target is not a choice: it is what the package declares. A `pictor` block means the
+   * window tree, `dsh.bundle` / `dsh.client` means the kernel's, and a package carrying both
+   * is mounted in both — which the two trees have always supported, even while the page made
+   * a person pick one of two lists.
+   *
+   * A plain cordis plugin (neither field) goes to the window tree, where it mounts and
+   * reports what it is waiting for. That is today's behaviour and it stays.
+   */
+  /**
+   * Enough for a manifest lookup: npm to ask the registry, and the kernel installation to
+   * recognise its own packages — which is the only signal a plain dsh plugin offers.
+   */
+  const declarationLookup = (): Parameters<typeof declarationFor>[1] => ({
+    npm: () => {
+      const node = resolveNodeBinary()
+      if (node === null) throw new Error('没有找到可用的 Node')
+      const cli = resolveNpmCli(node)
+      if (cli === null) throw new Error('没有找到 npm')
+      return { node, cli }
+    },
+    installation: workspace.kernelPlugins.installation,
+  })
+
+  /**
+   * What a spec declares, before anything is installed.
+   *
+   * The dialog says 「会装在：窗口」 or 「窗口 + 内核」 while the person is still typing, so the
+   * two trees stop being a decision they have to make. A spec that cannot be read answers
+   * with nothing rather than guessing.
+   */
+  ipcMain.handle(
+    'pictor:plugins.inspect',
+    async (_event, spec: unknown): Promise<PluginTarget[]> => {
+      if (typeof spec !== 'string' || spec.trim().length === 0) return []
+      const declaration = await declarationFor(spec.trim(), declarationLookup())
+      // Nothing rather than a guess: a package no registry answers for has no manifest to
+      // read, and the dialog says so instead of promising a tree.
+      if (declaration === null || declaration === 'unknown') return []
+      return targetsOf(declaration)
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:plugins.installAny',
+    async (_event, spec: unknown): Promise<PluginInstallSummary> => {
+      if (typeof spec !== 'string' || spec.trim().length === 0) {
+        return { ok: false, message: '要装什么？用包名、file: 路径，或 git/tarball 地址' }
+      }
+      const value = spec.trim()
+
+      const declaration = await declarationFor(value, declarationLookup())
+      if (declaration === null) {
+        return { ok: false, message: `装不了这个地址：${value}` }
+      }
+
+      // A git or tarball URL, or a name no registry answers for, has no manifest to read.
+      // It goes to the kernel tree first — the only tree that resolves arbitrary specs —
+      // and what arrives decides where it actually belongs.
+      let targets: PluginTarget[] = declaration === 'unknown' ? ['kernel'] : targetsOf(declaration)
+
+      const messages: string[] = []
+      let windowName: string | null = null
+      let kernelName: string | null = null
+
+      // The kernel half first: it is the one that can refuse for a reason worth reading
+      // (a version range, a missing package), and a failure there should not leave the
+      // window half half-installed and unexplained.
+      if (targets.includes('kernel')) {
+        try {
+          const installed = await workspace.kernelPlugins.install(value)
+          kernelName = installed.plugin.name
+          // Now that its files are here, the manifest can say whether the window half is
+          // also meant to exist.
+          if (declaration === 'unknown') {
+            const arrived = declarationOf(readManifest(join(installed.root, 'package.json')), {
+              shipped: installed.plugin.source === 'bundled',
+            })
+            targets = targetsOf(arrived)
+            // It turned out to be a window plugin. Its entry goes back off; the files stay,
+            // because removing a package under a running kernel is worse than an unused one.
+            if (!targets.includes('kernel')) {
+              await workspace.kernelPlugins.remove(installed.plugin.id)
+              kernelName = null
+              messages.push('这个包是窗口插件，没有进内核')
+            }
+          }
+          messages.push(
+            `内核：${installed.plugin.name}（${installed.mount === 'bundle' ? '自带 patch' : installed.mount === 'entry' ? '条目已写' : '已装'}）· 重启内核后生效`,
+          )
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? error.message : String(error) }
+        }
+      }
+
+      if (targets.includes('window')) {
+        const fromDirectory = /^(?:file|link):/.test(value)
+        const result = fromDirectory
+          ? await mountAfterInstall(() =>
+              workspace.installer.installFolder(value.replace(/^(?:file|link):/, '')),
+            )
+          : await mountAfterInstall(() => workspace.installer.installPackage(value))
+        if (!result.ok) {
+          // A kernel half that did install stays: it is a separate tree, and removing it
+          // because the other half failed would undo something that works.
+          messages.push(`窗口：${result.message}`)
+          return { ok: false, message: messages.join(' · '), window: null, kernel: kernelName }
+        }
+        windowName = result.id
+        messages.push(`窗口：${result.id ?? '已安装'}`)
+      }
+
+      announceWorkspaceChanged()
+      return {
+        ok: true,
+        message: messages.join(' · '),
+        window: windowName,
+        kernel: kernelName,
+        targets,
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:plugins.remove',
+    async (_event, id: unknown): Promise<KernelChangeResult> => {
+      if (typeof id !== 'string' || id.length === 0) {
+        return { ok: false, id: null, message: '需要一个插件名' }
+      }
+
+      // A plugin is one installation, named by its directory under the profile.
+      const name = id
+
+      const root = workspace.installer.rootOf(name)
+      if (root === null) return { ok: false, id, message: '没有这个插件' }
+
+      for (const plugin of discoverPlugins([root]).plugins) {
+        await workspace.plugins.remove(plugin.id)
+        // The record is what the switch and the row are drawn from; leaving it behind
+        // would list a plugin whose files are gone.
+        await workspace.client.removePlugin(plugin.id)
+      }
+      announceWorkspaceChanged()
+
+      try {
+        await workspace.installer.remove(name)
+      } catch (error) {
+        return { ok: false, id, message: error instanceof Error ? error.message : String(error) }
+      }
+      announceWorkspaceChanged()
+      return { ok: true, id, message: '' }
+    },
+  )
+
+  /**
+   * Every installed plugin, in the shape the settings page draws.
+   *
+   * Recomputed on every call rather than cached: installing or removing a plugin
+   * changes the answer, and a snapshot taken at launch would keep showing the old one.
+   */
+  ipcMain.handle('pictor:plugins.overview', async (): Promise<PluginOverview[]> => {
+    const records = await workspace.client.listPlugins()
+    // The workspace already holds expanded plugin directories, not parents.
+    const found = discoverPlugins([...workspace.pluginDirectories()])
+
+    // Counted from the runtime, which is the same list the panels and guards come from —
+    // so a row cannot claim a contribution the app is not using.
+    const counted = countContributions(workspace.plugins)
+    return found.plugins.map((plugin) => {
+      const name = basename(plugin.root)
+      const record = records.find((entry) => entry.id === plugin.id)
+      const byOwner = counted.get(plugin.id) ?? new Map<string, number>()
+      const contributions = [...byOwner].map(([point, count]) => ({ point, count }))
+
+      return {
+        name,
+        id: plugin.id,
+        label: plugin.manifest.name,
+        version: plugin.manifest.version,
+        // A bundled plugin is a direct child of the app's own plugins directory; an
+        // installed one is a child of the profile's. One comparison, both platforms.
+        source: dirname(plugin.root) === workspace.bundledRoot ? 'builtin' : name,
+        enabled: record?.enabled ?? true,
+        contributions,
+      }
+    })
+  })
+
+  /**
+   * dsh plugins: the list, and the three things a person can do to it.
+   *
+   * These run in the kernel's process, not this one — which is why they are here and not
+   * with the Pictor plugins above: the two lists are two different trees, and a row that
+   * said otherwise would mislead about what it can reach.
+   */
+  ipcMain.handle('pictor:kernelPlugins.home', async (): Promise<{ profile: string }> => {
+    return { profile: workspace.kernelPlugins.profile }
+  })
+
+  ipcMain.handle('pictor:kernelPlugins.list', async (): Promise<KernelPluginSpec[]> => {
+    return parseKernelPlugins(workspace.settings['kernel.plugins'])
+  })
+
+  ipcMain.handle(
+    'pictor:kernelPlugins.install',
+    async (_event, spec: unknown): Promise<KernelPluginInstallResult> => {
+      if (typeof spec !== 'string' || spec.trim().length === 0) {
+        throw new Error('要装什么？用包名、file: 路径，或 git/tarball 地址')
+      }
+      return workspace.kernelPlugins.install(spec)
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:kernelPlugins.setEnabled',
+    async (_event, id: unknown, enabled: unknown): Promise<KernelPluginSpec[]> => {
+      if (typeof id !== 'string' || id.length === 0) throw new Error('id is required')
+      if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean')
+      return workspace.kernelPlugins.setEnabled(id, enabled)
+    },
+  )
+
+  ipcMain.handle('pictor:kernelPlugins.remove', async (_event, id: unknown): Promise<void> => {
+    if (typeof id !== 'string' || id.length === 0) throw new Error('id is required')
+    await workspace.kernelPlugins.remove(id)
+  })
+
+  // A kernel that brings its own models answers for them; Pictor only relays.
+  ipcMain.handle('pictor:kernel.models', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelModels(sessionId)
+  })
+
+  /**
+   * MCP servers, as Pictor stores them.
+   *
+   * One list for every kernel: dsh mounts them from its profile patch, Pi gets them
+   * written into its own `mcp.json` at spawn. The page that edits this is not a
+   * kernel page, because the list is not a kernel's.
+   */
+  ipcMain.handle('pictor:mcp.list', async () => {
+    return parseMcpServers(workspace.settings['mcp.servers'])
+  })
+
+  ipcMain.handle('pictor:mcp.save', async (_event, servers: unknown) => {
+    const parsed = parseMcpServers(servers)
+    await workspace.writeSetting('mcp.servers', parsed as unknown as JsonValue)
+    // dsh mounts from the patch, so it has to reboot; `applySettings` skips the
+    // restart while a turn is streaming and re-runs it afterwards.
+    void workspace.harness.applySettings().catch((error: unknown) => {
+      console.warn('[mcp] 运行时没有重启', error instanceof Error ? error.message : error)
+    })
+    return parsed
+  })
+
+  /** Slash commands this conversation's kernel offers; empty when it has none. */
+  ipcMain.handle('pictor:kernel.commands', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelCommands(sessionId)
+  })
+
+  ipcMain.handle('pictor:kernel.runCommand', async (_event, sessionId: unknown, line: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof line !== 'string' || line.trim().length === 0) {
+      throw new Error('command line must be a non-empty string')
+    }
+    return workspace.harness.runKernelCommand(sessionId, line)
+  })
+
+  /**
+   * Background jobs the conversation's kernel reports.
+   *
+   * Asked rather than pushed: the roster also arrives as `job.updated` events, but a
+   * reload has to reconcile against the runtime that is alive *now*, or a job whose
+   * process died would keep claiming to run.
+   */
+  ipcMain.handle('pictor:kernel.jobs', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelJobs(sessionId)
+  })
+
+  ipcMain.handle('pictor:kernel.killJob', async (_event, sessionId: unknown, jobId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof jobId !== 'string' || jobId.length === 0) {
+      throw new Error('jobId must be a non-empty string')
+    }
+    await workspace.harness.killKernelJob(sessionId, jobId)
+  })
+
+  /**
+   * A child agent's transcript.
+   *
+   * `sessionId` only picks the kernel that owns the conversation; `childId` is that
+   * kernel's own name for the child, which is why both are required and neither is
+   * translated here.
+   */
+  ipcMain.handle(
+    'pictor:kernel.childTranscript',
+    async (_event, sessionId: unknown, childId: unknown, mode: unknown) => {
+      if (typeof sessionId !== 'string' || sessionId.length === 0) {
+        throw new Error('sessionId must be a non-empty string')
+      }
+      if (typeof childId !== 'string' || childId.length === 0) {
+        throw new Error('childId must be a non-empty string')
+      }
+      // The kernel needs the mode to address the child at all; a caller that does not
+      // know it says so instead of guessing.
+      if (typeof mode !== 'string' || mode.length === 0) {
+        throw new Error('mode must be a non-empty string')
+      }
+      return workspace.harness.childTranscript(sessionId, childId, mode)
+    },
+  )
+
+  /** One background job's output so far; `partial` says whether it is still running. */
+  ipcMain.handle('pictor:kernel.jobOutput', async (_event, sessionId: unknown, jobId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof jobId !== 'string' || jobId.length === 0) {
+      throw new Error('jobId must be a non-empty string')
+    }
+    return workspace.harness.kernelJobOutput(sessionId, jobId)
+  })
+
+  ipcMain.handle('pictor:kernel.selectModel', async (_event, sessionId: unknown, id: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof id !== 'string' || id.trim().length === 0) {
+      throw new Error('modelId must be a non-empty string')
+    }
+    await workspace.harness.selectKernelModel(sessionId, id)
+  })
+
+  ipcMain.handle('pictor:kernels.statuses', async () => workspace.harness.statuses())
+
+  /** Settings the mounted kernels declare; the page renders what it gets. */
+  ipcMain.handle('pictor:kernels.settings', async () => workspace.harness.settings())
+
+  ipcMain.handle('pictor:kernels.setSetting', async (_event, key: unknown, value: unknown) => {
+    if (typeof key !== 'string' || key.length === 0) throw new Error('key must be a string')
+    if (typeof value !== 'boolean') throw new Error('value must be a boolean')
+    return workspace.setKernelSetting(key, value)
+  })
+
+  ipcMain.handle('pictor:kernel.approval', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelApproval(sessionId)
+  })
+
+  ipcMain.handle('pictor:kernel.grants', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.kernelGrants(sessionId)
+  })
+
+  ipcMain.handle('pictor:kernel.grantTool', async (_event, sessionId: unknown, tool: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    if (typeof tool !== 'string' || tool.length === 0) {
+      throw new Error('tool must be a non-empty string')
+    }
+    return workspace.harness.grantKernelTool(sessionId, tool)
+  })
+
+  ipcMain.handle('pictor:kernel.revokeGrants', async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new Error('sessionId must be a non-empty string')
+    }
+    return workspace.harness.revokeKernelGrants(sessionId)
+  })
+
+  ipcMain.handle(
+    'pictor:kernel.selectApproval',
+    async (_event, sessionId: unknown, mode: unknown) => {
+      if (typeof sessionId !== 'string' || sessionId.length === 0) {
+        throw new Error('sessionId must be a non-empty string')
+      }
+      if (mode !== 'never' && mode !== 'mutating') {
+        throw new Error(`不认识的审批模式：${String(mode)}`)
+      }
+      await workspace.harness.selectKernelApproval(sessionId, mode)
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:kernel.selectEffort',
+    async (_event, sessionId: unknown, effort: unknown) => {
+      if (typeof sessionId !== 'string' || sessionId.length === 0) {
+        throw new Error('sessionId must be a non-empty string')
+      }
+      // `null` clears the level and leaves the kernel's own default in place.
+      const level = effort === null || effort === undefined ? null : parseEffort(effort)
+      await workspace.harness.selectKernelEffort(sessionId, level)
+    },
+  )
+
+  ipcMain.handle('pictor:rules.list', async (): Promise<ToolRule[]> => workspace.rules.rules)
+
+  ipcMain.handle('pictor:rules.save', async (_event, value: unknown): Promise<ToolRule[]> => {
+    // The renderer sends the whole list; validation is the book's, so a bad row is
+    // dropped here rather than reaching a guard that cannot explain itself.
+    return workspace.rules.save(parseToolRules(value))
+  })
+
+  /**
+   * The sandbox mode the runtime is running under.
+   *
+   * dsh keeps one permission namespace for the whole process: a conversation does not
+   * carry its own. So this reads the runtime rather than a session, and the switch that
+   * writes it (`as above`) applies to everything the runtime does from then on — which is
+   * exactly what the row in the composer says.
+   */
+  ipcMain.handle('pictor:harness.permission', async (): Promise<PermissionMode> => {
+    return workspace.harness.status().permissionMode
+  })
+
+  // A skill's instructions live in a file the runtime discovered; showing it in
+  // the file manager is the shortest path from "what is this skill" to the text.
+  ipcMain.handle('pictor:shell.showItem', async (_event, path: unknown) => {
+    if (typeof path !== 'string' || path.length === 0) throw new Error('path is required')
+    shell.showItemInFolder(path)
+  })
+
+  ipcMain.handle(
+    'pictor:harness.approvalAnswer',
+    async (_event, eventId: unknown, allow: unknown) => {
+      if (typeof eventId !== 'string' || eventId.length === 0)
+        throw new Error('eventId is required')
+      if (typeof allow !== 'boolean') throw new Error('allow must be a boolean')
+      await workspace.harness.answerApproval(eventId, allow)
+    },
+  )
+
+  ipcMain.handle(
+    'pictor:harness.questionAnswer',
+    async (_event, eventId: unknown, answers: unknown) => {
+      if (typeof eventId !== 'string' || eventId.length === 0)
+        throw new Error('eventId is required')
+      // `null` is the dismissed card; anything else has to be a list of answers.
+      const list = answers === null ? null : parseAnswers(answers)
+      await workspace.harness.answerQuestions(eventId, list)
+    },
+  )
+
+  ipcMain.handle('pictor:harness.install', async (): Promise<HarnessStatus> => {
+    return workspace.harness.install()
+  })
+
+  ipcMain.handle('pictor:appInfo', async (): Promise<AppInfo> => {
+    const info = await workspace.client.info()
+    return {
+      name: 'Pictor',
+      version: app.getVersion(),
+      electron: process.versions.electron ?? 'unknown',
+      node: process.versions.node,
+      hostCore: info.version,
+      database: info.database,
+    }
+  })
+}
