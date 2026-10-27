@@ -297,6 +297,24 @@ like it would move the conversation under the reader. Refresh remounts the frame
 nothing to re-read, and a frame that kept its state while claiming to be refreshed would be
 lying about what happened.
 
+### What lives in a package, and what does not
+
+The window is `@vulonlok/pictor`; everything behind it is `@vulonlok/harness`. Two things
+are deliberately on the shell's side of that line:
+
+- **Colour.** `packages/ui` ships structure — spacing, borders, the shape of a button — and
+  reads `bg-surface`, `text-faint` and the rest from the tokens in
+  `apps/desktop/src/renderer/src/styles/`. One host, one palette: a kit that carried its own
+  colours would fight the window it is drawn in.
+- **The frame.** `AppShell`, the rail, the title bar and the columns are the shell's. The
+  harness exports destinations and state; composing them into a frame is what a shell does,
+  which is why there is no `HarnessApp` in the package.
+
+The main and preload bundles **inline** workspace TypeScript (`apps/desktop/scripts/build.mjs`):
+one shell and one harness ship together, and esbuild is pointed at package sources rather
+than told to externalise them. A harness distributed on its own would have to be built to
+JavaScript first — that is a decision, not an oversight.
+
 ### The engine
 
 Pictor owns no agent loop. A conversation is executed by **dsh**

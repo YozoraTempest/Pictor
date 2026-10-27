@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { build as viteBuild } from 'vite'
@@ -16,14 +18,21 @@ const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
  *
  * The main and preload bundles inline workspace TypeScript, and esbuild does not read a
  * package's `exports` map — so `@vulonlok/harness/main/...` is pointed at its source here,
- * the same way a sibling package's index is.
+ * the same way a sibling package's index is. This is deliberate: one shell, one harness,
+ * shipped together. A harness distributed on its own would have to be built to JS first.
  */
 const harnessPackage = {
   name: 'workspace-harness',
   setup(build) {
-    build.onResolve({ filter: /^@vulonlok\/harness\// }, (args) => ({
-      path: `${repoRoot}/packages/harness/src/${args.path.slice('@vulonlok/harness/'.length)}.ts`,
-    }))
+    build.onResolve({ filter: /^@vulonlok\/harness\// }, (args) => {
+      const tail = args.path.slice('@vulonlok/harness/'.length)
+      // A directory entry (`preload`) is its own index; anything else is a module file.
+      const base = `${repoRoot}/packages/harness/src/${tail}`
+      const file = ['.ts', '/index.ts']
+        .map((suffix) => base + suffix)
+        .find((path) => existsSync(path))
+      return file === undefined ? undefined : { path: file }
+    })
   },
 }
 
@@ -31,8 +40,8 @@ const shared = {
   bundle: true,
   platform: 'node',
   target: 'node22',
-  external: ['electron', '@earendil-works/pi-coding-agent', 'ws'],
   plugins: [harnessPackage],
+  external: ['electron', '@earendil-works/pi-coding-agent', 'ws'],
   logLevel: 'info',
   sourcemap: false,
   minify: false,
