@@ -8,11 +8,18 @@ export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: {
-      '@vulonlok/shared': fileURLToPath(
-        new URL('../../packages/shared/src/index.ts', import.meta.url),
-      ),
-    },
+    // The harness package's subpaths resolve to source, the same way its siblings do:
+    // the renderer is bundled, not run against `node_modules`.
+    alias: [
+      {
+        find: '@vulonlok/shared',
+        replacement: fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url)),
+      },
+      {
+        find: /^@vulonlok\/harness\//,
+        replacement: fileURLToPath(new URL('../../packages/harness/src/', import.meta.url)),
+      },
+    ],
   },
   build: {
     outDir: fileURLToPath(new URL('./out/renderer', import.meta.url)),

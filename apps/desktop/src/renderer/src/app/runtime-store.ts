@@ -1,23 +1,7 @@
-import { create } from 'zustand'
-
-import type { HarnessStatus } from '../../../shared/bridge.js'
-
 /**
- * The agent runtime's state, as the window last heard it.
+ * Moved: this belongs to the harness now.
  *
- * A transcript can only be read while the runtime is up, so the chat surface has
- * to know whether "no messages" means an empty conversation or an unreachable
- * one. Anything that changes the runtime reports here, and the initial value is
- * fetched on mount so a window opened later is not left guessing.
+ * `@vulonlok/harness/renderer/runtime-store` is the file. The re-export stays until the move is finished so the
+ * window's imports did not have to change in the same commit.
  */
-interface RuntimeState {
-  status: HarnessStatus | null
-  set: (status: HarnessStatus) => void
-}
-
-export const useRuntimeStore = create<RuntimeState>()((set) => ({
-  status: null,
-  set: (status) => {
-    set({ status })
-  },
-}))
+export * from '@vulonlok/harness/renderer/runtime-store'
